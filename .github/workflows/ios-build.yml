@@ -33,10 +33,16 @@ jobs:
 
       - name: Install build tools
         run: |
-          brew install ninja llvm libarchive pkg-config || true
+          brew install ninja llvm lld libarchive pkg-config cmake || true
           python3 -m pip install --break-system-packages meson || pip3 install meson || true
           meson --version || true
           ninja --version || true
+          echo "--- locate lld ---"
+          ls -l /opt/homebrew/opt/llvm/bin/ld.lld 2>/dev/null || echo "no ld.lld in llvm bin"
+          ls -l /opt/homebrew/opt/lld/bin/ld.lld 2>/dev/null || echo "no ld.lld in lld bin"
+          # Make llvm + lld tools discoverable for the rest of the job
+          echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/opt/lld/bin" >> "$GITHUB_PATH"
 
       - name: Prepare build-time config templates
         run: |
@@ -59,6 +65,10 @@ jobs:
         if: steps.deps-cache.outputs.cache-hit != 'true'
         run: |
           set -x
+          export PATH="/opt/homebrew/opt/llvm/bin:/opt/homebrew/opt/lld/bin:$PATH"
+          export PKG_CONFIG="/opt/homebrew/bin/pkg-config"
+          export PKG_CONFIG_PATH="/opt/homebrew/opt/libarchive/lib/pkgconfig:${PKG_CONFIG_PATH}"
+          which ld.lld || true
           chmod +x deps/*.sh || true
           ./deps/build_lame.sh
           ./deps/build_ffmpeg.sh
