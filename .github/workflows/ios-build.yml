@@ -69,10 +69,12 @@ jobs:
           export PKG_CONFIG="/opt/homebrew/bin/pkg-config"
           export PKG_CONFIG_PATH="/opt/homebrew/opt/libarchive/lib/pkgconfig:${PKG_CONFIG_PATH}"
           which ld.lld || true
+          echo "--- go version ---"; go version || true
           chmod +x deps/*.sh || true
           ./deps/build_lame.sh
           ./deps/build_ffmpeg.sh
           ./deps/build_ish.sh
+          ./deps/build_rclone_ios.sh
           ./deps/prepare_alpine_rootfs.sh
 
       - name: Build app (no signing)
