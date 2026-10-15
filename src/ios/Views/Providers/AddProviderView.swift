@@ -11,7 +11,7 @@ struct AIDataSharingConsentView: View {
     var onDecline: () -> Void
 
     var body: some View {
-        NavigationStack {
+        MinisNavigationContainer {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -287,7 +287,7 @@ struct AddProviderView: View {
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItem(placement: .navigationBarLeading) {
                 if selectedType != nil {
                     Button("Back") { goBack() }
                 } else {
@@ -300,7 +300,7 @@ struct AddProviderView: View {
             // gesture bounces instead of silently discarding, and this button
             // is the visible path to the save/discard choice — the same
             // pattern as Mail's compose sheet.
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .navigationBarTrailing) {
                 if selectedType != nil {
                     Button {
                         requestExit()
@@ -691,7 +691,7 @@ struct AddProviderView: View {
                     .textContentType(.nickname)
                     // A label is a proper noun the user is naming, and AutoFill
                     // must never offer to save it as a credential.
-                    .autocorrectionDisabled()
+                    .disableAutocorrection(true)
                     .textInputAutocapitalization(.words)
                     .onChange(of: labelInput) { _ in
                         // Mark the field as user-edited so subsequent
@@ -752,7 +752,7 @@ struct AddProviderView: View {
                                 // eye toggle.
                                 .textContentType(.oneTimeCode)
                                 .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
+                                .disableAutocorrection(true)
                         } else {
                             SecureField(keyPlaceholder, text: $apiKeyInput)
                                 // [T-provider-label-keyboard] Opt the credential
@@ -908,7 +908,7 @@ struct AddProviderView: View {
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .disableAutocorrection(true)
                     .keyboardType(.URL)
 
                 SecureField("Bearer Token", text: $manualOAuthTokenInput)
@@ -961,7 +961,7 @@ struct AddProviderView: View {
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .disableAutocorrection(true)
                 .keyboardType(.URL)
 
             if !enteredViaVoiceTemplate, selectedType != .gemini {

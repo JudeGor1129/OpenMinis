@@ -19,6 +19,12 @@ files=(
   src/ios/Views/Settings/SoulSettingsView.swift
   src/ios/Views/Settings/MemoryManagementView.swift
   src/ios/Views/Settings/LogManagementView.swift
+  src/ios/Views/Providers/GroupSlotPicker.swift
+  src/ios/Views/Providers/ModelGroupsView.swift
+  src/ios/Views/Providers/UnifiedModelPicker.swift
+  src/ios/Views/Providers/ModelQuickTestSheet.swift
+  src/ios/Views/Providers/ProviderInstancesView.swift
+  src/ios/Views/Providers/AddProviderView.swift
 )
 pattern='^[[:space:]]*(NavigationStack|LabeledContent|ShareLink)[[:space:]]*[( {]|\.autocorrectionDisabled\(|\.topBar(Leading|Trailing)|\.presentationDetents\(|\.scrollContentBackground\(|axis: \.vertical'
 status=0
