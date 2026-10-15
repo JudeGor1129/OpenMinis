@@ -126,7 +126,7 @@ struct SyncMigrationDetailView: View {
             let vm = vm ?? .empty
             // Top status — always visible while v2 is enabled.
             Section("Status") {
-                MinisLabeledRow("iCloud Sync") {
+                LabeledContent("iCloud Sync") {
                     Text(vm.v2Enabled ? "On" : "Off")
                         .foregroundStyle(vm.v2Enabled ? .green : .secondary)
                 }
@@ -176,41 +176,45 @@ struct SyncMigrationDetailView: View {
                         }
                     }
                     if !vm.transportName.isEmpty {
-                        MinisLabeledRow("Transport", value: vm.transportName)
+                        LabeledContent("Transport", value: vm.transportName)
                     }
                     if !vm.network.isEmpty {
-                        MinisLabeledRow(AppLocalized("Network"), value: vm.network)
+                        LabeledContent(AppLocalized("Network"), value: vm.network)
                     }
                     if !vm.throttleLabel.isEmpty {
-                        MinisLabeledRow(AppLocalized("Throttle"), value: vm.throttleLabel)
+                        LabeledContent(AppLocalized("Throttle"), value: vm.throttleLabel)
                     }
-                    MinisLabeledRow(AppLocalized("Rate (last 1 min)"), value: formatRate(vm.ratePerSecond))
+                    LabeledContent(AppLocalized("Rate (last 1 min)"), value: formatRate(vm.ratePerSecond))
                 }
             }
 
             if vm.v2Enabled {
                 Section {
                     if vm.pendingPush > 0 {
-                        MinisLabeledRow(AppLocalized("Pending push"), value: "\(vm.pendingPush)")
+                        LabeledContent(AppLocalized("Pending push"), value: "\(vm.pendingPush)")
                         if vm.pendingPushNew > 0 {
-                            MinisLabeledRow("· New writes") {
+                            LabeledContent {
                                 Text("\(vm.pendingPushNew)").foregroundStyle(.secondary)
+                            } label: {
+                                Text("· New writes").foregroundStyle(.secondary).font(.callout)
                             }
                         }
                         if vm.pendingPushMigration > 0 {
-                            MinisLabeledRow("· Migration backlog") {
+                            LabeledContent {
                                 Text("\(vm.pendingPushMigration)").foregroundStyle(.secondary)
+                            } label: {
+                                Text("· Migration backlog").foregroundStyle(.secondary).font(.callout)
                             }
                         }
                     } else {
-                        MinisLabeledRow(AppLocalized("Pending push")) {
+                        LabeledContent(AppLocalized("Pending push")) {
                             Text("Up to date").foregroundStyle(.secondary)
                         }
                     }
-                    MinisLabeledRow(AppLocalized("Sent this session"), value: "\(vm.totalSent)")
-                    MinisLabeledRow(AppLocalized("Received this session"), value: "\(vm.totalReceived)")
-                    MinisLabeledRow(AppLocalized("Last send"), value: relative(vm.lastSendAt))
-                    MinisLabeledRow(AppLocalized("Last fetch"), value: relative(vm.lastFetchAt))
+                    LabeledContent(AppLocalized("Sent this session"), value: "\(vm.totalSent)")
+                    LabeledContent(AppLocalized("Received this session"), value: "\(vm.totalReceived)")
+                    LabeledContent(AppLocalized("Last send"), value: relative(vm.lastSendAt))
+                    LabeledContent(AppLocalized("Last fetch"), value: relative(vm.lastFetchAt))
                 } header: {
                     Text("Sync Activity")
                 }
@@ -231,9 +235,11 @@ struct SyncMigrationDetailView: View {
                vm.lastFailureMessage == nil, !vm.isCanceledByUser,
                vm.unmigratedHistoryCount > 0 {
                 Section {
-                    MinisLabeledRow("Eligible records") {
+                    LabeledContent {
                         Text("\(vm.unmigratedHistoryCount)")
                             .foregroundStyle(.secondary)
+                    } label: {
+                        Text("Eligible records")
                     }
                     Button {
                         showRequestMigrationConfirm = true
@@ -283,8 +289,8 @@ struct SyncMigrationDetailView: View {
 
             if let m = vm.migration {
                 Section {
-                    MinisLabeledRow("Phase", value: m.phase)
-                    MinisLabeledRow("Status", value: m.status)
+                    LabeledContent("Phase", value: m.phase)
+                    LabeledContent("Status", value: m.status)
                     progressRow(
                         title: AppLocalized("Records pushed"),
                         done: m.pushDone, total: m.pushTotal
@@ -304,7 +310,7 @@ struct SyncMigrationDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                     } else {
-                        MinisLabeledRow(AppLocalized("Estimated time"), value: estimateETA(remaining: max(0, m.pushTotal - m.pushDone), rps: vm.ratePerSecond))
+                        LabeledContent(AppLocalized("Estimated time"), value: estimateETA(remaining: max(0, m.pushTotal - m.pushDone), rps: vm.ratePerSecond))
                     }
                     Button(role: .destructive) {
                         showCancelMigrationConfirm = true
@@ -331,8 +337,8 @@ struct SyncMigrationDetailView: View {
                 }
 
                 Section {
-                    MinisLabeledRow(AppLocalized("Reclaimed (v1 records deleted)"), value: "\(m.v1Deleted)")
-                    MinisLabeledRow(AppLocalized("Pending delete"), value: "\(m.v1DeletePending)")
+                    LabeledContent(AppLocalized("Reclaimed (v1 records deleted)"), value: "\(m.v1Deleted)")
+                    LabeledContent(AppLocalized("Pending delete"), value: "\(m.v1DeletePending)")
                     if v1ZoneForceDeletedAtTs > 0 {
                         // Permanent confirmation row — once the user has
                         // force-deleted, the destructive action is no
@@ -1068,7 +1074,7 @@ private struct PauseSyncSheet: View {
     private let hoursOptions = [1, 3, 6, 12, 24]
 
     var body: some View {
-        MinisNavigationContainer {
+        NavigationStack {
             List {
                 Section {
                     ForEach(hoursOptions, id: \.self) { hours in
@@ -1099,7 +1105,7 @@ private struct PauseSyncSheet: View {
                 }
             }
         }
-        .minisChatSheetSize(.medium)
-        .minisSheetGrabberHidden(false)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 }

@@ -94,12 +94,12 @@ struct MCPFormSheet: View {
     }
 
     var body: some View {
-        MinisNavigationContainer {
+        NavigationStack {
             Form {
                 Section {
                     TextField(AppLocalized("Server name"), text: $name)
                         .disabled(isEditing)   // id is the key; renaming = delete+add
-                        .disableAutocorrection(true)
+                        .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                     Picker(AppLocalized("Transport"), selection: $transport) {
                         ForEach(Transport.allCases) { t in
@@ -115,10 +115,8 @@ struct MCPFormSheet: View {
                 }
 
                 Section(AppLocalized("Note (shown to the agent)")) {
-                    MinisMultilineInput(title: AppLocalized("Optional description"),
-                                        text: $note,
-                                        minimumLines: 1,
-                                        maximumLines: 4)
+                    TextField(AppLocalized("Optional description"), text: $note, axis: .vertical)
+                        .lineLimit(1...4)
                 }
             }
             .navigationTitle(Text(isEditing ? "Edit Server" : "Add Server"))
@@ -127,7 +125,7 @@ struct MCPFormSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(AppLocalized("Cancel")) { dismiss() }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button {
                             // Defer the side effect to the next runloop tick: on
@@ -189,7 +187,7 @@ struct MCPFormSheet: View {
             Section(AppLocalized("Server URL")) {
                 HStack {
                     TextField("https://…", text: $url)
-                        .disableAutocorrection(true)
+                        .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
                     // URL references join with no separator (a URL is a base +
@@ -225,7 +223,7 @@ struct MCPFormSheet: View {
             }
             if authMode == .oauthStatic {
                 TextField(AppLocalized("Client ID"), text: $oauthClientId)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                 SecureField(AppLocalized("Client Secret (optional)"), text: $oauthClientSecret)
                     // [T-provider-label-keyboard] Same AutoFill opt-out as the
@@ -236,17 +234,17 @@ struct MCPFormSheet: View {
                     // but structurally identical to the provider-Label report.
                     .textContentType(.oneTimeCode)
                     .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled()
                 TextField(AppLocalized("Authorization Endpoint (https://…/authorize)"), text: $oauthAuthEndpoint)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
                 TextField(AppLocalized("Token Endpoint (https://…/token)"), text: $oauthTokenEndpoint)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
                 TextField(AppLocalized("Scopes (space-separated)"), text: $oauthScopes)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                 // [T-mcp-oauth-loopback] Default is the standardized loopback
                 // address — shown as the placeholder; leave empty to use it.
@@ -254,7 +252,7 @@ struct MCPFormSheet: View {
                 // custom-scheme redirect (auto-falls back to
                 // ASWebAuthenticationSession for non-localhost schemes).
                 TextField(MCPOAuthController.defaultRedirectURI, text: $oauthRedirectURI)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .keyboardType(.URL)
 
@@ -448,10 +446,10 @@ struct MCPFormSheet: View {
         Group {
             Section(AppLocalized("Command")) {
                 TextField("npx", text: $command)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                 TextField(AppLocalized("Arguments (space-separated)"), text: $argsText)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
             }
             Section {
@@ -515,11 +513,11 @@ struct MCPFormSheet: View {
                 let pair = rowBinding(pairs, id: id)
                 HStack {
                     TextField(keyPlaceholder, text: pair.key)
-                        .disableAutocorrection(true)
+                        .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                     Divider()
                     TextField(valuePlaceholder, text: pair.value)
-                        .disableAutocorrection(true)
+                        .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                     if showEnvPicker {
                         envReferenceMenu(into: pair.value)

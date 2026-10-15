@@ -119,11 +119,11 @@ struct ProviderInstancesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if !store.instances.isEmpty {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     EditButton()
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
                         showAddProvider = true
@@ -150,7 +150,7 @@ struct ProviderInstancesView: View {
             }
         }
         .sheet(isPresented: $showAddProvider) {
-            MinisNavigationContainer {
+            NavigationStack {
                 AddProviderView()
             }
         }

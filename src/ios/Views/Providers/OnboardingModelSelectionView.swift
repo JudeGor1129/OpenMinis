@@ -108,10 +108,10 @@ struct OnboardingModelSelectionView: View {
         .navigationTitle("Select Models")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
+            ToolbarItem(placement: .topBarLeading) {
                 Button("Skip") { dismiss() }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("Next") { createGroupAndDismiss() }
                     .disabled(selectedModelEntryIds.isEmpty)
             }

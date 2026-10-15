@@ -783,15 +783,11 @@ struct InlineVoiceInputView: View {
             // half back into view" freeze. The text view scrolls itself here,
             // which also restores native caret-tracking that the wrapped form
             // lost.
-            MinisFocusableMultilineInput(
-                title: "",
-                text: Binding(
-                    get: { viewModel.transcript },
-                    set: { viewModel.setTranscript($0); inputText = $0 }
-                ),
-                isFocused: $editFocused,
-                legacyHeight: 96
-            )
+            TextField("", text: Binding(
+                get: { viewModel.transcript },
+                set: { viewModel.setTranscript($0); inputText = $0 }
+            ), axis: .vertical)
+                .focused($editFocused)
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(ChatColors.primaryText)

@@ -695,12 +695,12 @@ struct UnifiedModelPicker: View {
         }
         .toolbar { toolbarContent }
         .sheet(isPresented: $showCreateGroupSheet) {
-            MinisNavigationContainer {
+            NavigationStack {
                 UnifiedModelPicker(config: createGroupConfig())
             }
         }
         .sheet(isPresented: $showGroupsManager) {
-            MinisNavigationContainer {
+            NavigationStack {
                 ModelGroupsView()
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
@@ -718,8 +718,8 @@ struct UnifiedModelPicker: View {
             // model while TestSession still ran the OLD one.
             ModelQuickTestSheet(entry: entry)
                 .id(entry.id)
-                .minisResizableSheet()
-                .minisSheetGrabberHidden(false)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
     }
 
@@ -797,10 +797,10 @@ struct UnifiedModelPicker: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         if isMulti {
-            ToolbarItem(placement: .navigationBarLeading) {
+            ToolbarItem(placement: .topBarLeading) {
                 Button("Cancel") { dismiss() }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("Add (\(selectedEntryIds.count))") {
                     config.onAddMulti?(selectedEntryIds)
                     dismiss()
@@ -809,7 +809,7 @@ struct UnifiedModelPicker: View {
                 .disabled(selectedEntryIds.isEmpty)
             }
         } else {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("Done") { dismiss() }
             }
         }

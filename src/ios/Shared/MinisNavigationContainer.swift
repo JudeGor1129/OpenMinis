@@ -125,34 +125,6 @@ extension View {
     }
 }
 
-extension View {
-    /// Material navigation-bar backdrop for full-screen presentation roots. The
-    /// Interface names only the material; iOS 15 callers cannot express
-    /// ToolbarBackground visibility or placement types, so their bar simply
-    /// keeps its native backdrop.
-    @ViewBuilder
-    func minisNavigationBarBackdropMaterial() -> some View {
-        if #available(iOS 16.0, *) {
-            self.toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-        } else {
-            self
-        }
-    }
-
-    /// Declares that a presentation root wants a visible navigation-bar
-    /// backdrop without choosing its style. A no-op on iOS 15, where the
-    /// native bar already draws one.
-    @ViewBuilder
-    func minisNavigationBarBackdropVisible() -> some View {
-        if #available(iOS 16.0, *) {
-            self.toolbarBackground(.visible, for: .navigationBar)
-        } else {
-            self
-        }
-    }
-}
-
 /// Label/value Module for settings rows. Its Interface uses only iOS 15 types;
 /// modern systems keep native LabeledContent, while the legacy Implementation
 /// aligns values without changing caller-owned buttons or editing behavior.
@@ -224,33 +196,6 @@ struct MinisMultilineInput: View {
     }
 }
 
-/// Focusable multiline input Module for callers that own keyboard lifecycle:
-/// the voice transcript editor drives `@FocusState` and force-resigns the
-/// responder on panel dismissal. The Interface keeps text and a Bool focus
-/// binding only, because that caller relies on unbounded intrinsic growth — no
-/// line range is exposed. The iOS 15 Adapter uses a fixed-height TextEditor that
-/// scrolls internally; unbounded growth is the one behaviour it cannot preserve.
-struct MinisFocusableMultilineInput: View {
-    let title: String
-    @Binding var text: String
-    let isFocused: FocusState<Bool>.Binding
-    /// iOS 15 Adapter only: visible height of the scrolling TextEditor.
-    let legacyHeight: CGFloat
-
-    @ViewBuilder
-    var body: some View {
-        if #available(iOS 16.0, *) {
-            TextField(title, text: $text, axis: .vertical)
-                .focused(isFocused)
-        } else {
-            TextEditor(text: $text)
-                .focused(isFocused)
-                .frame(height: legacyHeight)
-                .accessibilityLabel(Text(title))
-        }
-    }
-}
-
 /// Single-value prompt Module shared by backup flows. A sheet avoids SwiftUI
 /// alert text fields, which are unsupported on iOS 15. Validation and side
 /// effects remain with the caller; confirmation is deliberately always shown.
@@ -315,18 +260,6 @@ extension View {
                             placeholder: placeholder, confirmation: confirmation,
                             text: text, isPresented: isPresented,
                             onCancel: onCancel, onConfirm: onConfirm)
-        }
-    }
-}
-
-extension View {
-    /// Preserve interactive keyboard dismissal on iOS 16; iOS 15 uses its default.
-    @ViewBuilder
-    func minisInteractiveKeyboardDismissal() -> some View {
-        if #available(iOS 16.0, *) {
-            self.scrollDismissesKeyboard(.interactively)
-        } else {
-            self
         }
     }
 }

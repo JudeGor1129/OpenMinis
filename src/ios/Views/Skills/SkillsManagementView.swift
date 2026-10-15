@@ -106,7 +106,7 @@ struct SkillsManagementView: View {
                     prompt: Text(AppLocalized("Search skills")))
         .onAppear { store.reload() }
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 // Sort menu — same structure as the file browser's (sort-key
                 // picker + direction toggle), persisted via AppStorage.
                 Menu {
@@ -129,7 +129,7 @@ struct SkillsManagementView: View {
                     Image(systemName: "arrow.up.arrow.down")
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
                         showImportSheet = true
@@ -229,7 +229,7 @@ private struct ImportSkillSheet: View {
     }
 
     var body: some View {
-        MinisNavigationContainer {
+        NavigationStack {
             Form {
                 Picker("Import Method", selection: $importMode) {
                     ForEach(ImportMode.allCases, id: \.self) { mode in
@@ -246,7 +246,7 @@ private struct ImportSkillSheet: View {
                     Section("GitHub URL") {
                         TextField("", text: $urlText, prompt: Text("github.com/user/repo/blob/main/SKILL.md").foregroundColor(.secondary))
                             .textInputAutocapitalization(.never)
-                            .disableAutocorrection(true)
+                            .autocorrectionDisabled()
                             .keyboardType(.URL)
                             .tint(.primary)
                     }
@@ -277,10 +277,10 @@ private struct ImportSkillSheet: View {
             .navigationTitle(AppLocalized("Import Skill"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button(AppLocalized("Cancel")) { dismiss() }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     if importMode != .file {
                         Button(AppLocalized("Import")) { performImport() }
                             .disabled(isImporting || (importMode == .url ? urlText.isEmpty : pastedContent.isEmpty))
@@ -507,14 +507,14 @@ private struct SkillDetailView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    MinisLabeledRow("Version", value: skill.version)
+                    LabeledContent("Version", value: skill.version)
                     if let modDate = latestFileModDate {
-                        MinisLabeledRow("Last Modified") {
+                        LabeledContent("Last Modified") {
                             Text(Self.relativeTime(modDate))
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    MinisLabeledRow("Source") {
+                    LabeledContent("Source") {
                         switch skill.importSource {
                         case .url(let url):
                             Text(url)
@@ -529,7 +529,7 @@ private struct SkillDetailView: View {
                             Text(AppLocalized("Session created")).foregroundStyle(.secondary)
                         }
                     }
-                    MinisLabeledRow(AppLocalized("Usage")) {
+                    LabeledContent(AppLocalized("Usage")) {
                         let freq = store.usageFrequency(for: skill.id)
                         Text(usageFrequencyLabel(freq))
                             .foregroundStyle(usageFrequencyColor(freq))
@@ -659,7 +659,7 @@ private struct SkillDetailView: View {
         .navigationTitle(skill?.name ?? "Skill")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { shareSkill() } label: {
                     Image(systemName: "square.and.arrow.up")
                 }
@@ -882,7 +882,7 @@ private struct SkillFileDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if hasChanges {
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                    ToolbarItem(placement: .topBarTrailing) {
                         Button(AppLocalized("Save")) { save() }
                     }
                 }
@@ -912,7 +912,7 @@ struct MinisSkillsBrowserView: View {
     @StateObject private var coordinator = SkillBrowserCoordinator()
 
     var body: some View {
-        MinisNavigationContainer {
+        NavigationStack {
             ZStack {
                 SkillBrowserWebView(coordinator: coordinator)
                     .ignoresSafeArea(edges: .bottom)
@@ -931,10 +931,10 @@ struct MinisSkillsBrowserView: View {
             .navigationTitle("Minis Skills")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button(AppLocalized("Done")) { dismiss() }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button(AppLocalized("Import This")) {
                         coordinator.importCurrentSkill()
                     }

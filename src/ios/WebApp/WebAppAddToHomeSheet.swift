@@ -33,7 +33,7 @@ struct WebAppAddToHomeSheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        MinisNavigationContainer {
+        NavigationStack {
             Form {
                 if unsupportedScope {
                     unsupportedSection

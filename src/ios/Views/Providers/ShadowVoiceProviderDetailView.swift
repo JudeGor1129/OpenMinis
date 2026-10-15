@@ -21,29 +21,29 @@ struct ShadowVoiceProviderDetailView: View {
     var body: some View {
         List {
             Section {
-                HStack {
+                LabeledContent {
+                    Text(instance?.label ?? "—")
+                        .foregroundStyle(.secondary)
+                } label: {
                     Label {
                         Text("Credential from", comment: "Shadow voice credential label")
                     } icon: {
                         styledIcon("key.fill", color: .blue)
                     }
-                    Spacer()
-                    Text(instance?.label ?? "—")
-                        .foregroundStyle(.secondary)
                 }
                 if let base = instance?.effectiveCustomBaseURL {
-                    HStack {
-                        Label {
-                            Text("Endpoint", comment: "Shadow voice endpoint label")
-                        } icon: {
-                            styledIcon("link", color: .teal)
-                        }
-                        Spacer()
+                    LabeledContent {
                         Text(base)
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                    } label: {
+                        Label {
+                            Text("Endpoint", comment: "Shadow voice endpoint label")
+                        } icon: {
+                            styledIcon("link", color: .teal)
+                        }
                     }
                 }
             } footer: {
@@ -87,7 +87,7 @@ struct ShadowVoiceProviderDetailView: View {
             // sheet identity and its stale TestSession.
             ModelQuickTestSheet(entry: entry)
                 .id(entry.id)
-                .minisResizableSheet()
+                .presentationDetents([.medium, .large])
         }
     }
 

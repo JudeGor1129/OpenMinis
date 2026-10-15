@@ -1,12 +1,10 @@
 import SwiftUI
 
 /// Compile-only callers: no credentials, networking, persistence, or app state.
-/// Keep both prompt closure forms, the two labeled-row initializers, and both
-/// multiline input Modules covered.
+/// Keep both prompt closure forms and the two labeled-row initializers covered.
 private struct IOS15CompatibilityCallers: View {
     @State private var presented = false
     @State private var text = ""
-    @FocusState private var transcriptFocused: Bool
 
     var body: some View {
         MinisNavigationContainer {
@@ -20,9 +18,6 @@ private struct IOS15CompatibilityCallers: View {
                 }
                 MinisMultilineInput(title: "Instructions", text: $text,
                                     minimumLines: 4, maximumLines: 12)
-                MinisFocusableMultilineInput(title: "Transcript", text: $text,
-                                             isFocused: $transcriptFocused,
-                                             legacyHeight: 96)
                 TextEditor(text: $text)
                     .minisScrollBackgroundHidden()
                 Button("Edit") { presented = true }
@@ -42,8 +37,5 @@ private struct IOS15CompatibilityCallers: View {
                          onCancel: { text = "" }) {}
         .minisResizableSheet()
         .minisFixedSheetHeight(240)
-        .minisInteractiveKeyboardDismissal()
-        .minisNavigationBarBackdropMaterial()
-        .minisNavigationBarBackdropVisible()
     }
 }

@@ -85,18 +85,18 @@ struct ThinkingRuleEditorView: View {
     @State private var customHighValue: String = ""
 
     var body: some View {
-        MinisNavigationContainer {
+        NavigationStack {
             Form {
                 Section("Name") {
                     TextField("Rule name", text: $label)
-                        .disableAutocorrection(true)
+                        .autocorrectionDisabled()
                 }
 
                 Section {
                     Toggle("All models", isOn: $scopeIsAllModels)
                     if !scopeIsAllModels {
                         TextField("Model pattern (e.g. deepseek-v4*)", text: $pattern)
-                            .disableAutocorrection(true)
+                            .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                     }
                 } header: {
@@ -156,7 +156,7 @@ struct ThinkingRuleEditorView: View {
             Toggle("Send a value when thinking is off", isOn: $sendOffValue)
             if sendOffValue {
                 TextField("Off value (e.g. none, minimal)", text: $offValue)
-                    .disableAutocorrection(true)
+                    .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
             } else {
                 // This is not a cosmetic choice: sending an off tier to a strict-enum
@@ -167,18 +167,18 @@ struct ThinkingRuleEditorView: View {
             }
         case .booleanToggle:
             TextField("Field path", text: $togglePath)
-                .disableAutocorrection(true)
+                .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
         case .extraBodyToggle:
             TextField("Field path", text: $extraBodyPath)
-                .disableAutocorrection(true)
+                .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
         case .customPath:
             TextField("Dotted path (e.g. extra.thinking.mode)", text: $customPath)
-                .disableAutocorrection(true)
+                .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
             TextField("Value at High", text: $customHighValue)
-                .disableAutocorrection(true)
+                .autocorrectionDisabled()
         case .omitEverything, .deepSeekSibling, .qwenDual, .qwenRootOnly:
             EmptyView()
         }
