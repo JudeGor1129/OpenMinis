@@ -29,8 +29,12 @@ files=(
   src/ios/Views/Providers/CopilotDeviceLoginSheet.swift
   src/ios/Views/Providers/ProviderInstanceDetailView.swift
   src/ios/Views/Providers/ThinkingRuleEditorView.swift
+  src/ios/Views/Providers/ShadowVoiceProviderDetailView.swift
+  src/ios/Views/Providers/OnboardingModelSelectionView.swift
+  src/ios/Views/Providers/ModelGroupDetailView.swift
+  src/ios/Views/Providers/AgentLoopModelsView.swift
 )
-pattern='^[[:space:]]*(NavigationStack|LabeledContent|ShareLink)[[:space:]]*[( {]|\.autocorrectionDisabled\(|\.topBar(Leading|Trailing)|\.presentationDetents\(|\.scrollContentBackground\(|axis: \.vertical'
+pattern='^[[:space:]]*(NavigationStack|LabeledContent|ShareLink)[[:space:]]*[( {]|\.autocorrectionDisabled\(|\.topBar(Leading|Trailing)|\.presentationDetents\(|\.presentationDragIndicator\(|\.scrollDismissesKeyboard\(|\.scrollContentBackground\(|axis: \.vertical'
 status=0
 grep -nE "$pattern" "${files[@]}" || status=$?
 case "$status" in

@@ -21,29 +21,29 @@ struct ShadowVoiceProviderDetailView: View {
     var body: some View {
         List {
             Section {
-                LabeledContent {
-                    Text(instance?.label ?? "—")
-                        .foregroundStyle(.secondary)
-                } label: {
+                HStack {
                     Label {
                         Text("Credential from", comment: "Shadow voice credential label")
                     } icon: {
                         styledIcon("key.fill", color: .blue)
                     }
+                    Spacer()
+                    Text(instance?.label ?? "—")
+                        .foregroundStyle(.secondary)
                 }
                 if let base = instance?.effectiveCustomBaseURL {
-                    LabeledContent {
-                        Text(base)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    } label: {
+                    HStack {
                         Label {
                             Text("Endpoint", comment: "Shadow voice endpoint label")
                         } icon: {
                             styledIcon("link", color: .teal)
                         }
+                        Spacer()
+                        Text(base)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
                 }
             } footer: {
@@ -87,7 +87,7 @@ struct ShadowVoiceProviderDetailView: View {
             // sheet identity and its stale TestSession.
             ModelQuickTestSheet(entry: entry)
                 .id(entry.id)
-                .presentationDetents([.medium, .large])
+                .minisResizableSheet()
         }
     }
 

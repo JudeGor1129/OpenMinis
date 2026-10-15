@@ -719,7 +719,7 @@ struct UnifiedModelPicker: View {
             ModelQuickTestSheet(entry: entry)
                 .id(entry.id)
                 .minisResizableSheet()
-                .presentationDragIndicator(.visible)
+                .minisSheetGrabberHidden(false)
         }
     }
 

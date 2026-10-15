@@ -349,10 +349,10 @@ struct ModelGroupDetailView: View {
                 }
             }
         }
-        .scrollDismissesKeyboard(.interactively)
+        .minisInteractiveKeyboardDismissal()
         .environment(\.editMode, $editMode)
         .sheet(isPresented: $showAddModels) {
-            NavigationStack {
+            MinisNavigationContainer {
                 UnifiedModelPicker(config: addModelsConfig())
             }
         }
