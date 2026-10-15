@@ -41,6 +41,13 @@ files=(
   src/ios/Views/Rootfs/RootfsManagementView.swift
   src/ios/Views/Rootfs/ISHTerminalView.swift
   src/ios/Agent/BrowserUse/BrowserManagementView.swift
+  src/ios/Views/MCP/MCPFormSheet.swift
+  src/ios/Views/MCP/MCPIntegrationsView.swift
+  src/ios/Views/MCP/SessionMCPsView.swift
+  src/ios/Views/MCP/MCPJSONImportSheet.swift
+  src/ios/Views/Skills/SkillsManagementView.swift
+  src/ios/Views/Sync/CloudSyncSettingsV2View.swift
+  src/ios/Views/Sync/SyncMigrationDetailView.swift
 )
 pattern='^[[:space:]]*(NavigationStack|LabeledContent|ShareLink)[[:space:]]*[( {]|\.autocorrectionDisabled\(|\.topBar(Leading|Trailing)|\.presentationDetents\(|\.presentationDragIndicator\(|\.scrollDismissesKeyboard\(|\.scrollContentBackground\(|axis: \.vertical'
 status=0

@@ -44,7 +44,7 @@ struct CloudSyncSettingsV2View: View {
                     NavigationLink {
                         SyncMigrationDetailView()
                     } label: {
-                        LabeledContent("Status") {
+                        MinisLabeledRow("Status") {
                             Text(statusText).foregroundStyle(.secondary)
                         }
                     }
@@ -60,7 +60,7 @@ struct CloudSyncSettingsV2View: View {
                         deviceNameDraft = deviceName
                         showDeviceNameEditor = true
                     } label: {
-                        LabeledContent("Name") {
+                        MinisLabeledRow("Name") {
                             HStack(spacing: 6) {
                                 Text(deviceName).foregroundStyle(.secondary)
                                 Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
