@@ -263,3 +263,15 @@ extension View {
         }
     }
 }
+
+extension View {
+    /// Preserve interactive keyboard dismissal on iOS 16; iOS 15 uses its default.
+    @ViewBuilder
+    func minisInteractiveKeyboardDismissal() -> some View {
+        if #available(iOS 16.0, *) {
+            self.scrollDismissesKeyboard(.interactively)
+        } else {
+            self
+        }
+    }
+}

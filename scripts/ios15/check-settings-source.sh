@@ -27,6 +27,8 @@ files=(
   src/ios/Views/Providers/AddProviderView.swift
   src/ios/Views/Providers/KimiDeviceLoginSheet.swift
   src/ios/Views/Providers/CopilotDeviceLoginSheet.swift
+  src/ios/Views/Providers/ProviderInstanceDetailView.swift
+  src/ios/Views/Providers/ThinkingRuleEditorView.swift
 )
 pattern='^[[:space:]]*(NavigationStack|LabeledContent|ShareLink)[[:space:]]*[( {]|\.autocorrectionDisabled\(|\.topBar(Leading|Trailing)|\.presentationDetents\(|\.scrollContentBackground\(|axis: \.vertical'
 status=0

@@ -107,7 +107,7 @@ struct ProviderInstanceDetailView: View {
             }
         }
         .sheet(isPresented: $showManualTokenInput) {
-            NavigationStack {
+            MinisNavigationContainer {
                 Form {
                     Section {
                         SecureField("Bearer token", text: $manualTokenInputText)
@@ -126,7 +126,7 @@ struct ProviderInstanceDetailView: View {
                             // masking.
                             .textContentType(.oneTimeCode)
                             .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                            .disableAutocorrection(true)
                     } footer: {
                         Text("Paste the bearer token. Whitespace and newlines will be stripped automatically.")
                     }
@@ -152,7 +152,7 @@ struct ProviderInstanceDetailView: View {
                     }
                 }
             }
-            .presentationDetents([.medium])
+            .minisChatSheetSize(.medium)
         }
         .alert("Delete Provider", isPresented: $showDeleteConfirm) {
             Button("Delete", role: .destructive) {
@@ -436,11 +436,11 @@ struct ProviderInstanceDetailView: View {
                 let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(label).json")
                 let _ = try? json.write(to: tempURL, atomically: true, encoding: .utf8)
                 ProviderShareSheet(url: tempURL)
-                    .presentationDetents([.medium])
+                    .minisChatSheetSize(.medium)
             } else {
                 Text("Failed to export provider configuration.")
                     .foregroundStyle(.secondary)
-                    .presentationDetents([.medium])
+                    .minisChatSheetSize(.medium)
             }
         }
     }
@@ -490,7 +490,7 @@ struct ProviderInstanceDetailView: View {
                     // holds a credential, and saying so costs nothing.
                     .textContentType(.oneTimeCode)
                     .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .disableAutocorrection(true)
                     .foregroundStyle(showKeyRevealed ? Color.primary : Color.clear)
 
                 if !showKeyRevealed {
@@ -639,7 +639,7 @@ struct ProviderInstanceDetailView: View {
             TextField(customBaseURLPlaceholder(instance), text: $editingCustomBaseURL)
                 .font(.system(.body, design: .monospaced))
                 .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .disableAutocorrection(true)
                 .keyboardType(.URL)
                 .onAppear { editingCustomBaseURL = instance.customBaseURL ?? "" }
                 .onSubmit { saveCustomBaseURL(instance) }
@@ -691,7 +691,7 @@ struct ProviderInstanceDetailView: View {
             TextField(AppLocalized("Default"), text: $editingCustomUserAgent)
                 .font(.system(.body, design: .monospaced))
                 .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .disableAutocorrection(true)
                 .onAppear { editingCustomUserAgent = instance.customUserAgent ?? "" }
                 .onSubmit { saveCustomUserAgent(instance) }
                 .onDisappear { saveCustomUserAgent(instance) }
@@ -1236,18 +1236,18 @@ struct AddCustomModelSheet: View {
     private var instance: ProviderInstance? { store.instance(for: instanceId) }
 
     var body: some View {
-        NavigationStack {
+        MinisNavigationContainer {
             List {
                 Section {
                     TextField("Model ID (e.g. claude-3-opus-latest)", text: $modelId)
                         .font(.system(.subheadline, design: .monospaced))
                         .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                        .disableAutocorrection(true)
                         .onChange(of: modelId) { _ in duplicateError = nil }
 
                     TextField("Display name (optional)", text: $displayName)
                         .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                        .disableAutocorrection(true)
                 } header: {
                     Text("Model")
                 } footer: {
@@ -1298,10 +1298,10 @@ struct AddCustomModelSheet: View {
             .navigationTitle("Add Custom Model")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Add") { addModel() }
                         .font(.body.weight(.semibold))
                         .disabled(modelId.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -1423,7 +1423,7 @@ struct ModelEntryDetailSheet: View {
     @State private var showResetAlert: Bool = false
 
     var body: some View {
-        NavigationStack {
+        MinisNavigationContainer {
             List {
                 Section("Identity") {
                     HStack {
@@ -1431,15 +1431,13 @@ struct ModelEntryDetailSheet: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                         if entry.isCustom {
-                            // axis: .vertical lets long IDs wrap so the cursor
-                            // stays visible while editing. Single-line +
-                            // trailing alignment lost the cursor past the row
-                            // edge with no horizontal autoscroll.
-                            TextField("model-id", text: $modelId, axis: .vertical)
+                            // iOS 15 uses a scrolling editor so long IDs remain editable.
+                            MinisMultilineInput(title: "model-id", text: $modelId,
+                                                minimumLines: 2, maximumLines: 4)
                                 .font(.system(.body, design: .monospaced))
                                 .multilineTextAlignment(.trailing)
                                 .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
+                                .disableAutocorrection(true)
                         } else {
                             Text(entry.model.id)
                                 .font(.system(.body, design: .monospaced))
@@ -1455,7 +1453,7 @@ struct ModelEntryDetailSheet: View {
                         TextField("Display name", text: $displayName)
                             .multilineTextAlignment(.trailing)
                             .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                            .disableAutocorrection(true)
                     }
 
                     HStack {
@@ -1598,12 +1596,12 @@ struct ModelEntryDetailSheet: View {
             }
             .navigationTitle("Model Details")
             .navigationBarTitleDisplayMode(.inline)
-            .scrollDismissesKeyboard(.interactively)
+            .minisInteractiveKeyboardDismissal()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") { save() }
                         .font(.body.weight(.semibold))
                 }
@@ -1616,8 +1614,8 @@ struct ModelEntryDetailSheet: View {
                 // pin a stale TestSession.
                 ModelQuickTestSheet(entry: entry)
                     .id(entry.id)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
+                    .minisResizableSheet()
+                    .minisSheetGrabberHidden(false)
             }
             .alert(
                 AppLocalized("Force Enable Thinking"),

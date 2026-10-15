@@ -37,5 +37,6 @@ private struct IOS15CompatibilityCallers: View {
                          onCancel: { text = "" }) {}
         .minisResizableSheet()
         .minisFixedSheetHeight(240)
+        .minisInteractiveKeyboardDismissal()
     }
 }
