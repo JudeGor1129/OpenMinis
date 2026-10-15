@@ -778,7 +778,7 @@ private struct FolderPickerSheet: View {
     private var sessionCount: Int { sessionIds.count }
 
     var body: some View {
-        NavigationStack {
+        MinisNavigationContainer {
             List {
                 Section {
                     HStack {
@@ -791,8 +791,10 @@ private struct FolderPickerSheet: View {
                     // One-sentence auto-grouping context (≤100 chars). Typed
                     // here or prefilled by AI Suggest; never shown in the
                     // list, editable later from Rename Group.
-                    TextField("Description (optional, guides auto-grouping)", text: $newFolderDesc, axis: .vertical)
-                        .lineLimit(1...2)
+                    MinisMultilineInput(title: "Description (optional, guides auto-grouping)",
+                                        text: $newFolderDesc,
+                                        minimumLines: 1,
+                                        maximumLines: 2)
                         .font(.subheadline)
                         .onChange(of: newFolderDesc) { v in
                             if v.count > 100 { newFolderDesc = String(v.prefix(100)) }
@@ -963,7 +965,7 @@ private struct FolderPickerSheet: View {
                              : LocalizedStringKey("Move \(sessionCount) to Group"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Cancel") { dismiss() }
                 }
             }
@@ -5124,7 +5126,7 @@ struct ModernContentView: View {
                                 .foregroundStyle(.secondary)
                             TextField("Search chats...", text: $searchText)
                                 .textFieldStyle(.plain)
-                                .autocorrectionDisabled()
+                                .disableAutocorrection(true)
                                 .focused($searchFocused)
                                 .onChange(of: searchText) { _ in scheduleSearch() }
                             searchClearButton
@@ -6435,7 +6437,7 @@ private struct ExportPreviewSheet: View {
     private let previewLimit = 10000
 
     var body: some View {
-        NavigationStack {
+        MinisNavigationContainer {
             VStack(spacing: 0) {
                 // Preview — summary for multi-select, full content for single.
                 if let summary {
@@ -6496,7 +6498,7 @@ private struct ExportPreviewSheet: View {
             .navigationTitle(AppLocalized("Export Preview"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button(AppLocalized("Done")) { dismiss() }
                 }
             }
@@ -7495,7 +7497,7 @@ struct SessionEditSheet: View {
     ]
 
     var body: some View {
-        NavigationStack {
+        MinisNavigationContainer {
             List {
                 Section("Title") {
                     TextField("Session title", text: $editTitle)
