@@ -60,8 +60,10 @@ files=(
   src/ios/WebApp/WebAppAddToHomeSheet.swift
   src/ios/Debug/MessageListTestView.swift
   src/ios/Debug/BrowserBenchTestView.swift
+  src/ios/Views/Chat/ChatTurnScreenshot.swift
+  src/ios/Views/Chat/WebPreviewSheet.swift
 )
-pattern='^[[:space:]]*(NavigationStack|LabeledContent|ShareLink)[[:space:]]*[( {]|\.autocorrectionDisabled\(|\.topBar(Leading|Trailing)|\.presentationDetents\(|\.presentationDragIndicator\(|\.scrollDismissesKeyboard\(|\.scrollContentBackground\(|axis: \.vertical'
+pattern='^[[:space:]]*(NavigationStack|LabeledContent|ShareLink)[[:space:]]*[( {]|\.autocorrectionDisabled\(|\.topBar(Leading|Trailing)|\.presentationDetents\(|\.presentationDragIndicator\(|\.scrollDismissesKeyboard\(|\.scrollContentBackground\(|\.toolbarBackground\(|axis: \.vertical'
 status=0
 # Comment lines cannot call a newer-system API, and several reviewed views
 # document the exact API they replaced, so drop them before judging the scan.

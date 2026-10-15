@@ -125,6 +125,34 @@ extension View {
     }
 }
 
+extension View {
+    /// Material navigation-bar backdrop for full-screen presentation roots. The
+    /// Interface names only the material; iOS 15 callers cannot express
+    /// ToolbarBackground visibility or placement types, so their bar simply
+    /// keeps its native backdrop.
+    @ViewBuilder
+    func minisNavigationBarBackdropMaterial() -> some View {
+        if #available(iOS 16.0, *) {
+            self.toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+        } else {
+            self
+        }
+    }
+
+    /// Declares that a presentation root wants a visible navigation-bar
+    /// backdrop without choosing its style. A no-op on iOS 15, where the
+    /// native bar already draws one.
+    @ViewBuilder
+    func minisNavigationBarBackdropVisible() -> some View {
+        if #available(iOS 16.0, *) {
+            self.toolbarBackground(.visible, for: .navigationBar)
+        } else {
+            self
+        }
+    }
+}
+
 /// Label/value Module for settings rows. Its Interface uses only iOS 15 types;
 /// modern systems keep native LabeledContent, while the legacy Implementation
 /// aligns values without changing caller-owned buttons or editing behavior.

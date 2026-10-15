@@ -59,7 +59,7 @@ struct ChatScreenshotPreviewSheet: View {
                     }
                 }
             }
-            .toolbarBackground(.visible, for: .navigationBar)
+            .minisNavigationBarBackdropVisible()
             .overlay(alignment: .bottom) {
                 if let toast {
                     Text(toast)
