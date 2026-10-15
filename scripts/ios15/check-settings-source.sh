@@ -48,12 +48,26 @@ files=(
   src/ios/Views/Skills/SkillsManagementView.swift
   src/ios/Views/Sync/CloudSyncSettingsV2View.swift
   src/ios/Views/Sync/SyncMigrationDetailView.swift
+  src/ios/Agent/Background/BackgroundKeepAliveManager.swift
+  src/ios/Agent/BrowserUse/BrowserSheetView.swift
+  src/ios/Views/Chat/ChatTurnScreenshot.swift
+  src/ios/Views/Chat/ToolLiveSheet.swift
+  src/ios/Views/Chat/OffloadPermissionDialog.swift
+  src/ios/Views/Chat/Media/AudioPlayback.swift
+  src/ios/Views/Chat/MinisMediaViews.swift
+  src/ios/Views/Chat/Voice/InlineVoiceInputView.swift
+  src/ios/Views/Rootfs/RootfsResetButton.swift
+  src/ios/WebApp/WebAppAddToHomeSheet.swift
+  src/ios/Debug/MessageListTestView.swift
+  src/ios/Debug/BrowserBenchTestView.swift
 )
 pattern='^[[:space:]]*(NavigationStack|LabeledContent|ShareLink)[[:space:]]*[( {]|\.autocorrectionDisabled\(|\.topBar(Leading|Trailing)|\.presentationDetents\(|\.presentationDragIndicator\(|\.scrollDismissesKeyboard\(|\.scrollContentBackground\(|axis: \.vertical'
 status=0
-grep -nE "$pattern" "${files[@]}" || status=$?
+# Comment lines cannot call a newer-system API, and several reviewed views
+# document the exact API they replaced, so drop them before judging the scan.
+matches=$(grep -nE "$pattern" "${files[@]}" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//') || status=$?
 case "$status" in
-  0) printf 'FAIL: reviewed settings contain a direct newer-system call.\n' >&2; exit 1 ;;
+  0) printf 'FAIL: reviewed settings contain a direct newer-system call.\n%s\n' "$matches" >&2; exit 1 ;;
   1) printf 'PASS: reviewed settings source regression guard.\n' ;;
   *) printf 'ERROR: source scan failed (grep %s).\n' "$status" >&2; exit "$status" ;;
 esac

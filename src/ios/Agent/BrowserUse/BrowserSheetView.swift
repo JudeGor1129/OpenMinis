@@ -28,7 +28,7 @@ struct BrowserSheetView: View {
                         TextField("Search or enter URL", text: $addressText)
                             .font(.system(size: 13, design: .monospaced))
                             .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                            .disableAutocorrection(true)
                             .keyboardType(.URL)
                             .submitLabel(.go)
                             .focused($addressFocused)

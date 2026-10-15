@@ -196,6 +196,33 @@ struct MinisMultilineInput: View {
     }
 }
 
+/// Focusable multiline input Module for callers that own keyboard lifecycle:
+/// the voice transcript editor drives `@FocusState` and force-resigns the
+/// responder on panel dismissal. The Interface keeps text and a Bool focus
+/// binding only, because that caller relies on unbounded intrinsic growth — no
+/// line range is exposed. The iOS 15 Adapter uses a fixed-height TextEditor that
+/// scrolls internally; unbounded growth is the one behaviour it cannot preserve.
+struct MinisFocusableMultilineInput: View {
+    let title: String
+    @Binding var text: String
+    let isFocused: FocusState<Bool>.Binding
+    /// iOS 15 Adapter only: visible height of the scrolling TextEditor.
+    let legacyHeight: CGFloat
+
+    @ViewBuilder
+    var body: some View {
+        if #available(iOS 16.0, *) {
+            TextField(title, text: $text, axis: .vertical)
+                .focused(isFocused)
+        } else {
+            TextEditor(text: $text)
+                .focused(isFocused)
+                .frame(height: legacyHeight)
+                .accessibilityLabel(Text(title))
+        }
+    }
+}
+
 /// Single-value prompt Module shared by backup flows. A sheet avoids SwiftUI
 /// alert text fields, which are unsupported on iOS 15. Validation and side
 /// effects remain with the caller; confirmation is deliberately always shown.

@@ -1131,11 +1131,11 @@ struct MinisHTMLPreviewView: View {
                                       sourceSessionId: AIChatViewModel.activeSessionId)
                 }
         }
-        .presentationDetents([.large])
+        .minisChatSheetSize(.large)
         // [T-ios-html-preview-wide-sheet] Widen to a page-style sheet on
         // iPad/Mac, matching MinisMarkdownPreviewView. iPhone unaffected.
         .modifier(WideSheetSizingModifier())
-        .presentationDragIndicator(.hidden)
+        .minisSheetGrabberHidden(true)
         .preferredColorScheme(appearanceMode == 1 ? .light : appearanceMode == 2 ? .dark : nil)
     }
 }
