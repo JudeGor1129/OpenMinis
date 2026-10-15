@@ -1,0 +1,103 @@
+name: iOS 15 port diagnostics
+
+on:
+  push:
+    paths:
+      - 'src/ios/**'
+      - 'scripts/ios15/**'
+      - 'deps/build_rclone_ios.sh'
+      - '.github/workflows/ios15.yml'
+  workflow_dispatch:
+    inputs:
+      full_build:
+        description: 'Build native dependencies and attempt the full app (diagnostic, not release-ready)'
+        type: boolean
+        default: false
+      ish_commit:
+        description: 'Exact 40-character OpenMinis/ish-arm64 commit required for a full build'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios15-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  navigation-check:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Type-check navigation fallback for iOS 15
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          xcodebuild -version | tee ci-logs/xcode.txt
+          plutil -lint src/ios/Minis.xcodeproj/project.pbxproj
+          bash scripts/ios15/check-settings-source.sh 2>&1 | tee ci-logs/settings-source.txt
+          bash scripts/ios15/check-navigation.sh 2>&1 | tee ci-logs/navigation.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: navigation-check-${{ github.run_number }}
+          path: ci-logs/
+          retention-days: 7
+
+  app-diagnostics:
+    if: github.event_name == 'workflow_dispatch' && inputs.full_build
+    needs: navigation-check
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      ISH_COMMIT: ${{ inputs.ish_commit }}
+      IOS_DEPLOYMENT_TARGET: '15.0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: deps/rclone-mobile/go.mod
+          cache-dependency-path: deps/rclone-mobile/go.sum
+      - name: Validate and fetch exact iSH revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ISH_COMMIT" =~ ^[a-fA-F0-9]{40}$ ]] || { echo 'An exact iSH commit is required; refusing branch HEAD.'; exit 1; }
+          [[ ! -e deps/ish/meson.build ]] || { echo 'deps/ish already populated; refusing to replace it.'; exit 1; }
+          mkdir -p ci-logs deps/ish
+          git -C deps/ish init
+          git -C deps/ish remote add origin https://github.com/OpenMinis/ish-arm64.git
+          git -C deps/ish fetch --depth 1 origin "$ISH_COMMIT"
+          git -C deps/ish checkout --detach FETCH_HEAD
+          expected_commit="$(printf '%s' "$ISH_COMMIT" | tr '[:upper:]' '[:lower:]')"
+          [[ "$(git -C deps/ish rev-parse HEAD)" == "$expected_commit" ]]
+          git -C deps/ish submodule update --init --recursive
+          git -C deps/ish rev-parse HEAD | tee ci-logs/ish-commit.txt
+      - name: Install native build requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install ninja llvm libarchive pkg-config meson
+          xcodebuild -downloadComponent MetalToolchain
+      - name: Build dependencies and collect compiler diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          bash scripts/ios15/build-diagnostics.sh 2>&1 | tee ci-logs/build.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-diagnostics-${{ github.run_number }}
+          path: |
+            ci-logs/
+            build/ios15/Minis.xcresult
+          if-no-files-found: warn
+          retention-days: 7
