@@ -855,7 +855,7 @@ struct MinisLinkPreviewView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        MinisNavigationContainer {
             ReusableWebView(webView: holder.webView)
                 // [T-webview-preview-swipe-dismiss] Arbitrate the sheet's
                 // interactive-dismiss pan against page content at the gesture
@@ -904,13 +904,13 @@ struct MinisLinkPreviewView: View {
                     }
                 }
         }
-        .presentationDetents([.large])
+        .minisChatSheetSize(.large)
         // [T-ios-html-preview-wide-sheet] Widen to a page-style sheet on
         // iPad/Mac, reusing the shared modifier from AIChatView.swift. iPhone
         // unaffected (presentationSizing is iOS18+ and .page only affects
         // iPad/Mac form sheets).
         .modifier(WideSheetSizingModifier())
-        .presentationDragIndicator(.hidden)
+        .minisSheetGrabberHidden(true)
         // [T-webview-preview-swipe-dismiss] Interactive-dismiss arbitration is
         // now done at the gesture layer by WebViewDismissArbiterGate (above),
         // which vetoes the sheet dismiss pan synchronously when the touch is on

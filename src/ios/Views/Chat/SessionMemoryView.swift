@@ -12,7 +12,7 @@ struct SessionMemoryView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
+        MinisNavigationContainer {
             List {
                 // Section 1: Auto-injected memories
                 Section {
@@ -53,7 +53,7 @@ struct SessionMemoryView: View {
             .navigationTitle("Memories in Session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
                 }
             }
@@ -275,7 +275,7 @@ private struct MemoryContentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if fileURL != nil {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     if isEditing {
                         Button("Save") {
                             save()
@@ -374,7 +374,7 @@ private struct MemoryWriteDetailView: View {
         .navigationTitle(item.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
                 if isEditing {
                     Button("Save") { saveEdit() }
                 } else {
