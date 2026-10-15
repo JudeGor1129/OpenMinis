@@ -25,6 +25,8 @@ files=(
   src/ios/Views/Providers/ModelQuickTestSheet.swift
   src/ios/Views/Providers/ProviderInstancesView.swift
   src/ios/Views/Providers/AddProviderView.swift
+  src/ios/Views/Providers/KimiDeviceLoginSheet.swift
+  src/ios/Views/Providers/CopilotDeviceLoginSheet.swift
 )
 pattern='^[[:space:]]*(NavigationStack|LabeledContent|ShareLink)[[:space:]]*[( {]|\.autocorrectionDisabled\(|\.topBar(Leading|Trailing)|\.presentationDetents\(|\.scrollContentBackground\(|axis: \.vertical'
 status=0
