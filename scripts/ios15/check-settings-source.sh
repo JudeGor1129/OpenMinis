@@ -38,7 +38,9 @@ files=(
   src/ios/Views/Chat/SessionSkillsView.swift
   src/ios/Views/Chat/ChatInputBar.swift
   src/ios/Views/Chat/WebPreviewSheet.swift
-  src/ios/Views/Chat/AssistantBlockView.swift
+  src/ios/Views/Rootfs/RootfsManagementView.swift
+  src/ios/Views/Rootfs/ISHTerminalView.swift
+  src/ios/Agent/BrowserUse/BrowserManagementView.swift
 )
 pattern='^[[:space:]]*(NavigationStack|LabeledContent|ShareLink)[[:space:]]*[( {]|\.autocorrectionDisabled\(|\.topBar(Leading|Trailing)|\.presentationDetents\(|\.presentationDragIndicator\(|\.scrollDismissesKeyboard\(|\.scrollContentBackground\(|axis: \.vertical'
 status=0
