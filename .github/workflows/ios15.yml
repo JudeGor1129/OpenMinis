@@ -1,5 +1,6 @@
 name: iOS 15 port diagnostics
 
+# This workflow-only change requests a fresh check of the uploaded iOS 15 source snapshot.
 on:
   push:
     paths:
