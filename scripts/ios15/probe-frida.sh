@@ -6,7 +6,8 @@ VERSION=17.24.0
 ASSET="frida-core-devkit-${VERSION}-ios-arm64.tar.xz"
 OUT="$ROOT/build/frida-probe"
 mkdir -p "$OUT" "$ROOT/ci-logs"
-curl --fail --location --retry 3 --connect-timeout 20 \
+curl --fail --location --http1.1 --compressed --retry 8 --retry-all-errors --retry-delay 5 \
+  --connect-timeout 60 --max-time 600 \
   "https://api.github.com/repos/frida/frida/releases/tags/$VERSION" -o "$OUT/release.json"
 # Verify the exact asset against the digest GitHub publishes. Fail closed if absent.
 python3 - "$OUT/release.json" "$ASSET" "$OUT/asset.txt" <<'PY'
@@ -24,7 +25,9 @@ with open(sys.argv[3], 'w') as f:
 PY
 URL="$(sed -n '1p' "$OUT/asset.txt")"
 EXPECTED="$(sed -n '2p' "$OUT/asset.txt")"
-curl --fail --location --retry 3 --connect-timeout 20 "$URL" -o "$OUT/$ASSET"
+curl --fail --location --http1.1 --retry 10 --retry-all-errors --retry-delay 5 \
+  --connect-timeout 60 --max-time 1800 \
+  -C - "$URL" -o "$OUT/$ASSET"
 ACTUAL="$(shasum -a 256 "$OUT/$ASSET" | awk '{print $1}')"
 [[ "$ACTUAL" == "$EXPECTED" ]] || { echo 'Frida archive checksum mismatch'; exit 1; }
 printf '%s  %s\n' "$ACTUAL" "$ASSET" | tee "$ROOT/ci-logs/frida-checksum.txt"
