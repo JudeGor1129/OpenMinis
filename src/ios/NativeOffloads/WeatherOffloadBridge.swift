@@ -18,6 +18,24 @@ import CoreLocation
         longitude lng: Double,
         completion: @escaping (NSDictionary?, Error?) -> Void
     ) {
+        guard #available(iOS 16.0, *) else {
+            completion(nil, NSError(
+                domain: "WeatherOffloadBridge",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Apple Weather requires iOS 16 or newer; WeatherKit is unavailable on iOS 15."]
+            ))
+            return
+        }
+        fetchWeatherKit(forLatitude: lat, longitude: lng, completion: completion)
+    }
+
+    @available(iOS 16.0, *)
+    private static func fetchWeatherKit(
+        forLatitude lat: Double,
+        longitude lng: Double,
+        completion: @escaping (NSDictionary?, Error?) -> Void
+    ) {
         let location = CLLocation(latitude: lat, longitude: lng)
         let service = WeatherService.shared
 
