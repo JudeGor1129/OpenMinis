@@ -46,7 +46,9 @@ final class WebViewHolder: NSObject, ObservableObject {
         config.processPool = BrowserUseManager.sharedProcessPool
         config.websiteDataStore = .default()
         config.defaultWebpagePreferences.allowsContentJavaScript = true
-        config.preferences.isElementFullscreenEnabled = true
+        if #available(iOS 15.4, *) {
+            config.preferences.isElementFullscreenEnabled = true
+        }
         config.setURLSchemeHandler(BrowserUseManager.sharedMinisSchemeHandler, forURLScheme: "minis")
 
         // Bridge JS window.print() to the native print dialog, matching
@@ -745,7 +747,7 @@ struct MinisSafariView: View {
                 .padding(.bottom, 18) // clears the home-indicator gutter
         }
         .statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
+        .minisHideSystemOverlays()
         .preferredColorScheme(appearanceMode == 1 ? .light : appearanceMode == 2 ? .dark : nil)
         .sheet(isPresented: $showShareSheet) {
             MinisShareSheet(url: shareURL)

@@ -350,7 +350,7 @@ private struct BridgedAssistantBlockV3: View {
         // (same pattern as BridgedAssistantFooterV3).
         .overlay {
             Color.clear.frame(width: 0, height: 0)
-                .contextMenu {
+                .minisContextMenu {
                     Button {
                         let text = message.blocks
                             .filter { if case .text = $0.kind { return true }; return false }
@@ -525,7 +525,7 @@ private struct BridgedAssistantFooterV3: View {
         // report inflated heights to systemLayoutSizeFitting, causing height oscillation.
         .overlay {
             Color.clear.frame(width: 0, height: 0)
-                .contextMenu {
+                .minisContextMenu {
                     Button {
                         let text = message.blocks
                             .filter { if case .text = $0.kind { return true }; return false }
@@ -1378,7 +1378,7 @@ extension CollectionViewMessageListV3 {
                 let message = messages[msgIdx]
                 let bridge = getOrCreateBridge(for: message, in: messages)
                 cell.backgroundColor = .clear
-                let config = UIHostingConfiguration {
+                let config = MinisMessageHostingConfiguration {
                     BridgedWholeMessageV3(
                         message: message,
                         bridge: bridge,
@@ -1410,7 +1410,7 @@ extension CollectionViewMessageListV3 {
                 guard let msgIdx = messageIndex[msgId], msgIdx < messages.count else { return }
                 let message = messages[msgIdx]
                 cell.backgroundColor = .clear
-                let config = UIHostingConfiguration {
+                let config = MinisMessageHostingConfiguration {
                     BridgedAssistantHeaderV3(message: message, maxWidth: width,
                                             onOpenSoulSettings: onOpenSoulSettings)
                         .transaction { $0.disablesAnimations = true }
@@ -1430,7 +1430,7 @@ extension CollectionViewMessageListV3 {
                 }
                 let bridge = getOrCreateBridge(for: message, in: messages)
                 cell.backgroundColor = .clear
-                let config = UIHostingConfiguration {
+                let config = MinisMessageHostingConfiguration {
                     BridgedAssistantBlockV3(
                         block: block,
                         message: message,
@@ -1447,7 +1447,7 @@ extension CollectionViewMessageListV3 {
                 let message = messages[msgIdx]
                 let bridge = getOrCreateBridge(for: message, in: messages)
                 cell.backgroundColor = .clear
-                let config = UIHostingConfiguration {
+                let config = MinisMessageHostingConfiguration {
                     BridgedAssistantFooterV3(
                         message: message,
                         bridge: bridge,
@@ -5868,7 +5868,7 @@ private struct SheetOverlayView: View {
             // page) that hides the page's bar for good. Pin visible so the
             // bridged state can never be "hidden"; a no-op where the bar is
             // already shown.
-            .toolbar(.visible, for: .navigationBar)
+            .navigationBarHidden(false)
             .sheet(item: $toolPresenter.sheetData) { data in
                 // [T-agent-tool-sheet-unified] Every tool block — the agent
                 // block included — opens the same live sheet (this is the

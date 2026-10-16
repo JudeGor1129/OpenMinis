@@ -1186,3 +1186,89 @@ final class CellStateBridgeV2: ObservableObject {
     /// Compact summary — presented from overlay outside cell tree for animation.
     var onShowCompactSummary: ((String) -> Void)?
 }
+
+// MARK: - Cross-version SwiftUI message hosting
+
+/// Zero-margin, zero-minimum-size hosting used by the four message cell kinds.
+struct MinisMessageHostingConfiguration<Content: View>: UIContentConfiguration {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    // The message list requests zero insets and zero minimums at every call site.
+    func minSize(width: CGFloat, height: CGFloat) -> Self { self }
+    func margins(_ edges: Edge.Set, _ length: CGFloat) -> Self { self }
+
+    func makeContentView() -> UIView & UIContentView {
+        if #available(iOS 16.0, *) {
+            return UIHostingConfiguration { content }
+                .minSize(width: 0, height: 0).margins(.all, 0).makeContentView()
+        }
+        return LegacyMessageHostingView(configuration: self)
+    }
+
+    func updated(for state: UIConfigurationState) -> Self { self }
+}
+
+private final class LegacyMessageHostingView<Content: View>: UIView, UIContentView {
+    private let host: UIHostingController<Content>
+    private var storedConfiguration: MinisMessageHostingConfiguration<Content>
+
+    var configuration: any UIContentConfiguration {
+        get { storedConfiguration }
+        set {
+            guard let config = newValue as? MinisMessageHostingConfiguration<Content> else { return }
+            storedConfiguration = config
+            host.rootView = config.content
+            host.view.invalidateIntrinsicContentSize()
+            invalidateIntrinsicContentSize()
+            setNeedsLayout()
+        }
+    }
+
+    init(configuration: MinisMessageHostingConfiguration<Content>) {
+        storedConfiguration = configuration
+        host = UIHostingController(rootView: configuration.content)
+        super.init(frame: .zero)
+        backgroundColor = .clear
+        host.view.backgroundColor = .clear
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(host.view)
+        NSLayoutConstraint.activate([
+            host.view.leadingAnchor.constraint(equalTo: leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: trailingAnchor),
+            host.view.topAnchor.constraint(equalTo: topAnchor),
+            host.view.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            if host.parent != nil {
+                host.willMove(toParent: nil)
+                host.removeFromParent()
+            }
+        } else if host.parent == nil {
+            var responder: UIResponder? = next
+            while let current = responder {
+                if let parent = current as? UIViewController {
+                    parent.addChild(host)
+                    host.didMove(toParent: parent)
+                    break
+                }
+                responder = current.next
+            }
+        }
+    }
+
+    override var intrinsicContentSize: CGSize {
+        guard bounds.width > 0 else { return host.view.intrinsicContentSize }
+        let size = host.sizeThatFits(in: CGSize(width: bounds.width, height: CGFloat.greatestFiniteMagnitude))
+        return CGSize(width: UIView.noIntrinsicMetric, height: ceil(size.height))
+    }
+}

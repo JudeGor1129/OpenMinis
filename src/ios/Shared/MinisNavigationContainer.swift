@@ -330,3 +330,38 @@ extension View {
         }
     }
 }
+
+// MARK: - iOS 15 presentation compatibility
+
+extension View {
+    @ViewBuilder
+    func minisHideSystemOverlays() -> some View {
+        if #available(iOS 16.0, *) {
+            self.persistentSystemOverlays(.hidden)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func minisContextMenu<MenuItems: View, Preview: View>(
+        @ViewBuilder menuItems: () -> MenuItems,
+        @ViewBuilder preview: () -> Preview
+    ) -> some View {
+        if #available(iOS 16.0, *) {
+            self.contextMenu(menuItems: menuItems, preview: preview)
+        } else {
+            self.contextMenu(menuItems: menuItems)
+        }
+    }
+}
+
+struct MinisBottomRoundedShape: Shape {
+    let radius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        Path(UIBezierPath(roundedRect: rect,
+                          byRoundingCorners: [.bottomLeft, .bottomRight],
+                          cornerRadii: CGSize(width: radius, height: radius)).cgPath)
+    }
+}
