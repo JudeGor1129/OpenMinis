@@ -22,6 +22,7 @@ private struct LegacyContentView: View {
     @State private var sessions: [ChatSession] = []
     @State private var draftID = ""
     @State private var showingDraft = false
+    @State private var showingSettings = false
 
     var body: some View {
         NavigationView {
@@ -67,6 +68,12 @@ private struct LegacyContentView: View {
                     }
                     .accessibilityLabel("Refresh conversations")
                 }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showingSettings = true } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Settings")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: startDraft) {
                         Image(systemName: "square.and.pencil")
@@ -83,6 +90,9 @@ private struct LegacyContentView: View {
                 .hidden()
             )
             .onAppear(perform: reload)
+            .sheet(isPresented: $showingSettings, onDismiss: reload) {
+                LegacySettingsSheet()
+            }
         }
         .navigationViewStyle(StackNavigationViewStyle())
     }
@@ -101,5 +111,37 @@ private struct LegacyContentView: View {
             return "New Conversation"
         }
         return title
+    }
+}
+
+/// iOS 15 settings root: reuse the existing configuration pages and stores.
+/// This is intentionally not a claim of parity with the modern settings root.
+private struct LegacySettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        MinisNavigationContainer {
+            List {
+                Section {
+                    NavigationLink(destination: ProviderInstancesView()) {
+                        Label("Providers", systemImage: "server.rack")
+                    }
+                    NavigationLink(destination: ModelGroupsView()) {
+                        Label("Model Groups", systemImage: "square.stack.3d.up")
+                    }
+                } header: {
+                    Text("Models")
+                } footer: {
+                    Text("Configure a provider and its models, then choose a model group for chat.")
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
