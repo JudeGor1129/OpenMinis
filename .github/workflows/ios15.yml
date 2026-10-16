@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       full_build:
-        description: 'Build native dependencies and attempt the full app (diagnostic, not release-ready)'
+        description: 'Build native dependencies, full app, and TrollStore test IPA'
         type: boolean
         default: false
       ish_commit:
@@ -130,6 +130,18 @@ jobs:
           set -euo pipefail
           mkdir -p ci-logs
           bash scripts/ios15/build-diagnostics.sh 2>&1 | tee ci-logs/build.txt
+      - name: Package TrollStore iOS 15 test IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ios15/package-trollstore.sh 2>&1 | tee ci-logs/trollstore-package.txt
+      - name: Upload TrollStore test IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minis-iOS15-TrollStore-${{ github.run_number }}
+          path: build/ios15/artifacts/
+          if-no-files-found: error
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
         with:
