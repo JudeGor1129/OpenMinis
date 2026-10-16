@@ -1,0 +1,34 @@
+name: Frida iOS SDK compatibility probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [ios15-port]
+    paths:
+      - scripts/ios15/probe-frida.sh
+      - .github/workflows/frida-probe.yml
+permissions:
+  contents: read
+jobs:
+  frida-link:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download verified official devkit and test iOS 15 linkage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          bash scripts/ios15/probe-frida.sh 2>&1 | tee ci-logs/frida-probe.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frida-sdk-probe-${{ github.run_number }}
+          path: |
+            ci-logs/frida-*
+            build/frida-probe/release.json
+            build/frida-probe/asset.txt
+          if-no-files-found: warn
+          retention-days: 7
