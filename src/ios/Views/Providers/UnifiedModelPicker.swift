@@ -796,20 +796,20 @@ struct UnifiedModelPicker: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        if isMulti {
-            ToolbarItem(placement: .navigationBarLeading) {
+        ToolbarItem(placement: .navigationBarLeading) {
+            if isMulti {
                 Button("Cancel") { dismiss() }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+        }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            if isMulti {
                 Button("Add (\(selectedEntryIds.count))") {
                     config.onAddMulti?(selectedEntryIds)
                     dismiss()
                 }
                 .font(.body.weight(.semibold))
                 .disabled(selectedEntryIds.isEmpty)
-            }
-        } else {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            } else {
                 Button("Done") { dismiss() }
             }
         }

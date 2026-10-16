@@ -69,6 +69,13 @@ struct ModelGroupDetailView: View {
         return union.filter { $0 <= ceiling }.sorted()
     }
 
+    private var shortcutToolbarPlacement: ToolbarItemPlacement {
+        if #available(iOS 16.0, *) {
+            return .secondaryAction
+        }
+        return .navigationBarTrailing
+    }
+
     var body: some View {
         Group {
             if let group = group {
@@ -81,7 +88,7 @@ struct ModelGroupDetailView: View {
         .navigationTitle(group?.name ?? "Group")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: shortcutToolbarPlacement) {
                 if let group {
                     Button {
                         UIPasteboard.general.string = "group:\(group.id)"

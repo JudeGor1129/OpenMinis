@@ -20,7 +20,7 @@ struct ProviderInstancesView: View {
     /// it must never be a one-swipe irreversible act.
     @State private var pendingDeleteInstance: ProviderInstance?
 
-    var body: some View {
+    private var providerList: some View {
         List {
             // [T-mimo-shadow-voice] EVERY instance appears under its providerType
             // section now (no voice-only exclusion) — a mixed vendor like MiMo
@@ -115,11 +115,15 @@ struct ProviderInstancesView: View {
                 }
             }
         }
+    }
+
+    var body: some View {
+        providerList
         .navigationTitle("Providers")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if !store.instances.isEmpty {
-                ToolbarItem(placement: .navigationBarLeading) {
+            ToolbarItem(placement: .navigationBarLeading) {
+                if !store.instances.isEmpty {
                     EditButton()
                 }
             }
