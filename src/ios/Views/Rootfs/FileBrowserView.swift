@@ -488,8 +488,8 @@ private struct MarkdownFilePreview: View {
             }
         }
         .toolbar {
-            if case .loaded = loadState {
-                ToolbarItem(placement: .navigationBarLeading) {
+            ToolbarItem(placement: .navigationBarLeading) {
+                if case .loaded = loadState {
                     // Single toggle button, NOT a segmented Picker.
                     //
                     // A `.segmented` Picker asks for the width of all its
