@@ -512,9 +512,18 @@ struct AIChatView: View {
     /// (file was deleted, the session was pruned, or iCloud hasn't synced yet).
     @State private var missingMinisFileName: String?
 
+    private func sessionRoleText(_ role: ChatMessageRole) -> String {
+        switch role {
+        case .user: return "user"
+        case .assistant: return "assistant"
+        case .compactDivider: return "context_compaction"
+        case .systemInfo: return "system_info"
+        }
+    }
+
     private var sessionSearchRows: [MinisSessionSearchRow] {
         vm.messages.map {
-            MinisSessionSearchRow(id: String(describing: $0.id), role: $0.role.rawValue, text: $0.content)
+            MinisSessionSearchRow(id: String(describing: $0.id), role: sessionRoleText($0.role), text: $0.content)
         }
     }
 
@@ -537,7 +546,7 @@ struct AIChatView: View {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let url = directory.appendingPathComponent("Conversation-\(UUID().uuidString).md")
             let sections: [String] = vm.messages.map { message in
-                "## \(message.role.rawValue)\n\n\(message.content)"
+                "## \(sessionRoleText(message.role))\n\n\(message.content)"
             }
             try sections.joined(separator: "\n\n---\n\n").write(to: url, atomically: true, encoding: .utf8)
             sessionExportURL = url
