@@ -67,6 +67,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Select Xcode for full app diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          bash scripts/ios15/select-xcode.sh 2>&1 | tee ci-logs/xcode-selection.txt
       - uses: actions/setup-go@v5
         with:
           go-version-file: deps/rclone-mobile/go.mod
@@ -91,7 +97,16 @@ jobs:
         run: |
           set -euo pipefail
           brew install ninja llvm libarchive pkg-config meson
-          xcodebuild -downloadComponent MetalToolchain
+          if ! xcrun --sdk iphoneos metal --version > ci-logs/metal.txt 2>&1; then
+            xcodebuild -help > ci-logs/xcodebuild-help.txt 2>&1
+            if ! grep -q -- '-downloadComponent' ci-logs/xcodebuild-help.txt; then
+              cat ci-logs/metal.txt
+              echo 'error: selected Xcode has no working Metal compiler and cannot download components.' >&2
+              exit 1
+            fi
+            xcodebuild -downloadComponent MetalToolchain 2>&1 | tee ci-logs/metal-download.txt
+          fi
+          xcrun --sdk iphoneos metal --version 2>&1 | tee ci-logs/metal.txt
       - name: Build dependencies and collect compiler diagnostics
         shell: bash
         run: |
