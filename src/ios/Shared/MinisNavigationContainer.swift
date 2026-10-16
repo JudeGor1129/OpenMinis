@@ -365,3 +365,45 @@ struct MinisBottomRoundedShape: Shape {
                           cornerRadii: CGSize(width: radius, height: radius)).cgPath)
     }
 }
+
+private struct MinisGeometryValue<Value: Equatable>: Equatable {
+    let value: Value
+}
+
+extension View {
+    @ViewBuilder
+    func minisOnGeometryChange<Value: Equatable>(
+        for type: Value.Type,
+        of transform: @escaping (GeometryProxy) -> Value,
+        action: @escaping (Value) -> Void
+    ) -> some View {
+        if #available(iOS 16.0, *) {
+            self.onGeometryChange(for: type, of: transform, action: action)
+        } else {
+            self.background {
+                GeometryReader { proxy in
+                    let measured = MinisGeometryValue(value: transform(proxy))
+                    Color.clear
+                        .onAppear {
+                            DispatchQueue.main.async { action(measured.value) }
+                        }
+                        .onChange(of: measured) { updated in
+                            DispatchQueue.main.async { action(updated.value) }
+                        }
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    func minisVisibleScrollIndicators() -> some View {
+        if #available(iOS 16.0, *) {
+            self.scrollIndicators(.visible)
+        } else {
+            // ScrollView shows indicators by default on iOS 15.
+            self
+        }
+    }
+}
