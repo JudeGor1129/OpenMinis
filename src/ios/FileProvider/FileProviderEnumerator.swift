@@ -112,7 +112,7 @@ final class FileProviderEnumerator: NSObject, NSFileProviderEnumerator {
 
     private func listItems() -> [FileProviderItem] {
         // Trash is not supported — always return empty.
-        if containerItemIdentifier == .trashContainer {
+        if #available(iOS 16.0, *), containerItemIdentifier == .trashContainer {
             return []
         }
 
