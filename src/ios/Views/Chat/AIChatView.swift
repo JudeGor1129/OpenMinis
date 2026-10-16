@@ -812,7 +812,6 @@ struct AIChatView: View {
             ChatToolbarHost(key: chatToolbarKey, title: {
                 chatNavPrincipalContent
             }, trailing: {
-                sessionActionsMenu
                 trailingMenu
             })
             .equatable()
@@ -2002,6 +2001,12 @@ struct AIChatView: View {
         // the intrinsic icon size so the system wraps it in the same round
         // glass as a plain toolbar icon (fixes the earlier capsule).
         ChatTrailingMenuButton(
+            onShareSession: exportSessionMarkdown,
+            onSearchSession: { showingSessionSearch = true },
+            onToggleSessionAwake: {
+                manualScreenAwake.toggle()
+                UIApplication.shared.isIdleTimerDisabled = manualScreenAwake
+            },
             messagesEmpty: vm.messages.isEmpty,
             hasSession: vm.sessionId != nil,
             isForcePulling: isForcePulling,
@@ -5806,6 +5811,9 @@ private struct ChatTrailingMenu: View, Equatable {
 /// button's intrinsic size so the system container wraps it like a plain
 /// toolbar icon).
 private struct ChatTrailingMenuButton: UIViewRepresentable {
+    let onShareSession: () -> Void
+    let onSearchSession: () -> Void
+    let onToggleSessionAwake: () -> Void
     let messagesEmpty: Bool
     let hasSession: Bool
     let isForcePulling: Bool
@@ -5931,6 +5939,17 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
 
     private static func buildMenu(key: Key, coordinator: Coordinator) -> UIMenu {
         var groups: [UIMenuElement] = []
+        groups.append(UIMenu(options: .displayInline, children: [
+            UIAction(title: AppLocalized("Share Conversation"), image: UIImage(systemName: "square.and.arrow.up")) { _ in
+                coordinator.parent.onShareSession()
+            },
+            UIAction(title: AppLocalized("Search in Conversation"), image: UIImage(systemName: "magnifyingglass")) { _ in
+                coordinator.parent.onSearchSession()
+            },
+            UIAction(title: AppLocalized("Keep Screen Awake"), image: UIImage(systemName: "sun.max")) { _ in
+                coordinator.parent.onToggleSessionAwake()
+            }
+        ]))
 
         groups.append(UIMenu(options: .displayInline, children: [
             UIAction(title: AppLocalized("New Chat"),

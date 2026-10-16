@@ -1,6 +1,11 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Share Conversation" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分享会话" } }, "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "分享對話" } } } },
+    "Search in Conversation" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在会话中搜索" } }, "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "在對話中搜尋" } } } },
+    "Enter text to search this conversation." : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "输入文字以搜索当前会话。" } }, "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "輸入文字以搜尋目前對話。" } } } },
+    "No matching messages" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有匹配的消息" } }, "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "沒有相符的訊息" } } } },
+    "Export Failed" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "导出失败" } }, "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "匯出失敗" } } } },
     "" : {
 
     },

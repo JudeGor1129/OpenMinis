@@ -5286,6 +5286,17 @@ final class MinisLayoutManager: NSLayoutManager {
 
 /// Non-editable, selectable UITextView subclass for rendering Markdown as NSAttributedString.
 final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate {
+    private var legacyMeasuredWidth: CGFloat = 0
+
+    override var intrinsicContentSize: CGSize {
+        if #available(iOS 16.0, *) { return super.intrinsicContentSize }
+        guard !isScrollEnabled, bounds.width > 0 else {
+            return CGSize(width: UIView.noIntrinsicMetric, height: UIView.noIntrinsicMetric)
+        }
+        let measured = sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude))
+        return CGSize(width: UIView.noIntrinsicMetric, height: ceil(measured.height))
+    }
+
     private var attachmentViews: [UIView] = []
     /// Returns true if the text storage contains NSTextAttachment objects but no attachment views
     /// have been created yet. Used by updateUIView to detect the LazyVStack reappear case where
@@ -7188,6 +7199,15 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
     // MARK: Layout
 
     override func layoutSubviews() {
+        if #unavailable(iOS 16.0), !isScrollEnabled, bounds.width > 0,
+           abs(legacyMeasuredWidth - bounds.width) > 0.5 {
+            legacyMeasuredWidth = bounds.width
+            textContainer.widthTracksTextView = true
+            textContainer.size = CGSize(
+                width: max(1, bounds.width - textContainerInset.left - textContainerInset.right),
+                height: .greatestFiniteMagnitude)
+            invalidateIntrinsicContentSize()
+        }
         // TEMP(2026-05-13) — layoutSubviews slow-path probe. Most layout
         // work is fast; emit a direct-write line when a single
         // layoutSubviews pass takes >=50ms so a watchdog hang can be
