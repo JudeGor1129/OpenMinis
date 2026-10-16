@@ -51,12 +51,17 @@ jobs:
           retention-days: 7
 
   app-diagnostics:
-    if: github.event_name == 'workflow_dispatch' && inputs.full_build
+    # Full builds are opt-in: manual dispatch, or an explicit marker on ios15-port.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.full_build) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/ios15-port' &&
+       contains(github.event.head_commit.message, '[ios15-full-build]'))
     needs: navigation-check
     runs-on: macos-15
     timeout-minutes: 120
     env:
-      ISH_COMMIT: ${{ inputs.ish_commit }}
+      # Upstream OpenMinis/main submodule pin, explicitly selected for this diagnostic run.
+      ISH_COMMIT: ${{ github.event_name == 'push' && 'e6521d9cfe9cd48f19917fc3b23aea622ba358b4' || inputs.ish_commit }}
       IOS_DEPLOYMENT_TARGET: '15.0'
     steps:
       - uses: actions/checkout@v4
