@@ -7825,7 +7825,7 @@ private struct SteppedSlider: View {
     }
 }
 
-private struct AppearanceSettingsView: View {
+struct AppearanceSettingsView: View {
     @AppStorage("appearanceMode") private var appearanceMode: Int = 0
     @AppStorage("appIconMode") private var appIconMode: Int = 0
     @AppStorage("appLanguage") private var appLanguage: String = ""
