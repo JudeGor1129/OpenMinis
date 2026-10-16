@@ -2800,6 +2800,7 @@ struct AIChatView: View {
 
     private var messagesArea: some View {
         ZStack {
+            if #available(iOS 16.0, *) {
             CollectionViewMessageListV3(
                 vm: vm,
                 inputFocused: inputFocused,
@@ -2842,6 +2843,9 @@ struct AIChatView: View {
                 floatingBarHeight: floatingBarHeight,
                 inputBarHeight: inputBarHeight
             )
+            } else {
+                MinisLegacyTranscript(vm: vm, bottomInset: inputBarHeight + 24)
+            }
             // Empty/loading overlay for tap-to-dismiss-keyboard.
             // Placed BEFORE the directory timeline in the ZStack so the
             // timeline can sit on top and receive its own taps (folder-card
@@ -7169,5 +7173,68 @@ private struct MinisSessionPresentationModifier: ViewModifier {
             )) {
                 Button("OK") { exportError = nil }
             } message: { Text(exportError ?? "") }
+    }
+}
+
+// iOS 15 recovery renderer: no UICollectionView height cache, TextKit bridge,
+// or database writes. Keep the existing transcript untouched on newer systems.
+private struct MinisLegacyTranscript: View {
+    @ObservedObject var vm: AIChatViewModel
+    let bottomInset: CGFloat
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 20) {
+                    ForEach(vm.messages) { message in
+                        MinisLegacyTranscriptRow(message: message)
+                            .id(message.id)
+                    }
+                    Color.clear.frame(height: bottomInset).id("legacyTranscriptBottom")
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .onReceive(vm.forceScrollToBottom) { _ in
+                proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
+            }
+            .onChange(of: vm.messages.count) { _ in
+                proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
+            }
+        }
+    }
+}
+
+private struct MinisLegacyTranscriptRow: View {
+    @ObservedObject var message: ChatMessage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !message.content.isEmpty {
+                Text(verbatim: message.content)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+            ForEach(message.blocks) { block in
+                MinisLegacyTranscriptBlock(block: block)
+            }
+        }
+        .padding(message.role == .user ? 12 : 0)
+        .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+    }
+}
+
+private struct MinisLegacyTranscriptBlock: View {
+    @ObservedObject var block: AssistantBlock
+
+    var body: some View {
+        if !block.content.isEmpty {
+            Text(verbatim: block.content)
+                .font(.body)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
     }
 }
