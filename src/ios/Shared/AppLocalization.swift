@@ -76,6 +76,7 @@ func AppLocalized(_ key: String.LocalizationValue, comment: StaticString? = nil)
 
 /// `LocalizedStringResource` overload, for call sites that already hold a
 /// resource (App Intents build these) rather than a literal key.
+@available(iOS 16.0, *)
 func AppLocalized(_ resource: LocalizedStringResource) -> String {
     // A LocalizedStringResource carries its own bundle reference, so it cannot
     // be re-pointed the way a literal key can. Resolve it as-is rather than
