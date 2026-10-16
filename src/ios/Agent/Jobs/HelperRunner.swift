@@ -3,6 +3,22 @@ import Combine
 
 private let logger = AppLogger(category: "HelperRunner")
 
+/// Response extraction shared by helper progress and Shortcuts, without AppIntents.
+enum AgentResponseText {
+    @MainActor
+    static func extract(from vm: AIChatViewModel) -> String {
+        // Internal bridge turns are model instructions, never user-facing output.
+        guard let lastAssistant = vm.messages.last(where: { $0.role == .assistant && !$0.isInternalBridge }) else {
+            return "No response."
+        }
+        let textBlocks = lastAssistant.blocks
+            .filter { $0.kind == .text }
+            .map { $0.content }
+        let text = textBlocks.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "Task completed." : text
+    }
+}
+
 // [T-p1-delegate-task] The `delegate_task` tool: the model autonomously hands
 // a self-contained task to a helper (sub-agent) that runs its own agent loop
 // in a HIDDEN child session, concurrently with the parent, and returns the
@@ -1032,7 +1048,7 @@ extension AIChatViewModel {
                 guard !Task.isCancelled, let self, child.isProcessing,
                       job.state == .running else { return }
                 let info = SessionActivityTracker.shared.sessionToolInfo[childId]
-                let lastMessage = SendPromptIntent.extractResponseText(from: child)
+                let lastMessage = AgentResponseText.extract(from: child)
                 let signature = "\(info?.toolName ?? "")|\(info?.toolStatus ?? "")|\(info?.loopIteration ?? 0)|\(lastMessage.prefix(200))"
                 if onlyOnChange, signature == job.lastProgressSignature {
                     logger.info("[delegate_task] progress \(job.id.prefix(8)) unchanged — skipped")
