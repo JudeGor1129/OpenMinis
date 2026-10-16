@@ -1545,7 +1545,7 @@ struct AIChatView: View {
                 inputBarHealthProbe?.cancel()
                 let probeBaseline = inputBarGeometryTick
                 inputBarHealthProbe = Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(900))
+                    try? await Task.sleep(nanoseconds: 900_000_000)
                     guard !Task.isCancelled else { return }
                     let ticked = inputBarGeometryTick != probeBaseline
                     let age = inputBarLastGeometryAt.map { CFAbsoluteTimeGetCurrent() - $0 } ?? -1
@@ -4015,7 +4015,7 @@ struct AIChatView: View {
                     // is taken; we only re-read what onGeometryChange reported.
                     let voiceAtSeed = voiceInputActive
                     inputBarHeightDebounce = Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(380))
+                        try? await Task.sleep(nanoseconds: 380_000_000)
                         guard !Task.isCancelled, voiceAtSeed == voiceInputActive else { return }
                         let settled = latestInputBarFrameH
                         if settled > 0, abs(settled - newH) > 0.5 {
@@ -4046,7 +4046,7 @@ struct AIChatView: View {
                     // 200ms, which is stale), so the timer routinely expired
                     // while the panel was still moving and SwiftUI's final
                     // geometry callback had not landed yet.
-                    try? await Task.sleep(for: .milliseconds(380))
+                    try? await Task.sleep(nanoseconds: 380_000_000)
                     guard !Task.isCancelled else { return }
                     // [T-voice-inputbar-branch-swap] During rapid streaming
                     // re-renders, voiceInputActive can glitch for one frame,
@@ -4073,7 +4073,7 @@ struct AIChatView: View {
                     // height, which is the bottom-gap symptom. No new
                     // measurement is taken: we only re-read what
                     // onGeometryChange already reported.
-                    try? await Task.sleep(for: .milliseconds(320))
+                    try? await Task.sleep(nanoseconds: 320_000_000)
                     guard !Task.isCancelled else { return }
                     guard voiceAtCapture == voiceInputActive else { return }
                     let settled = latestInputBarFrameH
@@ -5856,6 +5856,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
     /// icon-sized footprint and the system wraps it in the same round glass
     /// as a plain toolbar icon (a representable otherwise accepts the full
     /// proposed width -> stretched capsule, the 2026-07-17 regression).
+    @available(iOS 16.0, *)
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
         uiView.intrinsicContentSize
     }

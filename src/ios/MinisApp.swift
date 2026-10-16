@@ -733,10 +733,13 @@ struct MinisApp: App {
 
     // MARK: - FileProvider
 
+    #if !MINIS_LEGACY_FILE_PROVIDER
+    @available(iOS 16.0, *)
     private static let fileProviderDomain = NSFileProviderDomain(
         identifier: NSFileProviderDomainIdentifier("com.openminis.app.files"),
         displayName: "Minis"
     )
+    #endif
 
     /// Bumped when we need to force-rebuild the FileProvider domain on next launch
     /// (e.g. after a bug where iOS Files ended up paused and only a full
@@ -802,11 +805,14 @@ struct MinisApp: App {
         // as a replicated domain. Do not reset/remove user data on this path.
         NSFileProviderManager.default.signalEnumerator(for: .rootContainer) { _ in }
         #else
-        registerReplicatedFileProviderDomain()
+        if #available(iOS 16.0, *) {
+            registerReplicatedFileProviderDomain()
+        }
         #endif
     }
 
     #if !MINIS_LEGACY_FILE_PROVIDER
+    @available(iOS 16.0, *)
     private static func registerReplicatedFileProviderDomain() {
         logAppUpdateMarkerForFPTrace()
 
@@ -1021,9 +1027,11 @@ struct MinisApp: App {
         #if MINIS_LEGACY_FILE_PROVIDER
         NSFileProviderManager.default.signalEnumerator(for: .rootContainer) { _ in }
         #else
-        NSFileProviderManager(for: fileProviderDomain)?.signalEnumerator(for: .rootContainer) { error in
-            if let error {
-                lifecycleLog.warning("[FileProvider] signal failed: \(error.localizedDescription)")
+        if #available(iOS 16.0, *) {
+            NSFileProviderManager(for: fileProviderDomain)?.signalEnumerator(for: .rootContainer) { error in
+                if let error {
+                    lifecycleLog.warning("[FileProvider] signal failed: \(error.localizedDescription)")
+                }
             }
         }
         #endif

@@ -70,8 +70,30 @@ struct SwipeToSendHint: View {
 
 // MARK: - Flow Layout
 
+/// Preserves native wrapping on iOS 16+, with an overflow-safe stack on iOS 15.
+private struct FlowLayout<Content: View>: View {
+    var hSpacing: CGFloat = 8
+    var vSpacing: CGFloat = 8
+    var alignment: HorizontalAlignment = .leading
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        if #available(iOS 16.0, *) {
+            NativeFlowLayout(hSpacing: hSpacing, vSpacing: vSpacing, alignment: alignment) {
+                content()
+            }
+        } else {
+            VStack(alignment: alignment, spacing: vSpacing) {
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: alignment == .trailing ? .trailing : .leading)
+        }
+    }
+}
+
 /// A custom Layout that arranges subviews in a wrapping horizontal flow.
-private struct FlowLayout: Layout {
+@available(iOS 16.0, *)
+private struct NativeFlowLayout: Layout {
     var hSpacing: CGFloat = 8
     var vSpacing: CGFloat = 8
     var alignment: HorizontalAlignment = .leading
@@ -1671,6 +1693,7 @@ struct PastableTextView: UIViewRepresentable {
         return tv
     }
 
+    @available(iOS 16.0, *)
     func sizeThatFits(_ proposal: ProposedViewSize, uiView tv: PastableUITextView, context: Context) -> CGSize? {
         let width = proposal.width ?? UIScreen.main.bounds.width
         // [T-share-url-input-height] UITextView.sizeThatFits returns the

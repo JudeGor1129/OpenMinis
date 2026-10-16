@@ -366,6 +366,47 @@ private struct FABGlassMorphID: ViewModifier {
 /// definition anymore. The only thing that varies by position is the SHAPE
 /// (lone / top / middle / bottom corner segmentation) and how the border is
 /// tiled; the fill comes from one place.
+// File-local compatibility shapes keep existing call sites available on iOS 15.
+private struct AnyShape: Shape {
+    private let makePath: (CGRect) -> Path
+    init<S: Shape>(_ shape: S) { makePath = { shape.path(in: $0) } }
+    func path(in rect: CGRect) -> Path { makePath(rect) }
+}
+
+private struct UnevenRoundedRectangle: Shape {
+    var topLeadingRadius: CGFloat
+    var bottomLeadingRadius: CGFloat
+    var bottomTrailingRadius: CGFloat
+    var topTrailingRadius: CGFloat
+    var style: RoundedCornerStyle = .continuous
+
+    func path(in r: CGRect) -> Path {
+        if #available(iOS 17.0, *) {
+            return SwiftUI.UnevenRoundedRectangle(
+                topLeadingRadius: topLeadingRadius, bottomLeadingRadius: bottomLeadingRadius,
+                bottomTrailingRadius: bottomTrailingRadius, topTrailingRadius: topTrailingRadius,
+                style: style).path(in: r)
+        }
+        let limit = max(0, min(r.width, r.height) / 2)
+        let tl = min(max(0, topLeadingRadius), limit)
+        let tr = min(max(0, topTrailingRadius), limit)
+        let bl = min(max(0, bottomLeadingRadius), limit)
+        let br = min(max(0, bottomTrailingRadius), limit)
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX + tl, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX - tr, y: r.minY))
+        p.addQuadCurve(to: CGPoint(x: r.maxX, y: r.minY + tr), control: CGPoint(x: r.maxX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - br))
+        p.addQuadCurve(to: CGPoint(x: r.maxX - br, y: r.maxY), control: CGPoint(x: r.maxX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX + bl, y: r.maxY))
+        p.addQuadCurve(to: CGPoint(x: r.minX, y: r.maxY - bl), control: CGPoint(x: r.minX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX, y: r.minY + tl))
+        p.addQuadCurve(to: CGPoint(x: r.minX + tl, y: r.minY), control: CGPoint(x: r.minX, y: r.minY))
+        p.closeSubpath()
+        return p
+    }
+}
+
 private struct FolderSurface: ViewModifier {
     enum Kind { case lone, top, middle, bottom }
     let kind: Kind
