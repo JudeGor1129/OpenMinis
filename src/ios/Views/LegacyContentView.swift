@@ -22,6 +22,8 @@ private struct LegacyContentView: View {
     @State private var sessions: [ChatSession] = []
     @State private var draftID = ""
     @State private var showingDraft = false
+    @State private var selectedSessions: Set<String> = []
+    @State private var selectionMode = false
     @State private var showingSettings = false
     @State private var showingTerminal = false
     @State private var showingRootfs = false
@@ -48,26 +50,18 @@ private struct LegacyContentView: View {
                     .padding(.vertical, 36)
                 } else {
                     ForEach(sessions) { session in
-                        NavigationLink(destination: AIChatView(sessionId: session.id)) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(displayTitle(for: session))
-                                    .font(.headline)
-                                    .lineLimit(1)
-                                if let preview = session.lastMessage, !preview.isEmpty {
-                                    Text(preview)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(2)
-                                }
-                            }
-                            .padding(.vertical, 4)
-                        }
+                        LegacySessionRow(session: session, selectionMode: $selectionMode, selectedSessions: $selectedSessions, onChange: reload)
                     }
                 }
             }
             .listStyle(PlainListStyle())
-            .navigationTitle("Minis")
+            .navigationTitle(selectionMode ? "Selected: \(selectedSessions.count)" : "Minis")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if selectionMode {
+                        Button("Done") { selectionMode = false; selectedSessions.removeAll() }
+                    }
+                }
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: reload) {
                         Image(systemName: "arrow.clockwise")
@@ -145,7 +139,9 @@ private struct LegacyContentView: View {
     }
 
     private func reload() {
-        sessions = ChatStore.shared.listSessions()
+        Task { @MainActor in
+            sessions = await ChatStore.shared.listSessions().filter { !$0.isChild }
+        }
     }
 
     private func startDraft() {
@@ -289,6 +285,178 @@ private struct LegacySettingsSheet: View {
             NavigationLink(destination: BackupAndRestoreView()) {
                 Label("Backup & Restore", systemImage: "arrow.triangle.2.circlepath")
             }
+        }
+    }
+}
+
+/// Destination navigation and context actions share the same stored session.
+private struct LegacySessionRow: View {
+    let session: ChatSession
+    @Binding var selectionMode: Bool
+    @Binding var selectedSessions: Set<String>
+    let onChange: () -> Void
+    @State private var editing = false
+    @State private var choosingFolder = false
+    @State private var confirmingDelete = false
+    @State private var exportURL: URL?
+    @State private var failure: String?
+    @State private var busy = false
+    @State private var folders: [ChatFolder] = []
+
+    private var title: String { session.title ?? "New Conversation" }
+
+    var body: some View {
+        Group {
+            if selectionMode {
+                Button {
+                    if selectedSessions.contains(session.id) { selectedSessions.remove(session.id) }
+                    else { selectedSessions.insert(session.id) }
+                } label: {
+                    HStack {
+                        Image(systemName: selectedSessions.contains(session.id) ? "checkmark.circle.fill" : "circle")
+                        rowLabel
+                    }
+                }
+            } else {
+                NavigationLink(destination: AIChatView(sessionId: session.id)) { rowLabel }
+            }
+        }
+        .contextMenu { contextActions }
+        .sheet(isPresented: $editing) {
+            SessionEditSheet(session: session) { title, category in
+                Task { @MainActor in
+                    await ChatStore.shared.updateSessionTitle(session.id, title: title, category: category)
+                    onChange()
+                }
+            }
+        }
+        .sheet(isPresented: $choosingFolder) { folderPicker }
+        .sheet(item: $exportURL) { MinisShareSheet(url: $0) }
+        .alert("Delete Conversation?", isPresented: $confirmingDelete) {
+            Button("Delete", role: .destructive) { deleteSession() }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("This deletes the conversation and its local files.") }
+        .alert("Operation Failed", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+            Button("OK") { failure = nil }
+        } message: { Text(failure ?? "") }
+    }
+
+    private var rowLabel: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                if session.isPinned { Image(systemName: "pin.fill") }
+                Text(title).font(.headline).lineLimit(1)
+                if busy { ProgressView() }
+            }
+            if let preview = session.lastMessage, !preview.isEmpty {
+                Text(preview).font(.caption).foregroundColor(.secondary).lineLimit(2)
+            }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private var contextActions: some View {
+        Button {
+            Task { @MainActor in
+                _ = await ChatStore.shared.toggleSessionPin(session.id)
+                onChange()
+            }
+        } label: { Label(session.isPinned ? "Unpin" : "Pin", systemImage: "pin") }
+        Button { exportSession() } label: { Label("Export", systemImage: "square.and.arrow.up") }
+        Button { editing = true } label: { Label("Edit Title & Category", systemImage: "square.and.pencil") }
+        Button { regenerateTitle() } label: { Label("Regenerate Title", systemImage: "arrow.triangle.2.circlepath") }
+            .disabled(busy)
+        Button { duplicateSession() } label: { Label("Duplicate Session", systemImage: "plus.square.on.square") }
+            .disabled(busy)
+        Button { choosingFolder = true } label: { Label("Move to Group", systemImage: "folder") }
+        Button { selectionMode = true; selectedSessions = [session.id] } label: { Label("Select", systemImage: "checkmark.circle") }
+        Button { reportContent() } label: { Label("Report Content", systemImage: "exclamationmark.bubble") }
+        Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete", systemImage: "trash") }
+    }
+
+    private var folderPicker: some View {
+        MinisNavigationContainer {
+            List {
+                Button("Ungrouped") { moveToFolder(nil) }
+                ForEach(folders) { folder in
+                    Button(folder.name) { moveToFolder(folder.id) }
+                }
+            }
+            .navigationTitle("Move to Group")
+            .task { folders = await ChatStore.shared.listFolders() }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") { choosingFolder = false }
+                }
+            }
+        }
+    }
+
+    private func moveToFolder(_ id: String?) {
+        Task { @MainActor in
+            await ChatStore.shared.setFolder(id, forSessions: [session.id])
+            choosingFolder = false
+            onChange()
+        }
+    }
+
+    private func regenerateTitle() {
+        busy = true
+        Task { @MainActor in
+            defer { busy = false }
+            do {
+                try await AIChatViewModel.regenerateSessionTitle(sessionId: session.id)
+                onChange()
+            } catch { failure = error.localizedDescription }
+        }
+    }
+
+    private func duplicateSession() {
+        busy = true
+        Task { @MainActor in
+            defer { busy = false }
+            if await SessionForkManager.shared.duplicateSession(sessionId: session.id) != nil {
+                onChange()
+            } else { failure = "Unable to duplicate this conversation." }
+        }
+    }
+
+    private func exportSession() {
+        Task { @MainActor in
+            do {
+                let messages = await ChatStore.shared.loadMessages(sessionId: session.id)
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("Conversation-\(UUID().uuidString).json")
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                encoder.dateEncodingStrategy = .iso8601
+                try encoder.encode(messages).write(to: url, options: .atomic)
+                exportURL = url
+            } catch { failure = error.localizedDescription }
+        }
+    }
+
+    private func reportContent() {
+        var url = URLComponents()
+        url.scheme = "mailto"
+        url.path = "dev@openminis.app"
+        url.queryItems = [URLQueryItem(name: "subject", value: "Content Report: \(title.prefix(60))"),
+                          URLQueryItem(name: "body", value: "Session: \(session.id)\n\nPlease describe the issue:\n")]
+        if let target = url.url { UIApplication.shared.open(target) }
+    }
+
+    private func deleteSession() {
+        Task { @MainActor in
+            let ids = await ChatStore.shared.sessionIdsWithDescendants([session.id])
+            for id in ids {
+                AgentJobRegistry.shared.cancelAll(parent: id, reason: "sessionDeleted")
+                AgentJobRegistry.shared.cancelAll(session: id, reason: "sessionDeleted")
+                ViewModelCache.shared.remove(sessionId: id)
+                BrowserUseOffloadBridge.releasePool(forSession: id)
+            }
+            await ChatStore.shared.deleteSession(session.id)
+            selectedSessions.remove(session.id)
+            onChange()
         }
     }
 }
