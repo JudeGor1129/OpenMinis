@@ -1,5 +1,16 @@
 import SwiftUI
 
+private extension View {
+    @ViewBuilder
+    func backupFullWidthSeparator() -> some View {
+        if #available(iOS 16.0, *) {
+            alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+        } else {
+            self
+        }
+    }
+}
+
 private let logger = AppLogger(category: "Backup")
 
 /// Minimal user-facing entry point for creating a backup package
@@ -314,7 +325,7 @@ struct BackupSettingsView: View {
                     // Without maxWidth the row sizes to its content and sits
                     // left; this is what centres it in the Form row.
                     .frame(maxWidth: .infinity)
-                    .fontWeight(.medium)
+                    .font(.body.weight(.medium))
                 }
                 // The start-time requirements gate STARTING only. Applying
                 // them while running would disable the button mid-run and
@@ -332,7 +343,7 @@ struct BackupSettingsView: View {
                 // spanned the middle of the card (user report: the divider
                 // above Stop Backup looked broken). Pin it to the row's
                 // leading edge so it runs the full card width.
-                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                .backupFullWidthSeparator()
 
                 // A disabled button with no explanation is a dead end — say
                 // which requirement is unmet rather than leaving the user to
@@ -350,28 +361,28 @@ struct BackupSettingsView: View {
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
                             .multilineTextAlignment(.center)
-                            .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                            .backupFullWidthSeparator()
                     } else if selected.isEmpty {
                         Text("Choose at least one thing to include.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
                             .multilineTextAlignment(.center)
-                            .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                            .backupFullWidthSeparator()
                     } else if encryptBackup && passphrase.isEmpty {
                         Text("Set a passphrase to encrypt this backup.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
                             .multilineTextAlignment(.center)
-                            .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                            .backupFullWidthSeparator()
                     } else if encryptBackup && passphrase != confirmPassphrase {
                         Text("Confirm the passphrase to continue.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
                             .multilineTextAlignment(.center)
-                            .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                            .backupFullWidthSeparator()
                     }
                 }
 
