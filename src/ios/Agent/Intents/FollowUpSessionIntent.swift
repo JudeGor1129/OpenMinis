@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 private let logger = AppLogger(category: "FollowUpIntent")
 
 /// Sends a follow-up prompt to an existing session, continuing the conversation.
+@available(iOS 16.0, *)
 struct FollowUpSessionIntent: AppIntent {
     static var title: LocalizedStringResource = "Follow Up Session"
     static var description = IntentDescription("Sends a follow-up prompt to an existing Minis session, continuing the conversation with the AI agent.")
@@ -17,8 +18,7 @@ struct FollowUpSessionIntent: AppIntent {
     var prompt: String
 
     @Parameter(title: "Attachments", description: "Images, videos, or files to attach to the prompt. Accepts output from previous Shortcuts actions (e.g. filtered photos or documents).",
-               supportedTypeIdentifiers: ["public.image", "public.movie", "public.data"],
-               inputConnectionBehavior: .connectToPreviousIntentResult)
+               supportedTypeIdentifiers: ["public.image", "public.movie", "public.data"])
     var files: [IntentFile]?
 
     @Parameter(title: "Wait for Result", description: "When enabled, waits for the AI to finish and returns the full response for use in subsequent actions.", default: false)

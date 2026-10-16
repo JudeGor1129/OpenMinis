@@ -5,6 +5,7 @@ import UserNotifications
 
 /// Sends a prompt to the Minis AI agent and returns immediately with structured session info.
 /// The agent continues running in the background — use Get Session Status to poll for completion.
+@available(iOS 16.0, *)
 struct SendPromptIntent: AppIntent {
     static var title: LocalizedStringResource = "Send Prompt"
     static var description = IntentDescription("Sends a prompt to the Minis AI agent. Returns session info immediately while the task runs in the background.")
@@ -15,17 +16,15 @@ struct SendPromptIntent: AppIntent {
     // editor (Time of Day etc.) there is no one to ask, and with no
     // `parameterSummary` naming it the parameter was not surfaced at all — the
     // action card rendered as a bare "Send Prompt" title with no editable
-    // field. Keeping the dialog for Siri is fine; the summary below is what
-    // makes the text field appear. `inputConnectionBehavior` additionally lets
-    // the field accept the previous action's output as a variable.
+    // field. Keep the Siri dialog and parameterSummary, but use the older
+    // initializer: inputConnectionBehavior requires iOS 18. Users can still
+    // select input variables explicitly on older systems.
     @Parameter(title: "Prompt",
-               requestValueDialog: "What would you like to ask Minis?",
-               inputConnectionBehavior: .connectToPreviousIntentResult)
+               requestValueDialog: "What would you like to ask Minis?")
     var prompt: String
 
     @Parameter(title: "Attachments", description: "Images, videos, or files to attach to the prompt. Accepts output from previous Shortcuts actions (e.g. filtered photos or documents).",
-               supportedTypeIdentifiers: ["public.image", "public.movie", "public.data"],
-               inputConnectionBehavior: .connectToPreviousIntentResult)
+               supportedTypeIdentifiers: ["public.image", "public.movie", "public.data"])
     var files: [IntentFile]?
 
     @Parameter(title: "Session", description: "Existing session to continue. Leave empty for a new session.")

@@ -296,10 +296,15 @@ final class EnvVarStore: ObservableObject {
     // MARK: - Validation
 
     /// Valid env var name: starts with a letter, contains only letters, digits, and underscores.
-    static let keyRegex = /^[A-Za-z][A-Za-z0-9_]*$/
-
     static func isValidKey(_ key: String) -> Bool {
-        key.wholeMatch(of: keyRegex) != nil
+        let bytes = Array(key.utf8)
+        func isLetter(_ byte: UInt8) -> Bool {
+            (65...90).contains(byte) || (97...122).contains(byte)
+        }
+        guard let first = bytes.first, isLetter(first) else { return false }
+        return bytes.dropFirst().allSatisfy {
+            isLetter($0) || (48...57).contains($0) || $0 == 95
+        }
     }
 
     // MARK: - Value Sanitization

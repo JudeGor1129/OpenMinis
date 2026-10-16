@@ -17,8 +17,7 @@ struct RetryRunIntent: AppIntent {
     var message: UserMessageEntity?
 
     @Parameter(title: "Attachments", description: "Images, videos, or files to replace existing attachments. Accepts output from previous Shortcuts actions. If empty, keeps original attachments.",
-               supportedTypeIdentifiers: ["public.image", "public.movie", "public.data"],
-               inputConnectionBehavior: .connectToPreviousIntentResult)
+               supportedTypeIdentifiers: ["public.image", "public.movie", "public.data"])
     var files: [IntentFile]?
 
     @Parameter(title: "Wait for Result", description: "When enabled, waits for the AI to finish and returns the full response for use in subsequent actions.", default: false)
