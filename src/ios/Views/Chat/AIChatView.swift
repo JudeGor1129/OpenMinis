@@ -179,6 +179,10 @@ struct AIChatView: View {
     /// [T-ios-crash-objectdestroy-composer-uaf] Relay for the composer's key
     /// callbacks. See `ComposerActionChannel`.
     @State private var composerActions = ComposerActionChannel()
+    @State private var showingSessionSearch = false
+    @State private var sessionExportURL: URL?
+    @State private var sessionExportError: String?
+    @State private var manualScreenAwake = false
 
     /// The actual ViewModel — always derived from the @StateObject to avoid
     /// the @ObservedObject re-init-on-body-recompute problem.
@@ -765,10 +769,50 @@ struct AIChatView: View {
             ChatToolbarHost(key: chatToolbarKey, title: {
                 chatNavPrincipalContent
             }, trailing: {
-                trailingMenu
+                HStack {
+                    Menu {
+                        Button {
+                            do {
+                                let directory = FileManager.default.temporaryDirectory
+                                    .appendingPathComponent("MinisExports", isDirectory: true)
+                                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                                let url = directory.appendingPathComponent("Conversation-\(UUID().uuidString).md")
+                                let text = vm.messages.map { "## \($0.role.rawValue)\n\n\($0.content)" }.joined(separator: "\n\n---\n\n")
+                                try text.write(to: url, atomically: true, encoding: .utf8)
+                                sessionExportURL = url
+                            } catch { sessionExportError = error.localizedDescription }
+                        } label: {
+                            Label("Share Conversation", systemImage: "square.and.arrow.up")
+                        }
+                        Button { showingSessionSearch = true } label: {
+                            Label("Search in Conversation", systemImage: "magnifyingglass")
+                        }
+                        Button {
+                            manualScreenAwake.toggle()
+                            UIApplication.shared.isIdleTimerDisabled = manualScreenAwake
+                        } label: {
+                            Label("Keep Screen Awake", systemImage: manualScreenAwake ? "checkmark.circle.fill" : "sun.max")
+                        }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    trailingMenu
+                }
             })
             .equatable()
         )
+        .sheet(isPresented: $showingSessionSearch) {
+            MinisSessionSearchSheet(rows: vm.messages.map {
+                MinisSessionSearchRow(id: String(describing: $0.id), role: $0.role.rawValue, text: $0.content)
+            })
+        }
+        .sheet(item: $sessionExportURL) { url in
+            MinisShareSheet(url: url)
+        }
+        .alert("Export Failed", isPresented: Binding(
+            get: { sessionExportError != nil },
+            set: { if !$0 { sessionExportError = nil } }
+        )) {
+            Button("OK") { sessionExportError = nil }
+        } message: { Text(sessionExportError ?? "") }
         .sheet(item: $titlePillEditSession) { session in
             SessionEditSheet(session: session) { newTitle, newCategory in
                 Task {
@@ -7008,4 +7052,49 @@ final class ComposerActionChannel {
     /// an early arrow/tab key keeps its default text-view behaviour).
     @discardableResult
     func send(_ action: Action) -> Bool { handler?(action) ?? false }
+}
+
+private struct MinisSessionSearchRow: Identifiable {
+    let id: String
+    let role: String
+    let text: String
+}
+
+private struct MinisSessionSearchSheet: View {
+    let rows: [MinisSessionSearchRow]
+    @State private var query = ""
+    @Environment(\.dismiss) private var dismiss
+
+    private var matches: [MinisSessionSearchRow] {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return [] }
+        return rows.filter { $0.text.localizedCaseInsensitiveContains(term) }
+    }
+
+    var body: some View {
+        MinisNavigationContainer {
+            List {
+                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Enter text to search this conversation.")
+                } else if matches.isEmpty {
+                    Text("No matching messages")
+                } else {
+                    ForEach(matches) { row in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(row.role).font(.caption).foregroundColor(.secondary)
+                            Text(row.text).textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+            .searchable(text: $query)
+            .navigationTitle("Search in Conversation")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
 }

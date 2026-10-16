@@ -23,6 +23,12 @@ private struct LegacyContentView: View {
     @State private var draftID = ""
     @State private var showingDraft = false
     @State private var showingSettings = false
+    @State private var showingTerminal = false
+    @State private var showingRootfs = false
+    @State private var showingBrowser = false
+    @State private var showingBrowserSettings = false
+    @State private var keepScreenAwake = false
+    @StateObject private var browserPool = BrowserTabPool()
 
     var body: some View {
         NavigationView {
@@ -75,6 +81,27 @@ private struct LegacyContentView: View {
                     .accessibilityLabel("Settings")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button { showingTerminal = true } label: {
+                            Label("Shell Terminal", systemImage: "terminal")
+                        }
+                        Button { showingRootfs = true } label: {
+                            Label("Rootfs Management", systemImage: "externaldrive")
+                        }
+                        Divider()
+                        Button { showingBrowser = true } label: {
+                            Label("Open Browser", systemImage: "globe")
+                        }
+                        Button { showingBrowserSettings = true } label: {
+                            Label("Browser Settings", systemImage: "globe")
+                        }
+                        Toggle("Keep Screen Awake", isOn: $keepScreenAwake)
+                    } label: {
+                        Image(systemName: "terminal")
+                    }
+                    .accessibilityLabel("Tools")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: startDraft) {
                         Image(systemName: "square.and.pencil")
                     }
@@ -92,6 +119,26 @@ private struct LegacyContentView: View {
             .onAppear(perform: reload)
             .sheet(isPresented: $showingSettings, onDismiss: reload) {
                 LegacySettingsSheet()
+            }
+            .fullScreenCover(isPresented: $showingTerminal) {
+                MinisNavigationContainer { ISHTerminalView(showCloseButton: true) }
+            }
+            .sheet(isPresented: $showingRootfs) {
+                MinisNavigationContainer {
+                    RootfsManagementView()
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Done") { showingRootfs = false }
+                            }
+                        }
+                }
+            }
+            .sheet(isPresented: $showingBrowser) { BrowserSheetView(pool: browserPool) }
+            .sheet(isPresented: $showingBrowserSettings) {
+                MinisNavigationContainer { BrowserManagementView(pool: browserPool) }
+            }
+            .onChange(of: keepScreenAwake) { enabled in
+                UIApplication.shared.isIdleTimerDisabled = enabled
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
@@ -125,6 +172,11 @@ private struct LegacySettingsSheet: View {
                 Section("Appearance") {
                     NavigationLink(destination: AppearanceSettingsView()) {
                         Label("Appearance", systemImage: "paintbrush.fill")
+                    }
+                }
+                Section("User Interaction") {
+                    NavigationLink(destination: LegacyInteractionSettings()) {
+                        Label("User Interaction", systemImage: "hand.tap")
                     }
                 }
                 runtimeSection
@@ -243,5 +295,37 @@ private struct LegacySettingsSheet: View {
                 Label("Backup & Restore", systemImage: "arrow.triangle.2.circlepath")
             }
         }
+    }
+}
+
+private struct LegacyInteractionSettings: View {
+    @AppStorage("returnKeyBehavior") private var returnKey = 0
+    @AppStorage("keepScreenAwakeDuringTasks") private var keepAwake = false
+    @AppStorage("chat.autoFocusAfterReply") private var autoFocus = true
+    @AppStorage("chat.autoExpandThinking") private var expandThinking = true
+    @AppStorage("toolPreviewEnabled") private var toolPreview = true
+
+    var body: some View {
+        Form {
+            Section("Return Key") {
+                Picker("Return Key", selection: $returnKey) {
+                    Text("Newline").tag(0)
+                    Text("Send").tag(1)
+                }
+                .pickerStyle(.segmented)
+            }
+            Section {
+                Toggle("Keep Screen Awake", isOn: $keepAwake)
+            } footer: {
+                Text("Prevent the screen from sleeping while any session is running a task. May increase battery drain.")
+            }
+            Section("User Interaction") {
+                Toggle("Auto-Focus Input After Reply", isOn: $autoFocus)
+                Toggle("Expand Thinking While Streaming", isOn: $expandThinking)
+                Toggle("Tool Preview Window", isOn: $toolPreview)
+            }
+        }
+        .navigationTitle("User Interaction")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
