@@ -2,6 +2,7 @@ import FileProvider
 import UniformTypeIdentifiers
 import os.log
 
+#if !MINIS_LEGACY_FILE_PROVIDER
 /// Replicated File Provider extension that exposes MinisFileProvider/ to the system Files app.
 /// Structure: Minis → { memory, skills, shared }
 /// Uses the modern NSFileProviderReplicatedExtension protocol (iOS 16+).
@@ -415,3 +416,222 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension {
         return Progress()
     }
 }
+
+#else
+/// iOS 15 Adapter: legacy File Provider callbacks with local materialized documents.
+/// Selected only by the iOS 15 diagnostic build; modern builds retain replication.
+final class FileProviderExtension: NSFileProviderExtension {
+    static let topLevelSubdirs = ["memory", "skills", "shared"]
+    static var providerRoot: URL {
+        let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.com.openminis.app")!
+        let root = container.appendingPathComponent("MinisFileProvider", isDirectory: true)
+        for name in topLevelSubdirs {
+            try? FileManager.default.createDirectory(at: root.appendingPathComponent(name),
+                                                    withIntermediateDirectories: true)
+        }
+        return root
+    }
+
+    private var storage: URL { NSFileProviderManager.default.documentStorageURL }
+
+    // IDs remain relative to the shared tree, and never accept traversal or symlinks.
+    private func relativePath(_ identifier: NSFileProviderItemIdentifier) throws -> String {
+        if identifier == .rootContainer { return "" }
+        let path = identifier.rawValue
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard !parts.isEmpty, parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
+              topLevelAllowed(String(parts[0])) else {
+            throw NSFileProviderError(.noSuchItem)
+        }
+        let candidate = Self.providerRoot.appendingPathComponent(path).resolvingSymlinksInPath()
+        let root = Self.providerRoot.resolvingSymlinksInPath().path + "/"
+        guard candidate.path.hasPrefix(root) else { throw NSFileProviderError(.noSuchItem) }
+        return path
+    }
+
+    private func topLevelAllowed(_ name: String) -> Bool { Self.topLevelSubdirs.contains(name) }
+
+    private func source(_ identifier: NSFileProviderItemIdentifier) throws -> URL {
+        Self.providerRoot.appendingPathComponent(try relativePath(identifier))
+    }
+
+    private func requireWritable(_ identifier: NSFileProviderItemIdentifier, child: Bool = false) throws {
+        let path = try relativePath(identifier)
+        guard path.hasPrefix("shared/") || (child && path == "shared") else {
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError)
+        }
+    }
+
+    private func childIdentifier(_ parent: NSFileProviderItemIdentifier, name: String) throws -> NSFileProviderItemIdentifier {
+        guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\0") else {
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteInvalidFileNameError)
+        }
+        try requireWritable(parent, child: true)
+        let id = NSFileProviderItemIdentifier("\(try relativePath(parent))/\(name)")
+        _ = try relativePath(id)
+        return id
+    }
+
+    private func parent(of id: NSFileProviderItemIdentifier) -> NSFileProviderItemIdentifier {
+        let path = (id.rawValue as NSString).deletingLastPathComponent
+        return path.isEmpty ? .rootContainer : NSFileProviderItemIdentifier(path)
+    }
+
+    private func signal(_ id: NSFileProviderItemIdentifier) {
+        NSFileProviderManager.default.signalEnumerator(for: id) { _ in }
+        NSFileProviderManager.default.signalEnumerator(for: .workingSet) { _ in }
+    }
+
+    override func item(for identifier: NSFileProviderItemIdentifier) throws -> NSFileProviderItem {
+        let url = try source(identifier)
+        guard FileManager.default.fileExists(atPath: url.path) else { throw NSFileProviderError(.noSuchItem) }
+        return FileProviderItem(url: url, parentIdentifier: parent(of: identifier),
+                                isRoot: identifier == .rootContainer)
+    }
+
+    override func enumerator(for containerItemIdentifier: NSFileProviderItemIdentifier) throws -> NSFileProviderEnumerator {
+        if containerItemIdentifier != .workingSet { _ = try source(containerItemIdentifier) }
+        return FileProviderEnumerator(containerItemIdentifier: containerItemIdentifier,
+                                      recursive: containerItemIdentifier == .workingSet)
+    }
+
+    override func urlForItem(withPersistentIdentifier identifier: NSFileProviderItemIdentifier) -> URL? {
+        guard let path = try? relativePath(identifier) else { return nil }
+        return storage.appendingPathComponent(path)
+    }
+
+    override func persistentIdentifierForItem(at url: URL) -> NSFileProviderItemIdentifier? {
+        let root = storage.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        if path == root { return .rootContainer }
+        guard path.hasPrefix(root + "/") else { return nil }
+        let id = NSFileProviderItemIdentifier(String(path.dropFirst(root.count + 1)))
+        return (try? relativePath(id)) == nil ? nil : id
+    }
+
+    override func providePlaceholder(at url: URL, completionHandler: @escaping (Error?) -> Void) {
+        do {
+            guard let id = persistentIdentifierForItem(at: url) else { throw NSFileProviderError(.noSuchItem) }
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try NSFileProviderManager.writePlaceholder(at: NSFileProviderManager.placeholderURL(for: url),
+                                                       withMetadata: item(for: id))
+            completionHandler(nil)
+        } catch { completionHandler(error) }
+    }
+
+    private func revision(of url: URL) throws -> Data {
+        let values = try FileManager.default.attributesOfItem(atPath: url.path)
+        let date = (values[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let size = (values[.size] as? NSNumber)?.uint64Value ?? 0
+        return Data("\(date):\(size)".utf8)
+    }
+
+    private func baselineURL(for identifier: NSFileProviderItemIdentifier) -> URL {
+        let root = Self.providerRoot.deletingLastPathComponent()
+            .appendingPathComponent("MinisConfig/legacy-fp-baselines", isDirectory: true)
+        // Hex avoids collisions and prevents user paths from escaping the metadata tree.
+        let key = identifier.rawValue.utf8.map { String(format: "%02x", $0) }.joined()
+        return root.appendingPathComponent(key)
+    }
+
+    private func saveBaseline(_ identifier: NSFileProviderItemIdentifier, source url: URL) throws {
+        let record = baselineURL(for: identifier)
+        try FileManager.default.createDirectory(at: record.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try revision(of: url).write(to: record, options: .atomic)
+    }
+
+    override func startProvidingItem(at url: URL, completionHandler: @escaping (Error?) -> Void) {
+        do {
+            guard let id = persistentIdentifierForItem(at: url) else { throw NSFileProviderError(.noSuchItem) }
+            let original = try source(id)
+            // Do not overwrite a materialized document: it may contain a pending coordinated edit.
+            if !FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: original, to: url)
+                try saveBaseline(id, source: original)
+            }
+            completionHandler(nil)
+        } catch { completionHandler(error) }
+    }
+
+    override func itemChanged(at url: URL) {
+        do {
+            guard let id = persistentIdentifierForItem(at: url) else { throw NSFileProviderError(.noSuchItem) }
+            try requireWritable(id)
+            let original = try source(id)
+            // A stale or unknown baseline must never overwrite a newer shared file.
+            // Keep the materialized edit intact for recovery on conflict.
+            let baseline = try Data(contentsOf: baselineURL(for: id))
+            guard baseline == (try revision(of: original)) else {
+                throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteFileExistsError)
+            }
+            let data = try Data(contentsOf: url)
+            try data.write(to: original, options: .atomic)
+            try saveBaseline(id, source: original)
+            signal(parent(of: id))
+        } catch { os_log("Legacy FileProvider write failed: %{public}@", error.localizedDescription) }
+    }
+
+    override func stopProvidingItem(at url: URL) {
+        // Retain materialized data; eviction without tracking pending writes risks data loss.
+    }
+
+    override func createDirectory(withName directoryName: String, inParentItemIdentifier parentItemIdentifier: NSFileProviderItemIdentifier,
+                                  completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) {
+        do {
+            let id = try childIdentifier(parentItemIdentifier, name: directoryName)
+            try FileManager.default.createDirectory(at: source(id), withIntermediateDirectories: false)
+            completionHandler(try item(for: id), nil)
+            signal(parentItemIdentifier)
+        } catch { completionHandler(nil, error) }
+    }
+
+    override func importDocument(at fileURL: URL, toParentItemIdentifier parentItemIdentifier: NSFileProviderItemIdentifier,
+                                 completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) {
+        let scoped = fileURL.startAccessingSecurityScopedResource()
+        defer { if scoped { fileURL.stopAccessingSecurityScopedResource() } }
+        do {
+            let id = try childIdentifier(parentItemIdentifier, name: fileURL.lastPathComponent)
+            try FileManager.default.copyItem(at: fileURL, to: source(id))
+            completionHandler(try item(for: id), nil)
+            signal(parentItemIdentifier)
+        } catch { completionHandler(nil, error) }
+    }
+
+    private func move(_ identifier: NSFileProviderItemIdentifier, to parentID: NSFileProviderItemIdentifier,
+                      name: String, completionHandler: (NSFileProviderItem?, Error?) -> Void) {
+        do {
+            try requireWritable(identifier)
+            let destinationID = try childIdentifier(parentID, name: name)
+            let oldParent = parent(of: identifier)
+            try FileManager.default.moveItem(at: source(identifier), to: source(destinationID))
+            completionHandler(try item(for: destinationID), nil)
+            signal(oldParent)
+            signal(parentID)
+        } catch { completionHandler(nil, error) }
+    }
+
+    override func renameItem(withIdentifier itemIdentifier: NSFileProviderItemIdentifier, toName itemName: String,
+                             completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) {
+        move(itemIdentifier, to: parent(of: itemIdentifier), name: itemName, completionHandler: completionHandler)
+    }
+
+    override func reparentItem(withIdentifier itemIdentifier: NSFileProviderItemIdentifier,
+                               toParentItemWithIdentifier parentItemIdentifier: NSFileProviderItemIdentifier,
+                               newName: String?, completionHandler: @escaping (NSFileProviderItem?, Error?) -> Void) {
+        move(itemIdentifier, to: parentItemIdentifier,
+             name: newName ?? (itemIdentifier.rawValue as NSString).lastPathComponent, completionHandler: completionHandler)
+    }
+
+    override func deleteItem(withIdentifier itemIdentifier: NSFileProviderItemIdentifier,
+                             completionHandler: @escaping (Error?) -> Void) {
+        do {
+            try requireWritable(itemIdentifier)
+            try FileManager.default.removeItem(at: source(itemIdentifier))
+            completionHandler(nil)
+            signal(parent(of: itemIdentifier))
+        } catch { completionHandler(error) }
+    }
+}
+#endif

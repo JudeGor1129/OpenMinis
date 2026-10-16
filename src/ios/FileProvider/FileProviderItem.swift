@@ -77,11 +77,19 @@ final class FileProviderItem: NSObject, NSFileProviderItem {
                 .allowsDeleting]
     }
 
+    #if !MINIS_LEGACY_FILE_PROVIDER
     var itemVersion: NSFileProviderItemVersion {
         let modDate = (attrs?[.modificationDate] as? Date) ?? Date()
         let stamp = "\(modDate.timeIntervalSince1970)".data(using: .utf8) ?? Data()
         return NSFileProviderItemVersion(contentVersion: stamp, metadataVersion: stamp)
     }
+    #endif
+
+    // Legacy File Provider metadata used for placeholders and local edits.
+    var typeIdentifier: String { contentType.identifier }
+    var isDownloaded: Bool { true }
+    var isMostRecentVersionDownloaded: Bool { true }
+    var isUploaded: Bool { true }
 
     var documentSize: NSNumber? {
         guard let size = attrs?[.size] as? UInt64 else { return nil }

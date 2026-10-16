@@ -761,7 +761,7 @@ final class MountedFoldersManager {
         //    owns this URL and nudge it to re-stage. Third-party providers
         //    (e.g. "Shu Files") often need this explicit poke after relaunch
         //    because they don't keep placeholders alive across app launches.
-        if let domain = await Self.domainForURL(url) {
+        if #available(iOS 16.0, *), let domain = await Self.domainForURL(url) {
             if let mgr = NSFileProviderManager(for: domain) {
                 await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
                     mgr.signalEnumerator(for: .rootContainer) { error in

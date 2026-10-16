@@ -36,4 +36,5 @@ xcodebuild -project src/ios/Minis.xcodeproj \
   -derivedDataPath build/ios15/DerivedData \
   -resultBundlePath build/ios15/Minis.xcresult \
   CODE_SIGNING_ALLOWED=NO \
+  'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) MINIS_LEGACY_FILE_PROVIDER' \
   build

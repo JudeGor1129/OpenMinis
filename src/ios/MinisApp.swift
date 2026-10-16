@@ -797,6 +797,17 @@ struct MinisApp: App {
     }
 
     private static func registerFileProviderDomain() {
+        #if MINIS_LEGACY_FILE_PROVIDER
+        // The legacy non-UI extension is discovered by the system, not registered
+        // as a replicated domain. Do not reset/remove user data on this path.
+        NSFileProviderManager.default.signalEnumerator(for: .rootContainer) { _ in }
+        #else
+        registerReplicatedFileProviderDomain()
+        #endif
+    }
+
+    #if !MINIS_LEGACY_FILE_PROVIDER
+    private static func registerReplicatedFileProviderDomain() {
         logAppUpdateMarkerForFPTrace()
 
         // [T-ios-fp-mac-bootcrash] Circuit breaker, NOT a blanket disable.
@@ -1004,12 +1015,18 @@ struct MinisApp: App {
         }
     }
 
+    #endif
+
     private static func signalFileProvider() {
+        #if MINIS_LEGACY_FILE_PROVIDER
+        NSFileProviderManager.default.signalEnumerator(for: .rootContainer) { _ in }
+        #else
         NSFileProviderManager(for: fileProviderDomain)?.signalEnumerator(for: .rootContainer) { error in
             if let error {
                 lifecycleLog.warning("[FileProvider] signal failed: \(error.localizedDescription)")
             }
         }
+        #endif
     }
 
     /// Snapshot providerRoot's three user-data subdirs (`memory`, `skills`,

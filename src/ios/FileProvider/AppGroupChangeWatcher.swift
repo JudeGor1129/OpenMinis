@@ -301,6 +301,9 @@ final class AppGroupChangeWatcher {
 
     private func deliverSignal(itemID: NSFileProviderItemIdentifier) {
         pendingSignals.removeValue(forKey: itemID)
+        #if MINIS_LEGACY_FILE_PROVIDER
+        NSFileProviderManager.default.signalEnumerator(for: itemID) { _ in }
+        #else
         let domainID = domainIdentifier
         NSFileProviderManager.getDomainsWithCompletionHandler { [logger] domains, error in
             if let error {
@@ -322,5 +325,6 @@ final class AppGroupChangeWatcher {
                 }
             }
         }
+        #endif
     }
 }

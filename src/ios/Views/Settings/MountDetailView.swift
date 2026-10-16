@@ -340,6 +340,15 @@ struct MountDetailView: View {
     }
 
     private func signalFileProviderRoot() {
+        #if MINIS_LEGACY_FILE_PROVIDER
+        NSFileProviderManager.default.signalEnumerator(for: .rootContainer) { _ in }
+        #else
+        signalReplicatedFileProviderRoot()
+        #endif
+    }
+
+    #if !MINIS_LEGACY_FILE_PROVIDER
+    private func signalReplicatedFileProviderRoot() {
         let domainIdentifier = NSFileProviderDomainIdentifier("com.openminis.app.files")
         NSFileProviderManager.getDomainsWithCompletionHandler { domains, _ in
             guard let domain = domains.first(where: { $0.identifier == domainIdentifier }) else {
@@ -348,4 +357,5 @@ struct MountDetailView: View {
             NSFileProviderManager(for: domain)?.signalEnumerator(for: .rootContainer) { _ in }
         }
     }
+    #endif
 }

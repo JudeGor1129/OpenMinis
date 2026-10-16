@@ -1114,6 +1114,9 @@ class FileBrowserViewModel: ObservableObject {
         }
         guard let targetID = parentID else { return }
 
+        #if MINIS_LEGACY_FILE_PROVIDER
+        NSFileProviderManager.default.signalEnumerator(for: targetID) { _ in }
+        #else
         let domainIdentifier = NSFileProviderDomainIdentifier("com.openminis.app.files")
         NSFileProviderManager.getDomainsWithCompletionHandler { domains, _ in
             guard let domain = domains.first(where: { $0.identifier == domainIdentifier }) else {
@@ -1121,6 +1124,7 @@ class FileBrowserViewModel: ObservableObject {
             }
             NSFileProviderManager(for: domain)?.signalEnumerator(for: targetID) { _ in }
         }
+        #endif
     }
 
     /// If `removedURL` lives inside a session's per-session minis directory
