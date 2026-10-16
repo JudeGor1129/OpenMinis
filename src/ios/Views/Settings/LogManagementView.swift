@@ -194,8 +194,8 @@ struct LogManagementView: View {
             }
         }
         .toolbar {
-            if !vm.logFiles.isEmpty && tab == "logs" {
-                ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if !vm.logFiles.isEmpty && tab == "logs" {
                     Button {
                         showShareSheet = true
                     } label: {

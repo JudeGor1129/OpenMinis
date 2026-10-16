@@ -4583,11 +4583,19 @@ final class VideoAttachment: NSTextAttachment {
             generator.maximumSize = CGSize(width: 400, height: 400)
 
             var thumb: UIImage?
-            do {
-                let (cgImage, _) = try await generator.image(at: .zero)
-                thumb = UIImage(cgImage: cgImage)
-            } catch {
-                // Fallback: no thumbnail
+            if #available(iOS 16.0, *) {
+                do {
+                    let (cgImage, _) = try await generator.image(at: .zero)
+                    thumb = UIImage(cgImage: cgImage)
+                } catch {
+                    // Fallback: no thumbnail
+                }
+            } else {
+                thumb = await withCheckedContinuation { continuation in
+                    generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: .zero)]) { _, image, _, _, _ in
+                        continuation.resume(returning: image.map { UIImage(cgImage: $0) })
+                    }
+                }
             }
 
             if let thumb {
@@ -8304,10 +8312,12 @@ struct SelectableMarkdownView: UIViewRepresentable {
         // becomes a measurable chunk of every updateUIView pass (and
         // updateUIView runs on each SwiftUI body re-evaluation, so it
         // multiplies during streaming and self-sizing measurement loops).
-        let imageMatches = markdown.ranges(of: /!\[([^\]]*)\]\(([^)]+)\)/)
+        let imagePattern = try? NSRegularExpression(pattern: #"!\[([^\]]*)\]\(([^)]+)\)"#)
+        let imageMatches = imagePattern?.matches(in: markdown, range: NSRange(markdown.startIndex..., in: markdown)) ?? []
         if !imageMatches.isEmpty {
             for match in imageMatches {
-                let matchStr = String(markdown[match])
+                guard let range = Range(match.range, in: markdown) else { continue }
+                let matchStr = String(markdown[range])
                 imgLogger.info("[MinisImage][StreamParse] image markdown found: \(matchStr)")
             }
             let imageBlockCount = content.blocks.flatMap { Self.collectImageNodes(from: $0) }.count
