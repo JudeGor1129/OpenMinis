@@ -1212,8 +1212,22 @@ struct MinisMessageHostingConfiguration<Content: View>: UIContentConfiguration {
     func updated(for state: UIConfigurationState) -> Self { self }
 }
 
+/// The legacy hosting controller otherwise uses a view's ideal width for
+/// fixed-size Markdown content, which can exceed the collection cell proposal.
+private struct LegacyMessageWidthContent<Content: View>: View {
+    let content: Content
+    let width: CGFloat?
+
+    var body: some View {
+        content
+            .frame(width: width, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 private final class LegacyMessageHostingView<Content: View>: UIView, UIContentView {
-    private let host: UIHostingController<Content>
+    private let host: UIHostingController<LegacyMessageWidthContent<Content>>
+    private var contentWidth: CGFloat?
     private var storedConfiguration: MinisMessageHostingConfiguration<Content>
 
     var configuration: any UIContentConfiguration {
@@ -1221,7 +1235,7 @@ private final class LegacyMessageHostingView<Content: View>: UIView, UIContentVi
         set {
             guard let config = newValue as? MinisMessageHostingConfiguration<Content> else { return }
             storedConfiguration = config
-            host.rootView = config.content
+            host.rootView = LegacyMessageWidthContent(content: config.content, width: contentWidth)
             host.view.invalidateIntrinsicContentSize()
             invalidateIntrinsicContentSize()
             setNeedsLayout()
@@ -1230,7 +1244,7 @@ private final class LegacyMessageHostingView<Content: View>: UIView, UIContentVi
 
     init(configuration: MinisMessageHostingConfiguration<Content>) {
         storedConfiguration = configuration
-        host = UIHostingController(rootView: configuration.content)
+        host = UIHostingController(rootView: LegacyMessageWidthContent(content: configuration.content, width: nil))
         super.init(frame: .zero)
         backgroundColor = .clear
         host.view.backgroundColor = .clear
@@ -1266,8 +1280,24 @@ private final class LegacyMessageHostingView<Content: View>: UIView, UIContentVi
         }
     }
 
+    private func updateContentWidth(_ width: CGFloat) {
+        guard width.isFinite, width > 0, contentWidth != width else { return }
+        contentWidth = width
+        host.rootView = LegacyMessageWidthContent(content: storedConfiguration.content, width: width)
+        host.view.invalidateIntrinsicContentSize()
+    }
+
+    override func layoutSubviews() {
+        updateContentWidth(bounds.width)
+        super.layoutSubviews()
+    }
+
     override var intrinsicContentSize: CGSize {
-        guard bounds.width > 0 else { return host.view.intrinsicContentSize }
+        // Never expose the SwiftUI ideal width to collection-view self sizing.
+        guard bounds.width > 0 else {
+            return CGSize(width: UIView.noIntrinsicMetric, height: UIView.noIntrinsicMetric)
+        }
+        updateContentWidth(bounds.width)
         let size = host.sizeThatFits(in: CGSize(width: bounds.width, height: CGFloat.greatestFiniteMagnitude))
         return CGSize(width: UIView.noIntrinsicMetric, height: ceil(size.height))
     }

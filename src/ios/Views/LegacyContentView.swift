@@ -174,11 +174,6 @@ private struct LegacySettingsSheet: View {
                         Label("Appearance", systemImage: "paintbrush.fill")
                     }
                 }
-                Section("User Interaction") {
-                    NavigationLink(destination: LegacyInteractionSettings()) {
-                        Label("User Interaction", systemImage: "hand.tap")
-                    }
-                }
                 runtimeSection
                 storageSection
                 Section("Permissions") {
@@ -295,37 +290,5 @@ private struct LegacySettingsSheet: View {
                 Label("Backup & Restore", systemImage: "arrow.triangle.2.circlepath")
             }
         }
-    }
-}
-
-private struct LegacyInteractionSettings: View {
-    @AppStorage("returnKeyBehavior") private var returnKey = 0
-    @AppStorage("keepScreenAwakeDuringTasks") private var keepAwake = false
-    @AppStorage("chat.autoFocusAfterReply") private var autoFocus = true
-    @AppStorage("chat.autoExpandThinking") private var expandThinking = true
-    @AppStorage("toolPreviewEnabled") private var toolPreview = true
-
-    var body: some View {
-        Form {
-            Section("Return Key") {
-                Picker("Return Key", selection: $returnKey) {
-                    Text("Newline").tag(0)
-                    Text("Send").tag(1)
-                }
-                .pickerStyle(.segmented)
-            }
-            Section {
-                Toggle("Keep Screen Awake", isOn: $keepAwake)
-            } footer: {
-                Text("Prevent the screen from sleeping while any session is running a task. May increase battery drain.")
-            }
-            Section("User Interaction") {
-                Toggle("Auto-Focus Input After Reply", isOn: $autoFocus)
-                Toggle("Expand Thinking While Streaming", isOn: $expandThinking)
-                Toggle("Tool Preview Window", isOn: $toolPreview)
-            }
-        }
-        .navigationTitle("User Interaction")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }

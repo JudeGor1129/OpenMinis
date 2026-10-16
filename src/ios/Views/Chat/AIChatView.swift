@@ -512,6 +512,40 @@ struct AIChatView: View {
     /// (file was deleted, the session was pruned, or iCloud hasn't synced yet).
     @State private var missingMinisFileName: String?
 
+    private var sessionSearchRows: [MinisSessionSearchRow] {
+        vm.messages.map {
+            MinisSessionSearchRow(id: String(describing: $0.id), role: $0.role.rawValue, text: $0.content)
+        }
+    }
+
+    private var sessionActionsMenu: some View {
+        MinisSessionActionsMenu(
+            keepAwake: manualScreenAwake,
+            onShare: exportSessionMarkdown,
+            onSearch: { showingSessionSearch = true },
+            onToggleAwake: {
+                manualScreenAwake.toggle()
+                UIApplication.shared.isIdleTimerDisabled = manualScreenAwake
+            }
+        )
+    }
+
+    private func exportSessionMarkdown() {
+        do {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("MinisExports", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent("Conversation-\(UUID().uuidString).md")
+            let sections: [String] = vm.messages.map { message in
+                "## \(message.role.rawValue)\n\n\(message.content)"
+            }
+            try sections.joined(separator: "\n\n---\n\n").write(to: url, atomically: true, encoding: .utf8)
+            sessionExportURL = url
+        } catch {
+            sessionExportError = error.localizedDescription
+        }
+    }
+
     var body: some View {
         ZStack {
             // Messages — floating tool preview overlaid at bottom
@@ -769,50 +803,17 @@ struct AIChatView: View {
             ChatToolbarHost(key: chatToolbarKey, title: {
                 chatNavPrincipalContent
             }, trailing: {
-                HStack {
-                    Menu {
-                        Button {
-                            do {
-                                let directory = FileManager.default.temporaryDirectory
-                                    .appendingPathComponent("MinisExports", isDirectory: true)
-                                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                                let url = directory.appendingPathComponent("Conversation-\(UUID().uuidString).md")
-                                let text = vm.messages.map { "## \($0.role.rawValue)\n\n\($0.content)" }.joined(separator: "\n\n---\n\n")
-                                try text.write(to: url, atomically: true, encoding: .utf8)
-                                sessionExportURL = url
-                            } catch { sessionExportError = error.localizedDescription }
-                        } label: {
-                            Label("Share Conversation", systemImage: "square.and.arrow.up")
-                        }
-                        Button { showingSessionSearch = true } label: {
-                            Label("Search in Conversation", systemImage: "magnifyingglass")
-                        }
-                        Button {
-                            manualScreenAwake.toggle()
-                            UIApplication.shared.isIdleTimerDisabled = manualScreenAwake
-                        } label: {
-                            Label("Keep Screen Awake", systemImage: manualScreenAwake ? "checkmark.circle.fill" : "sun.max")
-                        }
-                    } label: { Image(systemName: "ellipsis.circle") }
-                    trailingMenu
-                }
+                sessionActionsMenu
+                trailingMenu
             })
             .equatable()
         )
-        .sheet(isPresented: $showingSessionSearch) {
-            MinisSessionSearchSheet(rows: vm.messages.map {
-                MinisSessionSearchRow(id: String(describing: $0.id), role: $0.role.rawValue, text: $0.content)
-            })
-        }
-        .sheet(item: $sessionExportURL) { url in
-            MinisShareSheet(url: url)
-        }
-        .alert("Export Failed", isPresented: Binding(
-            get: { sessionExportError != nil },
-            set: { if !$0 { sessionExportError = nil } }
-        )) {
-            Button("OK") { sessionExportError = nil }
-        } message: { Text(sessionExportError ?? "") }
+        .modifier(MinisSessionPresentationModifier(
+            showingSearch: $showingSessionSearch,
+            exportURL: $sessionExportURL,
+            exportError: $sessionExportError,
+            rows: sessionSearchRows
+        ))
         .sheet(item: $titlePillEditSession) { session in
             SessionEditSheet(session: session) { newTitle, newCategory in
                 Task {
@@ -7096,5 +7097,49 @@ private struct MinisSessionSearchSheet: View {
                 }
             }
         }
+    }
+}
+
+private struct MinisSessionActionsMenu: View {
+    let keepAwake: Bool
+    let onShare: () -> Void
+    let onSearch: () -> Void
+    let onToggleAwake: () -> Void
+
+    var body: some View {
+        Menu {
+            Button(action: onShare) {
+                Label("Share Conversation", systemImage: "square.and.arrow.up")
+            }
+            Button(action: onSearch) {
+                Label("Search in Conversation", systemImage: "magnifyingglass")
+            }
+            Button(action: onToggleAwake) {
+                Label("Keep Screen Awake", systemImage: keepAwake ? "checkmark.circle.fill" : "sun.max")
+            }
+        } label: { Image(systemName: "ellipsis.circle") }
+    }
+}
+
+private struct MinisSessionPresentationModifier: ViewModifier {
+    @Binding var showingSearch: Bool
+    @Binding var exportURL: URL?
+    @Binding var exportError: String?
+    let rows: [MinisSessionSearchRow]
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $showingSearch) {
+                MinisSessionSearchSheet(rows: rows)
+            }
+            .sheet(item: $exportURL) { url in
+                MinisShareSheet(url: url)
+            }
+            .alert("Export Failed", isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+            )) {
+                Button("OK") { exportError = nil }
+            } message: { Text(exportError ?? "") }
     }
 }
