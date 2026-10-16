@@ -29,6 +29,7 @@ import SwiftUI
 // the same switches — delegation passed its own gate, but a switch can flip
 // mid-run and the child's next turn must honour it (T-tools-master-switch).
 enum AgentToolSwitch: String, CaseIterable {
+    case interaction = "agent.tools.interaction.enabled"
     case browser = "agent.tools.browser.enabled"
     case agents = "agent.tools.agents.enabled"
 
@@ -53,6 +54,7 @@ enum AgentToolSwitch: String, CaseIterable {
     /// turned Sub Agents OFF stays off.
     var defaultValue: Bool {
         switch self {
+        case .interaction: return true
         case .browser: return true
         case .agents: return true
         }
@@ -72,6 +74,7 @@ enum AgentToolSwitch: String, CaseIterable {
     /// The switch governing a tool name; nil = always available.
     nonisolated static func governing(_ toolName: String) -> AgentToolSwitch? {
         switch toolName {
+        case "ask_user": return .interaction
         case "browser_use": return .browser
         case SubAgentDefinition.toolName: return .agents
         default: return nil
@@ -116,11 +119,13 @@ enum AgentToolSwitch: String, CaseIterable {
 }
 
 struct ToolsSettingsView: View {
+    @AppStorage(AgentToolSwitch.interaction.key) private var interactionEnabled = AgentToolSwitch.interaction.defaultValue
     @AppStorage(AgentToolSwitch.browser.key) private var browserEnabled: Bool = AgentToolSwitch.browser.defaultValue
 
     var body: some View {
         Form {
             Section {
+                toolRow(AppLocalized("User Interaction"), tool: "ask_user", icon: "hand.tap", isOn: $interactionEnabled)
                 toolRow(AppLocalized("Browser Use"), tool: "browser_use", icon: "globe", isOn: $browserEnabled)
             } footer: {
                 Text(AppLocalized("Browse the web in the in-app browser: open pages, read them, click and type. Stable and on by default. When off, the tool is removed from every conversation — the model does not see it at all."))
@@ -158,4 +163,41 @@ extension AIChatViewModel {
     /// flipped still names a gated tool.
     static let toolsDisabledMessage =
         "This tool is turned off in the app's settings. Tell the user they can enable it there; do not retry."
+}
+import UIKit
+
+/// Serializes interactive prompts and bounds their lifetime when a task stops.
+@MainActor
+final class MinisUserQuestionPresenter {
+    static let shared = MinisUserQuestionPresenter()
+    private var active: UUID?
+
+    func ask(_ question: String) async -> String {
+        guard active == nil else { return "Another user question is already open." }
+        let id = UUID()
+        active = id
+        defer { active = nil }
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard var presenter = scenes.flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else {
+            return "User interaction unavailable: no active window."
+        }
+        while let next = presenter.presentedViewController { presenter = next }
+        let alert = UIAlertController(title: AppLocalized("User Interaction"), message: question, preferredStyle: .alert)
+        alert.addTextField { $0.placeholder = AppLocalized("Your answer") }
+        var answer: String?
+        alert.addAction(UIAlertAction(title: AppLocalized("Send"), style: .default) { _ in
+            answer = alert.textFields?.first?.text ?? ""
+        })
+        alert.addAction(UIAlertAction(title: AppLocalized("Cancel"), style: .cancel) { _ in
+            answer = "User cancelled the question."
+        })
+        presenter.present(alert, animated: true)
+        for _ in 0..<3000 {
+            if let answer { return answer }
+            do { try await Task.sleep(nanoseconds: 100_000_000) }
+            catch { alert.dismiss(animated: true); return "Question cancelled because the task stopped." }
+        }
+        alert.dismiss(animated: true)
+        return "User question timed out after five minutes."
+    }
 }

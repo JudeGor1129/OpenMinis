@@ -151,6 +151,12 @@ class SelfSizingCell: UICollectionViewCell {
     override func preferredLayoutAttributesFitting(
         _ layoutAttributes: UICollectionViewLayoutAttributes
     ) -> UICollectionViewLayoutAttributes {
+        // iOS 15's legacy hosting view can change height after TextKit has
+        // wrapped a paragraph. Do not reuse its previous ideal-size result.
+        if #unavailable(iOS 16.0) {
+            lastComputedHeight = nil
+            seededHeight = nil
+        }
         // Cache-hit short-circuit BEFORE super: when UIKit re-asks a cell to
         // self-size at a width it already measured, return the cached
         // height directly and skip both `super.preferredLayoutAttributesFitting`
@@ -1290,6 +1296,25 @@ private final class LegacyMessageHostingView<Content: View>: UIView, UIContentVi
     override func layoutSubviews() {
         updateContentWidth(bounds.width)
         super.layoutSubviews()
+    }
+
+    override func systemLayoutSizeFitting(
+        _ targetSize: CGSize,
+        withHorizontalFittingPriority horizontalFittingPriority: UILayoutPriority,
+        verticalFittingPriority: UILayoutPriority
+    ) -> CGSize {
+        let width = targetSize.width
+        guard width.isFinite, width > 0 else {
+            return super.systemLayoutSizeFitting(targetSize,
+                withHorizontalFittingPriority: horizontalFittingPriority,
+                verticalFittingPriority: verticalFittingPriority)
+        }
+        updateContentWidth(width)
+        host.view.bounds.size.width = width
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        let measured = host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: max(1, ceil(measured.height)))
     }
 
     override var intrinsicContentSize: CGSize {

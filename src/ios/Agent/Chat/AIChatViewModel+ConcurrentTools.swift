@@ -370,6 +370,22 @@ extension AIChatViewModel {
 
         do {
         switch tu.name {
+        case "ask_user":
+            guard AgentToolSwitch.interaction.isEnabled else {
+                toolOutput = Self.toolsDisabledMessage
+                toolSuccess = false
+                break
+            }
+            guard let data = argsJson.data(using: .utf8),
+                  let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let question = args["question"] as? String,
+                  !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                toolOutput = "Missing required question."
+                toolSuccess = false
+                break
+            }
+            toolOutput = await MinisUserQuestionPresenter.shared.ask(question)
+            toolSuccess = !Task.isCancelled
         case "shell_execute":
             let (command, timeout, delay) = parseToolInput(from: argsJson)
 
