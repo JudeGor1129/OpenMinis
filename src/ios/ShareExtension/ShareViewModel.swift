@@ -21,6 +21,11 @@ final class ShareViewModel {
             guard let attachments = extensionItem.attachments else { continue }
 
             for provider in attachments {
+                // Preserve file identity before URL/plain-text coercion. Provider
+                // temporary URLs must be copied inside the completion callback.
+                if await stageFileRepresentation(provider) {
+                    continue
+                }
                 if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
                     await processURL(provider)
                 } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
@@ -34,6 +39,42 @@ final class ShareViewModel {
                 }
             }
         }
+    }
+
+    /// Copy the file while NSItemProvider still owns its temporary URL.
+    private func stageFileRepresentation(_ provider: NSItemProvider) async -> Bool {
+        let types = provider.registeredTypeIdentifiers.filter { identifier in
+            guard let type = UTType(identifier) else { return false }
+            return type.conforms(to: .data) && type != .url && type != .fileURL
+                && (!type.conforms(to: .text) || provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier))
+        }
+        for identifier in types {
+            let staged: String? = await withCheckedContinuation { continuation in
+                provider.loadFileRepresentation(forTypeIdentifier: identifier) { url, error in
+                    guard let url, let dir = SharedContainerStore.sharedFileDirectory else {
+                        if let error { NSLog("[ShareExt] File representation failed: %@", error.localizedDescription) }
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let access = url.startAccessingSecurityScopedResource()
+                    defer { if access { url.stopAccessingSecurityScopedResource() } }
+                    do {
+                        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                        let name = "shared-\(UUID().uuidString.prefix(8))_\(url.lastPathComponent)"
+                        try FileManager.default.copyItem(at: url, to: dir.appendingPathComponent(name))
+                        continuation.resume(returning: name)
+                    } catch {
+                        NSLog("[ShareExt] Shared file copy failed: %@", error.localizedDescription)
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+            if let staged {
+                pendingItems.append(.init(kind: .attachment, value: staged))
+                return true
+            }
+        }
+        return false
     }
 
     /// Save pending share and return true on success.
@@ -169,8 +210,12 @@ final class ShareViewModel {
         let fileName = "shared-\(UUID().uuidString.prefix(8))_\(url.lastPathComponent)"
         if let dir = SharedContainerStore.sharedFileDirectory {
             let destURL = dir.appendingPathComponent(fileName)
-            try? FileManager.default.copyItem(at: url, to: destURL)
-            pendingItems.append(.init(kind: .attachment, value: fileName))
+            do {
+                try FileManager.default.copyItem(at: url, to: destURL)
+                pendingItems.append(.init(kind: .attachment, value: fileName))
+            } catch {
+                NSLog("[ShareExt] File fallback copy failed: %@", error.localizedDescription)
+            }
         }
     }
 }
