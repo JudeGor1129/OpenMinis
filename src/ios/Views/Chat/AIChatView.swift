@@ -3922,7 +3922,7 @@ struct AIChatView: View {
                                 Color.clear.preference(key: AttachmentGridHeightKey.self, value: geo.size.height)
                             })
                     }
-                    .frame(height: min(attachmentGridHeight, 160))
+                    .frame(height: min(max(attachmentGridHeight, 96), 160))
                     .onPreferenceChange(AttachmentGridHeightKey.self) { attachmentGridHeight = $0 }
                     .padding(.top, 8)
                 }
@@ -7189,6 +7189,15 @@ private struct MinisLegacyTranscript: View {
                     ForEach(vm.messages) { message in
                         MinisLegacyTranscriptRow(message: message)
                             .id(message.id)
+                    }
+                    if vm.isProcessing || vm.isCompacting {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text(vm.isCompacting ? "正在整理上下文…" : "模型任务运行中（请求或工具处理中）…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
                     }
                     Color.clear.frame(height: bottomInset).id("legacyTranscriptBottom")
                 }

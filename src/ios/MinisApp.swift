@@ -502,6 +502,10 @@ struct MinisApp: App {
             }
             backgroundEntryDate = nil
 
+            // Share extensions may save files successfully without opening the
+            // custom URL. Recover their pending payload on every foreground.
+            shareCoordinator.checkForPendingShare()
+
             // [T-new-session-hang-credential-cache] L2 invalidation hook #4:
             // foreground backstop. Credentials may have changed while backgrounded
             // (another device edited a provider and it synced, a Keychain item
