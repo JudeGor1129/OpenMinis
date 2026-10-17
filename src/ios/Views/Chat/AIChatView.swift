@@ -1379,7 +1379,7 @@ struct AIChatView: View {
             if let sessionId { AIChatViewModel.activeSessionId = sessionId }
             vm.ensureKernelBooted()
             if let sessionId {
-                if cached.isNew || (vm.messages.isEmpty && !vm.isLoadingSession) {
+                if !vm.hasCompletedInitialLoad && vm.messages.isEmpty && !vm.isLoadingSession {
                     // Load session if: (a) VM is freshly created, or (b) cache hit but messages
                     // are empty — this can happen on iOS 16 where NavigationStack may recreate
                     // @StateObject unexpectedly, causing isNew=false but an empty VM.
@@ -1425,9 +1425,9 @@ struct AIChatView: View {
                     // re-renders on diff. Skip when isProcessing — the
                     // active stream owns messages right now and a reload
                     // would clobber the in-flight assistant turn.
-                    if !vm.isProcessing && !vm.isCompacting {
-                        Task { @MainActor in await vm.reloadMessagesFromDB(reason: "AIChatView.onAppear-reuse") }
-                    }
+                    // Reuse the visible snapshot immediately. Reload only on
+                    // the existing database/sync invalidation signals, not on
+                    // every navigation appearance (which rebuilds all history).
                     vm.consumeDeferredSnapshotIfNeeded()
                     let mountElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
                     // Cached VM already has messages — trigger scroll-to-bottom
@@ -7244,6 +7244,10 @@ private struct MinisLegacyTranscript: View {
                 .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
                 .padding(.horizontal, 18)
                 .padding(.top, 12)
+                .background(GeometryReader { content in
+                    Color.clear.preference(key: MinisLegacyContentHeightKey.self,
+                                           value: content.size.height)
+                })
             }
             .frame(width: viewport.size.width, height: viewport.size.height)
             .clipped()
@@ -7252,6 +7256,16 @@ private struct MinisLegacyTranscript: View {
             .onChange(of: viewport.size) { size in
                 viewportHeight = size.height
                 if followingBottom && !userDragging { scrollRevision += 1 }
+            }
+            .onPreferenceChange(MinisLegacyContentHeightKey.self) { _ in
+                // Observes actual layout, including streamed child blocks whose
+                // changes do not publish vm.messages.count. Offset-only changes
+                // never change this preference, so scrolling cannot feed back.
+                guard followingBottom && !userDragging else { return }
+                DispatchQueue.main.async {
+                    guard followingBottom && !userDragging else { return }
+                    proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
+                }
             }
             .onPreferenceChange(MinisLegacyBottomPositionKey.self) { bottom in
                 // Measurement must not schedule another scroll: that creates
@@ -7294,6 +7308,11 @@ private struct MinisLegacyTranscript: View {
         }
         }
     }
+}
+
+private struct MinisLegacyContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 private struct MinisLegacyBottomPositionKey: PreferenceKey {

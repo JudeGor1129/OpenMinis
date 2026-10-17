@@ -33,3 +33,10 @@ grep -q 'Empty result from this backend; cause undetermined' "$bridge"
 grep -q 'No built-in backend completed process enumeration' "$bridge"
 ! grep -q 'frida_device_manager_get_device_by_type_sync' "$bridge"
 printf 'PASS: built-in backend allowlist, cooperative cancellation and empty-result diagnostics.\n'
+
+# Re-entry should not rebuild full history; streaming tracks content size, not offset.
+! grep -q 'if cached.isNew || (vm.messages.isEmpty' "$view"
+! grep -q 'await vm.reloadMessagesFromDB(reason: "AIChatView.onAppear-reuse")' "$view"
+grep -q 'onPreferenceChange(MinisLegacyContentHeightKey.self)' "$view"
+grep -q 'value: content.size.height' "$view"
+printf 'PASS: cached re-entry and content-height driven streaming follow wiring.\n'
