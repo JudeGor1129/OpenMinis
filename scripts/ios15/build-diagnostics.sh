@@ -28,6 +28,26 @@ PROJECT=src/ios/Minis.xcodeproj/project.pbxproj
 cp "$PROJECT" ci-logs/project-before-ios15.pbxproj
 sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 16\.0;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' "$PROJECT"
 grep -n 'IPHONEOS_DEPLOYMENT_TARGET' "$PROJECT" | tee ci-logs/deployment-targets.txt
+# Add Frida only to the app's existing iSH linker lists, not every extension.
+# Global OTHER_LDFLAGS overrides would also link iSH/Frida into share/widget targets.
+[[ -f deps/include/frida-core.h && -f deps/libs/libfrida-core.a ]] || {
+  echo 'error: verified Frida SDK missing' >&2; exit 1;
+}
+sed -i '' '/"-lfakefs",/a\
+                    "-lfrida-core",\
+                    "-lbsm",\
+                    "-ldl",\
+                    "-lm",\
+                    "-lresolv",\
+                    "-lpthread",\
+                    "-framework",\
+                    "Security",\
+                    "-framework",\
+                    "CoreFoundation",\
+                    "-framework",\
+                    "Foundation",\
+' "$PROJECT"
+plutil -lint "$PROJECT"
 rm -rf build/ios15/Minis.xcresult
 xcodebuild -project src/ios/Minis.xcodeproj \
   -scheme Minis \
@@ -36,6 +56,6 @@ xcodebuild -project src/ios/Minis.xcodeproj \
   -derivedDataPath build/ios15/DerivedData \
   -resultBundlePath build/ios15/Minis.xcresult \
   CODE_SIGNING_ALLOWED=NO \
-  OTHER_LDFLAGS='$(inherited) -lish_emu -lish -lfakefs -lfrida-core' \
+  'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) MINIS_LEGACY_FILE_PROVIDER' \
   LIBRARY_SEARCH_PATHS='$(SRCROOT)/../../deps/libs' \
   build
