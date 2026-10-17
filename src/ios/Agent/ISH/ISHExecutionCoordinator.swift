@@ -214,12 +214,14 @@ actor ISHExecutionCoordinator {
     }
     #endif
 
-    /// Resolve a Linux path under /var/minis/ to its current host URL.
-    /// Tries the static bind-mount table first (memory/skills/shared +
-    /// external folders), then falls back to MinisFsRouter for the per-
-    /// session buckets. Per-session lookups need a sessionId because the
-    /// router routes by fs_context; pass it via `sessionId` for those paths.
+    /// Resolve session buckets and scoped memory before global/external mounts.
+    /// All callers performing task work must pass their own session ID.
     func hostURL(for linuxPath: String, sessionId: String? = nil) -> URL? {
+        // Session routing must win over the global memory bind mount.
+        if let sid = sessionId ?? mountedSessionId,
+           let url = MinisFsRouter.shared.hostURL(forGuest: linuxPath, sid: sid) {
+            return url
+        }
         for (prefix, hostBase) in mountedPaths {
             if linuxPath == prefix {
                 return hostBase
@@ -228,10 +230,6 @@ actor ISHExecutionCoordinator {
                 let sub = String(linuxPath.dropFirst(prefix.count + 1))
                 return hostBase.appendingPathComponent(sub)
             }
-        }
-        if let sid = sessionId ?? mountedSessionId,
-           let url = MinisFsRouter.shared.hostURL(forGuest: linuxPath, sid: sid) {
-            return url
         }
         return nil
     }

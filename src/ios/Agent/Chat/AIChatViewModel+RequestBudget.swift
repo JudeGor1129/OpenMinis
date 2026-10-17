@@ -327,6 +327,14 @@ extension AIChatViewModel {
         let subPaths = MinisURLPathDecoding.subPathCandidates(for: url)
         let fm = FileManager.default
 
+        // An explicitly scoped memory link must never fall back to another
+        // group's or global memory when its target does not exist.
+        if host == "memory", let sid = sessionId ?? activeSessionId,
+           let directory = MinisFsRouter.shared.memoryDirectory(for: sid) {
+            return subPaths.map { directory.appendingPathComponent($0) }
+                .first { fm.fileExists(atPath: $0.path) }
+        }
+
         // Primary: resolve via the owning session (explicit), else frontmost
         if let sid = sessionId ?? activeSessionId {
             for subPath in subPaths {

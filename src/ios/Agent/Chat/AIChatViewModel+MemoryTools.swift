@@ -7,8 +7,8 @@ extension AIChatViewModel {
     // MARK: - Memory Tools
 
     /// Load full global memory content for system prompt injection.
-    nonisolated static func loadGlobalMemoryFragment() -> String? {
-        let globalFile = minisMemoryPersistentDir.appendingPathComponent("GLOBAL.md")
+    nonisolated static func loadGlobalMemoryFragment(directory: URL? = nil) -> String? {
+        let globalFile = (directory ?? minisMemoryPersistentDir).appendingPathComponent("GLOBAL.md")
         guard FileManager.default.fileExists(atPath: globalFile.path),
               let content = try? String(contentsOf: globalFile, encoding: .utf8),
               !content.isEmpty else { return nil }
@@ -17,7 +17,7 @@ extension AIChatViewModel {
     }
 
     /// Load the 3 most recent daily memory logs that have content, for system prompt injection (first 200 lines each).
-    nonisolated static func loadRecentDailyMemoryFragment() -> String? {
+    nonisolated static func loadRecentDailyMemoryFragment(directory: URL? = nil) -> String? {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         let fm = FileManager.default
@@ -30,7 +30,7 @@ extension AIChatViewModel {
         while fragments.count < 3 && dayOffset < maxLookback {
             let date = today.addingTimeInterval(-Double(dayOffset) * 86400)
             let dateStr = fmt.string(from: date)
-            let fileURL = minisMemoryPersistentDir.appendingPathComponent("\(dateStr).md")
+            let fileURL = (directory ?? minisMemoryPersistentDir).appendingPathComponent("\(dateStr).md")
 
             if fm.fileExists(atPath: fileURL.path),
                let content = try? String(contentsOf: fileURL, encoding: .utf8),
@@ -72,7 +72,7 @@ extension AIChatViewModel {
         }
 
         let fm = FileManager.default
-        let persistDir = Self.minisMemoryPersistentDir
+        let persistDir = sessionMemoryDirectory
         try? fm.createDirectory(at: persistDir, withIntermediateDirectories: true)
 
         let dateFmt = DateFormatter()
@@ -111,8 +111,10 @@ extension AIChatViewModel {
         // Date() call) so the dateKey matches what was actually written
         // even across a midnight boundary.
         let dateStrForSync = (fileName as NSString).deletingPathExtension
-        Task { @MainActor in
-            await ChatStore.shared.markDirty(recordType: "MemoryDailyV2", recordId: dateStrForSync)
+        if taskGroupID == nil {
+            Task { @MainActor in
+                await ChatStore.shared.markDirty(recordType: "MemoryDailyV2", recordId: dateStrForSync)
+            }
         }
         NotificationCenter.default.post(name: .memoryFilesDidChange, object: nil)
 
@@ -149,7 +151,7 @@ extension AIChatViewModel {
 
         var filesToSearch: [(label: String, url: URL)] = []
         let fm = FileManager.default
-        let memDir = Self.minisMemoryPersistentDir
+        let memDir = sessionMemoryDirectory
 
         var globalEmpty = false
         if scope == "all" {

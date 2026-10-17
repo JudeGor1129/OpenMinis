@@ -1256,6 +1256,34 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     var pendingSendIsFromComposer = false
     /// When true, skip the needsCompactBeforeSend check (used after compactAndSend to avoid loop).
     var skipCompactCheck = false
+    /// Task-scoped group defaults. Refreshed before each task, not from the
+    /// foreground session, so concurrent conversations never share this state.
+    @Published var taskGroupID: String?
+    var taskGroupSoul: String?
+    var sessionMemoryDirectory: URL {
+        taskGroupID.map { MinisGroupConfigurationStore.memoryDirectory($0) }
+            ?? Self.minisMemoryPersistentDir
+    }
+
+    func refreshGroupContext() async {
+        let owner = helperConfig?.parentSessionId ?? sessionId
+        let folderID: String?
+        if let owner { folderID = await ChatStore.shared.getSession(owner)?.folderId }
+        else { folderID = nil }
+        taskGroupID = folderID
+        taskGroupSoul = folderID.map { MinisGroupConfigurationStore.load($0).soul }
+        // Initialize a newly grouped conversation without requiring the user
+        // to open and save the group editor first (also migrates draft memory).
+        if let folderID,
+           !FileManager.default.fileExists(atPath: sessionMemoryDirectory.appendingPathComponent("GLOBAL.md").path) {
+            do { try MinisGroupConfigurationStore.save(MinisGroupConfigurationStore.load(folderID), folderID: folderID) }
+            catch { logger.error("Group memory initialization failed: \(error.localizedDescription)") }
+        }
+        if let sid = sessionId {
+            MinisFsRouter.shared.setMemoryDirectory(sessionMemoryDirectory, for: sid)
+        }
+    }
+
     /// When false, memory_write tool calls are skipped (returns "Memory disabled") in this session.
     @Published var memoryEnabled = true
 
@@ -2221,8 +2249,11 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         let subPaths = MinisURLPathDecoding.subPathCandidates(for: url)
         let fm = FileManager.default
 
+        if host == "memory" {
+            return resolveMinisURL(url, sessionId: activeSessionId)
+        }
         // Global directories resolve without session ID
-        let globalDirs = ["memory", "skills", "shared"]
+        let globalDirs = ["skills", "shared"]
         if globalDirs.contains(host) {
             let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
             for subPath in subPaths {
@@ -2311,7 +2342,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // Personality section from SOUL.md's body. The original wording
         // is preserved inside SystemPromptBuilder.identityTemplate so we
         // don't regress model behavior that depended on it.
-        (helperConfig != nil ? helperIdentitySection : SystemPromptBuilder.identitySection())
+        (helperConfig != nil ? helperIdentitySection : SystemPromptBuilder.identitySection(personalityOverride: taskGroupSoul))
             + "You should proactively use shell commands to accomplish the user's tasks — installing packages (apk add), "
             + "writing and running scripts, managing files, networking, and any other operations a Linux terminal can perform.\n\n"
             + "Available tools:\n"
@@ -5833,6 +5864,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         defer { logger.info("🔄SESSION [vm=\(self.vmInstanceId)] runAgentLoop END session=\(self.sessionId ?? "nil") history=\(self.agentHistory.count) estimated ~\(self.estimateContextTokens()) tokens") }
 
         let loopSetupStart = CFAbsoluteTimeGetCurrent()
+        await refreshGroupContext()
 
         // [T-ios-stale-error-banner] Every turn funnels through here — a send, a
         // retry, a Resume, a queued prompt draining, and the auto-fallback that
@@ -5950,10 +5982,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // global default.
         AppLogger(category: "MemDiag").info("[MemDiag] inject-decision sid=\(self.sessionId?.prefix(8) ?? "nil") vm.memoryEnabled=\(self.memoryEnabled)")
         if memoryEnabled {
-            if let memoryFragment = Self.loadGlobalMemoryFragment() {
+            if let memoryFragment = Self.loadGlobalMemoryFragment(directory: sessionMemoryDirectory) {
                 userSystemPrompt += "\n\n" + memoryFragment
             }
-            if let dailyFragment = Self.loadRecentDailyMemoryFragment() {
+            if let dailyFragment = Self.loadRecentDailyMemoryFragment(directory: sessionMemoryDirectory) {
                 userSystemPrompt += "\n\n" + dailyFragment
             }
         }
@@ -6664,10 +6696,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 // new provider must respect the per-session memoryEnabled
                 // toggle the same way the initial system prompt did.
                 if memoryEnabled {
-                    if let memoryFragment = Self.loadGlobalMemoryFragment() {
+                    if let memoryFragment = Self.loadGlobalMemoryFragment(directory: sessionMemoryDirectory) {
                         userSystemPrompt += "\n\n" + memoryFragment
                     }
-                    if let dailyFragment = Self.loadRecentDailyMemoryFragment() {
+                    if let dailyFragment = Self.loadRecentDailyMemoryFragment(directory: sessionMemoryDirectory) {
                         userSystemPrompt += "\n\n" + dailyFragment
                     }
                 }

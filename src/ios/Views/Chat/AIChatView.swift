@@ -1871,7 +1871,8 @@ struct AIChatView: View {
         // that view simply happened to be on screen. ContentView now stamps the
         // destination on the buffer before navigating; a nil stamp (cold
         // launch, where the launch flow owns the choice) still passes.
-        guard shareCoordinator.bufferTargets(sessionId, draftId: draftId) else {
+        guard isChatViewVisible else { return }
+        guard shareCoordinator.bufferTargets(sessionId ?? vm.sessionId, draftId: draftId) else {
             minisLogger.info("[Share] injectPendingShareIfNeeded — buffer is addressed to another session (mine: sessionId=\(sessionId ?? "nil") draftId=\(draftId ?? "nil")); leaving it")
             return
         }
@@ -7198,11 +7199,16 @@ private struct MinisSessionPresentationModifier: ViewModifier {
 private struct MinisLegacyTranscript: View {
     @ObservedObject var vm: AIChatViewModel
     let bottomInset: CGFloat
+    @State private var followingBottom = true
+    @State private var scrollRevision = 0
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 20) {
+                // iOS 15 LazyVStack can retain invalid estimated heights after
+                // asynchronous DB loads and variable-height streaming updates.
+                // Eager layout trades memory for stable, immediately visible rows.
+                VStack(alignment: .leading, spacing: 20) {
                     ForEach(vm.messages) { message in
                         MinisLegacyTranscriptRow(message: message)
                             .id(message.id)
@@ -7217,19 +7223,46 @@ private struct MinisLegacyTranscript: View {
                         .accessibilityElement(children: .combine)
                     }
                     Color.clear.frame(height: bottomInset).id("legacyTranscriptBottom")
+                        .background(GeometryReader { geometry in
+                            Color.clear.preference(key: MinisLegacyBottomPositionKey.self,
+                                                   value: geometry.frame(in: .named("legacyTranscriptViewport")).maxY)
+                        })
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .coordinateSpace(name: "legacyTranscriptViewport")
+            .background(GeometryReader { geometry in
+                Color.clear.onPreferenceChange(MinisLegacyBottomPositionKey.self) { bottom in
+                    followingBottom = bottom <= geometry.size.height + 80
+                }
+            })
+            .onAppear { scrollRevision += 1 }
             .onReceive(vm.forceScrollToBottom) { _ in
-                proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
+                followingBottom = true
+                scrollRevision += 1
             }
             .onChange(of: vm.messages.count) { _ in
+                if followingBottom || !vm.hasCompletedInitialLoad { scrollRevision += 1 }
+            }
+            .onChange(of: vm.isLoadingSession) { loading in
+                if !loading { scrollRevision += 1 }
+            }
+            .task(id: scrollRevision) {
+                // The scroll target must exist and have its final loaded height.
+                // Cancel the obsolete task when another load/scroll supersedes it.
+                await Task.yield()
+                guard !Task.isCancelled else { return }
                 proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
             }
         }
     }
+}
+
+private struct MinisLegacyBottomPositionKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 private struct MinisLegacyTranscriptRow: View {

@@ -286,15 +286,28 @@ struct MinisGroupConfiguration: Codable {
 }
 
 enum MinisGroupConfigurationStore {
+    static func memoryDirectory(_ folderID: String) -> URL {
+        // IDs are data, never host path segments (including imported IDs).
+        let key = folderID.utf8.map { String(format: "%02x", $0) }.joined()
+        return AIChatViewModel.minisConfigRoot
+            .appendingPathComponent("group-memory", isDirectory: true)
+            .appendingPathComponent(key, isDirectory: true)
+    }
+
     static func load(_ folderID: String) -> MinisGroupConfiguration {
-        guard let data = UserDefaults.standard.data(forKey: "group.configuration." + folderID),
-              let value = try? JSONDecoder().decode(MinisGroupConfiguration.self, from: data) else {
-            return MinisGroupConfiguration()
+        var value = UserDefaults.standard.data(forKey: "group.configuration." + folderID)
+            .flatMap { try? JSONDecoder().decode(MinisGroupConfiguration.self, from: $0) }
+            ?? MinisGroupConfiguration()
+        if let memory = try? String(contentsOf: memoryDirectory(folderID).appendingPathComponent("GLOBAL.md"), encoding: .utf8) {
+            value.memory = memory
         }
         return value
     }
-    static func save(_ value: MinisGroupConfiguration, folderID: String) {
-        guard let data = try? JSONEncoder().encode(value) else { return }
+    static func save(_ value: MinisGroupConfiguration, folderID: String) throws {
+        let data = try JSONEncoder().encode(value)
+        let dir = memoryDirectory(folderID)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try value.memory.write(to: dir.appendingPathComponent("GLOBAL.md"), atomically: true, encoding: .utf8)
         UserDefaults.standard.set(data, forKey: "group.configuration." + folderID)
     }
 }
@@ -304,6 +317,7 @@ struct MinisGroupConfigurationView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var skills = SkillStore.shared
     @State private var configuration: MinisGroupConfiguration
+    @State private var saveError: String?
 
     init(folder: ChatFolder) {
         self.folder = folder
@@ -334,21 +348,26 @@ struct MinisGroupConfigurationView: View {
                     } label: { Label("灵魂", systemImage: "sparkles") }
                     NavigationLink {
                         Form {
-                            Text("本组记忆草稿独立保存，不会自动复制全局记忆。")
+                            Text("本组独立的长期记忆。日记由记忆工具保存到本组目录，不会混入全局或其他分组。")
                             TextEditor(text: $configuration.memory).frame(minHeight: 240)
                         }.navigationTitle("记忆")
                     } label: { Label("记忆", systemImage: "brain.head.profile") }
                 } footer: {
-                    Text("技能默认值已接入主聊天任务，在下一次任务启动时读取；会话覆盖优先。灵魂和记忆仍仅为本机草稿，尚未用于模型请求或隔离读写。此配置暂不云同步。")
+                    Text("保存后在下一次任务启动时生效。技能：会话覆盖优先于分组默认；灵魂留空继承全局；分组记忆独立读写，记忆开关仍有效。分组配置及记忆暂不云同步。")
                 }
             }
             .navigationTitle(folder.name)
+            .alert("保存失败", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+                Button("确定") { saveError = nil }
+            } message: { Text(saveError ?? "") }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
-                        MinisGroupConfigurationStore.save(configuration, folderID: folder.id)
-                        dismiss()
+                        do {
+                            try MinisGroupConfigurationStore.save(configuration, folderID: folder.id)
+                            dismiss()
+                        } catch { saveError = error.localizedDescription }
                     }
                 }
             }

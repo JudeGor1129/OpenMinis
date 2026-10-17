@@ -35,7 +35,7 @@ struct SessionMemoryView: View {
                         ForEach(toolMemories) { item in
                             NavigationLink {
                                 if item.isWrite {
-                                    MemoryWriteDetailView(item: item)
+                                    MemoryWriteDetailView(item: item, memoryDirectory: vm.sessionMemoryDirectory)
                                 } else {
                                     MemoryGetDetailView(item: item)
                                 }
@@ -93,15 +93,17 @@ struct SessionMemoryView: View {
     private var autoInjected: [AutoItem] {
         var items: [AutoItem] = []
         let fm = FileManager.default
-        let memDir = AIChatViewModel.minisMemoryPersistentDir
+        let memDir = vm.sessionMemoryDirectory
 
         // SOUL.md — listed first because it's the identity/personality
         // layer that SystemPromptBuilder.identitySection() injects at
         // the very top of every turn's system prompt. The Memory Sheet
         // previously only surfaced GLOBAL.md + daily logs, so users had
         // no way to confirm SOUL.md was reaching the model.
-        let soulURL = memDir.appendingPathComponent("SOUL.md")
-        if fm.fileExists(atPath: soulURL.path),
+        let soulURL = AIChatViewModel.minisMemoryPersistentDir.appendingPathComponent("SOUL.md")
+        if let soul = vm.taskGroupSoul, !soul.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            items.append(AutoItem(name: "分组灵魂", detail: "分组设置", icon: "person.fill", content: soul, fileURL: nil))
+        } else if fm.fileExists(atPath: soulURL.path),
            let content = try? String(contentsOf: soulURL, encoding: .utf8),
            !content.isEmpty {
             let lineCount = content.components(separatedBy: "\n").count
@@ -333,6 +335,7 @@ private struct MemoryContentView: View {
 
 private struct MemoryWriteDetailView: View {
     let item: SessionMemoryView.ToolMemoryItem
+    let memoryDirectory: URL
     @Environment(\.dismiss) private var dismiss
     @State private var isEditing = false
     @State private var editedContent: String = ""
@@ -440,7 +443,7 @@ private struct MemoryWriteDetailView: View {
     /// Returns the filename on success, nil on failure.
     private func replaceEntryInLog(oldContent: String, newContent: String) -> String? {
         let fm = FileManager.default
-        let memDir = AIChatViewModel.minisMemoryPersistentDir
+        let memDir = memoryDirectory
         let dateFmt = DateFormatter()
         dateFmt.dateFormat = "yyyy-MM-dd"
         let candidates = [
@@ -494,7 +497,7 @@ private struct MemoryWriteDetailView: View {
         guard let written = item.writtenContent else {
             return AppLocalized("No written content to revoke.")
         }
-        return MemoryWriteRevoker.revoke(writtenContent: written)
+        return MemoryWriteRevoker.revoke(writtenContent: written, directory: memoryDirectory)
     }
 }
 

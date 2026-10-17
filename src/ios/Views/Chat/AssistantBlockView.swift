@@ -568,7 +568,7 @@ struct ToolCapsuleView: View {
                 // `content` parse can still come back empty here (malformed or
                 // still-streaming args). Report that rather than failing silently.
                 if let written = memoryWriteContent {
-                    revokeMemoryResult = MemoryWriteRevoker.revoke(writtenContent: written)
+                    revokeMemoryResult = MemoryWriteRevoker.revoke(writtenContent: written, directory: vm.sessionMemoryDirectory)
                 } else {
                     revokeMemoryResult = AppLocalized("No written content to revoke.")
                 }

@@ -22,14 +22,14 @@ enum MemoryWriteRevoker {
     /// Returns a user-facing result string — `"Removed from <date>.md"` on
     /// success, otherwise a not-found / write-error message. Callers surface it
     /// directly in an alert or toast.
-    static func revoke(writtenContent: String) -> String {
+    static func revoke(writtenContent: String, directory: URL) -> String {
         let written = writtenContent.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !written.isEmpty else {
             return AppLocalized("No written content to revoke.")
         }
 
         let fm = FileManager.default
-        let memDir = AIChatViewModel.minisMemoryPersistentDir
+        let memDir = directory
 
         let dateFmt = DateFormatter()
         dateFmt.dateFormat = "yyyy-MM-dd"

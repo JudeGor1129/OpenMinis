@@ -31,10 +31,19 @@ private struct LegacyContentView: View {
     @State private var showingBrowserSettings = false
     @State private var keepScreenAwake = false
     @StateObject private var browserPool = BrowserTabPool()
+    @ObservedObject private var shareCoordinator = ShareCoordinator.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationView {
             List {
+                Section {
+                    NavigationLink {
+                        LegacyGroupManagerView()
+                    } label: {
+                        Label("会话分组", systemImage: "folder")
+                    }
+                }
                 if sessions.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "bubble.left.and.bubble.right")
@@ -110,7 +119,17 @@ private struct LegacyContentView: View {
                 )
                 .hidden()
             )
-            .onAppear(perform: reload)
+            .onAppear {
+                reload()
+                shareCoordinator.checkForPendingShare()
+                routePendingShare()
+            }
+            .onChange(of: shareCoordinator.hasPendingShare) { pending in
+                if pending { routePendingShare() }
+            }
+            .onChange(of: scenePhase) { phase in
+                if phase == .active { shareCoordinator.checkForPendingShare() }
+            }
             .sheet(isPresented: $showingSettings, onDismiss: reload) {
                 LegacySettingsSheet()
             }
@@ -136,6 +155,31 @@ private struct LegacyContentView: View {
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+    }
+
+    @MainActor
+    private func routePendingShare() {
+        guard shareCoordinator.hasPendingShare else { return }
+        guard let pending = SharedContainerStore.loadPendingShare() else {
+            shareCoordinator.hasPendingShare = false
+            ShareFeedbackToast.show("未读取到分享内容，请重新分享文件。")
+            return
+        }
+        // The foreground chat owns delivery when it is visible. Otherwise use
+        // an explicit draft; never let a hidden mounted chat steal this share.
+        let target = AIChatViewModel.activeSessionId ?? (showingDraft ? draftID : "__new__\(UUID().uuidString)")
+        shareCoordinator.storeBuffer(pending, targetSessionId: target)
+        SharedContainerStore.clearPendingShare()
+        shareCoordinator.hasPendingShare = false
+        if AIChatViewModel.activeSessionId == nil {
+            showingSettings = false
+            showingTerminal = false
+            showingRootfs = false
+            showingBrowser = false
+            showingBrowserSettings = false
+            draftID = target
+            showingDraft = true
+        }
     }
 
     private func reload() {
@@ -457,6 +501,162 @@ private struct LegacySessionRow: View {
             await ChatStore.shared.deleteSession(session.id)
             selectedSessions.remove(session.id)
             onChange()
+        }
+    }
+}
+
+// iOS 15 destination-based group management: never depends on ModernContentView.
+private struct LegacyGroupManagerView: View {
+    @State private var folders: [ChatFolder] = []
+    @State private var creating = false
+
+    var body: some View {
+        List {
+            Button { creating = true } label: { Label("新建分组", systemImage: "folder.badge.plus") }
+            if folders.isEmpty { Text("暂无分组，点上方新建。长按会话可选择移动到分组。") }
+            ForEach(folders) { folder in
+                NavigationLink(destination: LegacyGroupDetailView(folder: folder)) {
+                    Label(folder.name, systemImage: folder.icon ?? "folder")
+                }
+            }
+        }
+        .navigationTitle("会话分组")
+        .onAppear(perform: reload)
+        .sheet(isPresented: $creating, onDismiss: reload) {
+            LegacyGroupNameSheet(title: "新建分组", initialName: "") { name in
+                Task { @MainActor in
+                    _ = await ChatStore.shared.createFolder(name: name)
+                    creating = false
+                    reload()
+                }
+            }
+        }
+    }
+
+    private func reload() {
+        Task { @MainActor in folders = await ChatStore.shared.listFolders() }
+    }
+}
+
+private struct LegacyGroupNameSheet: View {
+    let title: String
+    let onSave: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+
+    init(title: String, initialName: String, onSave: @escaping (String) -> Void) {
+        self.title = title
+        self.onSave = onSave
+        _name = State(initialValue: initialName)
+    }
+
+    var body: some View {
+        MinisNavigationContainer {
+            Form { TextField("分组名称", text: $name) }
+                .navigationTitle(title)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("保存") { onSave(name.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+        }
+    }
+}
+
+private struct LegacyGroupDetailView: View {
+    @State var folder: ChatFolder
+    @Environment(\.dismiss) private var dismiss
+    @State private var sessions: [ChatSession] = []
+    @State private var selected: Set<String> = []
+    @State private var selectionMode = false
+    @State private var configuring = false
+    @State private var renaming = false
+    @State private var moving = false
+    @State private var dissolving = false
+
+    var body: some View {
+        List {
+            Section {
+                Button { configuring = true } label: { Label("分组功能设置 · 技能 / 灵魂 / 记忆", systemImage: "slider.horizontal.3") }
+                Button { moving = true } label: { Label("添加会话到分组", systemImage: "plus.bubble") }
+                Button { renaming = true } label: { Label("重命名", systemImage: "pencil") }
+                Button { dissolving = true } label: { Label("解散分组（保留会话）", systemImage: "folder.badge.minus") }
+            }
+            Section("组内会话") {
+                if sessions.isEmpty { Text("暂无会话；可以添加已有会话。") }
+                ForEach(sessions) { session in
+                    LegacySessionRow(session: session, selectionMode: $selectionMode, selectedSessions: $selected, onChange: reload)
+                }
+            }
+        }
+        .navigationTitle(folder.name)
+        .onAppear(perform: reload)
+        .sheet(isPresented: $configuring, onDismiss: reload) { MinisGroupConfigurationView(folder: folder) }
+        .sheet(isPresented: $moving, onDismiss: reload) { LegacyGroupSessionPicker(folderID: folder.id) }
+        .sheet(isPresented: $renaming) {
+            LegacyGroupNameSheet(title: "重命名分组", initialName: folder.name) { name in
+                Task { @MainActor in
+                    await ChatStore.shared.renameFolder(folder.id, name: name)
+                    folder.name = name
+                    renaming = false
+                }
+            }
+        }
+        .alert("解散分组？", isPresented: $dissolving) {
+            Button("解散", role: .destructive) {
+                Task { @MainActor in
+                    _ = await ChatStore.shared.dissolveFolder(folder.id)
+                    dismiss()
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: { Text("会话和文件不会删除，会话将回到未分组列表。") }
+    }
+
+    private func reload() {
+        Task { @MainActor in
+            let ids = Set(await ChatStore.shared.sessionIdsInFolder(folder.id))
+            sessions = await ChatStore.shared.listSessions().filter { ids.contains($0.id) && !$0.isChild }
+        }
+    }
+}
+
+private struct LegacyGroupSessionPicker: View {
+    let folderID: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var sessions: [ChatSession] = []
+    @State private var selected: Set<String> = []
+    @State private var saving = false
+
+    var body: some View {
+        MinisNavigationContainer {
+            List(sessions) { session in
+                Button {
+                    if selected.contains(session.id) { selected.remove(session.id) }
+                    else { selected.insert(session.id) }
+                } label: {
+                    HStack {
+                        Image(systemName: selected.contains(session.id) ? "checkmark.circle.fill" : "circle")
+                        Text(session.title ?? "New Conversation")
+                    }
+                }
+            }
+            .navigationTitle("添加会话到分组")
+            .task { sessions = await ChatStore.shared.listSessions().filter { !$0.isChild } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("移动所选 (\(selected.count))") {
+                        saving = true
+                        Task { @MainActor in
+                            await ChatStore.shared.setFolder(folderID, forSessions: Array(selected))
+                            dismiss()
+                        }
+                    }.disabled(selected.isEmpty || saving)
+                }
+            }
         }
     }
 }

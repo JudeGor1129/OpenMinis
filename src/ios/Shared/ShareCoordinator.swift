@@ -138,7 +138,7 @@ final class ShareCoordinator: ObservableObject {
     /// attachment file names are UUID-suffixed so distinct files never
     /// collide, while a doubled delivery of the same record stays single.
     /// bufferedAt renews so the merged buffer gets a fresh TTL window.
-    func storeBuffer(_ share: PendingShare) {
+    func storeBuffer(_ share: PendingShare, targetSessionId: String? = nil) {
         if let existing = pendingShareBuffer {
             var merged = existing.share.items
             for item in share.items where !merged.contains(where: { $0.kind == item.kind && $0.value == item.value }) {
@@ -148,12 +148,12 @@ final class ShareCoordinator: ObservableObject {
             // Keep the existing target: a merge means the first share's
             // destination has already been decided (and possibly navigated to).
             pendingShareBuffer = PendingShareBuffer(share: mergedShare, bufferedAt: Date(),
-                                                    targetSessionId: existing.targetSessionId)
+                                                    targetSessionId: existing.targetSessionId ?? targetSessionId)
             bufferVersion += 1
             shareLog.info("[Share] storeBuffer: MERGED \(existing.share.items.count) existing + \(share.items.count) new → \(merged.count) items (v\(bufferVersion)) target=\(existing.targetSessionId ?? "nil")")
             return
         }
-        pendingShareBuffer = PendingShareBuffer(share: share, bufferedAt: Date(), targetSessionId: nil)
+        pendingShareBuffer = PendingShareBuffer(share: share, bufferedAt: Date(), targetSessionId: targetSessionId)
         bufferVersion += 1
         shareLog.info("[Share] storeBuffer: \(share.items.count) items buffered (v\(bufferVersion)) at \(Date())")
     }
