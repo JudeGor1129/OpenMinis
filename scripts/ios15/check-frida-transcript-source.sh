@@ -20,3 +20,12 @@ grep -q 'if rawIndex.isMultiple(of: 20) { await Task.yield() }' "$persist"
 grep -q 'let isLast = aIdx == lastAssistantIndex' "$persist"
 printf 'PASS: Frida read-only tool wiring, transcript alignment and cooperative history reconstruction.\n'
 printf 'NOTE: not proof of Swift/ObjC compilation, device process visibility or scroll performance.\n'
+
+# Diagnose backend visibility without attributing every empty list to sandboxing.
+grep -q 'g_strcmp0(deviceID, "local")' "$bridge"
+grep -q 'g_strcmp0(deviceID, "socket")' "$bridge"
+grep -q 'g_cancellable_cancel(cancel)' "$bridge"
+grep -q 'Empty result from this backend; cause undetermined' "$bridge"
+grep -q 'No built-in backend completed process enumeration' "$bridge"
+! grep -q 'frida_device_manager_get_device_by_type_sync' "$bridge"
+printf 'PASS: built-in backend allowlist, cooperative cancellation and empty-result diagnostics.\n'

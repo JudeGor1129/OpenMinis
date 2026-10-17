@@ -267,7 +267,7 @@ extension AIChatViewModel {
             ))
             tools.append(AgentToolDefinition(
                 name: "frida_processes",
-                description: "Read-only enumeration of local process PIDs and names using embedded Frida Core. Only use for authorized device diagnostics. Does not attach, spawn, inject or execute scripts. Visibility depends on the app's privileges, and does not prove attach permission. Returns up to 300 entries.",
+                description: "Read-only process PID/name queries using embedded Frida Core, limited to built-in local and socket backends already present in the device manager. Does not add remote endpoints. A socket query may contact an existing local Frida service. Reports each backend separately with cooperative 5-second cancellation per query and up to 300 combined entries. Only for authorized device diagnostics; never attaches, spawns or executes scripts. An empty result does not establish its cause, server availability or attach permission.",
                 parameters: [:],
                 required: [],
                 propertyOrdering: []

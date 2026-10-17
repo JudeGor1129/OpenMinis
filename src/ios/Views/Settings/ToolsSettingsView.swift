@@ -137,7 +137,7 @@ struct ToolsSettingsView: View {
             Section {
                 toolRow("Frida Core（诊断）", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
                     .disabled(!OpenMinisFridaCoreAvailable())
-                Text(OpenMinisFridaCoreAvailable() ? "已内置 Frida Core。启用后可检查初始化、设备枚举和本机进程 PID／名称。仅只读诊断，不附加进程、不执行脚本；可见范围取决于实际权限。" : "当前构建没有内置 Frida Core。")
+                Text(OpenMinisFridaCoreAvailable() ? "已内置 Frida Core。启用后可检查初始化、设备枚举，按本地／Socket 后端查询进程 PID 和名称；Socket 查询可能连接已有的本机 Frida 服务。只读、不附加、不执行脚本；空列表不能确定原因或附加权限。" : "当前构建没有内置 Frida Core。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
