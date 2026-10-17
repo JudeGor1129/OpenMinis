@@ -370,7 +370,7 @@ extension AIChatViewModel {
 
         do {
         switch tu.name {
-        case "frida_status":
+        case "frida_status", "frida_processes":
             guard AgentToolSwitch.frida.isEnabled else {
                 toolOutput = Self.toolsDisabledMessage
                 toolSuccess = false
@@ -381,10 +381,11 @@ extension AIChatViewModel {
                 toolSuccess = false
                 break
             }
+            let listProcesses = tu.name == "frida_processes"
             toolOutput = await withCheckedContinuation { continuation in
-                OpenMinisFridaCoreStatusAsync { result in
-                    continuation.resume(returning: result)
-                }
+                let completion: (String) -> Void = { result in continuation.resume(returning: result) }
+                if listProcesses { OpenMinisFridaProcessesAsync(completion) }
+                else { OpenMinisFridaCoreStatusAsync(completion) }
             }
             toolSuccess = !toolOutput.contains("ERROR:") && !Task.isCancelled
         case "ask_user":

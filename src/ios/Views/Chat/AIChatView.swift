@@ -7203,6 +7203,7 @@ private struct MinisLegacyTranscript: View {
     @State private var scrollRevision = 0
     @State private var visibleLimit = 40
     @State private var userDragging = false
+    @State private var viewportHeight: CGFloat = 0
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -7245,12 +7246,20 @@ private struct MinisLegacyTranscript: View {
             }
             .coordinateSpace(name: "legacyTranscriptViewport")
             .background(GeometryReader { geometry in
-                Color.clear.onPreferenceChange(MinisLegacyBottomPositionKey.self) { bottom in
-                    if userDragging || bottom <= geometry.size.height + 80 {
-                        followingBottom = bottom <= geometry.size.height + 80
+                Color.clear
+                    .onAppear { viewportHeight = geometry.size.height }
+                    .onChange(of: geometry.size.height) { height in
+                        viewportHeight = height
+                        if followingBottom && !userDragging { scrollRevision += 1 }
                     }
-                }
             })
+            .onPreferenceChange(MinisLegacyBottomPositionKey.self) { bottom in
+                // Observe on the ancestor receiving the content's preference,
+                // not its background sibling. Correct final layout changes too.
+                let nearBottom = bottom <= viewportHeight + 80
+                if userDragging { followingBottom = nearBottom }
+                else if followingBottom && !nearBottom { scrollRevision += 1 }
+            }
             .onAppear { scrollRevision += 1 }
             .onReceive(vm.forceScrollToBottom) { _ in
                 followingBottom = true
@@ -7291,7 +7300,7 @@ private struct MinisLegacyTranscriptRow: View {
     @ObservedObject var message: ChatMessage
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 10) {
             Label(message.role == .user ? "我" : "模型", systemImage: message.role == .user ? "person.fill" : "sparkles")
                 .font(.caption.weight(.semibold))
                 .foregroundColor(message.role == .user ? Color.blue : Color.secondary)
@@ -7306,10 +7315,12 @@ private struct MinisLegacyTranscriptRow: View {
             if !message.content.isEmpty {
                 Text(verbatim: message.content)
                     .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(message.role == .user ? .trailing : .leading)
+                    .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
                     .textSelection(.enabled)
             }
             ForEach(message.blocks) { block in
-                MinisLegacyTranscriptBlock(block: block)
+                MinisLegacyTranscriptBlock(block: block, isUser: message.role == .user)
             }
         }
         .padding(message.role == .user ? 12 : 0)
@@ -7319,12 +7330,14 @@ private struct MinisLegacyTranscriptRow: View {
 
 private struct MinisLegacyTranscriptBlock: View {
     @ObservedObject var block: AssistantBlock
+    let isUser: Bool
 
     var body: some View {
         if !block.content.isEmpty {
             Text(verbatim: block.content)
                 .font(.body)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(isUser ? .trailing : .leading)
+                .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }

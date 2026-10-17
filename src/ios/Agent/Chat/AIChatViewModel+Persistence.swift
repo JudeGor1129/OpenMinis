@@ -297,7 +297,10 @@ extension AIChatViewModel {
         // Determine whether thinking blocks should be shown based on session config
         let showThinking = ProviderConfigStore.shared.inferenceConfig(for: sessionId)?.thinkingLevel.isEnabled ?? false
 
-        for raw in rawMessages {
+        for (rawIndex, raw) in rawMessages.enumerated() {
+            // Yield during history reconstruction so navigation stays responsive.
+            // Keep every record in the model's history; this is not truncation.
+            if rawIndex.isMultiple(of: 20) { await Task.yield() }
             // Always rebuild agent history (every message matters for API context).
             // Phase B: stamp the DB row id into dbMessageId so compact can resolve
             // boundaries by id after restore.
@@ -427,13 +430,14 @@ extension AIChatViewModel {
         // session load — hundreds of info lines for a long session), and the
         // block descriptors carry lengths only: the old head/tail excerpts put
         // 40 chars of message content per block into the log files.
+        let lastAssistantIndex = loadedUIMessages.lastIndex(where: { $0.role == .assistant })
         for (aIdx, aMsg) in loadedUIMessages.enumerated() where aMsg.role == .assistant {
             let textBlocks = aMsg.blocks.enumerated().compactMap { (i, b) -> String? in
                 guard b.kind == .text else { return nil }
                 return "[\(i)] len=\(b.content.count)"
             }
             let toolBlocks = aMsg.blocks.filter { $0.kind != .text && $0.kind != .thinking }.count
-            let isLast = aIdx == loadedUIMessages.lastIndex(where: { $0.role == .assistant })
+            let isLast = aIdx == lastAssistantIndex
             logger.debug("[BlocksLost] MERGE assistant[\(aIdx)] totalBlocks=\(aMsg.blocks.count) textBlocks=\(textBlocks.count) toolBlocks=\(toolBlocks) isLast=\(isLast) srcSO=\(aMsg.sourceSortOrder ?? -1)...\(aMsg.lastSourceSortOrder ?? -1) blocks=[\(textBlocks.joined(separator: " "))]")
         }
 

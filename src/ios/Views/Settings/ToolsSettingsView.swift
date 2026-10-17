@@ -77,7 +77,7 @@ enum AgentToolSwitch: String, CaseIterable {
     nonisolated static func governing(_ toolName: String) -> AgentToolSwitch? {
         switch toolName {
         case "ask_user": return .interaction
-        case "frida_status": return .frida
+        case "frida_status", "frida_processes": return .frida
         case "browser_use": return .browser
         case SubAgentDefinition.toolName: return .agents
         default: return nil
@@ -137,7 +137,7 @@ struct ToolsSettingsView: View {
             Section {
                 toolRow("Frida Core（诊断）", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
                     .disabled(!OpenMinisFridaCoreAvailable())
-                Text(OpenMinisFridaCoreAvailable() ? "已内置 Frida Core。启用后可让模型检查初始化和设备枚举；不附加进程、不执行脚本。" : "当前构建没有内置 Frida Core。")
+                Text(OpenMinisFridaCoreAvailable() ? "已内置 Frida Core。启用后可检查初始化、设备枚举和本机进程 PID／名称。仅只读诊断，不附加进程、不执行脚本；可见范围取决于实际权限。" : "当前构建没有内置 Frida Core。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

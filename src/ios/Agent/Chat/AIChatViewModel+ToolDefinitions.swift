@@ -265,6 +265,13 @@ extension AIChatViewModel {
                 required: [],
                 propertyOrdering: []
             ))
+            tools.append(AgentToolDefinition(
+                name: "frida_processes",
+                description: "Read-only enumeration of local process PIDs and names using embedded Frida Core. Only use for authorized device diagnostics. Does not attach, spawn, inject or execute scripts. Visibility depends on the app's privileges, and does not prove attach permission. Returns up to 300 entries.",
+                parameters: [:],
+                required: [],
+                propertyOrdering: []
+            ))
         }
         return tools
     }
