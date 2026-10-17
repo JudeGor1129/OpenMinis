@@ -7211,6 +7211,13 @@ private struct MinisLegacyTranscriptRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // Match the normal transcript: persisted metadata wins over the
+            // temporary input cache, so drain/reload never duplicates a file.
+            if !message.attachments.isEmpty {
+                UserAttachmentList(attachments: message.attachments)
+            } else if !message.inputAttachments.isEmpty {
+                QueuedAttachmentPreview(attachments: message.inputAttachments)
+            }
             if !message.content.isEmpty {
                 Text(verbatim: message.content)
                     .fixedSize(horizontal: false, vertical: true)
