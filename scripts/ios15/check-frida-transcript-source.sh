@@ -40,3 +40,9 @@ printf 'PASS: built-in backend allowlist, cooperative cancellation and empty-res
 grep -q 'onPreferenceChange(MinisLegacyContentHeightKey.self)' "$view"
 grep -q 'value: content.size.height' "$view"
 printf 'PASS: cached re-entry and content-height driven streaming follow wiring.\n'
+
+# Native mount overlay must not be recopied per session VM.
+grep -q 'guard !defaultOverlayApplied else { return }' src/ios/iSH/RootfsManager.swift
+grep -q 'defaultOverlayApplied = !overlayFailed' src/ios/iSH/RootfsManager.swift
+grep -q 'visibleLimit = 12' "$view"
+printf 'PASS: process-local mount overlay guard and smaller initial layout batch.\n'

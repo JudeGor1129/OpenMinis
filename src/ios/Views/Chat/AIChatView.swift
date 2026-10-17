@@ -7201,7 +7201,7 @@ private struct MinisLegacyTranscript: View {
     let bottomInset: CGFloat
     @State private var followingBottom = true
     @State private var scrollRevision = 0
-    @State private var visibleLimit = 40
+    @State private var visibleLimit = 12
     @State private var userDragging = false
     @State private var viewportHeight: CGFloat = 0
 
@@ -7341,7 +7341,9 @@ private struct MinisLegacyTranscriptRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(message.role == .user ? .trailing : .leading)
                     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-                    .textSelection(.enabled)
+                    .contextMenu {
+                        Button("复制正文") { UIPasteboard.general.string = message.content }
+                    }
             }
             ForEach(message.blocks) { block in
                 MinisLegacyTranscriptBlock(block: block, isUser: message.role == .user)
@@ -7363,7 +7365,9 @@ private struct MinisLegacyTranscriptBlock: View {
                 .multilineTextAlignment(isUser ? .trailing : .leading)
                 .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+                .contextMenu {
+                    Button("复制正文") { UIPasteboard.general.string = block.content }
+                }
         }
     }
 }

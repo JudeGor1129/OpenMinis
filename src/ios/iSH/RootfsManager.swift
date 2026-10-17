@@ -290,7 +290,14 @@ class RootfsManager {
 
     /// Overlay default configuration files from the bundle onto the rootfs.
     /// Runs on every boot so app updates with new defaults take effect.
+    private let defaultOverlayLock = NSLock()
+    private var defaultOverlayApplied = false
+
     func applyDefaultMountOverlay() {
+        defaultOverlayLock.lock()
+        defer { defaultOverlayLock.unlock() }
+        guard !defaultOverlayApplied else { return }
+        var overlayFailed = false
         let totalStart = CFAbsoluteTimeGetCurrent()
         logger.info("[DefaultMount] applyDefaultMountOverlay() called")
 
@@ -359,6 +366,7 @@ class RootfsManager {
                 ensureFakefsMetadata(for: relativePath, isDirectory: false, mode: fakefsMode)
                 metaDbTotalMs += (CFAbsoluteTimeGetCurrent() - metaStart) * 1000
             } catch {
+                overlayFailed = true
                 logger.error("[DefaultMount] ERROR \(relativePath): \(error)")
             }
         }
@@ -380,6 +388,9 @@ class RootfsManager {
         removeExternallyManagedMarker()
         let markerMs = (CFAbsoluteTimeGetCurrent() - markerStart) * 1000
 
+        // Bundle content is immutable until relaunch after an app update.
+        // Retain retry behavior if any file copy failed.
+        defaultOverlayApplied = !overlayFailed
         let totalMs = (CFAbsoluteTimeGetCurrent() - totalStart) * 1000
         let avgCopyMs = fileCount > 0 ? copyTotalMs / Double(fileCount) : 0
         let avgMetaMs = fileCount > 0 ? metaDbTotalMs / Double(fileCount) : 0
