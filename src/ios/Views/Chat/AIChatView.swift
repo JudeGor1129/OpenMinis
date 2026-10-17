@@ -7200,10 +7200,7 @@ private struct MinisLegacyTranscript: View {
     @ObservedObject var vm: AIChatViewModel
     let bottomInset: CGFloat
     @State private var followingBottom = true
-    @State private var scrollRevision = 0
     @State private var visibleLimit = 12
-    @State private var userDragging = false
-    @State private var viewportHeight: CGFloat = 0
 
     var body: some View {
         GeometryReader { viewport in
@@ -7236,88 +7233,88 @@ private struct MinisLegacyTranscript: View {
                         .accessibilityElement(children: .combine)
                     }
                     Color.clear.frame(height: bottomInset).id("legacyTranscriptBottom")
-                        .background(GeometryReader { geometry in
-                            Color.clear.preference(key: MinisLegacyBottomPositionKey.self,
-                                                   value: geometry.frame(in: .named("legacyTranscriptViewport")).maxY)
-                        })
                 }
                 .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
                 .padding(.horizontal, 18)
                 .padding(.top, 12)
-                .background(GeometryReader { content in
-                    Color.clear.preference(key: MinisLegacyContentHeightKey.self,
-                                           value: content.size.height)
-                })
+                .background(MinisLegacyScrollFollow(
+                    enabled: followingBottom,
+                    onFollowingChanged: { followingBottom = $0 }
+                ))
             }
             .frame(width: viewport.size.width, height: viewport.size.height)
             .clipped()
             .coordinateSpace(name: "legacyTranscriptViewport")
-            .onAppear { viewportHeight = viewport.size.height }
-            .onChange(of: viewport.size) { size in
-                viewportHeight = size.height
-                if followingBottom && !userDragging { scrollRevision += 1 }
-            }
-            .onPreferenceChange(MinisLegacyContentHeightKey.self) { _ in
-                // Observes actual layout, including streamed child blocks whose
-                // changes do not publish vm.messages.count. Offset-only changes
-                // never change this preference, so scrolling cannot feed back.
-                guard followingBottom && !userDragging else { return }
-                DispatchQueue.main.async {
-                    guard followingBottom && !userDragging else { return }
-                    proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
-                }
-            }
-            .onPreferenceChange(MinisLegacyBottomPositionKey.self) { bottom in
-                // Measurement must not schedule another scroll: that creates
-                // a scroll -> preference -> task cancellation feedback loop.
-                if userDragging {
-                    followingBottom = bottom <= viewportHeight + 80
-                }
-            }
-            .onAppear { scrollRevision += 1 }
-            .onReceive(vm.forceScrollToBottom) { _ in
-                followingBottom = true
-                scrollRevision += 1
-            }
-            .onChange(of: vm.messages.count) { _ in
-                if followingBottom || !vm.hasCompletedInitialLoad { scrollRevision += 1 }
-            }
+            .onReceive(vm.forceScrollToBottom) { _ in followingBottom = true }
             .onChange(of: vm.isLoadingSession) { loading in
-                if !loading { scrollRevision += 1 }
-            }
-            .onChange(of: bottomInset) { _ in
-                if followingBottom && !userDragging { scrollRevision += 1 }
-            }
-            .simultaneousGesture(DragGesture().onChanged { _ in
-                userDragging = true
-                followingBottom = false
-            }.onEnded { _ in userDragging = false })
-            .task(id: scrollRevision) {
-                // Re-align after the loaded rows and composer settle, not only
-                // after one executor yield. A drag cancels automatic alignment.
-                for delay in [UInt64(60_000_000), UInt64(160_000_000), UInt64(300_000_000)] {
-                    do { try await Task.sleep(nanoseconds: delay) } catch { return }
-                    guard !Task.isCancelled, followingBottom, !userDragging else { return }
-                    var transaction = Transaction(animation: nil)
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
-                    }
-                }
+                if !loading { followingBottom = true }
             }
         }
         }
     }
 }
 
-private struct MinisLegacyContentHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
+// Read the real hosting scroll view after UIKit layout. Never replace its
+// delegate (SwiftUI owns it), and never move it during a drag/deceleration.
+private struct MinisLegacyScrollFollow: UIViewRepresentable {
+    let enabled: Bool
+    let onFollowingChanged: (Bool) -> Void
 
-private struct MinisLegacyBottomPositionKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+    func makeUIView(context: Context) -> Probe { Probe() }
+    func updateUIView(_ view: Probe, context: Context) {
+        view.following = enabled
+        view.onFollowingChanged = onFollowingChanged
+    }
+    static func dismantleUIView(_ view: Probe, coordinator: ()) { view.stop() }
+
+    final class Probe: UIView {
+        var following = true
+        var onFollowingChanged: ((Bool) -> Void)?
+        private var timer: Timer?
+        private var wasMoving = false
+        private var lastSize = CGSize.zero
+        private var lastBounds = CGSize.zero
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            stop()
+            guard window != nil else { return }
+            let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.tick() }
+            self.timer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+        func stop() { timer?.invalidate(); timer = nil }
+        deinit { timer?.invalidate() }
+
+        private func report(_ value: Bool) {
+            guard following != value else { return }
+            following = value
+            onFollowingChanged?(value)
+        }
+        private func tick() {
+            var ancestor = superview
+            while let view = ancestor, !(view is UIScrollView) { ancestor = view.superview }
+            guard let scroll = ancestor as? UIScrollView,
+                  scroll.bounds.height > 0, scroll.contentSize.height > 0 else { return }
+            let inset = scroll.adjustedContentInset
+            let bottom = max(-inset.top, scroll.contentSize.height - scroll.bounds.height + inset.bottom)
+            let moving = scroll.isTracking || scroll.isDragging || scroll.isDecelerating
+            if moving {
+                wasMoving = true
+                report(bottom - scroll.contentOffset.y <= 80)
+                return
+            }
+            if wasMoving {
+                wasMoving = false
+                report(bottom - scroll.contentOffset.y <= 80)
+            }
+            let changed = lastSize != scroll.contentSize || lastBounds != scroll.bounds.size
+            lastSize = scroll.contentSize
+            lastBounds = scroll.bounds.size
+            guard following, changed || abs(scroll.contentOffset.y - bottom) > 1 else { return }
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: bottom), animated: false)
+        }
+    }
 }
 
 private struct MinisLegacyTranscriptRow: View {

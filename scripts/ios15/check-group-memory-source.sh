@@ -33,7 +33,7 @@ printf 'NOTE: full Swift compilation and device share/scroll/isolation tests are
 
 # Version 48 follow-up guards: bounded eager layout, bulk skills and scoped UI.
 grep -q 'vm.messages.suffix(visibleLimit)' src/ios/Views/Chat/AIChatView.swift
-grep -q 'onChange(of: bottomInset)' src/ios/Views/Chat/AIChatView.swift
+grep -q 'lastSize != scroll.contentSize || lastBounds != scroll.bounds.size' src/ios/Views/Chat/AIChatView.swift
 grep -q 'Button("全部开启")' "$skills"
 grep -q 'Button("全部关闭")' "$skills"
 grep -q 'MinisGroupMemorySettings(configuration:' "$skills"

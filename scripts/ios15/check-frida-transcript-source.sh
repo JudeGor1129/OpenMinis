@@ -15,7 +15,7 @@ grep -q 'case "frida_status", "frida_processes": return .frida' src/ios/Views/Se
 ! grep -Eq 'frida_(device_attach|session_create_script|device_spawn)' "$bridge"
 grep -q 'VStack(alignment: message.role == .user ? .trailing : .leading' "$view"
 grep -q 'multilineTextAlignment(isUser ? .trailing : .leading)' "$view"
-grep -q 'onChange(of: viewport.size)' "$view"
+grep -q 'scroll.isTracking || scroll.isDragging || scroll.isDecelerating' "$view"
 grep -q '.frame(width: max(0, viewport.size.width - 36)' "$view"
 ! grep -q 'else if followingBottom && !nearBottom' "$view"
 grep -q 'precacheTail = 0' "$persist"
@@ -37,9 +37,10 @@ printf 'PASS: built-in backend allowlist, cooperative cancellation and empty-res
 # Re-entry should not rebuild full history; streaming tracks content size, not offset.
 ! grep -q 'if cached.isNew || (vm.messages.isEmpty' "$view"
 ! grep -q 'await vm.reloadMessagesFromDB(reason: "AIChatView.onAppear-reuse")' "$view"
-grep -q 'onPreferenceChange(MinisLegacyContentHeightKey.self)' "$view"
-grep -q 'value: content.size.height' "$view"
-printf 'PASS: cached re-entry and content-height driven streaming follow wiring.\n'
+grep -q '.background(MinisLegacyScrollFollow(' "$view"
+grep -q 'scroll.setContentOffset(CGPoint' "$view"
+grep -q 'lastSize != scroll.contentSize' "$view"
+printf 'PASS: cached re-entry and native scroll follow wiring.\n'
 
 # Native mount overlay must not be recopied per session VM.
 grep -q 'guard !defaultOverlayApplied else { return }' src/ios/iSH/RootfsManager.swift
