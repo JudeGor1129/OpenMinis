@@ -126,6 +126,8 @@ jobs:
           xcrun --sdk iphoneos metal --version 2>&1 | tee ci-logs/metal.txt
       - name: Download verified Frida Core devkit
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/ios15/probe-frida.sh 2>&1 | tee ci-logs/frida-probe.txt

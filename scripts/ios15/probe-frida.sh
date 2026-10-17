@@ -6,9 +6,23 @@ VERSION=17.24.0
 ASSET="frida-core-devkit-${VERSION}-ios-arm64.tar.xz"
 OUT="$ROOT/build/frida-probe"
 mkdir -p "$OUT" "$ROOT/ci-logs"
-curl --fail --location --http1.1 --compressed --retry 8 --retry-all-errors --retry-delay 5 \
+# Authenticate only the GitHub API request, never cross-host asset redirects.
+# CI supplies its short-lived read-only token; no token is stored in artifacts.
+api_headers=(-H 'Accept: application/vnd.github+json')
+if [[ -n "${GH_TOKEN:-}" ]]; then
+  api_headers+=(-H "Authorization: Bearer ${GH_TOKEN}")
+fi
+echo 'Fetching Frida release metadata from GitHub API'
+curl --fail-with-body --location --http1.1 --compressed --retry 3 --retry-delay 5 \
   --connect-timeout 60 --max-time 600 \
-  "https://api.github.com/repos/frida/frida/releases/tags/$VERSION" -o "$OUT/release.json"
+  "${api_headers[@]}" \
+  -D "$OUT/api-headers.txt" \
+  "https://api.github.com/repos/frida/frida/releases/tags/$VERSION" -o "$OUT/release.json" || {
+    # Only allowlisted HTTP diagnostics; never dump authorization or cookies.
+    grep -iE '^(HTTP/|x-ratelimit-|retry-after:)' "$OUT/api-headers.txt" || true
+    echo 'error: GitHub release metadata request failed; see release.json for API response' >&2
+    exit 1
+  }
 # Verify the exact asset against the digest GitHub publishes. Fail closed if absent.
 python3 - "$OUT/release.json" "$ASSET" "$OUT/asset.txt" <<'PY'
 import json, sys

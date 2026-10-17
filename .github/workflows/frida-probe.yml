@@ -18,6 +18,8 @@ jobs:
           persist-credentials: false
       - name: Download verified official devkit and test iOS 15 linkage
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p ci-logs
