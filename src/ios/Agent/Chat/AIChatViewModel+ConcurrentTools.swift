@@ -370,6 +370,23 @@ extension AIChatViewModel {
 
         do {
         switch tu.name {
+        case "frida_status":
+            guard AgentToolSwitch.frida.isEnabled else {
+                toolOutput = Self.toolsDisabledMessage
+                toolSuccess = false
+                break
+            }
+            guard OpenMinisFridaCoreAvailable(), !Task.isCancelled else {
+                toolOutput = "Frida unavailable or task cancelled."
+                toolSuccess = false
+                break
+            }
+            toolOutput = await withCheckedContinuation { continuation in
+                OpenMinisFridaCoreStatusAsync { result in
+                    continuation.resume(returning: result)
+                }
+            }
+            toolSuccess = !toolOutput.contains("ERROR:") && !Task.isCancelled
         case "ask_user":
             guard AgentToolSwitch.interaction.isEnabled else {
                 toolOutput = Self.toolsDisabledMessage

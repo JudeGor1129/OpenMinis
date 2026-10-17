@@ -31,6 +31,7 @@ import SwiftUI
 enum AgentToolSwitch: String, CaseIterable {
     case interaction = "agent.tools.interaction.enabled"
     case browser = "agent.tools.browser.enabled"
+    case frida = "agent.tools.frida.enabled"
     case agents = "agent.tools.agents.enabled"
 
     var key: String { rawValue }
@@ -57,6 +58,7 @@ enum AgentToolSwitch: String, CaseIterable {
         case .interaction: return true
         case .browser: return true
         case .agents: return true
+        case .frida: return false
         }
     }
 
@@ -75,6 +77,7 @@ enum AgentToolSwitch: String, CaseIterable {
     nonisolated static func governing(_ toolName: String) -> AgentToolSwitch? {
         switch toolName {
         case "ask_user": return .interaction
+        case "frida_status": return .frida
         case "browser_use": return .browser
         case SubAgentDefinition.toolName: return .agents
         default: return nil
@@ -121,6 +124,7 @@ enum AgentToolSwitch: String, CaseIterable {
 struct ToolsSettingsView: View {
     @AppStorage(AgentToolSwitch.interaction.key) private var interactionEnabled = AgentToolSwitch.interaction.defaultValue
     @AppStorage(AgentToolSwitch.browser.key) private var browserEnabled: Bool = AgentToolSwitch.browser.defaultValue
+    @AppStorage(AgentToolSwitch.frida.key) private var fridaEnabled = AgentToolSwitch.frida.defaultValue
 
     var body: some View {
         Form {
@@ -129,6 +133,13 @@ struct ToolsSettingsView: View {
                 toolRow(AppLocalized("Browser Use"), tool: "browser_use", icon: "globe", isOn: $browserEnabled)
             } footer: {
                 Text(AppLocalized("Browse the web in the in-app browser: open pages, read them, click and type. Stable and on by default. When off, the tool is removed from every conversation — the model does not see it at all."))
+            }
+            Section {
+                toolRow("Frida Core（诊断）", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
+                    .disabled(!OpenMinisFridaCoreAvailable())
+                Text(OpenMinisFridaCoreAvailable() ? "已内置 Frida Core。启用后可让模型检查初始化和设备枚举；不附加进程、不执行脚本。" : "当前构建没有内置 Frida Core。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             // [T-sub-agents-v1] No Agents section here, and deliberately not
             // even a read-only pointer row: the switch belongs to the Sub Agents

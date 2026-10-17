@@ -257,6 +257,15 @@ extension AIChatViewModel {
                 propertyOrdering: ["question"]
             ))
         }
+        if AgentToolSwitch.frida.isEnabled && OpenMinisFridaCoreAvailable() {
+            tools.append(AgentToolDefinition(
+                name: "frida_status",
+                description: "Initialize the embedded Frida Core and enumerate device-manager entries. Diagnostic only: does not connect to a server, attach to a process or execute scripts. Device entries do not prove attach permission.",
+                parameters: [:],
+                required: [],
+                propertyOrdering: []
+            ))
+        }
         return tools
     }
 
