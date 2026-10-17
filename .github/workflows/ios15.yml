@@ -1,6 +1,6 @@
 name: iOS 15 port diagnostics
 
-# This workflow-only change requests a fresh check of the uploaded iOS 15 source snapshot.
+# Rebuild request: regenerate the deleted build 50 IPA without changing app source.
 on:
   push:
     paths:
