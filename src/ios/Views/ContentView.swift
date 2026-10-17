@@ -1376,6 +1376,7 @@ struct ModernContentView: View {
     @State private var folderMoveApplied = false
     // Folder-header context-menu state (rename / dissolve / delete-all / new chat).
     @State private var folderToRename: ChatFolder?
+    @State private var folderToConfigure: ChatFolder?
     @State private var renameFolderText = ""
     @State private var renameFolderDesc = ""
     @State private var folderToDissolve: ChatFolder?
@@ -1999,6 +2000,9 @@ struct ModernContentView: View {
                 folderPickerRequest = nil
             }
             .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $folderToConfigure) { folder in
+            MinisGroupConfigurationView(folder: folder)
         }
         .modifier(FolderAlertsModifier(
             folderToRename: $folderToRename,
@@ -5566,6 +5570,11 @@ struct ModernContentView: View {
                     folderToRename = folder
                 } label: {
                     Label("Rename Group", systemImage: "square.and.pencil")
+                }
+                Button {
+                    folderToConfigure = folder
+                } label: {
+                    Label("分组功能设置", systemImage: "slider.horizontal.3")
                 }
                 Button {
                     newChatInFolder(fid)

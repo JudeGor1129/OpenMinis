@@ -258,3 +258,81 @@ private struct SkillFilePreviewView: View {
         }
     }
 }
+
+// MARK: - Group configuration (local, independent from transcript storage)
+struct MinisGroupConfiguration: Codable {
+    var skillDefaults: [String: Bool] = [:]
+    var soul: String = ""
+    var memory: String = ""
+}
+
+enum MinisGroupConfigurationStore {
+    static func load(_ folderID: String) -> MinisGroupConfiguration {
+        guard let data = UserDefaults.standard.data(forKey: "group.configuration." + folderID),
+              let value = try? JSONDecoder().decode(MinisGroupConfiguration.self, from: data) else {
+            return MinisGroupConfiguration()
+        }
+        return value
+    }
+    static func save(_ value: MinisGroupConfiguration, folderID: String) {
+        guard let data = try? JSONEncoder().encode(value) else { return }
+        UserDefaults.standard.set(data, forKey: "group.configuration." + folderID)
+    }
+}
+
+struct MinisGroupConfigurationView: View {
+    let folder: ChatFolder
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var skills = SkillStore.shared
+    @State private var configuration: MinisGroupConfiguration
+
+    init(folder: ChatFolder) {
+        self.folder = folder
+        _configuration = State(initialValue: MinisGroupConfigurationStore.load(folder.id))
+    }
+
+    var body: some View {
+        MinisNavigationContainer {
+            Form {
+                Section {
+                    NavigationLink {
+                        Form {
+                            ForEach(skills.skills) { skill in
+                                Toggle(skill.name, isOn: Binding(
+                                    get: { configuration.skillDefaults[skill.id] ?? skill.isEnabled },
+                                    set: { configuration.skillDefaults[skill.id] = $0 }
+                                ))
+                            }
+                            Button("恢复全部继承全局") { configuration.skillDefaults = [:] }
+                        }
+                        .navigationTitle("技能")
+                    } label: { Label("技能", systemImage: "puzzlepiece.extension") }
+                    NavigationLink {
+                        Form {
+                            Text("分组专属提示词；留空表示继承全局。")
+                            TextEditor(text: $configuration.soul).frame(minHeight: 240)
+                        }.navigationTitle("灵魂")
+                    } label: { Label("灵魂", systemImage: "sparkles") }
+                    NavigationLink {
+                        Form {
+                            Text("本组记忆草稿独立保存，不会自动复制全局记忆。")
+                            TextEditor(text: $configuration.memory).frame(minHeight: 240)
+                        }.navigationTitle("记忆")
+                    } label: { Label("记忆", systemImage: "brain.head.profile") }
+                } footer: {
+                    Text("配置准备阶段：当前仅保存本机分组设置，尚未用于模型请求、自动记忆或云同步。会话继承及单独覆盖将在后续接入。")
+                }
+            }
+            .navigationTitle(folder.name)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        MinisGroupConfigurationStore.save(configuration, folderID: folder.id)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
