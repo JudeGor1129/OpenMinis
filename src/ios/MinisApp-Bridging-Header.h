@@ -61,6 +61,11 @@
 // CppJieba Chinese word segmentation (ObjC++ wrapper)
 #import "JiebaWrapper.h"
 
+// Optional Frida Core probe. The implementation is linked only when the
+// verified Frida devkit is supplied by the build; otherwise it reports the
+// capability as unavailable without changing normal app behavior.
+#import "Diagnostics/FridaCoreBridge.h"
+
 #endif /* MinisApp_Bridging_Header_h */
 
 // rclone static library (deps/frameworks/Rclone.xcframework) — see RcloneBridge.swift
