@@ -283,6 +283,19 @@ struct MinisGroupConfiguration: Codable {
     var skillDefaults: [String: Bool] = [:]
     var soul: String = ""
     var memory: String = ""
+    // Optional fields preserve configurations saved by version 47.
+    var soulName: String?
+    var soulStyle: String?
+    var soulLanguage: String?
+    var soulIcon: String?
+    var memoryEnabled: Bool?
+
+    var renderedSoul: String {
+        let fields = [soulName.map { "Name: \($0)" }, soulStyle.map { "Style: \($0)" },
+                      soulLanguage.flatMap { $0 == "auto" ? nil : "Language: \($0)" }]
+            .compactMap { $0 }.filter { !$0.hasSuffix(": ") }
+        return (fields + [soul]).filter { !$0.isEmpty }.joined(separator: "\n")
+    }
 }
 
 enum MinisGroupConfigurationStore {
@@ -330,6 +343,12 @@ struct MinisGroupConfigurationView: View {
                 Section {
                     NavigationLink {
                         Form {
+                            Button("全部开启") {
+                                for skill in skills.skills { configuration.skillDefaults[skill.id] = true }
+                            }
+                            Button("全部关闭") {
+                                for skill in skills.skills { configuration.skillDefaults[skill.id] = false }
+                            }
                             ForEach(skills.skills) { skill in
                                 Toggle(skill.name, isOn: Binding(
                                     get: { configuration.skillDefaults[skill.id] ?? skill.isEnabled },
@@ -342,15 +361,38 @@ struct MinisGroupConfigurationView: View {
                     } label: { Label("技能", systemImage: "puzzlepiece.extension") }
                     NavigationLink {
                         Form {
-                            Text("分组专属提示词；留空表示继承全局。")
-                            TextEditor(text: $configuration.soul).frame(minHeight: 240)
+                            Section {
+                                HStack {
+                                    TextField("图标", text: Binding(get: { configuration.soulIcon ?? "✨" }, set: { configuration.soulIcon = $0 }))
+                                        .frame(width: 60)
+                                    Text(configuration.soulName ?? folder.name).font(.headline)
+                                }
+                            }
+                            Section("标识") {
+                                TextField("名称", text: Binding(get: { configuration.soulName ?? "" }, set: { configuration.soulName = $0 }))
+                                TextField("风格：温和、直接、有主见", text: Binding(get: { configuration.soulStyle ?? "" }, set: { configuration.soulStyle = $0 }))
+                                Picker("语言", selection: Binding(get: { configuration.soulLanguage ?? "auto" }, set: { configuration.soulLanguage = $0 })) {
+                                    Text("自动").tag("auto")
+                                    Text("中文").tag("中文")
+                                    Text("English").tag("English")
+                                }
+                            }
+                            Section("人格提示词") {
+                                TextEditor(text: $configuration.soul).frame(minHeight: 240)
+                                Text("\(configuration.soul.count) 字符；留空并清除标识字段则继承全局灵魂。")
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
+                            Button("恢复继承全局", role: .destructive) {
+                                configuration.soul = ""
+                                configuration.soulName = nil
+                                configuration.soulStyle = nil
+                                configuration.soulLanguage = nil
+                                configuration.soulIcon = nil
+                            }
                         }.navigationTitle("灵魂")
                     } label: { Label("灵魂", systemImage: "sparkles") }
                     NavigationLink {
-                        Form {
-                            Text("本组独立的长期记忆。日记由记忆工具保存到本组目录，不会混入全局或其他分组。")
-                            TextEditor(text: $configuration.memory).frame(minHeight: 240)
-                        }.navigationTitle("记忆")
+                        MinisGroupMemorySettings(configuration: $configuration, folderID: folder.id)
                     } label: { Label("记忆", systemImage: "brain.head.profile") }
                 } footer: {
                     Text("保存后在下一次任务启动时生效。技能：会话覆盖优先于分组默认；灵魂留空继承全局；分组记忆独立读写，记忆开关仍有效。分组配置及记忆暂不云同步。")
@@ -372,5 +414,106 @@ struct MinisGroupConfigurationView: View {
                 }
             }
         }
+    }
+}
+
+// Group-scoped memory browser. GLOBAL uses the parent's save transaction;
+// daily files are edited explicitly and never sync into global memory.
+private struct MinisGroupMemorySettings: View {
+    @Binding var configuration: MinisGroupConfiguration
+    let folderID: String
+    @State private var files: [URL] = []
+    @State private var errorMessage: String?
+
+    var body: some View {
+        List {
+            Section {
+                Toggle("本分组启用记忆", isOn: Binding(get: { configuration.memoryEnabled ?? true }, set: { configuration.memoryEnabled = $0 }))
+            } footer: {
+                Text("关闭后，本组任务不注入长期记忆及每日日志，记忆工具也会停用。不会删除文件；主页面保存后生效。")
+            }
+            Section("记忆文件") {
+                NavigationLink {
+                    TextEditor(text: $configuration.memory).padding()
+                        .navigationTitle("GLOBAL.md")
+                } label: {
+                    fileLabel("GLOBAL.md", content: configuration.memory, date: nil)
+                }
+                ForEach(files, id: \.path) { url in
+                    NavigationLink {
+                        MinisGroupMemoryFileEditor(url: url)
+                    } label: {
+                        fileLabel(url.lastPathComponent,
+                                  content: (try? String(contentsOf: url, encoding: .utf8)) ?? "",
+                                  date: (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate)
+                    }
+                }
+                .onDelete { indices in
+                    do {
+                        for index in indices { try FileManager.default.removeItem(at: files[index]) }
+                        reload()
+                    } catch { errorMessage = error.localizedDescription }
+                }
+            }
+            Section {
+                Text("灵魂由本组的“灵魂”页面管理；此处仅列出本组记忆，不显示其他分组或全局日志。每日日志保存与删除立即生效。")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+        }
+        .navigationTitle("记忆")
+        .onAppear(perform: reload)
+        .alert("文件操作失败", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("确定") { errorMessage = nil }
+        } message: { Text(errorMessage ?? "") }
+    }
+
+    private func fileLabel(_ name: String, content: String, date: Date?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(name)
+                Text(ByteCountFormatter.string(fromByteCount: Int64(content.utf8.count), countStyle: .file))
+                    .font(.caption).foregroundColor(.secondary)
+                Spacer()
+                if let date { Text(date, style: .date).font(.caption2).foregroundColor(.secondary) }
+            }
+            if let line = content.components(separatedBy: .newlines).first(where: { !$0.isEmpty && !$0.hasPrefix("<!--") }) {
+                Text(line).lineLimit(1).font(.caption).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func reload() {
+        files = ((try? FileManager.default.contentsOfDirectory(at: MinisGroupConfigurationStore.memoryDirectory(folderID), includingPropertiesForKeys: [.contentModificationDateKey])) ?? [])
+            .filter { $0.pathExtension == "md" && $0.lastPathComponent != "GLOBAL.md" && $0.lastPathComponent != "SOUL.md" }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+    }
+}
+
+private struct MinisGroupMemoryFileEditor: View {
+    let url: URL
+    @State private var text = ""
+    @State private var loaded = false
+    @State private var errorMessage: String?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        TextEditor(text: $text).padding()
+            .navigationTitle(url.lastPathComponent)
+            .onAppear {
+                guard !loaded else { return }
+                do { text = try String(contentsOf: url, encoding: .utf8); loaded = true }
+                catch { errorMessage = error.localizedDescription }
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("保存") {
+                        do { try text.write(to: url, atomically: true, encoding: .utf8); dismiss() }
+                        catch { errorMessage = error.localizedDescription }
+                    }.disabled(!loaded)
+                }
+            }
+            .alert("读写失败", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+                Button("确定") { errorMessage = nil }
+            } message: { Text(errorMessage ?? "") }
     }
 }

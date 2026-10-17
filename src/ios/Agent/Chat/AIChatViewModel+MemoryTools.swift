@@ -62,8 +62,8 @@ extension AIChatViewModel {
 
     /// Execute a memory_write tool call: prepend a timestamped entry to today's daily log.
     func executeMemoryWrite(from json: String) -> FileToolResult {
-        guard memoryEnabled else {
-            return FileToolResult(output: "Memory saving is disabled for this session. Use /memory to re-enable.", success: false)
+        guard memoryEnabled && groupMemoryEnabled else {
+            return FileToolResult(output: "Memory saving is disabled for this session or group. Use /memory or group settings to re-enable.", success: false)
         }
         guard let data = json.data(using: .utf8),
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -132,8 +132,8 @@ extension AIChatViewModel {
         // call. If something else routes here (history replay, manual
         // RPC, future caller), refuse with a clear message that mirrors
         // executeMemoryWrite's guard above.
-        guard memoryEnabled else {
-            return FileToolResult(output: "Memory is disabled for this session. Use /memory to re-enable, or open Settings to change the default.", success: false)
+        guard memoryEnabled && groupMemoryEnabled else {
+            return FileToolResult(output: "Memory is disabled for this session or group. Use /memory or group settings to re-enable.", success: false)
         }
         let dict: [String: Any]
         if let data = json.data(using: .utf8),

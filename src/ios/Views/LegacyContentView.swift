@@ -162,7 +162,9 @@ private struct LegacyContentView: View {
         guard shareCoordinator.hasPendingShare else { return }
         guard let pending = SharedContainerStore.loadPendingShare() else {
             shareCoordinator.hasPendingShare = false
-            ShareFeedbackToast.show("未读取到分享内容，请重新分享文件。")
+            // Multiple scene/URL callbacks may observe the same notification.
+            // The first delivery already consumed the on-disk record; absence
+            // here is not evidence that the attachment failed to import.
             return
         }
         // The foreground chat owns delivery when it is visible. Otherwise use

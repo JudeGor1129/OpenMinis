@@ -1260,6 +1260,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// foreground session, so concurrent conversations never share this state.
     @Published var taskGroupID: String?
     var taskGroupSoul: String?
+    var groupMemoryEnabled = true
     var sessionMemoryDirectory: URL {
         taskGroupID.map { MinisGroupConfigurationStore.memoryDirectory($0) }
             ?? Self.minisMemoryPersistentDir
@@ -1271,7 +1272,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         if let owner { folderID = await ChatStore.shared.getSession(owner)?.folderId }
         else { folderID = nil }
         taskGroupID = folderID
-        taskGroupSoul = folderID.map { MinisGroupConfigurationStore.load($0).soul }
+        let configuration = folderID.map { MinisGroupConfigurationStore.load($0) }
+        taskGroupSoul = configuration?.renderedSoul
+        groupMemoryEnabled = configuration?.memoryEnabled ?? true
         // Initialize a newly grouped conversation without requiring the user
         // to open and save the group editor first (also migrates draft memory).
         if let folderID,
@@ -2540,16 +2543,16 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// model knows the tools won't be registered, the memory files won't
     /// be injected, and what to tell the user if they ask about memory.
     private var memoryStatusFragment: String {
-        if memoryEnabled {
+        if memoryEnabled && groupMemoryEnabled {
             return "\n\nMemory status: ENABLED for this session. GLOBAL.md and recent daily logs have been injected above (if non-empty), and memory_get / memory_write are available in the tool list."
         } else {
             return "\n\nMemory status: DISABLED for this session. "
-                + "The user has turned off memory for this conversation. "
+                + "Memory is disabled by this conversation's switch or its group settings. "
                 + "Despite any earlier mentions in this prompt:\n"
                 + "- GLOBAL.md and daily logs have NOT been injected — you do not have access to past memories.\n"
                 + "- The memory_get and memory_write tools are NOT registered — do not attempt to call them; they will not appear in your tool list.\n"
-                + "- If the user asks you to recall memories, save a memory, or wonders why earlier memories aren't visible, tell them memory is currently disabled for this session and they can re-enable it via the /memory slash command or in Settings.\n"
-                + "- This toggle is per-session. Other sessions may still have memory enabled.\n"
+                + "- To enable memory, both this conversation's /memory switch and the group memory switch (if grouped) must be enabled.\n"
+                + "- Changing a group's memory switch affects tasks in that group; unrelated groups are unaffected.\n"
                 + "- SOUL.md (your persona / identity) is unaffected and remains active above."
         }
     }
@@ -5981,7 +5984,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // session so a repro shows whether loadSession seeded it from the
         // global default.
         AppLogger(category: "MemDiag").info("[MemDiag] inject-decision sid=\(self.sessionId?.prefix(8) ?? "nil") vm.memoryEnabled=\(self.memoryEnabled)")
-        if memoryEnabled {
+        if memoryEnabled && groupMemoryEnabled {
             if let memoryFragment = Self.loadGlobalMemoryFragment(directory: sessionMemoryDirectory) {
                 userSystemPrompt += "\n\n" + memoryFragment
             }
@@ -6695,7 +6698,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 // the gate from the first injection site — fallback to a
                 // new provider must respect the per-session memoryEnabled
                 // toggle the same way the initial system prompt did.
-                if memoryEnabled {
+                if memoryEnabled && groupMemoryEnabled {
                     if let memoryFragment = Self.loadGlobalMemoryFragment(directory: sessionMemoryDirectory) {
                         userSystemPrompt += "\n\n" + memoryFragment
                     }

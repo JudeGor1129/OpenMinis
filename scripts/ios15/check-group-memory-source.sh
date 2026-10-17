@@ -30,3 +30,18 @@ grep -q 'LegacyGroupManagerView()' src/ios/Views/LegacyContentView.swift
 grep -q 'guard isChatViewVisible' src/ios/Views/Chat/AIChatView.swift
 printf 'PASS: group memory/soul, edit/revoke, legacy menu and share-visibility source wiring.\n'
 printf 'NOTE: full Swift compilation and device share/scroll/isolation tests are still required.\n'
+
+# Version 48 follow-up guards: bounded eager layout, bulk skills and scoped UI.
+grep -q 'vm.messages.suffix(visibleLimit)' src/ios/Views/Chat/AIChatView.swift
+grep -q 'onChange(of: bottomInset)' src/ios/Views/Chat/AIChatView.swift
+grep -q 'Button("全部开启")' "$skills"
+grep -q 'Button("全部关闭")' "$skills"
+grep -q 'MinisGroupMemorySettings(configuration:' "$skills"
+grep -q 'groupMemoryEnabled = configuration?.memoryEnabled' "$vm"
+[[ $(grep -c 'guard memoryEnabled && groupMemoryEnabled' "$memory") == 2 ]]
+! grep -q '未读取到分享内容，请重新分享文件' src/ios/Views/LegacyContentView.swift
+printf 'PASS: bounded transcript, bulk skill actions, scoped settings and duplicate-share guards.\n'
+
+grep -q 'let includeMemoryTools = memoryEnabled && groupMemoryEnabled' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
+[[ $(grep -c 'if memoryEnabled && groupMemoryEnabled' "$vm") == 3 ]]
+printf 'PASS: group switch gates prompt status, both injection paths, registration and execution.\n'

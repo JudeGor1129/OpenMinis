@@ -34,7 +34,7 @@ extension AIChatViewModel {
         // them. The system prompt also switches to a "memory disabled"
         // wording (see baseSystemPrompt below) so the model can correctly
         // tell the user to re-enable memory via /memory or Settings.
-        let includeMemoryTools = memoryEnabled
+        let includeMemoryTools = memoryEnabled && groupMemoryEnabled
         var tools: [AgentToolDefinition] = [
             AgentToolDefinition(
                 name: "shell_execute",

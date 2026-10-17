@@ -7201,15 +7201,26 @@ private struct MinisLegacyTranscript: View {
     let bottomInset: CGFloat
     @State private var followingBottom = true
     @State private var scrollRevision = 0
+    @State private var visibleLimit = 40
+    @State private var userDragging = false
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                // iOS 15 LazyVStack can retain invalid estimated heights after
-                // asynchronous DB loads and variable-height streaming updates.
-                // Eager layout trades memory for stable, immediately visible rows.
+                // Bound the initial eager layout: retain stable iOS 15 row
+                // heights without laying out years of history on entry.
                 VStack(alignment: .leading, spacing: 20) {
-                    ForEach(vm.messages) { message in
+                    if vm.messages.count > visibleLimit {
+                        Button("加载更早的消息（剩余 \(vm.messages.count - visibleLimit) 条）") {
+                            let first = vm.messages.suffix(visibleLimit).first?.id
+                            followingBottom = false
+                            visibleLimit += 40
+                            if let first {
+                                DispatchQueue.main.async { proxy.scrollTo(first, anchor: .top) }
+                            }
+                        }
+                    }
+                    ForEach(Array(vm.messages.suffix(visibleLimit))) { message in
                         MinisLegacyTranscriptRow(message: message)
                             .id(message.id)
                     }
@@ -7235,7 +7246,9 @@ private struct MinisLegacyTranscript: View {
             .coordinateSpace(name: "legacyTranscriptViewport")
             .background(GeometryReader { geometry in
                 Color.clear.onPreferenceChange(MinisLegacyBottomPositionKey.self) { bottom in
-                    followingBottom = bottom <= geometry.size.height + 80
+                    if userDragging || bottom <= geometry.size.height + 80 {
+                        followingBottom = bottom <= geometry.size.height + 80
+                    }
                 }
             })
             .onAppear { scrollRevision += 1 }
@@ -7249,12 +7262,21 @@ private struct MinisLegacyTranscript: View {
             .onChange(of: vm.isLoadingSession) { loading in
                 if !loading { scrollRevision += 1 }
             }
+            .onChange(of: bottomInset) { _ in
+                if followingBottom && !userDragging { scrollRevision += 1 }
+            }
+            .simultaneousGesture(DragGesture().onChanged { _ in
+                userDragging = true
+                followingBottom = false
+            }.onEnded { _ in userDragging = false })
             .task(id: scrollRevision) {
-                // The scroll target must exist and have its final loaded height.
-                // Cancel the obsolete task when another load/scroll supersedes it.
-                await Task.yield()
-                guard !Task.isCancelled else { return }
-                proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
+                // Re-align after the loaded rows and composer settle, not only
+                // after one executor yield. A drag cancels automatic alignment.
+                for delay in [UInt64(60_000_000), UInt64(160_000_000)] {
+                    do { try await Task.sleep(nanoseconds: delay) } catch { return }
+                    guard !Task.isCancelled, followingBottom, !userDragging else { return }
+                    proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
+                }
             }
         }
     }
@@ -7270,6 +7292,10 @@ private struct MinisLegacyTranscriptRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Label(message.role == .user ? "我" : "模型", systemImage: message.role == .user ? "person.fill" : "sparkles")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(message.role == .user ? Color.blue : Color.secondary)
+                .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
             // Match the normal transcript: persisted metadata wins over the
             // temporary input cache, so drain/reload never duplicates a file.
             if !message.attachments.isEmpty {
