@@ -21,26 +21,39 @@ enum SharedContainerStore {
     // MARK: - Write (called by Share Extension)
 
     static func savePendingShare(_ share: PendingShare) {
-        guard let defaults = sharedDefaults else { return }
+        let defaults = sharedDefaults
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         if let data = try? encoder.encode(share) {
-            defaults.set(data, forKey: pendingShareKey)
-            defaults.synchronize()
+            if let dir = sharedFileDirectory {
+                do {
+                    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    try data.write(to: dir.appendingPathComponent("pending-share.json"), options: .atomic)
+                } catch {
+                    NSLog("[Share] Cannot persist share manifest: %@", error.localizedDescription)
+                }
+            }
+            defaults?.set(data, forKey: pendingShareKey)
+            defaults?.synchronize()
         }
     }
 
     // MARK: - Read & Consume (called by main app)
 
     static func loadPendingShare() -> PendingShare? {
-        guard let defaults = sharedDefaults,
-              let data = defaults.data(forKey: pendingShareKey) else { return nil }
+        let fileData = sharedFileDirectory.flatMap {
+            try? Data(contentsOf: $0.appendingPathComponent("pending-share.json"))
+        }
+        guard let data = fileData ?? sharedDefaults?.data(forKey: pendingShareKey) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try? decoder.decode(PendingShare.self, from: data)
     }
 
     static func clearPendingShare() {
+        if let dir = sharedFileDirectory {
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent("pending-share.json"))
+        }
         sharedDefaults?.removeObject(forKey: pendingShareKey)
         sharedDefaults?.synchronize()
     }

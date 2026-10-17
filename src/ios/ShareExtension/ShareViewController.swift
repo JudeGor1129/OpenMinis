@@ -45,6 +45,14 @@ class ShareViewController: UIViewController {
                 NSLog("[ShareExt] WARNING: sharedDefaults is nil — App Group not configured?")
             }
 
+            guard saved, SharedContainerStore.loadPendingShare() != nil else {
+                let alert = UIAlertController(title: "文件分享失败", message: "未能读取文件或保存到共享容器。请尝试从“文件”App 分享，或在 OpenMinis 内添加文件。", preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "确定", style: .default) { _ in
+                    self.extensionContext?.completeRequest(returningItems: [])
+                })
+                present(alert, animated: true)
+                return
+            }
             redirectToHostApp()
 
             // Mark done and dismiss — if viewDidAppear already ran, dismiss now

@@ -1101,7 +1101,10 @@ struct AIChatView: View {
         .sheet(isPresented: $showFileBrowser) {
             MinisNavigationContainer {
                 let base = RootfsManager.shared.dataPath
-                FileBrowserView(rootPath: base, initialPath: base.appendingPathComponent("var/minis"), rootLabel: "/")
+                let workspace = vm.sessionId.map { AIChatViewModel.minisWorkspacePersistentDir(for: $0) }
+                FileBrowserView(rootPath: workspace ?? base,
+                                initialPath: workspace ?? base.appendingPathComponent("var/minis"),
+                                rootLabel: workspace == nil ? "/" : "/var/minis/workspace")
             }
         }
         .sheet(isPresented: $showBrowserSheet) {
@@ -3928,6 +3931,15 @@ struct AIChatView: View {
                 }
 
                 inputFieldOrWaveform
+
+                Button {
+                    showFileBrowser = true
+                } label: {
+                    Label("打开工作区文件夹", systemImage: "folder")
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 16)
 
                 inputBottomRow
                     // [T-ios-de-voice-toolbar] Measure the row so the
