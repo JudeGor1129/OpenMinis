@@ -364,7 +364,9 @@ private struct LegacySessionRow: View {
                     }
                 }
             } else {
-                NavigationLink(destination: AIChatView(sessionId: session.id)) { rowLabel }
+                NavigationLink {
+                    LegacySessionDestination(sessionID: session.id)
+                } label: { rowLabel }
             }
         }
         .contextMenu { contextActions }
@@ -661,4 +663,10 @@ private struct LegacyGroupSessionPicker: View {
             }
         }
     }
+}
+
+// Keep AIChatView's VM acquisition out of eager NavigationLink row creation.
+private struct LegacySessionDestination: View {
+    let sessionID: String
+    var body: some View { AIChatView(sessionId: sessionID) }
 }

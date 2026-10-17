@@ -738,10 +738,16 @@ extension AIChatViewModel {
         // `coldLoadPrecacheTailMessages` for why 80 and why prewarming further
         // ahead is the wrong lever here.
         //
-        // Sessions at or below the threshold take the identical code path as
-        // before — same blocks, same order, same work — so short and medium
-        // sessions cannot regress.
-        let precacheTail = Self.coldLoadPrecacheTailMessages
+        // iOS 16+ sessions at or below the threshold retain the original
+        // pre-render path. The iOS 15 recovery renderer needs no such cache.
+        // iOS 15's plain-text transcript never consumes attributed caches.
+        // Do not block first display parsing Markdown it will not render.
+        let precacheTail: Int
+        if #available(iOS 16.0, *) {
+            precacheTail = Self.coldLoadPrecacheTailMessages
+        } else {
+            precacheTail = 0
+        }
         let assistantMessages = loadedUIMessages.filter { $0.role == .assistant }
         let precacheTargets = assistantMessages.count > precacheTail
             ? Array(assistantMessages.suffix(precacheTail))
@@ -751,7 +757,9 @@ extension AIChatViewModel {
                 cacheAttributedString(for: block)
             }
         }
-        if assistantMessages.count > precacheTail {
+        if precacheTail == 0 {
+            logger.info("[SessionLoad] Phase 2b skipped: plain-text legacy transcript does not use attributed caches")
+        } else if assistantMessages.count > precacheTail {
             logger.info("[SessionLoad] Phase 2b tail-limited: pre-cached \(precacheTargets.count)/\(assistantMessages.count) assistant messages (older ones render lazily on scroll)")
         }
 

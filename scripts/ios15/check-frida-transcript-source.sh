@@ -15,7 +15,11 @@ grep -q 'case "frida_status", "frida_processes": return .frida' src/ios/Views/Se
 ! grep -Eq 'frida_(device_attach|session_create_script|device_spawn)' "$bridge"
 grep -q 'VStack(alignment: message.role == .user ? .trailing : .leading' "$view"
 grep -q 'multilineTextAlignment(isUser ? .trailing : .leading)' "$view"
-grep -q 'onChange(of: geometry.size.height)' "$view"
+grep -q 'onChange(of: viewport.size)' "$view"
+grep -q '.frame(width: max(0, viewport.size.width - 36)' "$view"
+! grep -q 'else if followingBottom && !nearBottom' "$view"
+grep -q 'precacheTail = 0' "$persist"
+grep -q 'LegacySessionDestination(sessionID: session.id)' src/ios/Views/LegacyContentView.swift
 grep -q 'if rawIndex.isMultiple(of: 20) { await Task.yield() }' "$persist"
 grep -q 'let isLast = aIdx == lastAssistantIndex' "$persist"
 printf 'PASS: Frida read-only tool wiring, transcript alignment and cooperative history reconstruction.\n'

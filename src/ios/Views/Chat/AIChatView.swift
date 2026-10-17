@@ -7206,6 +7206,7 @@ private struct MinisLegacyTranscript: View {
     @State private var viewportHeight: CGFloat = 0
 
     var body: some View {
+        GeometryReader { viewport in
         ScrollViewReader { proxy in
             ScrollView {
                 // Bound the initial eager layout: retain stable iOS 15 row
@@ -7240,25 +7241,24 @@ private struct MinisLegacyTranscript: View {
                                                    value: geometry.frame(in: .named("legacyTranscriptViewport")).maxY)
                         })
                 }
+                .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
                 .padding(.horizontal, 18)
                 .padding(.top, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(width: viewport.size.width, height: viewport.size.height)
+            .clipped()
             .coordinateSpace(name: "legacyTranscriptViewport")
-            .background(GeometryReader { geometry in
-                Color.clear
-                    .onAppear { viewportHeight = geometry.size.height }
-                    .onChange(of: geometry.size.height) { height in
-                        viewportHeight = height
-                        if followingBottom && !userDragging { scrollRevision += 1 }
-                    }
-            })
+            .onAppear { viewportHeight = viewport.size.height }
+            .onChange(of: viewport.size) { size in
+                viewportHeight = size.height
+                if followingBottom && !userDragging { scrollRevision += 1 }
+            }
             .onPreferenceChange(MinisLegacyBottomPositionKey.self) { bottom in
-                // Observe on the ancestor receiving the content's preference,
-                // not its background sibling. Correct final layout changes too.
-                let nearBottom = bottom <= viewportHeight + 80
-                if userDragging { followingBottom = nearBottom }
-                else if followingBottom && !nearBottom { scrollRevision += 1 }
+                // Measurement must not schedule another scroll: that creates
+                // a scroll -> preference -> task cancellation feedback loop.
+                if userDragging {
+                    followingBottom = bottom <= viewportHeight + 80
+                }
             }
             .onAppear { scrollRevision += 1 }
             .onReceive(vm.forceScrollToBottom) { _ in
@@ -7281,12 +7281,17 @@ private struct MinisLegacyTranscript: View {
             .task(id: scrollRevision) {
                 // Re-align after the loaded rows and composer settle, not only
                 // after one executor yield. A drag cancels automatic alignment.
-                for delay in [UInt64(60_000_000), UInt64(160_000_000)] {
+                for delay in [UInt64(60_000_000), UInt64(160_000_000), UInt64(300_000_000)] {
                     do { try await Task.sleep(nanoseconds: delay) } catch { return }
                     guard !Task.isCancelled, followingBottom, !userDragging else { return }
-                    proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
+                    var transaction = Transaction(animation: nil)
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
+                    }
                 }
             }
+        }
         }
     }
 }
