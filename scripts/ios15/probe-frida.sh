@@ -2,7 +2,7 @@
 # Compatibility probe only: this does not yet embed Frida into Minis.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-VERSION=17.24.0
+VERSION=17.9.10
 ASSET="frida-core-devkit-${VERSION}-ios-arm64.tar.xz"
 OUT="$ROOT/build/frida-probe"
 mkdir -p "$OUT" "$ROOT/ci-logs"
