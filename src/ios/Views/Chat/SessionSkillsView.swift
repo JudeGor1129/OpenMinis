@@ -24,6 +24,7 @@ struct SessionSkillsView: View {
     /// draft is materialized on first toggle it holds the real id so the rest
     /// of the sheet stays consistent without re-creating the session.
     @State private var resolvedSessionId: String?
+    @State private var groupDefaultsReady = false
 
     init(sessionId: String?, ensureSessionId: (() async -> String)? = nil) {
         self.sessionId = sessionId
@@ -50,10 +51,9 @@ struct SessionSkillsView: View {
         }
         Task {
             guard let sid = await ensureSessionId?() else { return }
-            await MainActor.run {
-                resolvedSessionId = sid
-                store.setSessionOverride(skillId: skill.id, sessionId: sid, enabled: enabled)
-            }
+            await store.refreshGroupDefaults(sessionId: sid)
+            resolvedSessionId = sid
+            store.setSessionOverride(skillId: skill.id, sessionId: sid, enabled: enabled)
         }
     }
 
@@ -68,11 +68,10 @@ struct SessionSkillsView: View {
         }
         Task {
             guard let sid = await ensureSessionId?() else { return }
-            await MainActor.run {
-                resolvedSessionId = sid
-                for skill in scope {
-                    store.setSessionOverride(skillId: skill.id, sessionId: sid, enabled: enabled)
-                }
+            await store.refreshGroupDefaults(sessionId: sid)
+            resolvedSessionId = sid
+            for skill in scope {
+                store.setSessionOverride(skillId: skill.id, sessionId: sid, enabled: enabled)
             }
         }
     }
@@ -104,7 +103,7 @@ struct SessionSkillsView: View {
                             .font(.subheadline)
                     }
                 } else {
-                    Section(footer: Text("Toggles override the skill's default for this session only.")) {
+                    Section(footer: Text("优先级：会话覆盖 → 分组默认 → 全局默认。显式切换仅影响本会话，正在运行的任务保持启动时的技能配置。")) {
                         ForEach(filteredSkills) { skill in
                             NavigationLink {
                                 SessionSkillDetailView(skill: skill)
@@ -112,6 +111,11 @@ struct SessionSkillsView: View {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(skill.name).font(.body)
+                                        Text(resolvedSessionId.map {
+                                            store.skillConfigurationSource(skill.id, sessionId: $0)
+                                        } ?? "全局默认（草稿）")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
                                         if !skill.description.isEmpty {
                                             Text(skill.description)
                                                 .font(.caption)
@@ -130,12 +134,26 @@ struct SessionSkillsView: View {
                         }
                     }
                 }
+                if let sid = resolvedSessionId {
+                    Section {
+                        Button("恢复继承分组／全局默认") {
+                            store.resetSessionOverrides(sessionId: sid)
+                        }
+                    }
+                }
             }
+            .disabled(!groupDefaultsReady)
             .navigationTitle("Skills in Session")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchQuery, placement: .navigationBarDrawer(displayMode: .always),
                         prompt: Text(AppLocalized("Search skills")))
-            .onAppear { store.reload() }
+            .task {
+                store.reload()
+                if let sid = resolvedSessionId {
+                    await store.refreshGroupDefaults(sessionId: sid)
+                }
+                groupDefaultsReady = true
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if !filteredSkills.isEmpty {
@@ -146,6 +164,7 @@ struct SessionSkillsView: View {
                             applyToAll(scope, enabled: newValue)
                         }
                         .font(.subheadline)
+                        .disabled(!groupDefaultsReady)
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -320,7 +339,7 @@ struct MinisGroupConfigurationView: View {
                         }.navigationTitle("记忆")
                     } label: { Label("记忆", systemImage: "brain.head.profile") }
                 } footer: {
-                    Text("配置准备阶段：当前仅保存本机分组设置，尚未用于模型请求、自动记忆或云同步。会话继承及单独覆盖将在后续接入。")
+                    Text("技能默认值已接入主聊天任务，在下一次任务启动时读取；会话覆盖优先。灵魂和记忆仍仅为本机草稿，尚未用于模型请求或隔离读写。此配置暂不云同步。")
                 }
             }
             .navigationTitle(folder.name)

@@ -181,8 +181,9 @@ check("no fallback setBinding ignores pendingModelSwitch (unguarded: \(unguarded
 print("\n▶️  C. source: fallback prompt rebuild keys skills/MCP like setup does (helper → parent session)")
 if let apply = body(of: "func applyFallbackSwitch()", in: vm).map(code) {
     check("setup keys skills on helperConfig?.parentSessionId ?? sessionId",
-          vm.contains("if let sid = helperConfig?.parentSessionId ?? sessionId,\n           let skillFragment = SkillStore.shared.skillPromptFragment(for: sid)"))
-    check("applyFallbackSwitch uses the same key for skills/MCP",
+          vm.contains("let taskSkillFragment = (helperConfig?.parentSessionId ?? sessionId).flatMap"))
+    check("applyFallbackSwitch reuses the task skill snapshot and parent MCP key",
+          apply.contains("if let skillFragment = taskSkillFragment") &&
           apply.contains("helperConfig?.parentSessionId ?? sessionId"))
 } else { check("applyFallbackSwitch found", false) }
 

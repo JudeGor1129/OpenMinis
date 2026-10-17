@@ -180,7 +180,7 @@ extension AIChatViewModel {
         // Session-scoped enable wins over the global default — a user can
         // re-enable a skill for THIS chat even when it's globally off, and
         // vice versa. Mirrors SkillStore.isEnabledForSession's precedence:
-        // session override → global isEnabled. Falls back to the global
+        // session override → group default → global isEnabled. Falls back to the global
         // value for draft / not-yet-persisted sessions (sessionId == nil).
         // [T-session-skill-toggle-override-global-ios]
         let currentSessionId = self.sessionId

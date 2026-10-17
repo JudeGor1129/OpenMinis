@@ -42,6 +42,7 @@ jobs:
           xcodebuild -version | tee ci-logs/xcode.txt
           plutil -lint src/ios/Minis.xcodeproj/project.pbxproj
           bash scripts/ios15/check-settings-source.sh 2>&1 | tee ci-logs/settings-source.txt
+          bash scripts/ios15/check-group-skills.sh 2>&1 | tee ci-logs/group-skills.txt
           bash scripts/ios15/check-navigation.sh 2>&1 | tee ci-logs/navigation.txt
           bash scripts/ios15/check-fileprovider.sh 2>&1 | tee ci-logs/fileprovider.txt
           bash scripts/ios15/check-localization.sh 2>&1 | tee ci-logs/localization.txt

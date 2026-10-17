@@ -5922,8 +5922,14 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // [T-p1-delegate-task] A helper inherits the PARENT session's skill
         // and MCP enablement (the user configured those for the conversation
         // that spawned it; the child session has no overrides of its own).
-        if let sid = helperConfig?.parentSessionId ?? sessionId,
-           let skillFragment = SkillStore.shared.skillPromptFragment(for: sid) {
+        if let sid = helperConfig?.parentSessionId ?? sessionId {
+            await SkillStore.shared.refreshGroupDefaults(sessionId: sid)
+        }
+        // Freeze the skill fragment for this task, including provider fallback.
+        let taskSkillFragment = (helperConfig?.parentSessionId ?? sessionId).flatMap {
+            SkillStore.shared.skillPromptFragment(for: $0)
+        }
+        if let skillFragment = taskSkillFragment {
             userSystemPrompt += "\n\n" + skillFragment
         }
 
@@ -6645,8 +6651,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 // path: a helper uses its PARENT's skill / MCP enablement.
                 // Keying on the child id here made a sub-agent that fell back
                 // lose the parent's skills and MCP servers mid-run.
-                if let sid = helperConfig?.parentSessionId ?? sessionId,
-                   let skillFragment = SkillStore.shared.skillPromptFragment(for: sid) {
+                if let skillFragment = taskSkillFragment {
                     userSystemPrompt += "\n\n" + skillFragment
                 }
                 // [T-mcp-integration-ios] Inject Top-20 enabled MCP metadata.

@@ -1463,6 +1463,11 @@ struct AIChatView: View {
         .onChange(of: vm.sessionId) { _ in
             refreshTitlePillSession()
         }
+        .task(id: vm.sessionId) {
+            if let sid = vm.sessionId {
+                await SkillStore.shared.refreshGroupDefaults(sessionId: sid)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sessionDidUpdate)) { note in
             guard let sid = vm.sessionId,
                   let updatedId = note.object as? String,

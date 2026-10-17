@@ -1182,22 +1182,42 @@ Do not create extraneous files: README.md, INSTALLATION_GUIDE.md, CHANGELOG.md, 
 
     // MARK: - Session Overrides
 
+    private var groupSkillDefaults: [String: [String: Bool]] = [:]
+
+    func refreshGroupDefaults(sessionId: String) async {
+        let folderID = await ChatStore.shared.getSession(sessionId)?.folderId
+        groupSkillDefaults[sessionId] = folderID.map {
+            MinisGroupConfigurationStore.load($0).skillDefaults
+        } ?? [:]
+        sessionOverrideVersion += 1
+    }
+
+    func skillConfigurationSource(_ skillId: String, sessionId: String) -> String {
+        if dbSessionOverride(sessionId: sessionId, skillId: skillId) != nil { return "会话覆盖" }
+        if groupSkillDefaults[sessionId]?[skillId] != nil { return "分组默认" }
+        return "全局默认"
+    }
+
     func isEnabledForSession(_ skillId: String, sessionId: String) -> Bool {
-        if let override = dbSessionOverride(sessionId: sessionId, skillId: skillId) {
-            return override
-        }
-        return skills.first(where: { $0.id == skillId })?.isEnabled ?? false
+        MinisSkillEnablement.resolve(
+            session: dbSessionOverride(sessionId: sessionId, skillId: skillId),
+            group: groupSkillDefaults[sessionId]?[skillId],
+            global: skills.first(where: { $0.id == skillId })?.isEnabled ?? false
+        )
     }
 
     /// A counter that increments on every session override change to trigger SwiftUI updates.
     @Published private(set) var sessionOverrideVersion: Int = 0
 
     func setSessionOverride(skillId: String, sessionId: String, enabled: Bool) {
-        let defaultEnabled = skills.first(where: { $0.id == skillId })?.isEnabled ?? true
-        if enabled == defaultEnabled {
-            dbDeleteSessionOverride(sessionId: sessionId, skillId: skillId)
-        } else {
-            dbSetSessionOverride(sessionId: sessionId, skillId: skillId, enabled: enabled)
+        // Explicit session choices must survive future group/global changes.
+        dbSetSessionOverride(sessionId: sessionId, skillId: skillId, enabled: enabled)
+        sessionOverrideVersion += 1
+    }
+
+    func resetSessionOverrides(sessionId: String) {
+        for skill in skills {
+            dbDeleteSessionOverride(sessionId: sessionId, skillId: skill.id)
         }
         sessionOverrideVersion += 1
     }
@@ -2545,3 +2565,11 @@ private extension String {
             .replacingOccurrences(of: "\"", with: "&quot;")
     }
 }
+
+// MARK: - Skill enablement precedence (also compiled by standalone tests)
+enum MinisSkillEnablement {
+    static func resolve(session: Bool?, group: Bool?, global: Bool) -> Bool {
+        session ?? group ?? global
+    }
+}
+// END Skill enablement precedence
