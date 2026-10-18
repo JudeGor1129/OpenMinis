@@ -3540,11 +3540,18 @@ actor ChatStore {
         return (count, maxSo)
     }
 
-    func loadMessages(sessionId: String) -> [RawMessage] {
+    func loadMessages(sessionId: String, tailLimit: Int? = nil) -> [RawMessage] {
         let totalStart = CFAbsoluteTimeGetCurrent()
+        // Limit in SQL BEFORE decoding JSON; the full-context path stays unchanged.
+        let source: String
+        if let tailLimit {
+            source = "(SELECT * FROM messages WHERE session_id = ? ORDER BY sort_order DESC, created_at DESC, id DESC LIMIT \(max(1, min(tailLimit, 200))))"
+        } else {
+            source = "messages WHERE session_id = ?"
+        }
         let sql = """
             SELECT id, session_id, role, parts_json, created_at, token_usage, reasoning_content, stream_interrupt_count, sort_order, error_info, model_id, model_display_name, provider_type, provider_instance_id, reasoning_echo
-            FROM messages WHERE session_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC
+            FROM \(source) ORDER BY sort_order ASC, created_at ASC, id ASC
         """
         var stmt: OpaquePointer?
         var messages: [RawMessage] = []
@@ -3666,6 +3673,9 @@ actor ChatStore {
         if totalElapsed > 20 {
             logger.info("[ChatStore.loadMessages] \(sessionId) — \(messages.count) messages in \(String(format: "%.1f", totalElapsed))ms (JSON decode: \(String(format: "%.1f", jsonElapsed))ms, SQL+IO: \(String(format: "%.1f", totalElapsed - jsonElapsed))ms)")
         }
+
+        // Tail previews must not run the full-history anomaly scan.
+        if tailLimit != nil { return messages }
 
         // DIAG: Detect sortOrder anomalies (duplicates, gaps). Small cost — O(n) scan.
         // loadMessages doesn't populate sortOrder on RawMessage, so re-query it.

@@ -20,6 +20,13 @@ struct ContentView: View {
 /// seam only after its iOS 15 build diagnostics pass.
 private struct LegacyContentView: View {
     @State private var sessions: [ChatSession] = []
+    @State private var folders: [ChatFolder] = []
+    @State private var groupSessions: [String: [ChatSession]] = [:]
+    @State private var expandedGroups: Set<String> = []
+    @State private var groupsExpanded = false
+    @State private var draftGroupId: String? = nil
+    @State private var creatingGroup = false
+    @State private var managingFolder: ChatFolder? = nil
     @State private var draftID = ""
     @State private var showingDraft = false
     @State private var selectedSessions: Set<String> = []
@@ -38,13 +45,36 @@ private struct LegacyContentView: View {
         NavigationView {
             List {
                 Section {
-                    NavigationLink {
-                        LegacyGroupManagerView()
+                    Button {
+                        groupsExpanded.toggle()
+                        if groupsExpanded { reloadFolders() }
                     } label: {
-                        Label("会话分组", systemImage: "folder")
+                        Label("会话分组", systemImage: groupsExpanded ? "folder.fill" : "folder")
+                    }
+                    if groupsExpanded {
+                        ForEach(folders) { folder in
+                            DisclosuredSessionList(
+                                folder: folder,
+                                sessions: groupSessions[folder.id] ?? [],
+                                expanded: expandedGroups.contains(folder.id),
+                                onToggle: { toggleGroup(folder.id) },
+                                onNewSession: { startDraft(in: folder.id) },
+                                onManage: { managingFolder = folder },
+                                onChange: reload
+                            )
+                        }
+                        if folders.isEmpty {
+                            Button { creatingGroup = true } label: {
+                                Label("新建分组", systemImage: "folder.badge.plus")
+                            }
+                        }
                     }
                 }
-                if sessions.isEmpty {
+                if ungroupedSessions.isEmpty && foldersAllEmpty && !sessions.isEmpty {
+                    Text("所有会话都已归入分组；展开分组即可查看。")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                } else if sessions.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "bubble.left.and.bubble.right")
                             .font(.system(size: 38))
@@ -58,7 +88,7 @@ private struct LegacyContentView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 36)
                 } else {
-                    ForEach(sessions) { session in
+                    ForEach(ungroupedSessions) { session in
                         LegacySessionRow(session: session, selectionMode: $selectionMode, selectedSessions: $selectedSessions, onChange: reload)
                     }
                 }
@@ -105,7 +135,7 @@ private struct LegacyContentView: View {
                     .accessibilityLabel("Tools")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: startDraft) {
+                    Button { startDraft() } label: {
                         Image(systemName: "square.and.pencil")
                     }
                     .accessibilityLabel("New conversation")
@@ -113,7 +143,7 @@ private struct LegacyContentView: View {
             }
             .background(
                 NavigationLink(
-                    destination: AIChatView(sessionId: nil, draftId: draftID),
+                    destination: AIChatView(sessionId: nil, draftId: draftID, initialGroupId: draftGroupId),
                     isActive: $showingDraft,
                     label: { EmptyView() }
                 )
@@ -132,6 +162,20 @@ private struct LegacyContentView: View {
             }
             .sheet(isPresented: $showingSettings, onDismiss: reload) {
                 LegacySettingsSheet()
+            }
+            .sheet(item: $managingFolder, onDismiss: reloadFolders) { folder in
+                MinisNavigationContainer {
+                    LegacyGroupDetailView(folder: folder)
+                }
+            }
+            .sheet(isPresented: $creatingGroup, onDismiss: reloadFolders) {
+                LegacyGroupNameSheet(title: "新建分组", initialName: "") { name in
+                    Task { @MainActor in
+                        _ = await ChatStore.shared.createFolder(name: name)
+                        creatingGroup = false
+                        reloadFolders()
+                    }
+                }
             }
             .fullScreenCover(isPresented: $showingTerminal) {
                 MinisNavigationContainer { ISHTerminalView(showCloseButton: true) }
@@ -184,13 +228,45 @@ private struct LegacyContentView: View {
         }
     }
 
+    private var ungroupedSessions: [ChatSession] {
+        sessions.filter { $0.folderId == nil }
+    }
+
+    private var foldersAllEmpty: Bool {
+        folders.allSatisfy { (groupSessions[$0.id] ?? []).isEmpty }
+    }
+
+    private func toggleGroup(_ id: String) {
+        if expandedGroups.contains(id) { expandedGroups.remove(id) }
+        else { expandedGroups.insert(id) }
+    }
+
     private func reload() {
         Task { @MainActor in
             sessions = await ChatStore.shared.listSessions().filter { !$0.isChild }
+            await reloadGroupMembers()
         }
     }
 
-    private func startDraft() {
+    private func reloadFolders() {
+        Task { @MainActor in
+            folders = await ChatStore.shared.listFolders()
+            await reloadGroupMembers()
+        }
+    }
+
+    @MainActor
+    private func reloadGroupMembers() async {
+        var members: [String: [ChatSession]] = [:]
+        for folder in folders {
+            let ids = Set(await ChatStore.shared.sessionIdsInFolder(folder.id))
+            members[folder.id] = sessions.filter { ids.contains($0.id) && !$0.isChild }
+        }
+        groupSessions = members
+    }
+
+    private func startDraft(in folderId: String? = nil) {
+        draftGroupId = folderId
         draftID = "__new__\(UUID().uuidString)"
         showingDraft = true
     }
@@ -200,6 +276,62 @@ private struct LegacyContentView: View {
             return "New Conversation"
         }
         return title
+    }
+}
+
+/// In-place, disclosured group section. Opening a group must not push a
+/// navigation screen; only a session row pushes into the chat.
+private struct DisclosuredSessionList: View {
+    let folder: ChatFolder
+    let sessions: [ChatSession]
+    let expanded: Bool
+    let onToggle: () -> Void
+    let onNewSession: () -> Void
+    let onManage: () -> Void
+    let onChange: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button(action: onToggle) {
+                    HStack {
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Image(systemName: folder.icon ?? "folder")
+                        Text(folder.name)
+                        Spacer()
+                        Text("\(sessions.count)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                // Sibling of the toggle, not inside its label: a Button nested
+                // in another Button's label swallows the inner tap.
+                Button { onManage() } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .buttonStyle(.borderless)
+            }
+            if expanded {
+                Button { onNewSession() } label: {
+                    Label("开始新会话", systemImage: "plus.bubble")
+                }
+                if sessions.isEmpty {
+                    Text("组内暂无会话")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+                ForEach(sessions) { session in
+                    LegacySessionRow(session: session,
+                                     selectionMode: .constant(false),
+                                     selectedSessions: .constant([]),
+                                     onChange: onChange)
+                }
+            }
+        }
     }
 }
 

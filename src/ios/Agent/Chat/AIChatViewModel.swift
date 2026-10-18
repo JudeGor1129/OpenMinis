@@ -1061,6 +1061,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// was nearly pinned on claude-haiku-4-5 — a model the session never used.
     @Published var selectedModel: LLMModel = .claudeHaiku45
     @Published var isLoadingSession = false
+    /// A tail preview is display-only; never use it as request context.
+    @Published var isRestoringFullHistory = false
+    var isShowingHistoryPreview = false
     /// False until the FIRST loadSession() for this vm completes. Lets the view
     /// distinguish "entering the session, nothing rendered yet" (show the soft
     /// centered loading card) from every later reload — iCloud sync, compaction,
@@ -2847,7 +2850,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Credential validity is checked at send time, not here — avoids blocking the
     /// send button due to Keychain/OAuth state that SwiftUI can't observe.
     var isReady: Bool {
-        ProviderConfigStore.shared.instances.contains { $0.isEnabled }
+        !isRestoringFullHistory && ProviderConfigStore.shared.instances.contains { $0.isEnabled }
     }
 
     // MARK: - Send Message
@@ -2859,6 +2862,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     ///   the text here keeps a background turn from reading, overwriting, or
     ///   emptying whatever the user is typing at that moment.
     func send(overrideText: String? = nil) {
+        guard !isRestoringFullHistory else {
+            errorMessage = "正在恢复完整历史，请稍后发送；输入内容已保留。"
+            return
+        }
         // Read-only mode — cannot send messages
         guard remoteDeviceId == nil else { return }
         // Every `inputText = ""` below is guarded by this: the composer is
@@ -3465,6 +3472,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Retry the next agent loop iteration (continue from where the error occurred,
     /// keeping all previously completed tool blocks and conversation history).
     func retry() {
+        guard !isRestoringFullHistory else { return }
         guard !isProcessing else { return }
         guard let lastMsg = messages.last, lastMsg.role == .assistant else { return }
 
@@ -3670,6 +3678,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Resume an interrupted agent loop. Injects a "Continue" user message
     /// into agentHistory so the model knows to pick up where it left off.
     func resume() {
+        guard !isRestoringFullHistory else { return }
         guard !isProcessing, canResume else { return }
         // [T-ios-orphan-user-tail GH#262/#263] A tail of "user turn with no
         // reply at all" has no assistant row to resume INTO — the reply never
@@ -3966,6 +3975,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     }
 
     func retryFromMessage(_ messageId: UUID, replacementAttachments: [InputAttachment]? = nil) {
+        guard !isRestoringFullHistory else { return }
         guard !isProcessing else { return }
         // [T-ios-retry-keyboard] Re-running from an existing user message is a
         // retry, not a new send.
@@ -4357,6 +4367,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// truncating at the preceding user message — delegate to
     /// retryFromMessage(precedingUser) and skip the sub-message rewrite.
     func retryFromToolBlock(blockId: UUID) {
+        guard !isRestoringFullHistory else { return }
         guard !isProcessing else { return }
 
         // Locate the assistant UI message + the target block's index within it.

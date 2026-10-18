@@ -1389,9 +1389,7 @@ struct AIChatView: View {
                     // ChatStore actor queue over background sidebar-refresh
                     // listSessions() scans that would otherwise starve it.
                     Task(priority: .userInitiated) {
-                        // Phase A: auto-repair any sortOrder / legacy marker anomalies
-                        // before loading. Cheap no-op if the session is healthy.
-                        _ = await ChatStore.shared.repairSessionIfNeeded(sessionId: sessionId)
+                        // Full repair runs after the display-only tail preview.
                         await vm.loadSession()
                     }
                 } else if vm.messages.isEmpty && vm.isLoadingSession {

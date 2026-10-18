@@ -167,7 +167,51 @@ extension AIChatViewModel {
     /// For UI, we merge consecutive assistant + tool-result turns into a single ChatMessage,
     /// matching how they appeared during the live session.
     func loadSession() async {
-        guard let sessionId else { return }
+        guard let sessionId, !isLoadingSession, !isRestoringFullHistory else { return }
+        isRestoringFullHistory = true
+        isLoadingSession = true
+        defer {
+            isRestoringFullHistory = false
+            isShowingHistoryPreview = false
+            isLoadingSession = false
+            hasCompletedInitialLoad = true
+        }
+        // Display-only preview. agentHistory is NEVER assigned from this query.
+        // Runs whenever there is nothing to show yet (first entry, or a cached
+        // VM whose messages were cleared) — the full rebuild still follows.
+        if messages.isEmpty && !isProcessing && remoteDeviceId == nil {
+            let previewStart = CFAbsoluteTimeGetCurrent()
+            let tail = await ChatStore.shared.loadMessages(sessionId: sessionId, tailLimit: 48)
+            let resolver = await ChatStore.shared.mediaFileURLResolver()
+            var preview: [ChatMessage] = []
+            var assistant: ChatMessage?
+            for raw in tail where !raw.isInternalBridge {
+                if raw.role == .user && raw.isToolResultOnly {
+                    if let assistant { Self.applyToolResults(from: raw, to: assistant, mediaResolver: resolver) }
+                    continue
+                }
+                let msg = raw.toChatMessage(mediaResolver: resolver, showThinking: ProviderConfigStore.shared.inferenceConfig(for: sessionId)?.thinkingLevel.isEnabled ?? false)
+                msg.sourceSortOrder = raw.sortOrder
+                msg.lastSourceSortOrder = raw.sortOrder
+                if raw.role == .assistant, let current = assistant {
+                    current.blocks.append(contentsOf: msg.blocks)
+                    current.lastSourceSortOrder = raw.sortOrder
+                    if let usage = msg.usage { current.usage = usage }
+                } else {
+                    assistant = raw.role == .assistant ? msg : nil
+                    preview.append(msg)
+                }
+            }
+            messages = preview
+            isShowingHistoryPreview = !preview.isEmpty
+            logger.info("[SessionLoad] tail preview: \(preview.count) bubbles in \(Int((CFAbsoluteTimeGetCurrent() - previewStart) * 1000))ms")
+            // Give SwiftUI a frame before full reconstruction. This is not a
+            // detached actor: published ChatMessage mutations stay on MainActor.
+            try? await Task.sleep(nanoseconds: 30_000_000)
+        }
+        if remoteDeviceId == nil {
+            _ = await ChatStore.shared.repairSessionIfNeeded(sessionId: sessionId)
+        }
         if !isProcessing { await refreshGroupContext() }
 
         let sinceAppear = (CFAbsoluteTimeGetCurrent() - Self.onAppearTimestamp) * 1000
@@ -220,11 +264,7 @@ extension AIChatViewModel {
         // badge is driven by `canResume` (AIChatViewModel's canResume didSet) —
         // the interrupted-loop detection later in this method sets canResume,
         // which raises/keeps the badge; resolving (Resume / new turn) clears it.
-        isLoadingSession = true
-        defer {
-            isLoadingSession = false
-            hasCompletedInitialLoad = true
-        }
+        // Loading ownership is established before the preview query above.
 
         // Loop detector state is per-runtime; reload of a session clears it.
         toolLoopDetector.reset()
@@ -1204,6 +1244,12 @@ extension AIChatViewModel {
         ViewModelCache.shared.cacheDraft(self, sessionId: session.id)
         logger.info("🔑DRAFT [vm=\(self.vmInstanceId)] ensureSession CREATED sessionId=\(session.id) draftId=\(self.draftId ?? "nil")")
         mountMinis(for: session.id)
+
+        // A draft started from inside a group must join that group even if an
+        // automatic grouping flow would otherwise leave it unfiled.
+        if let group = initialGroupId {
+            await ChatStore.shared.setFolder(group, forSessions: [session.id])
+        }
 
         // Create initial session binding from default group → last-used → latest
         // provider + latest text model. See createInitialBinding doc for the
