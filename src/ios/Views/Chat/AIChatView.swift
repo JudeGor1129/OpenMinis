@@ -7332,13 +7332,22 @@ private struct MinisLegacyTranscriptRow: View {
                 QueuedAttachmentPreview(attachments: message.inputAttachments)
             }
             if !message.content.isEmpty {
-                Text(verbatim: message.content)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(message.role == .user ? .trailing : .leading)
-                    .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-                    .contextMenu {
-                        Button("复制正文") { UIPasteboard.general.string = message.content }
-                    }
+                // [T-ios15-markdown-verbatim] This used to be
+                // `Text(verbatim:)`, which renders the model's markdown as
+                // literal text: `**bold**`, backticks and `- ` bullets all
+                // showed up as raw characters, and Text gives no text
+                // selection. Route through the same SelectableMarkdownView
+                // the modern transcript uses so iOS 15 gets identical
+                // markdown rendering plus long-press selection/copy.
+                SelectableMarkdownView(
+                    markdown: message.content,
+                    messageId: message.id
+                )
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+                .contextMenu {
+                    Button("复制正文") { UIPasteboard.general.string = message.content }
+                }
             }
             ForEach(message.blocks) { block in
                 MinisLegacyTranscriptBlock(block: block, isUser: message.role == .user)
@@ -7355,14 +7364,20 @@ private struct MinisLegacyTranscriptBlock: View {
 
     var body: some View {
         if !block.content.isEmpty {
-            Text(verbatim: block.content)
-                .font(.body)
-                .multilineTextAlignment(isUser ? .trailing : .leading)
-                .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .contextMenu {
-                    Button("复制正文") { UIPasteboard.general.string = block.content }
-                }
+            // Same fix as the row body above: a plain `Text` here is what made
+            // assistant replies look like raw markdown (`**`, `` ` ``, `- `)
+            // and blocked text selection on iOS 15.
+            SelectableMarkdownView(
+                markdown: block.content,
+                cachedContent: block.cachedMarkdown,
+                cachedAttributedString: block.cachedAttributedString,
+                blockId: block.id
+            )
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+            .contextMenu {
+                Button("复制正文") { UIPasteboard.general.string = block.content }
+            }
         }
     }
 }

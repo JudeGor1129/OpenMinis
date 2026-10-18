@@ -14,7 +14,11 @@ grep -q 'case "frida_status", "frida_processes":' src/ios/Agent/Chat/AIChatViewM
 grep -q 'case "frida_status", "frida_processes": return .frida' src/ios/Views/Settings/ToolsSettingsView.swift
 ! grep -Eq 'frida_(device_attach|session_create_script|device_spawn)' "$bridge"
 grep -q 'VStack(alignment: message.role == .user ? .trailing : .leading' "$view"
-grep -q 'multilineTextAlignment(isUser ? .trailing : .leading)' "$view"
+# Legacy transcript must render markdown through SelectableMarkdownView, not
+# Text(verbatim:), which showed raw ** / ` / - and blocked text selection.
+! grep -q 'Text(verbatim: message.content)' "$view"
+! grep -q 'Text(verbatim: block.content)' "$view"
+grep -q 'cachedContent: block.cachedMarkdown' "$view"
 grep -q 'scroll.isTracking || scroll.isDragging || scroll.isDecelerating' "$view"
 grep -q '.frame(width: max(0, viewport.size.width - 36)' "$view"
 ! grep -q 'else if followingBottom && !nearBottom' "$view"

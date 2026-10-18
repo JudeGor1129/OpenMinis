@@ -27,6 +27,15 @@ private struct LegacyContentView: View {
     @State private var draftGroupId: String? = nil
     @State private var creatingGroup = false
     @State private var managingFolder: ChatFolder? = nil
+    /// Set when a session row inside the group-management sheet was tapped.
+    /// The sheet dismisses first, then the HOME navigation stack pushes the
+    /// chat, so it opens full screen instead of inside the sheet's card.
+    @State private var pendingOpenSessionId: String? = nil
+    /// Session pushed from inside the group sheet. Only meaningful together
+    /// with `showingSession`; kept separate from `draftID` so the draft link
+    /// and the session link never fight over one isActive flag.
+    @State private var openedSessionID = ""
+    @State private var showingSession = false
     @State private var draftID = ""
     @State private var showingDraft = false
     @State private var selectedSessions: Set<String> = []
@@ -169,11 +178,21 @@ private struct LegacyContentView: View {
                 }
             }
             .background(
-                NavigationLink(
-                    destination: AIChatView(sessionId: nil, draftId: draftID, initialGroupId: draftGroupId),
-                    isActive: $showingDraft,
-                    label: { EmptyView() }
-                )
+                Group {
+                    NavigationLink(
+                        destination: AIChatView(sessionId: nil, draftId: draftID, initialGroupId: draftGroupId),
+                        isActive: $showingDraft,
+                        label: { EmptyView() }
+                    )
+                    // Second, independent link for "opened from the group
+                    // sheet". Reusing $showingDraft would tear down a draft
+                    // that is still in progress.
+                    NavigationLink(
+                        destination: openedSessionDestination,
+                        isActive: $showingSession,
+                        label: { EmptyView() }
+                    )
+                }
                 .hidden()
             )
             .onAppear {
@@ -190,9 +209,26 @@ private struct LegacyContentView: View {
             .sheet(isPresented: $showingSettings, onDismiss: reload) {
                 LegacySettingsSheet()
             }
-            .sheet(item: $managingFolder, onDismiss: reloadFolders) { folder in
+            .sheet(item: $managingFolder, onDismiss: {
+                reloadFolders()
+                // Dismiss-then-push: the sheet's own stack would render the
+                // chat card-sized on iOS 15.
+                if let sid = pendingOpenSessionId {
+                    pendingOpenSessionId = nil
+                    DispatchQueue.main.async {
+                        openedSessionID = sid
+                        showingSession = true
+                    }
+                }
+            }) { folder in
                 MinisNavigationContainer {
-                    LegacyGroupDetailView(folder: folder)
+                    LegacyGroupDetailView(
+                        folder: folder,
+                        onOpenSession: { sid in
+                            pendingOpenSessionId = sid
+                            managingFolder = nil
+                        }
+                    )
                 }
             }
             .sheet(isPresented: $creatingGroup, onDismiss: reloadFolders) {
@@ -286,6 +322,17 @@ private struct LegacyContentView: View {
             members[folder.id] = sessions.filter { ids.contains($0.id) && !$0.isChild }
         }
         groupSessions = members
+    }
+
+    /// Destination for the sheet-dismiss-then-push path. Guarded so an empty
+    /// id (initial state) never constructs a chat view for nothing.
+    @ViewBuilder
+    private var openedSessionDestination: some View {
+        if openedSessionID.isEmpty {
+            EmptyView()
+        } else {
+            LegacySessionDestination(sessionID: openedSessionID)
+        }
     }
 
     private func members(of folderId: String) -> [ChatSession] {
@@ -480,6 +527,13 @@ private struct LegacySessionRow: View {
     @Binding var selectionMode: Bool
     @Binding var selectedSessions: Set<String>
     let onChange: () -> Void
+    /// When set, tapping the row invokes this instead of pushing a
+    /// NavigationLink. Used from inside the group-management sheet: pushing
+    /// into a sheet's own navigation stack renders the chat as a card-sized
+    /// screen on iOS 15 (not full screen) and the sheet's presentation
+    /// gestures then interfere with long-press text selection. The sheet
+    /// dismisses and the home NavigationView performs the push instead.
+    var onOpen: ((String) -> Void)? = nil
     @State private var editing = false
     @State private var choosingFolder = false
     @State private var confirmingDelete = false
@@ -502,6 +556,10 @@ private struct LegacySessionRow: View {
                         rowLabel
                     }
                 }
+            } else if let onOpen {
+                // Sheet-hosted row: hand the push back to the home stack.
+                Button { onOpen(session.id) } label: { rowLabel }
+                    .buttonStyle(.plain)
             } else {
                 NavigationLink {
                     LegacySessionDestination(sessionID: session.id)
@@ -710,6 +768,10 @@ private struct LegacyGroupNameSheet: View {
 
 private struct LegacyGroupDetailView: View {
     @State var folder: ChatFolder
+    /// Injected by the home view so a tapped member opens on the HOME stack
+    /// (full screen). Pushing inside this sheet renders the chat card-sized on
+    /// iOS 15 and the sheet's gestures block text selection.
+    var onOpenSession: ((String) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var sessions: [ChatSession] = []
     @State private var selected: Set<String> = []
@@ -730,7 +792,17 @@ private struct LegacyGroupDetailView: View {
             Section("组内会话") {
                 if sessions.isEmpty { Text("暂无会话；可以添加已有会话。") }
                 ForEach(sessions) { session in
-                    LegacySessionRow(session: session, selectionMode: $selectionMode, selectedSessions: $selected, onChange: reload)
+                    // selectionMode stays read-only here: the sheet's list is
+                    // not a multi-select surface, and a live binding would
+                    // turn every tap into a checkbox toggle instead of opening
+                    // the chat. `onOpen` hands the push to the home stack.
+                    LegacySessionRow(
+                        session: session,
+                        selectionMode: .constant(false),
+                        selectedSessions: .constant([]),
+                        onChange: reload,
+                        onOpen: onOpenSession
+                    )
                 }
             }
         }
