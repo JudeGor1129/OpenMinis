@@ -70,7 +70,7 @@ private struct LegacyContentView: View {
                         }
                     }
                 }
-                if ungroupedSessions.isEmpty && foldersAllEmpty && !sessions.isEmpty {
+                if ungroupedSessions.isEmpty && !sessions.isEmpty {
                     Text("所有会话都已归入分组；展开分组即可查看。")
                         .font(.footnote)
                         .foregroundColor(.secondary)
@@ -230,10 +230,6 @@ private struct LegacyContentView: View {
 
     private var ungroupedSessions: [ChatSession] {
         sessions.filter { $0.folderId == nil }
-    }
-
-    private var foldersAllEmpty: Bool {
-        folders.allSatisfy { (groupSessions[$0.id] ?? []).isEmpty }
     }
 
     private func toggleGroup(_ id: String) {
