@@ -2851,7 +2851,17 @@ struct AIChatView: View {
                 inputBarHeight: inputBarHeight
             )
             } else {
-                MinisLegacyTranscript(vm: vm, bottomInset: inputBarHeight + 24)
+                // [T-ios15-floating-preview-inset] The modern list receives the
+                // measured `floatingBarHeight`, but this legacy transcript only
+                // reserved room for the composer. When the floating tool preview
+                // ("Minis 电脑" panel) was on screen it covered the newest
+                // message, so the last bubble could only be read by scrolling.
+                // Reserve the same measured height here, plus a small gap so the
+                // text does not touch the panel's edge.
+                MinisLegacyTranscript(
+                    vm: vm,
+                    bottomInset: inputBarHeight + floatingBarHeight + 32
+                )
             }
             // Empty/loading overlay for tap-to-dismiss-keyboard.
             // Placed BEFORE the directory timeline in the ZStack so the

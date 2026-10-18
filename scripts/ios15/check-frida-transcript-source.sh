@@ -42,6 +42,10 @@ printf 'PASS: built-in backend allowlist, cooperative cancellation and empty-res
 ! grep -q 'if cached.isNew || (vm.messages.isEmpty' "$view"
 ! grep -q 'await vm.reloadMessagesFromDB(reason: "AIChatView.onAppear-reuse")' "$view"
 grep -q '.background(MinisLegacyScrollFollow(' "$view"
+# The floating tool preview must be reserved in the legacy transcript's bottom
+# inset, otherwise the "Minis 电脑" panel covers the newest message on iOS 15.
+grep -q 'bottomInset: inputBarHeight + floatingBarHeight' "$view"
+! grep -q 'MinisLegacyTranscript(vm: vm, bottomInset: inputBarHeight + 24)' "$view"
 grep -q 'scroll.setContentOffset(CGPoint' "$view"
 grep -q 'lastSize != scroll.contentSize' "$view"
 printf 'PASS: cached re-entry and native scroll follow wiring.\n'
