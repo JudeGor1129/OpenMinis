@@ -52,16 +52,43 @@ private struct LegacyContentView: View {
                         Label("会话分组", systemImage: groupsExpanded ? "folder.fill" : "folder")
                     }
                     if groupsExpanded {
+                        // Every interactive element must be its OWN List row.
+                        // A single row holding a VStack of buttons + links lets
+                        // SwiftUI hand every tap to the row's button, which is
+                        // exactly why "开始新会话" and the member rows inside a
+                        // group stopped opening.
                         ForEach(folders) { folder in
-                            DisclosuredSessionList(
+                            DisclosuredGroupHeader(
                                 folder: folder,
-                                sessions: groupSessions[folder.id] ?? [],
+                                memberCount: members(of: folder.id).count,
                                 expanded: expandedGroups.contains(folder.id),
                                 onToggle: { toggleGroup(folder.id) },
-                                onNewSession: { startDraft(in: folder.id) },
-                                onManage: { managingFolder = folder },
-                                onChange: reload
+                                onManage: { managingFolder = folder }
                             )
+                            if expandedGroups.contains(folder.id) {
+                                Button { startDraft(in: folder.id) } label: {
+                                    Label("开始新会话", systemImage: "plus.bubble")
+                                }
+                                if members(of: folder.id).isEmpty {
+                                    Text("组内暂无会话")
+                                        .font(.footnote)
+                                        .foregroundColor(.secondary)
+                                }
+                                ForEach(members(of: folder.id)) { session in
+                                    // Deliberately read-only selection state:
+                                    // group rows always push into the chat. A
+                                    // live selectionMode binding turned them
+                                    // into checkboxes whenever the home list
+                                    // was in multi-select, so a tap selected
+                                    // instead of opening.
+                                    LegacySessionRow(
+                                        session: session,
+                                        selectionMode: .constant(false),
+                                        selectedSessions: .constant([]),
+                                        onChange: reload
+                                    )
+                                }
+                            }
                         }
                         if folders.isEmpty {
                             Button { creatingGroup = true } label: {
@@ -261,6 +288,10 @@ private struct LegacyContentView: View {
         groupSessions = members
     }
 
+    private func members(of folderId: String) -> [ChatSession] {
+        groupSessions[folderId] ?? []
+    }
+
     private func startDraft(in folderId: String? = nil) {
         draftGroupId = folderId
         draftID = "__new__\(UUID().uuidString)"
@@ -275,58 +306,38 @@ private struct LegacyContentView: View {
     }
 }
 
-/// In-place, disclosured group section. Opening a group must not push a
-/// navigation screen; only a session row pushes into the chat.
-private struct DisclosuredSessionList: View {
+/// Group header row: disclosure toggle + management entry. Deliberately a
+/// small View placed as its OWN List row — see the group block in body.
+private struct DisclosuredGroupHeader: View {
     let folder: ChatFolder
-    let sessions: [ChatSession]
+    let memberCount: Int
     let expanded: Bool
     let onToggle: () -> Void
-    let onNewSession: () -> Void
     let onManage: () -> Void
-    let onChange: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Button(action: onToggle) {
-                    HStack {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Image(systemName: folder.icon ?? "folder")
-                        Text(folder.name)
-                        Spacer()
-                        Text("\(sessions.count)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                // Sibling of the toggle, not inside its label: a Button nested
-                // in another Button's label swallows the inner tap.
-                Button { onManage() } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .buttonStyle(.borderless)
-            }
-            if expanded {
-                Button { onNewSession() } label: {
-                    Label("开始新会话", systemImage: "plus.bubble")
-                }
-                if sessions.isEmpty {
-                    Text("组内暂无会话")
-                        .font(.footnote)
+        HStack {
+            Button(action: onToggle) {
+                HStack {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Image(systemName: folder.icon ?? "folder")
+                    Text(folder.name)
+                    Spacer()
+                    Text("\(memberCount)")
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                ForEach(sessions) { session in
-                    LegacySessionRow(session: session,
-                                     selectionMode: .constant(false),
-                                     selectedSessions: .constant([]),
-                                     onChange: onChange)
-                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            // Sibling of the toggle, not inside its label: a Button nested in
+            // another Button's label swallows the inner tap.
+            Button(action: onManage) {
+                Image(systemName: "ellipsis.circle")
+            }
+            .buttonStyle(.borderless)
         }
     }
 }

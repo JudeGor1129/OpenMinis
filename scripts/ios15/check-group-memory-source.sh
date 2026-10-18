@@ -29,7 +29,7 @@ grep -q 'try MinisGroupConfigurationStore.save' "$skills"
 # iOS 15 group UI is an in-place disclosure now: tapping 会话分组 or a group
 # must never push a screen. Guard the disclosure wiring and the sheet-hosted
 # management entry instead of the old NavigationLink.
-grep -q 'DisclosuredSessionList(' src/ios/Views/LegacyContentView.swift
+grep -q 'DisclosuredGroupHeader(' src/ios/Views/LegacyContentView.swift
 grep -q 'sheet(item: \$managingFolder' src/ios/Views/LegacyContentView.swift
 grep -q 'LegacyGroupDetailView(folder: folder)' src/ios/Views/LegacyContentView.swift
 grep -q 'guard isChatViewVisible' src/ios/Views/Chat/AIChatView.swift
