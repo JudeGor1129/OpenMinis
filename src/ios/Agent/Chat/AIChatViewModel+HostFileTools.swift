@@ -89,7 +89,7 @@ extension AIChatViewModel {
 
     // MARK: - Argument helpers
 
-    static func hostArgs(_ json: String) -> [String: Any]? {
+    nonisolated static func hostArgs(_ json: String) -> [String: Any]? {
         guard let data = json.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -97,14 +97,14 @@ extension AIChatViewModel {
         return object
     }
 
-    static func hostInt(_ value: Any?) -> Int? {
+    nonisolated static func hostInt(_ value: Any?) -> Int? {
         if let int = value as? Int { return int }
         if let number = value as? NSNumber { return number.intValue }
         if let string = value as? String { return Int(string) }
         return nil
     }
 
-    static func hostBool(_ value: Any?) -> Bool? {
+    nonisolated static func hostBool(_ value: Any?) -> Bool? {
         if let bool = value as? Bool { return bool }
         if let number = value as? NSNumber { return number.boolValue }
         return nil
@@ -113,7 +113,7 @@ extension AIChatViewModel {
     /// Human-readable byte count. Kept deliberately crude — the model only
     /// needs magnitude, and a formatter instance per entry would dominate the
     /// cost of listing a large directory.
-    static func hostByteSize(_ bytes: Int) -> String {
+    nonisolated static func hostByteSize(_ bytes: Int) -> String {
         if bytes < 1024 { return "\(bytes) B" }
         if bytes < 1024 * 1024 { return String(format: "%.1f KB", Double(bytes) / 1024) }
         if bytes < 1024 * 1024 * 1024 { return String(format: "%.1f MB", Double(bytes) / (1024 * 1024)) }
@@ -122,7 +122,7 @@ extension AIChatViewModel {
 
     /// Clamp a tool result to the shared character budget, announcing the cut so
     /// the model knows it is looking at a prefix rather than the whole answer.
-    static func hostClamp(_ text: String, limit: Int = AIChatViewModel.kMaxToolResultChars) -> String {
+    nonisolated static func hostClamp(_ text: String, limit: Int) -> String {
         guard text.count > limit else { return text }
         let head = text.prefix(limit)
         return String(head) + "\n\n[truncated: result exceeded \(limit) characters]"
@@ -206,7 +206,7 @@ extension AIChatViewModel {
             }
             return (output, true)
         }.value
-        return FileToolResult(output: Self.hostClamp(result.0), success: result.1)
+        return FileToolResult(output: Self.hostClamp(result.0, limit: Self.kMaxToolResultChars), success: result.1)
     }
 
     // MARK: - host_read_file
@@ -272,7 +272,7 @@ extension AIChatViewModel {
             }
             return ("\(header)\n\n\(text)", true)
         }.value
-        return FileToolResult(output: Self.hostClamp(result.0), success: result.1)
+        return FileToolResult(output: Self.hostClamp(result.0, limit: Self.kMaxToolResultChars), success: result.1)
     }
 
     // MARK: - host_search_files
@@ -330,7 +330,7 @@ extension AIChatViewModel {
             if matches.isEmpty { return (header + "\n(no matching file names)", true) }
             return (([header] + matches).joined(separator: "\n"), true)
         }.value
-        return FileToolResult(output: Self.hostClamp(result.0), success: result.1)
+        return FileToolResult(output: Self.hostClamp(result.0, limit: Self.kMaxToolResultChars), success: result.1)
     }
 
     // MARK: - host_search_text
@@ -422,7 +422,7 @@ extension AIChatViewModel {
             if matches.isEmpty { return (header + "\n(no matching lines)", true) }
             return (([header] + matches).joined(separator: "\n"), true)
         }.value
-        return FileToolResult(output: Self.hostClamp(result.0), success: result.1)
+        return FileToolResult(output: Self.hostClamp(result.0, limit: Self.kMaxToolResultChars), success: result.1)
     }
 
     // MARK: - host_file_info
@@ -476,6 +476,6 @@ extension AIChatViewModel {
             }
             return (lines.joined(separator: "\n"), true)
         }.value
-        return FileToolResult(output: Self.hostClamp(result.0), success: result.1)
+        return FileToolResult(output: Self.hostClamp(result.0, limit: Self.kMaxToolResultChars), success: result.1)
     }
 }
