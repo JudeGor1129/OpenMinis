@@ -472,6 +472,7 @@
 		E5HF0001 /* AIChatViewModel+HostFileTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5HF0002 /* AIChatViewModel+HostFileTools.swift */; };
 		E5HW0001 /* AIChatViewModel+HostWriteTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5HW0002 /* AIChatViewModel+HostWriteTools.swift */; };
 		E5MB0001 /* AIChatViewModel+HostBinaryTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5MB0002 /* AIChatViewModel+HostBinaryTools.swift */; };
+		E5BT0001 /* AIChatViewModel+HostBuildTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BT0002 /* AIChatViewModel+HostBuildTools.swift */; };
 		E5VMC0003 /* AIChatViewModel+Offloading.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0013 /* AIChatViewModel+Offloading.swift */; };
 		E5VMC0004 /* AIChatViewModel+SSEStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0014 /* AIChatViewModel+SSEStream.swift */; };
 		E5VMC0005 /* AIChatViewModel+Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0015 /* AIChatViewModel+Persistence.swift */; };
@@ -1192,6 +1193,7 @@
 		E5HF0002 /* AIChatViewModel+HostFileTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+HostFileTools.swift"; sourceTree = "<group>"; };
 		E5HW0002 /* AIChatViewModel+HostWriteTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+HostWriteTools.swift"; sourceTree = "<group>"; };
 		E5MB0002 /* AIChatViewModel+HostBinaryTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+HostBinaryTools.swift"; sourceTree = "<group>"; };
+		E5BT0002 /* AIChatViewModel+HostBuildTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+HostBuildTools.swift"; sourceTree = "<group>"; };
 		E5VMC0013 /* AIChatViewModel+Offloading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Offloading.swift"; sourceTree = "<group>"; };
 		E5VMC0014 /* AIChatViewModel+SSEStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+SSEStream.swift"; sourceTree = "<group>"; };
 		E5VMC0015 /* AIChatViewModel+Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Persistence.swift"; sourceTree = "<group>"; };
@@ -2141,6 +2143,7 @@
 				E5HF0002 /* AIChatViewModel+HostFileTools.swift */,
 				E5HW0002 /* AIChatViewModel+HostWriteTools.swift */,
 				E5MB0002 /* AIChatViewModel+HostBinaryTools.swift */,
+				E5BT0002 /* AIChatViewModel+HostBuildTools.swift */,
 				E5VMD0011 /* MinisURLPathDecoding.swift */,
 				E5VMC0013 /* AIChatViewModel+Offloading.swift */,
 				E5VMC0014 /* AIChatViewModel+SSEStream.swift */,
@@ -2905,6 +2908,7 @@
 				E5HF0001 /* AIChatViewModel+HostFileTools.swift in Sources */,
 				E5HW0001 /* AIChatViewModel+HostWriteTools.swift in Sources */,
 				E5MB0001 /* AIChatViewModel+HostBinaryTools.swift in Sources */,
+				E5BT0001 /* AIChatViewModel+HostBuildTools.swift in Sources */,
 				E5VMD0001 /* MinisURLPathDecoding.swift in Sources */,
 				E5VMC0003 /* AIChatViewModel+Offloading.swift in Sources */,
 				E5VMC0004 /* AIChatViewModel+SSEStream.swift in Sources */,

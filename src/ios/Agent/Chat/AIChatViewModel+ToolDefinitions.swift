@@ -448,6 +448,20 @@ extension AIChatViewModel {
             required: ["tool_title", "path"],
             propertyOrdering: ["tool_title", "path", "root"]
         ))
+        tools.append(AgentToolDefinition(
+            name: "host_build_tweak",
+            description: "Compile and package a Theos jailbreak project on the device with the installed toolchain (clang + ld64 + Theos), producing a .deb in the project's packages/ directory. Runs `make package`. Use this to turn generated Tweak.x/Makefile/control sources into an installable package. Reports compiler errors verbatim when the build fails, and names the missing packages when no toolchain is installed. Do not claim a build succeeded unless an artifact path is returned.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "path": AgentToolParam(type: .string, description: "Theos project directory (containing Makefile and control). Absolute, or relative to the app Documents directory under root=\"ios\"."),
+                "root": AgentToolParam(type: .string, description: "\"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+                "package": AgentToolParam(type: .boolean, description: "Run `make package` to produce a .deb (default true). Set false to compile and link only."),
+                "clean": AgentToolParam(type: .boolean, description: "Run `make clean` first (default false). Use after changing the Makefile's file list."),
+                "timeout": AgentToolParam(type: .integer, description: "Timeout in seconds (default 900). The build is killed on expiry."),
+            ],
+            required: ["tool_title", "path"],
+            propertyOrdering: ["tool_title", "path", "root", "package", "clean", "timeout"]
+        ))
         return tools
     }
 
