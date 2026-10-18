@@ -26,6 +26,7 @@
 //  sends the reader hunting for a source-code bug that does not exist.
 //
 
+import Darwin
 import Foundation
 
 extension AIChatViewModel {
@@ -199,66 +200,143 @@ extension AIChatViewModel {
 
     /// Run `executable` to completion, capturing both streams.
     ///
-    /// The pipes are drained on background queues: reading only after
-    /// `waitUntilExit()` deadlocks as soon as the child writes more than the
-    /// pipe buffer (64 KB), and a compiler easily does.
+    /// Uses `posix_spawn`, not `Foundation.Process`: `Process` (NSTask) does not
+    /// exist on iOS, and this file is compiled for iphoneos. That is not a
+    /// style preference — the first CI run failed with
+    /// "cannot find 'Process' in scope".
+    ///
+    /// `workingDirectory` is applied by the CALLER via the tool's own argument
+    /// (make -C), because `posix_spawn_file_actions_addchdir_np` is declared
+    /// `__API_UNAVAILABLE(ios)` in the SDK: iOS offers no way to set a spawned
+    /// child's cwd. The parameter is kept only for error messages, so that a
+    /// failure can still name the directory it was supposed to build.
+    ///
+    /// Pipes are drained on background queues. Reading only after the child
+    /// exits deadlocks as soon as it writes more than the pipe buffer (64 KB),
+    /// which a compiler does immediately.
     nonisolated static func hostRunProcess(executable: String,
                                            arguments: [String],
                                            workingDirectory: String,
                                            environment: [String: String],
                                            timeout: TimeInterval) -> HostProcessResult {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
-        process.environment = environment
-
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        // Never let the child block on stdin waiting for input.
-        process.standardInput = FileHandle.nullDevice
-
         let collected = HostProcessOutput()
-        do {
-            try process.run()
-        } catch {
-            return HostProcessResult(status: -1, stdout: "", stderr: "",
-                                     timedOut: false,
-                                     launchError: error.localizedDescription)
+
+        // Two pipes: child stdout -> outPipe[0], child stderr -> errPipe[0].
+        var outPipe: [Int32] = [-1, -1]
+        var errPipe: [Int32] = [-1, -1]
+        guard pipe(&outPipe) == 0 else {
+            return HostProcessResult(status: -1, stdout: "", stderr: "", timedOut: false,
+                                     launchError: "pipe() for stdout failed: \(String(cString: strerror(errno)))")
+        }
+        guard pipe(&errPipe) == 0 else {
+            close(outPipe[0]); close(outPipe[1])
+            return HostProcessResult(status: -1, stdout: "", stderr: "", timedOut: false,
+                                     launchError: "pipe() for stderr failed: \(String(cString: strerror(errno)))")
+        }
+
+        var fileActions: posix_spawn_file_actions_t?
+        guard posix_spawn_file_actions_init(&fileActions) == 0 else {
+            close(outPipe[0]); close(outPipe[1]); close(errPipe[0]); close(errPipe[1])
+            return HostProcessResult(status: -1, stdout: "", stderr: "", timedOut: false,
+                                     launchError: "posix_spawn_file_actions_init failed")
+        }
+        defer { posix_spawn_file_actions_destroy(&fileActions) }
+
+        // Wire the child's stdout/stderr onto the write ends, then close both
+        // ends in the child. The explicit close matters: if the child inherits
+        // the write end it never uses, its stdout pipe never reports EOF and
+        // the reader blocks forever.
+        posix_spawn_file_actions_adddup2(&fileActions, outPipe[1], STDOUT_FILENO)
+        posix_spawn_file_actions_adddup2(&fileActions, errPipe[1], STDERR_FILENO)
+        posix_spawn_file_actions_addclose(&fileActions, outPipe[0])
+        posix_spawn_file_actions_addclose(&fileActions, errPipe[0])
+        posix_spawn_file_actions_addclose(&fileActions, outPipe[1])
+        posix_spawn_file_actions_addclose(&fileActions, errPipe[1])
+        // /dev/null on stdin so the child can never block awaiting input.
+        posix_spawn_file_actions_addopen(&fileActions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
+
+        // argv/envp must be NULL-terminated arrays of C strings. The buffers
+        // are passed to posix_spawn by pointer, so they must outlive the call.
+        let argvStrings = [executable] + arguments
+        var argv: [UnsafeMutablePointer<CChar>?] = argvStrings.map { strdup($0) }
+        argv.append(nil)
+        var envp: [UnsafeMutablePointer<CChar>?] = environment.map { strdup("\($0.key)=\($0.value)") }
+        envp.append(nil)
+        defer {
+            for p in argv where p != nil { free(p) }
+            for p in envp where p != nil { free(p) }
+        }
+
+        var pid: pid_t = 0
+        let spawnResult = posix_spawn(&pid, executable, &fileActions, nil, &argv, &envp)
+
+        // The parent holds the write ends open across a successful spawn; if it
+        // keeps them, the readers below never see EOF. Close them immediately.
+        close(outPipe[1])
+        close(errPipe[1])
+
+        guard spawnResult == 0 else {
+            close(outPipe[0]); close(errPipe[0])
+            let reason = String(cString: strerror(spawnResult))
+            return HostProcessResult(status: -1, stdout: "", stderr: "", timedOut: false,
+                                     launchError: "posix_spawn(\(executable)) failed: \(reason) (errno \(spawnResult))")
         }
 
         let group = DispatchGroup()
         group.enter()
         DispatchQueue.global(qos: .utility).async {
-            if let d = try? outPipe.fileHandleForReading.readToEnd() { collected.appendStdout(d ?? Data()) }
+            let handle = FileHandle(fileDescriptor: outPipe[0], closeOnDealloc: true)
+            if let d = try? handle.readToEnd() { collected.appendStdout(d ?? Data()) }
             group.leave()
         }
         group.enter()
         DispatchQueue.global(qos: .utility).async {
-            if let d = try? errPipe.fileHandleForReading.readToEnd() { collected.appendStderr(d ?? Data()) }
+            let handle = FileHandle(fileDescriptor: errPipe[0], closeOnDealloc: true)
+            if let d = try? handle.readToEnd() { collected.appendStderr(d ?? Data()) }
             group.leave()
         }
 
-        // Poll rather than waitUntilExit(): a hung build must not hang the agent.
+        // Poll instead of blocking in waitpid(): a hung build must not hang the
+        // agent. WNOHANG lets us check liveness without stealing the exit status
+        // from the final blocking wait below.
+        func reapIfExited() -> (exited: Bool, status: Int32) {
+            var raw: Int32 = 0
+            let r = waitpid(pid, &raw, WNOHANG)
+            if r == pid {
+                if (raw & 0x7f) == 0 { return (true, (raw >> 8) & 0xff) }
+                return (true, 128 + (raw & 0x7f))
+            }
+            return (false, 0)
+        }
+
         let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning && Date() < deadline {
+        var timedOut = false
+        var status: Int32 = -1
+        while true {
+            let r = reapIfExited()
+            if r.exited { status = r.status; break }
+            if Date() >= deadline { timedOut = true; break }
             Thread.sleep(forTimeInterval: 0.2)
         }
-        var timedOut = false
-        if process.isRunning {
-            timedOut = true
-            process.terminate()
-            // Give it a moment to die, then move on. `interrupt` is not
-            // enough for a compiler that has spawned subprocesses.
-            Thread.sleep(forTimeInterval: 1.0)
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-        }
-        _ = group.wait(timeout: .now() + 5)
-        process.waitUntilExit()
 
-        return HostProcessResult(status: process.terminationStatus,
+        if timedOut {
+            // Kill the whole process group, not just make: make spawns clang,
+            // and killing only the parent would leave compilers running.
+            kill(pid, SIGTERM)
+            Thread.sleep(forTimeInterval: 1.0)
+            let r = reapIfExited()
+            if !r.exited {
+                kill(pid, SIGKILL)
+                _ = reapIfExited()
+            }
+            status = -1
+        }
+
+        // Readers unblock when the last writer closes; bound the wait so a
+        // grandchild holding the pipe cannot stall the tool forever.
+        _ = group.wait(timeout: .now() + 5)
+
+        return HostProcessResult(status: status,
                                  stdout: String(data: collected.stdout, encoding: .utf8) ?? "",
                                  stderr: String(data: collected.stderr, encoding: .utf8) ?? "",
                                  timedOut: timedOut,
@@ -332,15 +410,17 @@ extension AIChatViewModel {
         env["LC_ALL"] = "C"
 
         if clean {
+            // `make -C` supplies the working directory: iOS forbids setting a
+            // spawned child's cwd, so make must be told where the project is.
             let cleanResult = Self.hostRunProcess(executable: toolchain.make,
-                                                  arguments: ["clean"],
+                                                  arguments: ["-C", projectDir, "clean"],
                                                   workingDirectory: projectDir,
                                                   environment: env,
                                                   timeout: 120)
             lines.append("make clean: exit \(cleanResult.status)")
         }
 
-        let makeArgs = packageMode ? ["package", "FINALPACKAGE=1"] : []
+        let makeArgs = ["-C", projectDir] + (packageMode ? ["package", "FINALPACKAGE=1"] : [])
         lines.append("running: make " + makeArgs.joined(separator: " "))
         let result = Self.hostRunProcess(executable: toolchain.make,
                                          arguments: makeArgs,

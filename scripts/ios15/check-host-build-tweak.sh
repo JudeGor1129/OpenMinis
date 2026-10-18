@@ -63,18 +63,33 @@ grep -q 'hostValidateTheosProject' "$impl" || { echo "FAIL: no project validatio
 grep -q 'missing control' "$impl" || { echo "FAIL: control file not checked"; fail=1; }
 echo "  Makefile + control + a source file are required"
 
-echo "== pipes are drained concurrently (no 64 KB deadlock) =="
-# Reading a pipe only after waitUntilExit() deadlocks once the child fills the
-# buffer. A compiler does this immediately, so the readers must run on queues.
-grep -q 'readToEnd' "$impl" || { echo "FAIL: output is not drained via readToEnd"; fail=1; }
-if grep -q 'waitUntilExit()' "$impl" && ! grep -q 'fileHandleForReading.readToEnd' "$impl"; then
-    echo "FAIL: waitUntilExit without concurrent pipe readers can deadlock"; fail=1
+echo "== iOS build constraints are respected =="
+# Foundation.Process (NSTask) does NOT exist on iOS; the first CI run failed
+# with "cannot find 'Process' in scope". posix_spawn is the only option.
+if grep -qE '\bProcess\(\)' "$impl"; then
+  echo "FAIL: Foundation.Process is unavailable on iOS; use posix_spawn"; fail=1
 fi
+grep -q 'posix_spawn(' "$impl" || { echo "FAIL: no posix_spawn call"; fail=1; }
+# addchdir_np is __API_UNAVAILABLE(ios), so the cwd must come from make -C.
+# Match the CALL form only: the explanatory comment names the function too.
+if grep -q 'posix_spawn_file_actions_addchdir_np(&' "$impl"; then
+  echo "FAIL: addchdir_np is unavailable on iOS"; fail=1
+fi
+grep -q '\-C' "$impl" || { echo "FAIL: make -C must supply the working directory"; fail=1; }
+echo "  posix_spawn used; cwd via make -C"
+
+echo "== pipes are drained concurrently (no 64 KB deadlock) =="
+# Reading a pipe only after the child exits deadlocks once it fills the
+# buffer. A compiler does this immediately, so readers must run on queues.
+grep -q 'readToEnd' "$impl" || { echo "FAIL: output is not drained via readToEnd"; fail=1; }
 grep -q 'DispatchQueue.global' "$impl" || { echo "FAIL: no background drain queues"; fail=1; }
-echo "  stdout/stderr drained on background queues"
+# The child must not inherit a write end it does not use, or EOF never arrives.
+grep -q 'addclose' "$impl" || { echo "FAIL: unused pipe ends not closed in the child"; fail=1; }
+echo "  stdout/stderr drained on background queues, pipe ends closed"
 
 echo "== a hung build cannot hang the agent =="
 grep -q 'timedOut' "$impl" || { echo "FAIL: no timeout tracking"; fail=1; }
+grep -q 'WNOHANG' "$impl" || { echo "FAIL: cannot poll child liveness without blocking"; fail=1; }
 grep -q 'SIGKILL' "$impl" || { echo "FAIL: runaway build is never force-killed"; fail=1; }
 echo "  timeout enforced; terminate then SIGKILL"
 
