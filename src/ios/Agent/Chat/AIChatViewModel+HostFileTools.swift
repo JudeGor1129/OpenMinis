@@ -31,7 +31,7 @@ extension AIChatViewModel {
     /// it is a context boundary: anything returned here is copied into the
     /// model's context and the conversation log. Keychain databases are
     /// therefore refused rather than merely discouraged.
-    static let hostDeniedPathPrefixes: [String] = [
+    nonisolated static let hostDeniedPathPrefixes: [String] = [
         "/var/Keychains",
         "/private/var/Keychains",
         "/var/mobile/Library/Keychains",
@@ -41,9 +41,34 @@ extension AIChatViewModel {
     /// Result of mapping a caller-supplied path onto a concrete filesystem
     /// location. `error` is user-facing text, never a thrown error, so the
     /// dispatcher can report it through the normal tool-result channel.
+    ///
+    /// `url` is symlink-RESOLVED and is what the tools actually open.
+    /// `displayPath` keeps what the caller asked for, because the two diverge:
+    /// `/var/jb/usr/sbin` resolves to `/private/preboot/<uuid>/xina-…/usr/sbin`,
+    /// and iSH paths under `/var/minis/**` are symlinks into a shared AppGroup
+    /// container. [T-host-symlink-follow] Both roots must follow links: iSH
+    /// stores `/var/minis/skills` as a symlink, and opening it without
+    /// resolution failed with "could not open file skills" even though the
+    /// target was readable.
     struct HostPathResolution {
         let url: URL?
+        let displayPath: String
         let error: String?
+
+        init(url: URL?, displayPath: String = "", error: String?) {
+            self.url = url
+            self.displayPath = displayPath
+            self.error = error
+        }
+    }
+
+    /// Refusal text for a credential store, or nil when the path is allowed.
+    nonisolated static func hostDeniedPathError(for path: String) -> String? {
+        for denied in AIChatViewModel.hostDeniedPathPrefixes
+        where path == denied || path.hasPrefix(denied + "/") {
+            return "Refused: \(path) is a credential store. Host tools never read keychain material into the conversation."
+        }
+        return nil
     }
 
     /// Resolve `raw` under the requested root. Relative iOS paths anchor at the
@@ -54,15 +79,15 @@ extension AIChatViewModel {
         guard !trimmed.isEmpty else {
             return HostPathResolution(url: nil, error: "Empty path.")
         }
+        let candidate: URL
         switch root.lowercased() {
         case "ish":
             guard let url = resolveHostPath(trimmed) else {
                 return HostPathResolution(url: nil, error: "Invalid iSH path: \(trimmed)")
             }
-            return HostPathResolution(url: url.standardizedFileURL, error: nil)
+            candidate = url
 
         case "ios", "":
-            let candidate: URL
             if trimmed.hasPrefix("/") {
                 candidate = URL(fileURLWithPath: trimmed)
             } else {
@@ -71,20 +96,22 @@ extension AIChatViewModel {
                 }
                 candidate = docs.appendingPathComponent(trimmed)
             }
-            let standardized = candidate.standardizedFileURL
-            let path = standardized.path
-            for denied in Self.hostDeniedPathPrefixes
-            where path == denied || path.hasPrefix(denied + "/") {
-                return HostPathResolution(
-                    url: nil,
-                    error: "Refused: \(path) is a credential store. Host tools never read keychain material into the conversation."
-                )
-            }
-            return HostPathResolution(url: standardized, error: nil)
 
         default:
             return HostPathResolution(url: nil, error: "Unknown root '\(root)'. Use 'ios' or 'ish'.")
         }
+
+        let standardized = candidate.standardizedFileURL
+        // Check the literal path AND the resolved one: a symlink under an
+        // allowed directory must not become a way into a credential store.
+        if let denied = Self.hostDeniedPathError(for: standardized.path) {
+            return HostPathResolution(url: nil, error: denied)
+        }
+        let resolved = standardized.resolvingSymlinksInPath()
+        if let denied = Self.hostDeniedPathError(for: resolved.path) {
+            return HostPathResolution(url: nil, error: denied)
+        }
+        return HostPathResolution(url: resolved, displayPath: standardized.path, error: nil)
     }
 
     // MARK: - Argument helpers
@@ -159,7 +186,7 @@ extension AIChatViewModel {
             guard isDirectory.boolValue else {
                 return ("Error: Not a directory: \(url.path) (use host_file_info for a file)", false)
             }
-            let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey]
+            let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey, .isSymbolicLinkKey]
             let options: FileManager.DirectoryEnumerationOptions = includeHidden ? [] : [.skipsHiddenFiles]
 
             var lines: [String] = []
@@ -169,6 +196,14 @@ extension AIChatViewModel {
 
             func describe(_ child: URL) {
                 let values = try? child.resourceValues(forKeys: Set(keys))
+                // A symlink reports isDirectory=false for the link itself, so
+                // without this branch a linked directory looked like a 0-byte
+                // file. Name the target instead of inventing a size.
+                if values?.isSymbolicLink == true {
+                    let destination = (try? fm.destinationOfSymbolicLink(atPath: child.path)) ?? "?"
+                    lines.append("l  \(child.lastPathComponent) -> \(destination)")
+                    return
+                }
                 let isDir = values?.isDirectory ?? false
                 if isDir {
                     directories += 1
@@ -221,6 +256,9 @@ extension AIChatViewModel {
 
             var header = "\(url.path) (root=\(rootLabel), \(directories) dir, \(files) file"
             header += truncated ? ", listing truncated at \(limit))" : ")"
+            if resolution.displayPath != url.path {
+                header += "\nrequested: \(resolution.displayPath) (symlink-resolved)"
+            }
             if lines.isEmpty { return (header + "\n(empty directory)", true) }
             var output = ([header] + lines).joined(separator: "\n")
             if truncated {
@@ -481,11 +519,16 @@ extension AIChatViewModel {
             var lines: [String] = [url.path]
             lines.append("root: \(root.lowercased() == "ish" ? "ish" : "ios")")
             lines.append("exists: true")
-            lines.append("type: \((values?.isDirectory ?? isDirectory.boolValue) ? "directory" : "file")")
-            if values?.isSymbolicLink == true {
-                let destination = (try? fm.destinationOfSymbolicLink(atPath: url.path)) ?? "?"
-                lines.append("symlink -> \(destination)")
+            // Report the link itself, then the target's real type. `url` is
+            // already resolved, so asking IT about symlinks would always say no.
+            let requested = URL(fileURLWithPath: resolution.displayPath)
+            if let requestedValues = try? requested.resourceValues(forKeys: [.isSymbolicLinkKey]),
+               requestedValues.isSymbolicLink == true {
+                let destination = (try? fm.destinationOfSymbolicLink(atPath: requested.path)) ?? "?"
+                lines.append("symlink: \(resolution.displayPath) -> \(destination)")
+                lines.append("resolved: \(url.path)")
             }
+            lines.append("type: \((values?.isDirectory ?? isDirectory.boolValue) ? "directory" : "file")")
             lines.append("readable: \(values?.isReadable == true ? "yes" : "no")")
             if let size = values?.fileSize, values?.isDirectory != true {
                 lines.append("size: \(size) bytes (\(Self.hostByteSize(size)))")

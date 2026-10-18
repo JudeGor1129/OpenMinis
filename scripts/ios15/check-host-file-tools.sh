@@ -41,7 +41,13 @@ echo "== dual-root support =="
 grep -q 'case "ish":' "$impl"
 grep -q 'case "ios", "":' "$impl"
 grep -q 'resolveHostPath(trimmed)' "$impl"
-echo "  ios and ish roots both resolved (ish delegates to the existing resolver)"
+# [T-host-symlink-follow] iSH serves /var/minis/** through symlinks into a
+# shared AppGroup container; without resolution, listing failed with
+# "could not open file skills" while the target was readable.
+grep -q 'resolvingSymlinksInPath()' "$impl"
+grep -q 'symlink-resolved' "$impl"
+grep -q 'l  \\(child.lastPathComponent) -> ' "$impl"
+echo "  ios and ish roots both resolved; symlinks followed and labelled"
 
 echo "== credential stores refused =="
 grep -q '/var/mobile/Library/Keychains' "$impl"
