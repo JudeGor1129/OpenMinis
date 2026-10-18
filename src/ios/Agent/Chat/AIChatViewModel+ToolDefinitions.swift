@@ -273,6 +273,82 @@ extension AIChatViewModel {
                 propertyOrdering: []
             ))
         }
+        // [T-host-file-tools] iOS-side read-only filesystem tools. Ungated like
+        // the existing file_read/file_write family, but they address the real
+        // device filesystem instead of the iSH fakefs — `root` picks which.
+        tools.append(AgentToolDefinition(
+            name: "host_list_files",
+            description: "List a directory on the iOS filesystem (NOT the iSH Linux fakefs — use shell_execute or file_read for that). root=\"ios\" (default) addresses the real device: absolute paths like /var/jb, /var/mobile, /private/preboot work, and relative paths resolve against this app's Documents directory. root=\"ish\" addresses the same filesystem file_read uses. Read-only, bounded to 500 entries. Keychain databases are always refused.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "path": AgentToolParam(type: .string, description: "Directory to list. Absolute for a real path, or relative to the app Documents directory under root=\"ios\"."),
+                "root": AgentToolParam(type: .string, description: "Which filesystem: \"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+                "limit": AgentToolParam(type: .integer, description: "Maximum entries to return (default 200, max 500)."),
+                "recursive": AgentToolParam(type: .boolean, description: "Walk subdirectories too (default false). Deep trees still stop at 'limit'."),
+                "include_hidden": AgentToolParam(type: .boolean, description: "Include dotfiles (default false)."),
+            ],
+            required: ["tool_title", "path"],
+            propertyOrdering: ["tool_title", "path", "root", "limit", "recursive", "include_hidden"]
+        ))
+        tools.append(AgentToolDefinition(
+            name: "host_read_file",
+            description: "Read a text file from the iOS filesystem (NOT the iSH fakefs — use file_read there). Binary files return a hex preview instead of content. Content is capped at 80000 characters; use offset/lines to page through large files. Read-only; keychain databases are refused.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "path": AgentToolParam(type: .string, description: "File to read. Absolute for a real path, or relative to the app Documents directory under root=\"ios\"."),
+                "root": AgentToolParam(type: .string, description: "Which filesystem: \"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+                "offset": AgentToolParam(type: .integer, description: "1-based first line to return (default 1)."),
+                "lines": AgentToolParam(type: .integer, description: "Maximum number of lines to return. Omit for the whole file."),
+                "direction": AgentToolParam(type: .string, description: "\"head\" reads from 'offset' (default); \"tail\" reads the last N lines.", enumValues: ["head", "tail"]),
+                "max_length": AgentToolParam(type: .integer, description: "Character cap (default and maximum 80000)."),
+            ],
+            required: ["tool_title", "path"],
+            propertyOrdering: ["tool_title", "path", "root", "offset", "lines", "direction", "max_length"]
+        ))
+        tools.append(AgentToolDefinition(
+            name: "host_search_files",
+            description: "Recursively find files whose NAME contains a substring, on the iOS filesystem. Returns absolute paths. Bounded by 'limit' (matches) and 'max_scanned' (entries walked) so a search of / cannot hang. For file CONTENTS use host_search_text.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "query": AgentToolParam(type: .string, description: "Case-insensitive substring to match against file names."),
+                "path": AgentToolParam(type: .string, description: "Directory to search. Defaults to the Documents directory under root=\"ios\", or / under root=\"ish\"."),
+                "root": AgentToolParam(type: .string, description: "Which filesystem: \"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+                "limit": AgentToolParam(type: .integer, description: "Maximum matches to return (default 100, max 300)."),
+                "max_scanned": AgentToolParam(type: .integer, description: "Maximum directory entries to walk (default 20000, max 100000)."),
+                "include_hidden": AgentToolParam(type: .boolean, description: "Include dotfiles and hidden directories (default false)."),
+            ],
+            required: ["tool_title", "query"],
+            propertyOrdering: ["tool_title", "query", "path", "root", "limit", "max_scanned", "include_hidden"]
+        ))
+        tools.append(AgentToolDefinition(
+            name: "host_search_text",
+            description: "Search file CONTENTS on the iOS filesystem and return path:line matches. Skips files larger than 2 MB and binary files by default. Bounded by 'limit' (total matches), 'max_files' and 'per_file'. Read-only; keychain databases are refused.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "query": AgentToolParam(type: .string, description: "Text to search for."),
+                "path": AgentToolParam(type: .string, description: "File or directory to search. Defaults to the Documents directory under root=\"ios\", or / under root=\"ish\"."),
+                "root": AgentToolParam(type: .string, description: "Which filesystem: \"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+                "limit": AgentToolParam(type: .integer, description: "Maximum total matches (default 100, max 300)."),
+                "max_files": AgentToolParam(type: .integer, description: "Maximum files to scan (default 2000, max 20000)."),
+                "per_file": AgentToolParam(type: .integer, description: "Maximum matches reported per file (default 5, max 50)."),
+                "case_sensitive": AgentToolParam(type: .boolean, description: "Match case exactly (default false)."),
+                "skip_binary": AgentToolParam(type: .boolean, description: "Skip binary files detected by a NUL byte in the first 512 bytes (default true)."),
+                "include_hidden": AgentToolParam(type: .boolean, description: "Include dotfiles and hidden directories (default false)."),
+            ],
+            required: ["tool_title", "query"],
+            propertyOrdering: ["tool_title", "query", "path", "root", "limit", "max_files", "per_file", "case_sensitive", "skip_binary", "include_hidden"]
+        ))
+        tools.append(AgentToolDefinition(
+            name: "host_file_info",
+            description: "Report existence, type, size, symlink target, readability and timestamps for a path on the iOS filesystem. Cheaper than listing a directory to check whether something exists.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "path": AgentToolParam(type: .string, description: "Path to inspect. Absolute for a real path, or relative to the app Documents directory under root=\"ios\"."),
+                "root": AgentToolParam(type: .string, description: "Which filesystem: \"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+            ],
+            required: ["tool_title", "path"],
+            propertyOrdering: ["tool_title", "path", "root"]
+        ))
         return tools
     }
 

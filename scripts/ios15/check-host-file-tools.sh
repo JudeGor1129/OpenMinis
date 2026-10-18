@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# [T-host-file-tools] Source-level guards for the iOS-side read-only file tools.
+#
+# These checks cannot prove the Swift compiles. They prove the three things that
+# silently break a tool: it is not registered in the Xcode project, it is not
+# advertised in makeAgentTools(), or it is advertised but has no dispatch case.
+# A tool that is listed but undispatched fails at runtime with "unknown tool",
+# which is exactly the failure this catches before a build is spent.
+set -euo pipefail
+
+cd "$(dirname "$0")/../.."
+
+impl=src/ios/Agent/Chat/AIChatViewModel+HostFileTools.swift
+defs=src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
+dispatch=src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift
+pbx=src/ios/Minis.xcodeproj/project.pbxproj
+
+for f in "$impl" "$defs" "$dispatch" "$pbx"; do
+    [ -f "$f" ] || { echo "FAIL: missing $f"; exit 1; }
+done
+
+tools=(host_list_files host_read_file host_search_files host_search_text host_file_info)
+
+echo "== tool registration =="
+for t in "${tools[@]}"; do
+    grep -q "name: \"$t\"" "$defs" || { echo "FAIL: $t not defined in makeAgentTools()"; exit 1; }
+    grep -q "case \"$t\":" "$dispatch" || { echo "FAIL: $t has no dispatch case"; exit 1; }
+    echo "  $t: defined + dispatched"
+done
+
+echo "== implementation entry points =="
+grep -q 'func resolveHostToolPath(' "$impl"
+grep -q 'func executeHostListFiles(' "$impl"
+grep -q 'func executeHostReadFile(' "$impl"
+grep -q 'func executeHostSearchFiles(' "$impl"
+grep -q 'func executeHostSearchText(' "$impl"
+grep -q 'func executeHostFileInfo(' "$impl"
+echo "  all six entry points present"
+
+echo "== dual-root support =="
+grep -q 'case "ish":' "$impl"
+grep -q 'case "ios", "":' "$impl"
+grep -q 'resolveHostPath(trimmed)' "$impl"
+echo "  ios and ish roots both resolved (ish delegates to the existing resolver)"
+
+echo "== credential stores refused =="
+grep -q '/var/mobile/Library/Keychains' "$impl"
+grep -q 'hostDeniedPathPrefixes' "$impl"
+grep -q 'is a credential store' "$impl"
+echo "  keychain prefixes denied before any read"
+
+echo "== bounded traversal and output =="
+grep -q '80_000' "$impl"
+grep -q 'Self.kMaxToolResultChars' "$impl"
+grep -q 'max_scanned' "$impl"
+grep -q 'max_files' "$impl"
+grep -q '2 \* 1024 \* 1024' "$impl"
+echo "  per-file cap, scan caps and result clamp present"
+
+echo "== off-main-actor IO =="
+count=$(grep -c 'Task.detached(priority: .userInitiated)' "$impl")
+[ "$count" -eq 5 ] || { echo "FAIL: expected 5 detached IO blocks, found $count"; exit 1; }
+echo "  all 5 tools hand filesystem work to a detached task"
+
+echo "== Xcode project registration =="
+grep -q 'E5HF0001 /\* AIChatViewModel+HostFileTools.swift in Sources \*/' "$pbx"
+grep -q 'E5HF0002 /\* AIChatViewModel+HostFileTools.swift \*/' "$pbx"
+sources=$(grep -c 'E5HF0001 /\* AIChatViewModel+HostFileTools.swift in Sources \*/,' "$pbx")
+[ "$sources" -eq 1 ] || { echo "FAIL: file not in the Sources build phase exactly once (found $sources)"; exit 1; }
+echo "  build file, file reference and Sources membership present"
+
+echo "PASS: host read-only file tools are defined, dispatched, registered and bounded."
+printf 'NOTE: not proof of Swift compilation, iOS permission grants or real device reachability.\n'

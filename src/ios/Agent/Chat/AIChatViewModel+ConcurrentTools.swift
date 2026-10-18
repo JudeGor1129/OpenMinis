@@ -388,6 +388,41 @@ extension AIChatViewModel {
                 else { OpenMinisFridaCoreStatusAsync(completion) }
             }
             toolSuccess = !toolOutput.contains("ERROR:") && !Task.isCancelled
+        case "host_list_files":
+            let result = await executeHostListFiles(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
+        case "host_read_file":
+            let result = await executeHostReadFile(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
+        case "host_search_files":
+            let result = await executeHostSearchFiles(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
+        case "host_search_text":
+            let result = await executeHostSearchText(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
+        case "host_file_info":
+            let result = await executeHostFileInfo(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
         case "ask_user":
             guard AgentToolSwitch.interaction.isEnabled else {
                 toolOutput = Self.toolsDisabledMessage
