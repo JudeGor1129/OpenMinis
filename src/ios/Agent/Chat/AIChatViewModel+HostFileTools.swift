@@ -188,10 +188,32 @@ extension AIChatViewModel {
                     describe(child)
                 }
             } else {
-                guard let children = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: options) else {
-                    return ("Error: Cannot read directory \(url.path) — permission denied or unreadable.", false)
+                var children: [URL]?
+                var listError: Error?
+                do {
+                    children = try fm.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: options)
+                } catch {
+                    listError = error
                 }
-                for child in children.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                // iSH paths can be enumerable while contentsOfDirectory refuses
+                // them (bind-mount overlay). Try a shallow enumerator before
+                // reporting failure — and never invent a cause: the previous
+                // message said "permission denied" for every error, which hid
+                // whatever the real reason was.
+                if children == nil {
+                    var shallow = options
+                    shallow.insert(.skipsSubdirectoryDescendants)
+                    if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: keys, options: shallow, errorHandler: nil) {
+                        var collected: [URL] = []
+                        for case let child as URL in enumerator { collected.append(child) }
+                        if !collected.isEmpty { children = collected }
+                    }
+                }
+                guard let readChildren = children else {
+                    let reason = listError?.localizedDescription ?? "unknown error"
+                    return ("Error: Cannot read directory \(url.path): \(reason)", false)
+                }
+                for child in readChildren.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
                     if lines.count >= limit { truncated = true; break }
                     describe(child)
                 }
