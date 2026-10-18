@@ -437,6 +437,17 @@ extension AIChatViewModel {
             required: ["tool_title", "from", "to"],
             propertyOrdering: ["tool_title", "from", "to", "root", "overwrite", "allow_system"]
         ))
+        tools.append(AgentToolDefinition(
+            name: "host_macho_info",
+            description: "Inspect a Mach-O binary (executable, dylib, framework, .app binary) on the iOS filesystem and report its architectures, encryption state, minimum OS, UUID, linked libraries, rpaths and segments. Works on both thin and universal (fat) binaries. Use this before any static analysis: an App Store binary still encrypted (cryptid 1) must be dumped first, and a fat binary needs its architecture slices identified. Read-only; the file is never executed.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "path": AgentToolParam(type: .string, description: "Mach-O file to inspect. Absolute, or relative to the app Documents directory under root=\"ios\"."),
+                "root": AgentToolParam(type: .string, description: "\"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+            ],
+            required: ["tool_title", "path"],
+            propertyOrdering: ["tool_title", "path", "root"]
+        ))
         return tools
     }
 
