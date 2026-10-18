@@ -7355,6 +7355,17 @@ private struct MinisLegacyTranscriptRow: View {
                 )
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+                // [T-ios15-openurl-bridge] A UIViewRepresentable hosting a
+                // UITextView does NOT route link taps through SwiftUI's
+                // `\.openURL` by itself: the coordinator copies whatever
+                // `@Environment(\.openURL)` resolves to. Without this modifier
+                // that is the SYSTEM action, and a `minis://…` link has no
+                // registered system handler — so tapping a file or deep link
+                // in the model's reply did nothing at all. The modern
+                // transcript gets this through AssistantBlockView; the legacy
+                // transcript has no such wrapper, which is why the failure was
+                // iOS-15-only.
+                .modifier(MinisOpenURLHandler())
                 .contextMenu {
                     Button("复制正文") { UIPasteboard.general.string = message.content }
                 }
@@ -7385,6 +7396,10 @@ private struct MinisLegacyTranscriptBlock: View {
             )
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+            // [T-ios15-openurl-bridge] Same bridge as the row body above: the
+            // assistant's actual reply text lives in blocks, so this is the
+            // path that most file links take on iOS 15.
+            .modifier(MinisOpenURLHandler())
             .contextMenu {
                 Button("复制正文") { UIPasteboard.general.string = block.content }
             }

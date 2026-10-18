@@ -46,6 +46,25 @@ grep -q '.background(MinisLegacyScrollFollow(' "$view"
 # inset, otherwise the "Minis 电脑" panel covers the newest message on iOS 15.
 grep -q 'bottomInset: inputBarHeight + floatingBarHeight' "$view"
 ! grep -q 'MinisLegacyTranscript(vm: vm, bottomInset: inputBarHeight + 24)' "$view"
+
+# [T-ios15-openurl-bridge] Every SelectableMarkdownView that renders MESSAGE
+# content must sit behind MinisOpenURLHandler. The view is a UIViewRepresentable
+# hosting a UITextView; the coordinator copies `@Environment(\.openURL)`, which
+# without the modifier is the SYSTEM action. `minis://workspace/file` has no
+# registered system handler, so tapping a file link in a reply did nothing —
+# iOS 15 only, because the modern transcript gets the bridge from
+# AssistantBlockView while the legacy one had no wrapper.
+for f in src/ios/Views/Chat/AIChatView.swift \
+         src/ios/Views/Chat/HelperBlockView.swift \
+         src/ios/Views/Chat/PaginatedMarkdownView.swift; do
+    total=$(grep -c 'SelectableMarkdownView(' "$f")
+    bridged=$(grep -c 'modifier(MinisOpenURLHandler())' "$f")
+    [ "$bridged" -ge "$total" ] || {
+        echo "FAIL: $f has $total SelectableMarkdownView call(s) but only $bridged MinisOpenURLHandler bridge(s)"
+        exit 1
+    }
+done
+echo "  every message-content markdown view bridges openURL to the app handler"
 grep -q 'scroll.setContentOffset(CGPoint' "$view"
 grep -q 'lastSize != scroll.contentSize' "$view"
 printf 'PASS: cached re-entry and native scroll follow wiring.\n'

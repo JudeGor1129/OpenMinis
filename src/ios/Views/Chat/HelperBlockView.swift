@@ -837,6 +837,11 @@ struct HelperDetailCard: View {
                     AgentDetailCard(title: AppLocalized("Sent to the sub agent"),
                                     icon: "arrow.up.message") {
                         SelectableMarkdownView(markdown: payload)
+                            // [T-ios15-openurl-bridge] Tool output often contains
+                            // file paths and minis:// links; without the bridge
+                            // the tap fell through to the system action and did
+                            // nothing.
+                            .modifier(MinisOpenURLHandler())
                     }
                 }
 
@@ -855,6 +860,9 @@ struct HelperDetailCard: View {
                     AgentDetailCard(title: resultTitle, icon: resultIcon) {
                         if let result, !result.isEmpty {
                             SelectableMarkdownView(markdown: result)
+                                // [T-ios15-openurl-bridge] Sub-agent results
+                                // carry the same file links as a normal reply.
+                                .modifier(MinisOpenURLHandler())
                         } else {
                             Text(AppLocalized("No deliverable was returned"))
                                 .font(.system(size: 13))

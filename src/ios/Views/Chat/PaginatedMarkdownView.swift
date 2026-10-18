@@ -128,6 +128,9 @@ struct PaginatedMarkdownView: View {
                 // plain ScrollView.
                 ScrollView {
                     SelectableMarkdownView(markdown: markdown)
+                        // [T-ios15-openurl-bridge] Long documents are still
+                        // message content — links must resolve the same way.
+                        .modifier(MinisOpenURLHandler())
                         .padding()
                 }
             } else if let segments {
@@ -135,6 +138,7 @@ struct PaginatedMarkdownView: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(segments) { segment in
                             SelectableMarkdownView(markdown: segment.text)
+                                .modifier(MinisOpenURLHandler())
                                 .padding(.horizontal)
                                 .padding(.vertical, 4)
                         }
