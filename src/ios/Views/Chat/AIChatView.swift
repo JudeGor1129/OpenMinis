@@ -7366,9 +7366,15 @@ private struct MinisLegacyTranscriptRow: View {
                 // transcript has no such wrapper, which is why the failure was
                 // iOS-15-only.
                 .modifier(MinisOpenURLHandler())
-                .contextMenu {
-                    Button("复制正文") { UIPasteboard.general.string = message.content }
-                }
+                // [T-ios15-longpress-blank-menu] No SwiftUI `.contextMenu`
+                // here. On iOS 15 it installs its own long-press gesture and,
+                // when it fires, presents an empty SwiftUI menu (a
+                // UIViewRepresentable contributes no items) while swallowing
+                // the press — so the UITextView's own edit menu never opened
+                // and the reply could not be selected or copied at all.
+                // The text view already supplies the full native menu
+                // ("Copy Full Reply" → markdown / rich / plain, plus the
+                // read-aloud entries), so nothing is lost by dropping it.
             }
             ForEach(message.blocks) { block in
                 MinisLegacyTranscriptBlock(block: block, isUser: message.role == .user)
@@ -7400,9 +7406,9 @@ private struct MinisLegacyTranscriptBlock: View {
             // assistant's actual reply text lives in blocks, so this is the
             // path that most file links take on iOS 15.
             .modifier(MinisOpenURLHandler())
-            .contextMenu {
-                Button("复制正文") { UIPasteboard.general.string = block.content }
-            }
+            // [T-ios15-longpress-blank-menu] Deliberately no `.contextMenu`
+            // here either — see the row body above. It suppressed the native
+            // edit menu (selection/copy) and showed an empty menu instead.
         }
     }
 }

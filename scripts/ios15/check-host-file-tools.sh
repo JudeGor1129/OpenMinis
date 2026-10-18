@@ -53,7 +53,7 @@ echo "== credential stores refused =="
 grep -q '/var/mobile/Library/Keychains' "$impl"
 grep -q 'hostDeniedPathPrefixes' "$impl"
 grep -q 'is a credential store' "$impl"
-echo "  keychain prefixes denied before any read"
+echo "  keychain prefixes denied before any read or write"
 
 echo "== bounded traversal and output =="
 grep -q '80_000' "$impl"
