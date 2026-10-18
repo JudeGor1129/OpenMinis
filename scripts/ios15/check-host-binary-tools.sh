@@ -21,6 +21,26 @@ grep -q 'case "host_macho_info":' "$dispatch" || { echo "FAIL: host_macho_info n
 grep -q 'func executeHostMachOInfo(' "$impl" || { echo "FAIL: missing executeHostMachOInfo"; exit 1; }
 echo "  host_macho_info defined, dispatched and implemented"
 
+echo "== container classification is an enum, not an optional tuple =="
+# A thin file is neither "failed" nor a slice list; modelling it with `nil`
+# inside a non-optional tuple does not compile (build 69 failed with
+# "'nil' requires a contextual type"). Guard the shape that compiles.
+grep -q 'enum MachOContainer' "$impl" || { echo "FAIL: MachOContainer enum missing"; exit 1; }
+for caseName in 'case notMachO' 'case thin' 'case fat('; do
+    grep -q "$caseName" "$impl" || { echo "FAIL: missing $caseName"; exit 1; }
+done
+if grep -q 'machOSlices(head:' "$impl"; then
+    echo "FAIL: old optional-tuple helper reintroduced; use machOContainer"; exit 1
+fi
+echo "  notMachO / thin / fat enumerated explicitly"
+
+echo "== 64-bit values not formatted with %x/%d =="
+# %x and %d consume 32-bit operands; passing a Swift Int on arm64 truncates.
+if grep -nE 'String\(format:.*%[0-9]*[xdl].*\bslice\.(offset|size)' "$impl" | grep -q .; then
+    echo "FAIL: 64-bit slice fields must use string interpolation, not %x/%d"; exit 1
+fi
+echo "  slice offsets/sizes use interpolation"
+
 echo "== fat magic compared in the accessor's byte order =="
 # The fat header is big-endian; read through a LE u32 accessor the constant
 # must be byte-swapped. 0xcafebabe here would silently skip every universal binary.

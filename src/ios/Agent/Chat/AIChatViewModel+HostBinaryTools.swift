@@ -154,29 +154,52 @@ extension AIChatViewModel {
         let size: Int
     }
 
-    /// Parse the fat header, or describe the file as a single thin slice.
-    nonisolated static func machOSlices(head: MachOWindow, fileSize: Int) -> (slices: [MachOSlice], isFat: Bool)? {
-        guard let magic = head.u32(at: 0) else { return nil }
-        if magic == MachO.fatMagic || magic == MachO.fatMagic64 {
-            let is64 = magic == MachO.fatMagic64
-            guard let rawCount = head.be32(at: 4) else { return nil }
-            let count = min(Int(rawCount), 32)
-            var out: [MachOSlice] = []
-            let entrySize = is64 ? 32 : 20
-            for i in 0..<count {
-                let base = 8 + i * entrySize
-                guard let cpu = head.be32(at: base),
-                      let sub = head.be32(at: base + 4),
-                      let off = is64 ? head.be64(at: base + 8) : UInt64(head.be32(at: base + 8) ?? 0),
-                      let sz = is64 ? head.be64(at: base + 16) : UInt64(head.be32(at: base + 12) ?? 0)
-                else { break }
-                out.append(MachOSlice(arch: machOArchitecture(cpuType: cpu, cpuSubtype: sub),
-                                      cpuType: cpu, cpuSubtype: sub,
-                                      offset: Int(off), size: Int(sz)))
-            }
-            return (out, true)
+    /// How the file's architecture slices are arranged.
+    ///
+    /// A plain optional tuple was the wrong shape here: "thin" is neither a
+    /// failure nor a slice list, so expressing it with `nil` inside a
+    /// non-optional field does not compile. Naming the three states removes the
+    /// ambiguity for the caller too.
+    enum MachOContainer {
+        case notMachO
+        case thin
+        case fat([MachOSlice])
+    }
+
+    /// Classify the container and, for a fat file, read its architecture list.
+    ///
+    /// The fat header is big-endian, so it is read through `be32`/`be64`.
+    nonisolated static func machOContainer(head: MachOWindow) -> MachOContainer {
+        guard let magic = head.u32(at: 0) else { return .notMachO }
+        guard magic == MachO.fatMagic || magic == MachO.fatMagic64 else {
+            // A thin image, or something that is not Mach-O at all — the
+            // per-image reader reports the latter with its actual magic.
+            return magic == MachO.magic32 || magic == MachO.magic64 ? .thin : .notMachO
         }
-        return (nil, false)
+        let is64 = magic == MachO.fatMagic64
+        guard let rawCount = head.be32(at: 4) else { return .fat([]) }
+        let count = min(Int(rawCount), 32)
+        var out: [MachOSlice] = []
+        let entrySize = is64 ? 32 : 20
+        for i in 0..<count {
+            let base = 8 + i * entrySize
+            guard let cpu = head.be32(at: base),
+                  let sub = head.be32(at: base + 4)
+            else { break }
+            let off: UInt64
+            let sz: UInt64
+            if is64 {
+                guard let o = head.be64(at: base + 8), let s = head.be64(at: base + 16) else { break }
+                off = o; sz = s
+            } else {
+                guard let o = head.be32(at: base + 8), let s = head.be32(at: base + 12) else { break }
+                off = UInt64(o); sz = UInt64(s)
+            }
+            out.append(MachOSlice(arch: machOArchitecture(cpuType: cpu, cpuSubtype: sub),
+                                  cpuType: cpu, cpuSubtype: sub,
+                                  offset: Int(off), size: Int(sz)))
+        }
+        return .fat(out)
     }
 
     /// Analyse one thin Mach-O image located at `offset` inside `url`.
@@ -427,32 +450,38 @@ extension AIChatViewModel {
 
         var lines = ["file: \(url.path)", "size: \(size) bytes (\(hostByteSize(size)))"]
 
-        guard let (slices, isFat) = machOSlices(head: head, fileSize: size) else {
+        switch machOContainer(head: head) {
+        case .notMachO:
             return (lines + ["Not a Mach-O file (unrecognised magic bytes). "
                              + "If this is a .deb or .ipa, extract it first."]).joined(separator: "\n")
-        }
 
-        if isFat, let slices {
+        case .fat(let slices):
+            if slices.isEmpty {
+                lines.append("format: universal (fat) binary, but its architecture list is unreadable.")
+                return lines.joined(separator: "\n")
+            }
             lines.append("format: universal (fat) binary, \(slices.count) slice(s)")
             lines.append("")
             for (i, slice) in slices.enumerated() {
                 lines.append("--- slice \(i + 1)/\(slices.count): \(slice.arch) ---")
                 lines.append(String(format: "  cputype:   0x%08x  cpusubtype 0x%08x (subtype base %u)",
                                     slice.cpuType, slice.cpuSubtype, slice.cpuSubtype & MachO.subtypeBaseMask))
-                lines.append(String(format: "  offset:    0x%x  size %d bytes (%@)",
-                                    slice.offset, slice.size, hostByteSize(slice.size)))
+                // Interpolation rather than String(format:) for the 64-bit
+                // values: `%x`/`%d` expect 32-bit operands, so passing a Swift
+                // `Int` on arm64 would print a truncated offset.
+                lines.append("  offset:    0x\(String(slice.offset, radix: 16))  size \(slice.size) bytes (\(hostByteSize(slice.size)))")
                 lines.append(contentsOf: machOImageDescription(url: url, offset: slice.offset, archHint: slice.arch))
                 lines.append("")
             }
-            // Unclamped here: `kMaxToolResultChars` is main-actor isolated, and
-            // this function is nonisolated so it can run in a detached task.
-            // The caller clamps.
-            return lines.joined(separator: "\n")
+
+        case .thin:
+            lines.append("format: thin Mach-O (single architecture)")
+            lines.append("")
+            lines.append(contentsOf: machOImageDescription(url: url, offset: 0, archHint: nil))
         }
 
-        lines.append("format: thin Mach-O (single architecture)")
-        lines.append("")
-        lines.append(contentsOf: machOImageDescription(url: url, offset: 0, archHint: nil))
+        // Unclamped here: `kMaxToolResultChars` is main-actor isolated and this
+        // function is nonisolated so it can run in a detached task. Caller clamps.
         return lines.joined(separator: "\n")
     }
 
