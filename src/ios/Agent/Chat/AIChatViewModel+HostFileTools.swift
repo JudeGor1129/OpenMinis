@@ -66,7 +66,10 @@ extension AIChatViewModel {
     nonisolated static func hostDeniedPathError(for path: String) -> String? {
         for denied in AIChatViewModel.hostDeniedPathPrefixes
         where path == denied || path.hasPrefix(denied + "/") {
-            return "Refused: \(path) is a credential store. Host tools never read keychain material into the conversation."
+            // Direction-neutral wording: this helper guards reads AND writes,
+            // and the write path used to report "never read keychain
+            // material", which described the wrong operation entirely.
+            return "Refused: \(path) is a credential store. Host tools never read or write keychain material."
         }
         return nil
     }

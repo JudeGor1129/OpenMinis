@@ -65,6 +65,16 @@ for f in src/ios/Views/Chat/AIChatView.swift \
     }
 done
 echo "  every message-content markdown view bridges openURL to the app handler"
+
+# [T-ios15-longpress-blank-menu] The legacy transcript must NOT wrap the
+# markdown view in a SwiftUI .contextMenu: on iOS 15 it swallowed the long
+# press and presented an empty menu, so replies could not be selected or
+# copied. Guard the regression rather than relying on the comment.
+if grep -nE '^[[:space:]]*\.contextMenu' "$view" | grep -q .; then
+    echo "FAIL: AIChatView.swift reintroduced a SwiftUI .contextMenu — this suppresses the native edit menu on iOS 15"
+    exit 1
+fi
+echo "  legacy transcript raises the native edit menu (no SwiftUI contextMenu)"
 grep -q 'scroll.setContentOffset(CGPoint' "$view"
 grep -q 'lastSize != scroll.contentSize' "$view"
 printf 'PASS: cached re-entry and native scroll follow wiring.\n'
