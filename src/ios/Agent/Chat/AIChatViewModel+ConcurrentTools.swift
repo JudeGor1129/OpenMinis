@@ -423,6 +423,48 @@ extension AIChatViewModel {
             }
             toolOutput = result.output
             toolSuccess = result.success
+        case "host_write_file":
+            let result = await executeHostWriteFile(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
+        case "host_append_file":
+            let result = await executeHostAppendFile(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
+        case "host_edit_file":
+            let result = await executeHostEditFile(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
+        case "host_delete_file":
+            let result = await executeHostDeleteFile(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
+        case "host_move_file":
+            let result = await executeHostMoveFile(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
+        case "host_copy_file":
+            let result = await executeHostCopyFile(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
         case "ask_user":
             guard AgentToolSwitch.interaction.isEnabled else {
                 toolOutput = Self.toolsDisabledMessage

@@ -349,6 +349,94 @@ extension AIChatViewModel {
             required: ["tool_title", "path"],
             propertyOrdering: ["tool_title", "path", "root"]
         ))
+        // [T-host-write-tools] Write side of the host filesystem pair. Separate
+        // tools rather than a `write` flag on the read family: a read can be
+        // retried harmlessly, a write cannot, so the interface is narrower.
+        // `allow_system` is the explicit opt-in for the jailbreak bootstrap.
+        tools.append(AgentToolDefinition(
+            name: "host_write_file",
+            description: "Write a UTF-8 text file on the iOS filesystem (NOT the iSH fakefs — use file_write there). Creates parent directories by default. An existing file is only replaced when overwrite=true (default true), so pass overwrite=false to make the call fail instead of clobbering. Refuses credential stores always, and refuses the jailbreak/OS area unless allow_system=true.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "path": AgentToolParam(type: .string, description: "Destination file. Absolute for a real path, or relative to the app Documents directory under root=\"ios\"."),
+                "content": AgentToolParam(type: .string, description: "Full UTF-8 text to write."),
+                "root": AgentToolParam(type: .string, description: "\"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+                "overwrite": AgentToolParam(type: .boolean, description: "Replace an existing file (default true). Set false to fail when the file already exists."),
+                "create_dirs": AgentToolParam(type: .boolean, description: "Create missing parent directories (default true)."),
+                "allow_system": AgentToolParam(type: .boolean, description: "Permit writing inside the OS/jailbreak area (/var/jb, /System, /usr, /bin, /sbin, /private/preboot, …). Default false. A bad write there can leave the device unbootable, so only set this when deliberately editing tweak/bootstrap files."),
+            ],
+            required: ["tool_title", "path", "content"],
+            propertyOrdering: ["tool_title", "path", "content", "root", "overwrite", "create_dirs", "allow_system"]
+        ))
+        tools.append(AgentToolDefinition(
+            name: "host_append_file",
+            description: "Append UTF-8 text to the END of a file on the iOS filesystem, creating it if missing. Cheaper and safer than host_write_file for logs and incremental content because it never re-reads the existing body. Same allow_system gate as host_write_file.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "path": AgentToolParam(type: .string, description: "File to append to. Absolute, or relative to the app Documents directory under root=\"ios\"."),
+                "content": AgentToolParam(type: .string, description: "Text to append verbatim (no newline is added)."),
+                "root": AgentToolParam(type: .string, description: "\"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+                "create_dirs": AgentToolParam(type: .boolean, description: "Create missing parent directories (default true)."),
+                "allow_system": AgentToolParam(type: .boolean, description: "Permit appending inside the OS/jailbreak area. Default false."),
+            ],
+            required: ["tool_title", "path", "content"],
+            propertyOrdering: ["tool_title", "path", "content", "root", "create_dirs", "allow_system"]
+        ))
+        tools.append(AgentToolDefinition(
+            name: "host_edit_file",
+            description: "Replace exactly one occurrence of old_text with new_text in a text file on the iOS filesystem. Refuses when old_text is missing or appears more than once, so read the file first and quote a unique block. Pass new_text as an empty string to delete the block.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "path": AgentToolParam(type: .string, description: "File to edit. Absolute, or relative to the app Documents directory under root=\"ios\"."),
+                "old_text": AgentToolParam(type: .string, description: "Exact text to replace. Must appear exactly once in the file, including whitespace."),
+                "new_text": AgentToolParam(type: .string, description: "Replacement text. Use \"\" to delete the old_text block."),
+                "root": AgentToolParam(type: .string, description: "\"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+                "allow_system": AgentToolParam(type: .boolean, description: "Permit editing inside the OS/jailbreak area. Default false."),
+            ],
+            required: ["tool_title", "path", "old_text", "new_text"],
+            propertyOrdering: ["tool_title", "path", "old_text", "new_text", "root", "allow_system"]
+        ))
+        tools.append(AgentToolDefinition(
+            name: "host_delete_file",
+            description: "Delete a file or directory on the iOS filesystem. Deleting a directory requires recursive=true and is refused for container roots. Credential stores and the OS/jailbreak area are refused unless allow_system=true, and the credential refusal cannot be overridden. This is irreversible.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "path": AgentToolParam(type: .string, description: "File or directory to delete. Absolute, or relative to the app Documents directory under root=\"ios\"."),
+                "root": AgentToolParam(type: .string, description: "\"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+                "recursive": AgentToolParam(type: .boolean, description: "Required to delete a directory and everything inside it. Default false."),
+                "allow_system": AgentToolParam(type: .boolean, description: "Permit deleting inside the OS/jailbreak area. Default false."),
+            ],
+            required: ["tool_title", "path"],
+            propertyOrdering: ["tool_title", "path", "root", "recursive", "allow_system"]
+        ))
+        tools.append(AgentToolDefinition(
+            name: "host_move_file",
+            description: "Move or rename a file/directory on the iOS filesystem. Creates the destination's parent directories. Fails when the destination exists unless overwrite=true. Both endpoints pass the same allow_system gate.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "from": AgentToolParam(type: .string, description: "Source path. Absolute, or relative to the app Documents directory under root=\"ios\"."),
+                "to": AgentToolParam(type: .string, description: "Destination path. Absolute, or relative to the app Documents directory under root=\"ios\"."),
+                "root": AgentToolParam(type: .string, description: "\"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+                "overwrite": AgentToolParam(type: .boolean, description: "Replace an existing destination (default false)."),
+                "allow_system": AgentToolParam(type: .boolean, description: "Permit moving inside the OS/jailbreak area. Default false."),
+            ],
+            required: ["tool_title", "from", "to"],
+            propertyOrdering: ["tool_title", "from", "to", "root", "overwrite", "allow_system"]
+        ))
+        tools.append(AgentToolDefinition(
+            name: "host_copy_file",
+            description: "Copy a file/directory on the iOS filesystem. Creates the destination's parent directories. Fails when the destination exists unless overwrite=true. Same allow_system gate as host_move_file.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+                "from": AgentToolParam(type: .string, description: "Source path. Absolute, or relative to the app Documents directory under root=\"ios\"."),
+                "to": AgentToolParam(type: .string, description: "Destination path. Absolute, or relative to the app Documents directory under root=\"ios\"."),
+                "root": AgentToolParam(type: .string, description: "\"ios\" for the real device (default), \"ish\" for the iSH Linux view.", enumValues: ["ios", "ish"]),
+                "overwrite": AgentToolParam(type: .boolean, description: "Replace an existing destination (default false)."),
+                "allow_system": AgentToolParam(type: .boolean, description: "Permit copying inside the OS/jailbreak area. Default false."),
+            ],
+            required: ["tool_title", "from", "to"],
+            propertyOrdering: ["tool_title", "from", "to", "root", "overwrite", "allow_system"]
+        ))
         return tools
     }
 

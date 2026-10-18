@@ -76,4 +76,52 @@ sources=$(grep -c 'E5HF0001 /\* AIChatViewModel+HostFileTools.swift in Sources \
 echo "  build file, file reference and Sources membership present"
 
 echo "PASS: host read-only file tools are defined, dispatched, registered and bounded."
+
+# ---- [T-host-write-tools] write slice ----
+wimpl=src/ios/Agent/Chat/AIChatViewModel+HostWriteTools.swift
+wtools=(host_write_file host_append_file host_edit_file host_delete_file host_move_file host_copy_file)
+[ -f "$wimpl" ] || { echo "FAIL: missing $wimpl"; exit 1; }
+
+echo "== write tool registration =="
+for t in "${wtools[@]}"; do
+    grep -q "name: \"$t\"" "$defs" || { echo "FAIL: $t not defined in makeAgentTools()"; exit 1; }
+    grep -q "case \"$t\":" "$dispatch" || { echo "FAIL: $t has no dispatch case"; exit 1; }
+    echo "  $t: defined + dispatched"
+done
+
+echo "== write implementation entry points =="
+for fn in executeHostWriteFile executeHostAppendFile executeHostEditFile \
+          executeHostDeleteFile executeHostMoveFile executeHostCopyFile; do
+    grep -q "func $fn(" "$wimpl" || { echo "FAIL: missing $fn"; exit 1; }
+done
+echo "  all six write entry points present"
+
+echo "== write safety gates =="
+grep -q 'hostWriteForbiddenPathPrefixes' "$wimpl"
+grep -q 'hostWriteSystemPathPrefixes' "$wimpl"
+grep -q 'allow_system=true' "$wimpl"
+grep -q 'can never be written by a tool, even with allow_system' "$wimpl"
+# Credential stores must stay refused even when allow_system is set: the
+# forbid list is consulted BEFORE the allowSystem early-return.
+grep -A 12 'hostWriteDenial(for path: String' "$wimpl" | grep -q 'guard !allowSystem else'
+echo "  credential stores unconditionally refused; system area needs allow_system=true"
+
+echo "== destructive defaults =="
+grep -q 'recursive=true to delete it' "$wimpl"
+grep -q 'is a container root' "$wimpl"
+grep -q 'refusing to guess which one' "$wimpl"
+echo "  directory delete needs recursive=true; container roots guarded; edit refuses ambiguous match"
+
+echo "== write IO off the main actor =="
+wcount=$(grep -c 'Task.detached(priority: .userInitiated)' "$wimpl")
+[ "$wcount" -eq 5 ] || { echo "FAIL: expected 5 detached IO blocks in the write slice, found $wcount"; exit 1; }
+echo "  5 detached IO blocks (write, append, edit, delete, transfer)"
+
+echo "== write slice Xcode registration =="
+grep -q 'E5HW0001 /\* AIChatViewModel+HostWriteTools.swift in Sources \*/,' "$pbx"
+grep -q 'E5HW0002 /\* AIChatViewModel+HostWriteTools.swift \*/' "$pbx"
+echo "  build file, file reference and Sources membership present"
+
+echo "PASS: host write tools are defined, dispatched, gated and registered."
+
 printf 'NOTE: not proof of Swift compilation, iOS permission grants or real device reachability.\n'
