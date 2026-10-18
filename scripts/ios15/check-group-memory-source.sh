@@ -26,7 +26,12 @@ grep -q 'directory: vm.sessionMemoryDirectory)' src/ios/Views/Chat/AssistantBloc
 grep -q 'try MinisGroupConfigurationStore.save' "$skills"
 ! grep -q 'let memDir = AIChatViewModel.minisMemoryPersistentDir' "$view"
 ! grep -q 'let memDir = AIChatViewModel.minisMemoryPersistentDir' src/ios/Views/Chat/MemoryWriteRevoker.swift
-grep -q 'LegacyGroupManagerView()' src/ios/Views/LegacyContentView.swift
+# iOS 15 group UI is an in-place disclosure now: tapping 会话分组 or a group
+# must never push a screen. Guard the disclosure wiring and the sheet-hosted
+# management entry instead of the old NavigationLink.
+grep -q 'DisclosuredSessionList(' src/ios/Views/LegacyContentView.swift
+grep -q 'sheet(item: \$managingFolder' src/ios/Views/LegacyContentView.swift
+grep -q 'LegacyGroupDetailView(folder: folder)' src/ios/Views/LegacyContentView.swift
 grep -q 'guard isChatViewVisible' src/ios/Views/Chat/AIChatView.swift
 printf 'PASS: group memory/soul, edit/revoke, legacy menu and share-visibility source wiring.\n'
 printf 'NOTE: full Swift compilation and device share/scroll/isolation tests are still required.\n'
