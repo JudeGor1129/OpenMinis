@@ -1,11 +1,92 @@
 #import "FridaCoreBridge.h"
 
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <string.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #if __has_include(<frida-core.h>)
 #import <frida-core.h>
 #define OPENMINIS_HAS_FRIDA_CORE 1
 #else
 #define OPENMINIS_HAS_FRIDA_CORE 0
 #endif
+
+/// Non-blocking connect probe with a 1 s budget. Used only to tell the user
+/// whether *their* frida-server is listening; it never speaks the Frida
+/// protocol, so a failure here is not proof that attach would fail and a
+/// success is not proof that attach would work.
+static BOOL OpenMinisTCPPortOpen(const char *host, int port) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return NO;
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)port);
+    addr.sin_addr.s_addr = inet_addr(host);
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    BOOL open = NO;
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+        open = YES;
+    } else if (errno == EINPROGRESS) {
+        fd_set wset;
+        FD_ZERO(&wset);
+        FD_SET(fd, &wset);
+        struct timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        if (select(fd + 1, NULL, &wset, NULL, &tv) > 0) {
+            int soerr = 0;
+            socklen_t len = sizeof(soerr);
+            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &len) == 0 && soerr == 0) open = YES;
+        }
+    }
+    close(fd);
+    return open;
+}
+
+/// Concrete, actionable server diagnostics. The previous output only said a
+/// socket query failed, which is indistinguishable from a sandbox denial — so
+/// users kept reinstalling the Frida package. Report the three facts that
+/// actually decide the outcome: is a server binary on disk, is it executable,
+/// and is anything listening on the default port.
+NSArray<NSString *> *OpenMinisFridaServerDiagnostics(void) {
+    NSMutableArray<NSString *> *lines = [NSMutableArray array];
+    NSArray<NSString *> *candidates = @[
+        @"/var/jb/usr/sbin/frida-server",
+        @"/var/jb/usr/bin/frida-server",
+        @"/usr/sbin/frida-server",
+        @"/usr/bin/frida-server",
+    ];
+    NSString *foundPath = nil;
+    for (NSString *path in candidates) {
+        if (access(path.fileSystemRepresentation, F_OK) == 0) {
+            BOOL executable = access(path.fileSystemRepresentation, X_OK) == 0;
+            [lines addObject:[NSString stringWithFormat:@"Server binary: %@%@",
+                              path, executable ? @" (executable)" : @" (NOT executable)"]];
+            if (foundPath == nil && executable) foundPath = path;
+        }
+    }
+    if (foundPath == nil) {
+        [lines addObject:@"Server binary: none found in /var/jb/usr/sbin, /var/jb/usr/bin, /usr/sbin, /usr/bin. Install a Frida server package only if you intend to run one."];
+    }
+
+    BOOL listening = OpenMinisTCPPortOpen("127.0.0.1", 27042);
+    [lines addObject:[NSString stringWithFormat:@"Port 127.0.0.1:27042: %@",
+                      listening ? @"OPEN (a Frida server is listening)" : @"CLOSED (nothing is listening)"]];
+    if (!listening) {
+        [lines addObject:@"Cause of a failed socket backend is therefore the missing listener, not necessarily this app's sandbox."];
+        [lines addObject:@"Remedy (requires root, then re-run this tool): launchctl bootstrap system /var/jb/Library/LaunchDaemons/re.frida.server.plist"];
+        [lines addObject:@"Alternative remedy: reboot the device so the jailbreak launcher re-bootstraps its LaunchDaemons."];
+        [lines addObject:@"This app cannot start a root-owned server process on its own."];
+    }
+    return lines;
+}
 
 BOOL OpenMinisFridaCoreAvailable(void) {
     return OPENMINIS_HAS_FRIDA_CORE;
@@ -42,6 +123,7 @@ NSString *OpenMinisFridaCoreStatus(void) {
         [lines addObject:@"Device enumeration is not proof of frida-server connectivity or attach permission."];
     }
     if (devices != NULL) g_object_unref(devices);
+    [lines addObjectsFromArray:OpenMinisFridaServerDiagnostics()];
     frida_device_manager_close_sync(manager, NULL, NULL);
     g_object_unref(manager);
     return [lines componentsJoinedByString:@"\n"];
@@ -134,6 +216,10 @@ void OpenMinisFridaProcessesAsync(void (^completion)(NSString *)) {
             if (devices != NULL) g_object_unref(devices);
             if (successfulQueries == 0) {
                 [lines addObject:@"ERROR: No built-in backend completed process enumeration. Review backend errors; server connectivity and permissions are not established."];
+                // The failure above is the exact symptom users misread as a
+                // sandbox denial. Add the server-side facts so the cause is
+                // visible without a shell.
+                [lines addObjectsFromArray:OpenMinisFridaServerDiagnostics()];
             } else if (totalProcesses == 0) {
                 [lines addObject:@"WARNING: All successful queries were empty. Process visibility remains unverified; do not claim a specific cause or attach capability."];
             }

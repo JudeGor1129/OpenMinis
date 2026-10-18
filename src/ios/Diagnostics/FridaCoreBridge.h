@@ -11,5 +11,9 @@ FOUNDATION_EXPORT void OpenMinisFridaCoreStatusAsync(void (^completion)(NSString
 /// Read-only built-in local/socket process queries, no attach/spawn/scripts.
 /// The socket backend may contact an existing local Frida service.
 FOUNDATION_EXPORT void OpenMinisFridaProcessesAsync(void (^completion)(NSString *result));
+/// Filesystem/port facts about a user-installed Frida server: binary presence,
+/// executability and whether anything listens on the default port. Never
+/// starts a server and never speaks the Frida protocol.
+FOUNDATION_EXPORT NSArray<NSString *> *OpenMinisFridaServerDiagnostics(void);
 
 NS_ASSUME_NONNULL_END
