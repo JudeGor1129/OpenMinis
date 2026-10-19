@@ -1,0 +1,2400 @@
+diff --git a/lld/MachO/Arch/ARM64.cpp b/lld/MachO/Arch/ARM64.cpp
+index 7acf48cbbf12336..b67e935c45ca1b3 100644
+--- a/lld/MachO/Arch/ARM64.cpp
++++ b/lld/MachO/Arch/ARM64.cpp
+@@ -26,20 +26,10 @@ namespace {
+ struct ARM64 : ARM64Common {
+   ARM64();
+   void writeStub(uint8_t *buf, const Symbol &, uint64_t) const override;
+-  void writeStubHelperHeader(uint8_t *buf) const override;
+-  void writeStubHelperEntry(uint8_t *buf, const Symbol &,
+-                            uint64_t entryAddr) const override;
+ 
+   void writeObjCMsgSendStub(uint8_t *buf, Symbol *sym, uint64_t stubsAddr,
+                             uint64_t &stubOffset, uint64_t selrefVA,
+                             Symbol *objcMsgSend) const override;
+-  void populateThunk(InputSection *thunk, Symbol *funcSym,
+-                     int64_t addend) override;
+-
+-  void initICFSafeThunkBody(InputSection *thunk,
+-                            Symbol *targetSym) const override;
+-  Symbol *getThunkBranchTarget(InputSection *thunk) const override;
+-  uint32_t getICFSafeThunkSize() const override;
+ };
+ 
+ } // namespace
+@@ -80,30 +70,6 @@ void ARM64::writeStub(uint8_t *buf8, const Symbol &sym,
+   ::writeStub(buf8, stubCode, sym, pointerVA);
+ }
+ 
+-static constexpr uint32_t stubHelperHeaderCode[] = {
+-    0x90000011, // 00: adrp  x17, _dyld_private@page
+-    0x91000231, // 04: add   x17, x17, _dyld_private@pageoff
+-    0xa9bf47f0, // 08: stp   x16/x17, [sp, #-16]!
+-    0x90000010, // 0c: adrp  x16, dyld_stub_binder@page
+-    0xf9400210, // 10: ldr   x16, [x16, dyld_stub_binder@pageoff]
+-    0xd61f0200, // 14: br    x16
+-};
+-
+-void ARM64::writeStubHelperHeader(uint8_t *buf8) const {
+-  ::writeStubHelperHeader<LP64>(buf8, stubHelperHeaderCode);
+-}
+-
+-static constexpr uint32_t stubHelperEntryCode[] = {
+-    0x18000050, // 00: ldr  w16, l0
+-    0x14000000, // 04: b    stubHelperHeader
+-    0x00000000, // 08: l0: .long 0
+-};
+-
+-void ARM64::writeStubHelperEntry(uint8_t *buf8, const Symbol &sym,
+-                                 uint64_t entryVA) const {
+-  ::writeStubHelperEntry(buf8, stubHelperEntryCode, sym, entryVA);
+-}
+-
+ static constexpr uint32_t objcStubsFastCode[] = {
+     0x90000001, // adrp  x1, __objc_selrefs@page
+     0xf9400021, // ldr   x1, [x1, @selector("foo")@pageoff]
+@@ -152,64 +118,12 @@ void ARM64::writeObjCMsgSendStub(uint8_t *buf, Symbol *sym, uint64_t stubsAddr,
+   stubOffset += objcStubSize;
+ }
+ 
+-// A thunk is the relaxed variation of stubCode. We don't need the
+-// extra indirection through a lazy pointer because the target address
+-// is known at link time.
+-static constexpr uint32_t thunkCode[] = {
+-    0x90000010, // 00: adrp  x16, <thunk.ptr>@page
+-    0x91000210, // 04: add   x16, [x16,<thunk.ptr>@pageoff]
+-    0xd61f0200, // 08: br    x16
+-};
+-
+-void ARM64::populateThunk(InputSection *thunk, Symbol *funcSym,
+-                          int64_t addend) {
+-  thunk->align = 4;
+-  thunk->data = {reinterpret_cast<const uint8_t *>(thunkCode),
+-                 sizeof(thunkCode)};
+-  thunk->relocs.emplace_back(/*type=*/ARM64_RELOC_PAGEOFF12,
+-                             /*pcrel=*/false, /*length=*/2,
+-                             /*offset=*/4, /*addend=*/addend,
+-                             /*referent=*/funcSym);
+-  thunk->relocs.emplace_back(/*type=*/ARM64_RELOC_PAGE21,
+-                             /*pcrel=*/true, /*length=*/2,
+-                             /*offset=*/0, /*addend=*/addend,
+-                             /*referent=*/funcSym);
+-}
+-// Just a single direct branch to the target function.
+-static constexpr uint32_t icfSafeThunkCode[] = {
+-    0x14000000, // 08: b    target
+-};
+-
+-void ARM64::initICFSafeThunkBody(InputSection *thunk, Symbol *targetSym) const {
+-  // The base data here will not be itself modified, we'll just be adding a
+-  // reloc below. So we can directly use the constexpr above as the data.
+-  thunk->data = {reinterpret_cast<const uint8_t *>(icfSafeThunkCode),
+-                 sizeof(icfSafeThunkCode)};
+-
+-  thunk->relocs.emplace_back(/*type=*/ARM64_RELOC_BRANCH26,
+-                             /*pcrel=*/true, /*length=*/2,
+-                             /*offset=*/0, /*addend=*/0,
+-                             /*referent=*/targetSym);
+-}
+-
+-Symbol *ARM64::getThunkBranchTarget(InputSection *thunk) const {
+-  assert(thunk->relocs.size() == 1 &&
+-         "expected a single reloc on ARM64 ICF thunk");
+-  auto &reloc = thunk->relocs[0];
+-  assert(isa<Symbol *>(reloc.referent) &&
+-         "ARM64 thunk reloc is expected to point to a Symbol");
+-
+-  return cast<Symbol *>(reloc.referent);
+-}
+-
+-uint32_t ARM64::getICFSafeThunkSize() const { return sizeof(icfSafeThunkCode); }
+-
+ ARM64::ARM64() : ARM64Common(LP64()) {
+   cpuType = CPU_TYPE_ARM64;
+   cpuSubtype = CPU_SUBTYPE_ARM64_ALL;
+ 
+   stubSize = sizeof(stubCode);
+-  thunkSize = sizeof(thunkCode);
++  thunkSize = sizeof(arm64ThunkCode);
+ 
+   objcStubsFastSize = sizeof(objcStubsFastCode);
+   objcStubsFastAlignment = 32;
+@@ -226,8 +140,8 @@ ARM64::ARM64() : ARM64Common(LP64()) {
+   subtractorRelocType = ARM64_RELOC_SUBTRACTOR;
+   unsignedRelocType = ARM64_RELOC_UNSIGNED;
+ 
+-  stubHelperHeaderSize = sizeof(stubHelperHeaderCode);
+-  stubHelperEntrySize = sizeof(stubHelperEntryCode);
++  stubHelperHeaderSize = sizeof(arm64StubHelperHeaderCode);
++  stubHelperEntrySize = sizeof(arm64StubHelperEntryCode);
+ 
+   relocAttrs = {relocAttrsArray.data(), relocAttrsArray.size()};
+ }
+diff --git a/lld/MachO/Arch/ARM64Common.cpp b/lld/MachO/Arch/ARM64Common.cpp
+index 599f1e18efda6a2..a59e48730b7257b 100644
+--- a/lld/MachO/Arch/ARM64Common.cpp
++++ b/lld/MachO/Arch/ARM64Common.cpp
+@@ -16,10 +16,58 @@ using namespace llvm::support::endian;
+ using namespace lld;
+ using namespace lld::macho;
+ 
++void ARM64Common::writeStubHelperHeader(uint8_t *buf) const {
++  ::writeStubHelperHeader<LP64>(buf, arm64StubHelperHeaderCode);
++}
++
++void ARM64Common::writeStubHelperEntry(uint8_t *buf, const Symbol &sym,
++                                       uint64_t entryVA) const {
++  ::writeStubHelperEntry(buf, arm64StubHelperEntryCode, sym, entryVA);
++}
++
++void ARM64Common::populateThunk(InputSection *thunk, Symbol *funcSym,
++                                int64_t addend) {
++  thunk->align = 4;
++  thunk->data = {reinterpret_cast<const uint8_t *>(arm64ThunkCode),
++                 sizeof(arm64ThunkCode)};
++  thunk->relocs.emplace_back(/*type=*/ARM64_RELOC_PAGEOFF12,
++                             /*pcrel=*/false, /*length=*/2,
++                             /*offset=*/4, /*addend=*/addend,
++                             /*referent=*/funcSym);
++  thunk->relocs.emplace_back(/*type=*/ARM64_RELOC_PAGE21,
++                             /*pcrel=*/true, /*length=*/2,
++                             /*offset=*/0, /*addend=*/addend,
++                             /*referent=*/funcSym);
++}
++
++void ARM64Common::initICFSafeThunkBody(InputSection *thunk,
++                                       Symbol *targetSym) const {
++  thunk->data = {reinterpret_cast<const uint8_t *>(arm64ICFSafeThunkCode),
++                 sizeof(arm64ICFSafeThunkCode)};
++  thunk->relocs.emplace_back(/*type=*/ARM64_RELOC_BRANCH26,
++                             /*pcrel=*/true, /*length=*/2,
++                             /*offset=*/0, /*addend=*/0,
++                             /*referent=*/targetSym);
++}
++
++Symbol *ARM64Common::getThunkBranchTarget(InputSection *thunk) const {
++  assert(thunk->relocs.size() == 1 &&
++         "expected a single reloc on ARM64 ICF thunk");
++  auto &reloc = thunk->relocs[0];
++  assert(isa<Symbol *>(reloc.referent) &&
++         "ARM64 thunk reloc is expected to point to a Symbol");
++  return cast<Symbol *>(reloc.referent);
++}
++
++uint32_t ARM64Common::getICFSafeThunkSize() const {
++  return sizeof(arm64ICFSafeThunkCode);
++}
++
+ int64_t ARM64Common::getEmbeddedAddend(MemoryBufferRef mb, uint64_t offset,
+                                        const relocation_info rel) const {
+   if (rel.r_type != ARM64_RELOC_UNSIGNED &&
+-      rel.r_type != ARM64_RELOC_SUBTRACTOR) {
++      rel.r_type != ARM64_RELOC_SUBTRACTOR &&
++      rel.r_type != ARM64_RELOC_AUTHENTICATED_POINTER) {
+     // All other reloc types should use the ADDEND relocation to store their
+     // addends.
+     // TODO(gkm): extract embedded addend just so we can assert that it is 0
+@@ -28,6 +76,12 @@ int64_t ARM64Common::getEmbeddedAddend(MemoryBufferRef mb, uint64_t offset,
+ 
+   const auto *buf = reinterpret_cast<const uint8_t *>(mb.getBufferStart());
+   const uint8_t *loc = buf + offset + rel.r_address;
++
++  if (rel.r_type == ARM64_RELOC_AUTHENTICATED_POINTER) {
++    // Only the low 32 bits are the addend; upper bits hold ptrauth fields.
++    return llvm::SignExtend64<32>(read32le(loc));
++  }
++
+   switch (rel.r_length) {
+   case 2:
+     return static_cast<int32_t>(read32le(loc));
+diff --git a/lld/MachO/Arch/ARM64Common.h b/lld/MachO/Arch/ARM64Common.h
+index f20cd4b170249a3..2f68d4a80f83a3a 100644
+--- a/lld/MachO/Arch/ARM64Common.h
++++ b/lld/MachO/Arch/ARM64Common.h
+@@ -18,6 +18,36 @@
+ 
+ namespace lld::macho {
+ 
++// Shared stub helper code — identical for ARM64 and ARM64e.
++inline constexpr uint32_t arm64StubHelperHeaderCode[] = {
++    0x90000011, // 00: adrp  x17, _dyld_private@page
++    0x91000231, // 04: add   x17, x17, _dyld_private@pageoff
++    0xa9bf47f0, // 08: stp   x16/x17, [sp, #-16]!
++    0x90000010, // 0c: adrp  x16, dyld_stub_binder@page
++    0xf9400210, // 10: ldr   x16, [x16, dyld_stub_binder@pageoff]
++    0xd61f0200, // 14: br    x16
++};
++
++inline constexpr uint32_t arm64StubHelperEntryCode[] = {
++    0x18000050, // 00: ldr  w16, l0
++    0x14000000, // 04: b    stubHelperHeader
++    0x00000000, // 08: l0: .long 0
++};
++
++// A thunk is the relaxed variation of stubCode. We don't need the
++// extra indirection through a lazy pointer because the target address
++// is known at link time.
++inline constexpr uint32_t arm64ThunkCode[] = {
++    0x90000010, // 00: adrp  x16, <thunk.ptr>@page
++    0x91000210, // 04: add   x16, [x16,<thunk.ptr>@pageoff]
++    0xd61f0200, // 08: br    x16
++};
++
++// Just a single direct branch to the target function.
++inline constexpr uint32_t arm64ICFSafeThunkCode[] = {
++    0x14000000, // 00: b    target
++};
++
+ struct ARM64Common : TargetInfo {
+   template <class LP> ARM64Common(LP lp) : TargetInfo(lp) {}
+ 
+@@ -31,6 +61,16 @@ struct ARM64Common : TargetInfo {
+ 
+   void handleDtraceReloc(const Symbol *sym, const Relocation &r,
+                          uint8_t *loc) const override;
++
++  void writeStubHelperHeader(uint8_t *buf) const override;
++  void writeStubHelperEntry(uint8_t *buf, const Symbol &sym,
++                            uint64_t entryVA) const override;
++  void populateThunk(InputSection *thunk, Symbol *funcSym,
++                     int64_t addend) override;
++  void initICFSafeThunkBody(InputSection *thunk,
++                            Symbol *targetSym) const override;
++  Symbol *getThunkBranchTarget(InputSection *thunk) const override;
++  uint32_t getICFSafeThunkSize() const override;
+ };
+ 
+ inline uint64_t bitField(uint64_t value, int right, int width, int left) {
+diff --git a/lld/MachO/Arch/ARM64e.cpp b/lld/MachO/Arch/ARM64e.cpp
+new file mode 100644
+index 000000000000000..8588705a97018c5
+--- /dev/null
++++ b/lld/MachO/Arch/ARM64e.cpp
+@@ -0,0 +1,182 @@
++//===- ARM64e.cpp ---------------------------------------------------------===//
++//
++// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
++// See https://llvm.org/LICENSE.txt for license information.
++// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++//
++//===----------------------------------------------------------------------===//
++
++#include "Arch/ARM64Common.h"
++#include "InputFiles.h"
++#include "Symbols.h"
++#include "SyntheticSections.h"
++#include "Target.h"
++
++#include "lld/Common/ErrorHandler.h"
++#include "mach-o/compact_unwind_encoding.h"
++#include "llvm/BinaryFormat/MachO.h"
++
++using namespace llvm;
++using namespace llvm::MachO;
++using namespace lld;
++using namespace lld::macho;
++
++namespace {
++
++struct ARM64e : ARM64Common {
++  ARM64e();
++  void writeStub(uint8_t *buf, const Symbol &, uint64_t) const override;
++
++  void writeObjCMsgSendStub(uint8_t *buf, Symbol *sym, uint64_t stubsAddr,
++                            uint64_t &stubOffset, uint64_t selrefVA,
++                            Symbol *objcMsgSend) const override;
++};
++
++} // namespace
++
++// Random notes on reloc types:
++// ADDEND always pairs with BRANCH26, PAGE21, or PAGEOFF12
++// POINTER_TO_GOT: ld64 supports a 4-byte pc-relative form as well as an 8-byte
++// absolute version of this relocation. The semantics of the absolute relocation
++// are weird -- it results in the value of the GOT slot being written, instead
++// of the address. Let's not support it unless we find a real-world use case.
++static constexpr std::array<RelocAttrs, 12> relocAttrsArray{{
++#define B(x) RelocAttrBits::x
++    {"UNSIGNED",
++     B(UNSIGNED) | B(ABSOLUTE) | B(EXTERN) | B(LOCAL) | B(BYTE4) | B(BYTE8)},
++    {"SUBTRACTOR", B(SUBTRAHEND) | B(EXTERN) | B(BYTE4) | B(BYTE8)},
++    {"BRANCH26", B(PCREL) | B(EXTERN) | B(BRANCH) | B(BYTE4)},
++    {"PAGE21", B(PCREL) | B(EXTERN) | B(BYTE4)},
++    {"PAGEOFF12", B(ABSOLUTE) | B(EXTERN) | B(BYTE4)},
++    {"GOT_LOAD_PAGE21", B(PCREL) | B(EXTERN) | B(GOT) | B(BYTE4)},
++    {"GOT_LOAD_PAGEOFF12",
++     B(ABSOLUTE) | B(EXTERN) | B(GOT) | B(LOAD) | B(BYTE4)},
++    {"POINTER_TO_GOT", B(PCREL) | B(EXTERN) | B(GOT) | B(POINTER) | B(BYTE4)},
++    {"TLVP_LOAD_PAGE21", B(PCREL) | B(EXTERN) | B(TLV) | B(BYTE4)},
++    {"TLVP_LOAD_PAGEOFF12",
++     B(ABSOLUTE) | B(EXTERN) | B(TLV) | B(LOAD) | B(BYTE4)},
++    {"ADDEND", B(ADDEND)},
++    // ARM64e-specific: AUTHENTICATED_POINTER (64-bit absolute, external or
++    // local)
++    {"AUTHENTICATED_POINTER",
++     B(ABSOLUTE) | B(UNSIGNED) | B(EXTERN) | B(LOCAL) | B(BYTE8) | B(AUTH)},
++#undef B
++}};
++
++// ARM64e uses authenticated stubs with braa instruction.
++// These are 16 bytes (4 instructions) instead of the regular 12 bytes.
++// The stub computes the GOT address in x17 for use as authentication context.
++static constexpr uint32_t stubCode[] = {
++    0x90000011, // 00: adrp  x17, __auth_got@page
++    0x91000231, // 04: add   x17, x17, __auth_got@pageoff
++    0xf9400230, // 08: ldr   x16, [x17]
++    0xd71f0a11, // 0c: braa  x16, x17  ; authenticate with IA key, context=x17
++};
++
++void ARM64e::writeStub(uint8_t *buf8, const Symbol &sym,
++                       uint64_t pointerVA) const {
++  auto *buf32 = reinterpret_cast<uint32_t *>(buf8);
++  constexpr size_t stubCodeSize = sizeof(stubCode);
++  SymbolDiagnostic d = {&sym, "stub"};
++  uint64_t stubAddr = in.stubs->addr + sym.stubsIndex * stubCodeSize;
++  uint64_t pcPageBits = pageBits(stubAddr);
++  uint64_t targetPageBits = pageBits(pointerVA);
++  int64_t pageDiff = static_cast<int64_t>(targetPageBits - pcPageBits);
++  // adrp x17, __auth_got@page
++  encodePage21(&buf32[0], d, stubCode[0], pageDiff);
++  // add x17, x17, __auth_got@pageoff
++  encodePageOff12(&buf32[1], d, stubCode[1], pointerVA);
++  // ldr x16, [x17]
++  buf32[2] = stubCode[2];
++  // braa x16, x17
++  buf32[3] = stubCode[3];
++}
++
++// ARM64e uses authenticated ObjC stubs with braa instruction.
++// Uses x17 as both the address register and authentication context,
++// matching the pattern used in ARM64e auth stubs.
++static constexpr uint32_t objcStubsFastCode[] = {
++    0x90000001, // adrp  x1, __objc_selrefs@page
++    0xf9400021, // ldr   x1, [x1, @selector("foo")@pageoff]
++    0x90000011, // adrp  x17, __auth_got@page
++    0x91000231, // add   x17, x17, __auth_got@pageoff
++    0xf9400230, // ldr   x16, [x17]
++    0xd71f0a11, // braa  x16, x17  ; authenticate with IA key
++    0xd4200020, // brk   #0x1
++    0xd4200020, // brk   #0x1
++};
++
++static constexpr uint32_t objcStubsSmallCode[] = {
++    0x90000001, // adrp  x1, __objc_selrefs@page
++    0xf9400021, // ldr   x1, [x1, @selector("foo")@pageoff]
++    0x14000000, // b     _objc_msgSend
++};
++
++void ARM64e::writeObjCMsgSendStub(uint8_t *buf, Symbol *sym, uint64_t stubsAddr,
++                                  uint64_t &stubOffset, uint64_t selrefVA,
++                                  Symbol *objcMsgSend) const {
++  uint64_t objcMsgSendAddr;
++  uint64_t objcStubSize;
++  uint64_t objcMsgSendIndex;
++
++  if (config->objcStubsMode == ObjCStubsMode::fast) {
++    objcStubSize = target->objcStubsFastSize;
++    // ARM64e uses authgot for objc_msgSend.
++    assert(objcMsgSend->isInAuthGot());
++    objcMsgSendAddr = in.authgot->addr;
++    objcMsgSendIndex = objcMsgSend->authGotIndex;
++    ::writeObjCMsgSendFastStub<LP64>(buf, objcStubsFastCode, sym, stubsAddr,
++                                     stubOffset, selrefVA, objcMsgSendAddr,
++                                     objcMsgSendIndex);
++  } else {
++    assert(config->objcStubsMode == ObjCStubsMode::small);
++    objcStubSize = target->objcStubsSmallSize;
++    if (auto *d = dyn_cast<Defined>(objcMsgSend)) {
++      objcMsgSendAddr = d->getVA();
++      objcMsgSendIndex = 0;
++    } else {
++      objcMsgSendAddr = in.stubs->addr;
++      objcMsgSendIndex = objcMsgSend->stubsIndex;
++    }
++    ::writeObjCMsgSendSmallStub<LP64>(buf, objcStubsSmallCode, sym, stubsAddr,
++                                      stubOffset, selrefVA, objcMsgSendAddr,
++                                      objcMsgSendIndex);
++  }
++  stubOffset += objcStubSize;
++}
++
++ARM64e::ARM64e() : ARM64Common(LP64()) {
++  cpuType = CPU_TYPE_ARM64;
++  // ARM64e-specific: Use ARM64E subtype with pointer authentication ABI version
++  // 0
++  cpuSubtype = CPU_SUBTYPE_ARM64E_WITH_PTRAUTH_VERSION(/*version*/ 0,
++                                                       /*kernel*/ false);
++
++  stubSize = sizeof(stubCode);
++  thunkSize = sizeof(arm64ThunkCode);
++
++  objcStubsFastSize = sizeof(objcStubsFastCode);
++  objcStubsFastAlignment = 32;
++  objcStubsSmallSize = sizeof(objcStubsSmallCode);
++  objcStubsSmallAlignment = 4;
++
++  // Branch immediate is two's complement 26 bits, which is implicitly
++  // multiplied by 4 (since all functions are 4-aligned: The branch range
++  // is -4*(2**(26-1))..4*(2**(26-1) - 1).
++  backwardBranchRange = 128 * 1024 * 1024;
++  forwardBranchRange = backwardBranchRange - 4;
++
++  modeDwarfEncoding = UNWIND_ARM64_MODE_DWARF;
++  subtractorRelocType = ARM64_RELOC_SUBTRACTOR;
++  unsignedRelocType = ARM64_RELOC_UNSIGNED;
++
++  stubHelperHeaderSize = sizeof(arm64StubHelperHeaderCode);
++  stubHelperEntrySize = sizeof(arm64StubHelperEntryCode);
++
++  relocAttrs = {relocAttrsArray.data(), relocAttrsArray.size()};
++}
++
++TargetInfo *macho::createARM64eTargetInfo() {
++  static ARM64e t;
++  return &t;
++}
+diff --git a/lld/MachO/BPSectionOrderer.cpp b/lld/MachO/BPSectionOrderer.cpp
+index a9b5d07ac55e5a6..8b36117429335fe 100644
+--- a/lld/MachO/BPSectionOrderer.cpp
++++ b/lld/MachO/BPSectionOrderer.cpp
+@@ -108,7 +108,7 @@ struct BPOrdererMachO : lld::BPOrderer<BPOrdererMachO> {
+         value = d->value;
+     }
+     return llvm::stable_hash_combine(kind, sectionIdx.value_or(0), value,
+-                                     reloc.addend);
++                                     reloc.getAddend());
+   }
+ };
+ } // namespace
+diff --git a/lld/MachO/CMakeLists.txt b/lld/MachO/CMakeLists.txt
+index 72631f11511bf67..e8afdc06609e972 100644
+--- a/lld/MachO/CMakeLists.txt
++++ b/lld/MachO/CMakeLists.txt
+@@ -6,6 +6,7 @@ include_directories(${LLVM_MAIN_SRC_DIR}/../libunwind/include)
+ 
+ add_lld_library(lldMachO
+   Arch/ARM64.cpp
++  Arch/ARM64e.cpp
+   Arch/ARM64Common.cpp
+   Arch/ARM64_32.cpp
+   Arch/X86_64.cpp
+diff --git a/lld/MachO/ConcatOutputSection.cpp b/lld/MachO/ConcatOutputSection.cpp
+index 753dea90d0f5d1a..1991407b099ed28 100644
+--- a/lld/MachO/ConcatOutputSection.cpp
++++ b/lld/MachO/ConcatOutputSection.cpp
+@@ -155,7 +155,7 @@ bool TextOutputSection::needsThunks() const {
+       // Pre-populate the thunkMap and memoize call site counts for every
+       // InputSection and ThunkInfo. We do this for the benefit of
+       // estimateBranchTargetThresholdVA().
+-      ThunkInfo &thunkInfo = thunkMap[ThunkKey{sym, r.addend}];
++      ThunkInfo &thunkInfo = thunkMap[ThunkKey{sym, r.getAddend()}];
+       // Knowing ThunkInfo call site count will help us know whether or not we
+       // might need to create more for this referent at the time we are
+       // estimating distance to __stubs in estimateBranchTargetThresholdVA().
+@@ -351,16 +351,17 @@ void TextOutputSection::finalize() {
+       uint64_t highVA = callVA + forwardBranchRange;
+       // Calculate our call referent address
+       auto *funcSym = cast<Symbol *>(r.referent);
+-      ThunkInfo &thunkInfo = thunkMap[ThunkKey{funcSym, r.addend}];
++      int64_t addend = r.getAddend();
++      ThunkInfo &thunkInfo = thunkMap[ThunkKey{funcSym, addend}];
+       // The referent is not reachable, so we need to use a thunk... unless we
+       // are close enough to the end that branch target sections (__stubs,
+       // __objc_stubs) are now within range of a simple forward branch -- BUT
+       // only for zero-addend branches. The writer's resolveSymbolOffsetVA()
+       // resolves non-zero-addend branches against the symbol body rather than
+       // the stub, so __stubs reachability says nothing about whether such a
+-      // call can be emitted directly. Hence the `r.addend == 0` guard below.
++      // call can be emitted directly. Hence the `addend == 0` guard below.
+       // See INTERP check lines in arm64-thunk-branch-addend.s.
+-      if (r.addend == 0 &&
++      if (addend == 0 &&
+           (funcSym->isInStubs() ||
+            (in.objcStubs && in.objcStubs->isNeeded() &&
+             ObjCStubsSection::isObjCStubSymbol(funcSym))) &&
+@@ -371,7 +372,7 @@ void TextOutputSection::finalize() {
+       // Use the same resolution rules as the writer: for non-zero addends this
+       // goes directly to the symbol body rather than any stub trampoline.
+       // See INTERP check lines in arm64-thunk-branch-addend.s.
+-      uint64_t funcVA = resolveSymbolOffsetVA(funcSym, r.type, r.addend);
++      uint64_t funcVA = resolveSymbolOffsetVA(funcSym, r.type, addend);
+       ++thunkInfo.callSitesUsed;
+       if (lowVA <= funcVA && funcVA <= highVA) {
+         // The referent is reachable with a simple call instruction.
+@@ -386,7 +387,7 @@ void TextOutputSection::finalize() {
+           r.referent = thunkInfo.sym;
+           // The thunk itself bakes in the addend, so the call-site reloc must
+           // branch to the thunk start with no extra offset.
+-          r.addend = 0;
++          r.setAddend(0);
+           continue;
+         }
+       }
+@@ -406,8 +407,8 @@ void TextOutputSection::finalize() {
+       assert(thunkInfo.isec->live);
+ 
+       std::string addendSuffix;
+-      if (r.addend != 0)
+-        addendSuffix = "+" + std::to_string(r.addend);
++      if (addend != 0)
++        addendSuffix = "+" + std::to_string(addend);
+       StringRef thunkName =
+           saver().save(funcSym->getName() + addendSuffix + ".thunk." +
+                        std::to_string(thunkInfo.sequence++));
+@@ -425,10 +426,10 @@ void TextOutputSection::finalize() {
+             /*noDeadStrip=*/false, /*isWeakDefCanBeHidden=*/false);
+       }
+       thunkInfo.sym->used = true;
+-      target->populateThunk(thunkInfo.isec, funcSym, r.addend);
++      target->populateThunk(thunkInfo.isec, funcSym, addend);
+       // The thunk itself bakes in the addend, so the call-site reloc must
+       // branch to the thunk start with no extra offset.
+-      r.addend = 0;
++      r.setAddend(0);
+       finalizeOne(thunkInfo.isec);
+       thunks.push_back(thunkInfo.isec);
+       ++thunkCount;
+diff --git a/lld/MachO/Driver.cpp b/lld/MachO/Driver.cpp
+index 26b39f7a28d0d22..fb66bad211f7ff9 100644
+--- a/lld/MachO/Driver.cpp
++++ b/lld/MachO/Driver.cpp
+@@ -951,6 +951,8 @@ static TargetInfo *createTargetInfo(InputArgList &args) {
+   case CPU_TYPE_X86_64:
+     return createX86_64TargetInfo();
+   case CPU_TYPE_ARM64:
++    if ((cpuSubtype & ~CPU_SUBTYPE_MASK) == CPU_SUBTYPE_ARM64E)
++      return createARM64eTargetInfo();
+     return createARM64TargetInfo();
+   case CPU_TYPE_ARM64_32:
+     return createARM64_32TargetInfo();
+@@ -1243,8 +1245,14 @@ static bool dataConstDefault(const InputArgList &args) {
+ 
+ static bool shouldEmitChainedFixups(const InputArgList &args) {
+   const Arg *arg = args.getLastArg(OPT_fixup_chains, OPT_no_fixup_chains);
+-  if (arg && arg->getOption().matches(OPT_no_fixup_chains))
++  if (arg && arg->getOption().matches(OPT_no_fixup_chains)) {
++    if (config->arch() == AK_arm64e) {
++      warn(
++          "-no_fixup_chains is incompatible with arm64e; using chained fixups");
++      return true;
++    }
+     return false;
++  }
+ 
+   bool requested = arg && arg->getOption().matches(OPT_fixup_chains);
+   if (!config->isPic) {
+@@ -1254,7 +1262,8 @@ static bool shouldEmitChainedFixups(const InputArgList &args) {
+     return false;
+   }
+ 
+-  if (!is_contained({AK_x86_64, AK_x86_64h, AK_arm64}, config->arch())) {
++  if (!is_contained({AK_x86_64, AK_x86_64h, AK_arm64, AK_arm64e},
++                    config->arch())) {
+     if (requested)
+       error("-fixup_chains is only supported on x86_64 and arm64 targets");
+ 
+diff --git a/lld/MachO/ICF.cpp b/lld/MachO/ICF.cpp
+index 39e7e580344c46c..5af9dd902bbee9a 100644
+--- a/lld/MachO/ICF.cpp
++++ b/lld/MachO/ICF.cpp
+@@ -115,6 +115,16 @@ bool ICF::equalsConstant(const ConcatInputSection *ia,
+       return false;
+     if (ra.offset != rb.offset)
+       return false;
++    // For AUTH relocs, both must be AUTH with identical signing metadata.
++    if (ra.hasAuth != rb.hasAuth)
++      return false;
++    if (ra.hasAuth) {
++      const AuthInfo *aiA = ra.getAuthInfo();
++      const AuthInfo *aiB = rb.getAuthInfo();
++      if (aiA->diversity != aiB->diversity || aiA->key != aiB->key ||
++          aiA->addrDiv != aiB->addrDiv)
++        return false;
++    }
+     if (isa<Symbol *>(ra.referent) != isa<Symbol *>(rb.referent))
+       return false;
+ 
+@@ -130,13 +140,13 @@ bool ICF::equalsConstant(const ConcatInputSection *ia,
+       // ICF runs before Undefineds are treated (and potentially converted into
+       // DylibSymbols).
+       if (isa<DylibSymbol>(sa) || isa<Undefined>(sa))
+-        return sa == sb && ra.addend == rb.addend;
++        return sa == sb && ra.getAddend() == rb.getAddend();
+       assert(isa<Defined>(sa));
+       const auto *da = cast<Defined>(sa);
+       const auto *db = cast<Defined>(sb);
+       if (!da->isec() || !db->isec()) {
+         assert(da->isAbsolute() && db->isAbsolute());
+-        return da->value + ra.addend == db->value + rb.addend;
++        return da->value + ra.getAddend() == db->value + rb.getAddend();
+       }
+       isecA = da->isec();
+       valueA = da->value;
+@@ -164,7 +174,7 @@ bool ICF::equalsConstant(const ConcatInputSection *ia,
+     assert(isecA->kind() == isecB->kind());
+     // We will compare ConcatInputSection contents in equalsVariable.
+     if (isa<ConcatInputSection>(isecA))
+-      return ra.addend == rb.addend;
++      return ra.getAddend() == rb.getAddend();
+     // Else we have two literal sections. References to them are equal iff their
+     // offsets in the output section are equal.
+     if (isa<Symbol *>(ra.referent))
+@@ -172,10 +182,10 @@ bool ICF::equalsConstant(const ConcatInputSection *ia,
+       // don't do `getOffset(value + addend)` because value + addend may not be
+       // a valid offset in the literal section.
+       return isecA->getOffset(valueA) == isecB->getOffset(valueB) &&
+-             ra.addend == rb.addend;
++             ra.getAddend() == rb.getAddend();
+     assert(valueA == 0 && valueB == 0);
+     // For section relocs, we compare the content at the section offset.
+-    return isecA->getOffset(ra.addend) == isecB->getOffset(rb.addend);
++    return isecA->getOffset(ra.getAddend()) == isecB->getOffset(rb.getAddend());
+   };
+   if (!llvm::equal(ia->relocs, ib->relocs, f))
+     return false;
+diff --git a/lld/MachO/InputFiles.cpp b/lld/MachO/InputFiles.cpp
+index cc7eae51175bc18..fe02500752a288a 100644
+--- a/lld/MachO/InputFiles.cpp
++++ b/lld/MachO/InputFiles.cpp
+@@ -201,6 +201,15 @@ static bool compatWithTargetArch(const InputFile *file, const Header *hdr) {
+     return false;
+   }
+ 
++  // Reject non-arm64e objects when linking for arm64e.
++  if (config->arch() == AK_arm64e && hdr->cputype == CPU_TYPE_ARM64 &&
++      (hdr->cpusubtype & ~CPU_SUBTYPE_MASK) != CPU_SUBTYPE_ARM64E) {
++    warn(toString(file) +
++         " has architecture arm64 which is incompatible with "
++         "target architecture arm64e (arm64e requires pointer authentication)");
++    return false;
++  }
++
+   return checkCompatibility(file);
+ }
+ 
+@@ -263,7 +272,7 @@ std::optional<MemoryBufferRef> macho::readFile(StringRef path) {
+     // FIXME: LD64 has a more complex fallback logic here.
+     // Consider implementing that as well?
+     if (cpuType != static_cast<uint32_t>(target->cpuType) ||
+-        cpuSubtype != target->cpuSubtype) {
++        cpuSubtype != (target->cpuSubtype & ~MachO::CPU_SUBTYPE_MASK)) {
+       archs.emplace_back(getArchName(cpuType, cpuSubtype));
+       continue;
+     }
+@@ -580,9 +589,27 @@ void ObjFile::parseRelocations(ArrayRef<SectionHeader> sectionHeaders,
+     r.pcrel = relInfo.r_pcrel;
+     r.length = relInfo.r_length;
+     r.offset = relInfo.r_address;
++
++    // For ARM64e authenticated pointer relocations, extract the auth info
++    // from the in-object bitfields and store in the union's authData member.
++    if (target->hasAttr(relInfo.r_type, RelocAttrBits::AUTH)) {
++      const uint8_t *loc = buf + sec.offset + relInfo.r_address;
++      auto authPtr =
++          *reinterpret_cast<const arm64e_auth_embedded_pointer *>(loc);
++      if (authPtr.auth) {
++        r.hasAuth = true;
++        r.authData.addend =
++            isSubtrahend ? 0 : static_cast<int32_t>(totalAddend);
++        r.authData.info.diversity = authPtr.diversity;
++        r.authData.info.addrDiv = authPtr.addrDiv;
++        r.authData.info.key = static_cast<PtrAuthKey>(authPtr.key);
++      }
++    }
++
+     if (relInfo.r_extern) {
+       r.referent = symbols[relInfo.r_symbolnum];
+-      r.addend = isSubtrahend ? 0 : totalAddend;
++      if (!r.hasAuth)
++        r.addend = isSubtrahend ? 0 : totalAddend;
+     } else {
+       assert(!isSubtrahend);
+       const SectionHeader &referentSecHead =
+@@ -604,7 +631,12 @@ void ObjFile::parseRelocations(ArrayRef<SectionHeader> sectionHeaders,
+       }
+       r.referent = findContainingSubsection(*sections[relInfo.r_symbolnum - 1],
+                                             &referentOffset);
+-      r.addend = referentOffset;
++      // For AUTH relocs the upper 32 bits of the addend slot hold AuthInfo;
++      // only write the int32_t addend half to avoid clobbering it.
++      if (r.hasAuth)
++        r.authData.addend = static_cast<int32_t>(referentOffset);
++      else
++        r.addend = referentOffset;
+     }
+ 
+     // Find the subsection that this relocation belongs to.
+@@ -1167,7 +1199,7 @@ void ObjFile::registerCompactUnwind(Section &compactUnwindSection) {
+         ++it;
+         continue;
+       }
+-      uint64_t add = r.addend;
++      uint64_t add = r.getAddend();
+       if (auto *sym = cast_or_null<Defined>(r.referent.dyn_cast<Symbol *>())) {
+         // Check whether the symbol defined in this file is the prevailing one.
+         // Skip if it is e.g. a weak def that didn't prevail.
+@@ -1350,12 +1382,13 @@ targetSymFromCanonicalSubtractor(const InputSection *isec,
+   if (!pcSym) {
+     auto *targetIsec =
+         cast<ConcatInputSection>(cast<InputSection *>(minuend.referent));
+-    target = findSymbolAtOffset(targetIsec, minuend.addend);
++    target = findSymbolAtOffset(targetIsec, minuend.getAddend());
+   }
+   if (Invert)
+     std::swap(pcSym, target);
+   if (pcSym->isec() == isec) {
+-    if (pcSym->value - (Invert ? -1 : 1) * minuend.addend != subtrahend.offset)
++    if (pcSym->value - (Invert ? -1 : 1) * minuend.getAddend() !=
++        subtrahend.offset)
+       fatal("invalid FDE relocation in __eh_frame");
+   } else {
+     // Ensure the pcReloc points to a symbol within the current EH frame.
+@@ -1367,7 +1400,7 @@ targetSymFromCanonicalSubtractor(const InputSection *isec,
+     Relocation &pcReloc = Invert ? minuend : subtrahend;
+     pcReloc.referent = isec->symbols[0];
+     assert(isec->symbols[0]->value == 0);
+-    minuend.addend = pcReloc.offset * (Invert ? 1LL : -1LL);
++    minuend.setAddend(pcReloc.offset * (Invert ? 1LL : -1LL));
+   }
+   return target;
+ }
+diff --git a/lld/MachO/InputSection.cpp b/lld/MachO/InputSection.cpp
+index 4c4f644889d5fbc..846401101064cca 100644
+--- a/lld/MachO/InputSection.cpp
++++ b/lld/MachO/InputSection.cpp
+@@ -101,7 +101,14 @@ uint64_t macho::resolveSymbolOffsetVA(const Symbol *sym, uint8_t type,
+     // There's no meaningful way to "interpose" an interior offset.
+     symVA = (offset != 0) ? sym->getVA() : sym->resolveBranchVA();
+   } else if (relocAttrs.hasAttr(RelocAttrBits::GOT)) {
+-    symVA = sym->resolveGotVA();
++    // GOT_LOAD (no POINTER attr) should use regular __got when available,
++    // because the compiler applies paciza on the loaded value and needs
++    // a raw (non-auth) pointer. POINTER_TO_GOT (has POINTER attr) should
++    // use __auth_got (the default from getGotVA/resolveGotVA).
++    if (!relocAttrs.hasAttr(RelocAttrBits::POINTER) && sym->isInGot())
++      symVA = in.got->getVA(sym->gotIndex);
++    else
++      symVA = sym->resolveGotVA();
+   } else if (relocAttrs.hasAttr(RelocAttrBits::TLV)) {
+     symVA = sym->resolveTlvVA();
+   } else {
+@@ -236,11 +243,11 @@ void ConcatInputSection::writeTo(uint8_t *buf) {
+       const Relocation &minuend = relocs[++i];
+       uint64_t minuendVA;
+       if (const Symbol *toSym = minuend.referent.dyn_cast<Symbol *>())
+-        minuendVA = toSym->getVA() + minuend.addend;
++        minuendVA = toSym->getVA() + minuend.getAddend();
+       else {
+         auto *referentIsec = cast<InputSection *>(minuend.referent);
+         assert(!::shouldOmitFromOutput(referentIsec));
+-        minuendVA = referentIsec->getVA(minuend.addend);
++        minuendVA = referentIsec->getVA(minuend.getAddend());
+       }
+       referentVA = minuendVA - fromSym->getVA();
+     } else if (auto *referentSym = r.referent.dyn_cast<Symbol *>()) {
+@@ -253,7 +260,7 @@ void ConcatInputSection::writeTo(uint8_t *buf) {
+         target->handleDtraceReloc(referentSym, r, loc);
+         continue;
+       }
+-      referentVA = resolveSymbolOffsetVA(referentSym, r.type, r.addend);
++      referentVA = resolveSymbolOffsetVA(referentSym, r.type, r.getAddend());
+ 
+       if (isThreadLocalVariables(getFlags()) && isa<Defined>(referentSym)) {
+         // References from thread-local variable sections are treated as offsets
+@@ -262,15 +269,15 @@ void ConcatInputSection::writeTo(uint8_t *buf) {
+         // contiguous).
+         referentVA -= firstTLVDataSection->addr;
+       } else if (needsFixup) {
+-        writeChainedFixup(loc, referentSym, r.addend);
++        writeChainedFixup(loc, referentSym, r);
+         continue;
+       }
+     } else if (auto *referentIsec = r.referent.dyn_cast<InputSection *>()) {
+       assert(!::shouldOmitFromOutput(referentIsec));
+-      referentVA = referentIsec->getVA(r.addend);
++      referentVA = referentIsec->getVA(r.getAddend());
+ 
+       if (needsFixup) {
+-        writeChainedRebase(loc, referentVA);
++        writeChainedRebase(loc, referentVA, r.getAuthInfo());
+         continue;
+       }
+     }
+diff --git a/lld/MachO/InputSection.h b/lld/MachO/InputSection.h
+index 2ecc198c99c5d04..afcaacd43b82aea 100644
+--- a/lld/MachO/InputSection.h
++++ b/lld/MachO/InputSection.h
+@@ -363,6 +363,7 @@ constexpr const char staticInit[] = "__StaticInit";
+ constexpr const char stringTable[] = "__string_table";
+ constexpr const char stubHelper[] = "__stub_helper";
+ constexpr const char stubs[] = "__stubs";
++constexpr const char authStubs[] = "__auth_stubs";
+ constexpr const char swift[] = "__swift";
+ constexpr const char symbolTable[] = "__symbol_table";
+ constexpr const char textCoalNt[] = "__textcoal_nt";
+diff --git a/lld/MachO/MapFile.cpp b/lld/MachO/MapFile.cpp
+index 29ebcdcf9a832d4..b7b041ecc96f3ea 100644
+--- a/lld/MachO/MapFile.cpp
++++ b/lld/MachO/MapFile.cpp
+@@ -147,10 +147,12 @@ static void printNonLazyPointerSection(raw_fd_ostream &os,
+   // entries to be linker-synthesized. Not sure why they made that decision, but
+   // I think we can follow suit unless there's demand for better symbol-to-file
+   // associations.
+-  for (const Symbol *sym : osec->getEntries())
++  for (const Symbol *sym : osec->getEntries()) {
++    uint32_t idx = osec->isAuth ? sym->authGotIndex : sym->gotIndex;
++    uint64_t symAddr = osec->addr + idx * target->wordSize;
+     os << format("0x%08llX\t0x%08zX\t[  0] non-lazy-pointer-to-local: %s\n",
+-                 osec->addr + sym->gotIndex * target->wordSize,
+-                 target->wordSize, sym->getName().str().data());
++                 symAddr, target->wordSize, sym->getName().str().data());
++  }
+ }
+ 
+ static uint64_t getSymSizeForMap(Defined *sym) {
+diff --git a/lld/MachO/MarkLive.cpp b/lld/MachO/MarkLive.cpp
+index a51c800bf4ef129..a94520082cb0917 100644
+--- a/lld/MachO/MarkLive.cpp
++++ b/lld/MachO/MarkLive.cpp
+@@ -158,7 +158,7 @@ void MarkLiveImpl<RecordWhyLive>::markTransitively() {
+         if (auto *s = r.referent.dyn_cast<Symbol *>())
+           addSym(s, entry);
+         else
+-          enqueue(cast<InputSection *>(r.referent), r.addend, entry);
++          enqueue(cast<InputSection *>(r.referent), r.getAddend(), entry);
+       }
+       for (Defined *d : getInputSection(entry)->symbols)
+         addSym(d, entry);
+@@ -182,7 +182,7 @@ void MarkLiveImpl<RecordWhyLive>::markTransitively() {
+           }
+         } else {
+           auto *referentIsec = cast<InputSection *>(r.referent);
+-          if (referentIsec->isLive(r.addend))
++          if (referentIsec->isLive(r.getAddend()))
+             enqueue(isec, 0, makeEntry(referentIsec, nullptr));
+         }
+       }
+diff --git a/lld/MachO/ObjC.cpp b/lld/MachO/ObjC.cpp
+index 4522c574c137fea..23ec58e3eb22309 100644
+--- a/lld/MachO/ObjC.cpp
++++ b/lld/MachO/ObjC.cpp
+@@ -1140,7 +1140,7 @@ void ObjcCategoryMerger::createSymbolReference(
+     const Relocation &relocTemplate) {
+   Relocation r = relocTemplate;
+   r.offset = offset;
+-  r.addend = 0;
++  r.setAddend(0);
+   r.referent = const_cast<Symbol *>(refTo);
+   refFrom->isec()->relocs.push_back(r);
+ }
+diff --git a/lld/MachO/OutputSegment.cpp b/lld/MachO/OutputSegment.cpp
+index 5824b5c7772b3ef..6d8eadb703f5a1f 100644
+--- a/lld/MachO/OutputSegment.cpp
++++ b/lld/MachO/OutputSegment.cpp
+@@ -148,6 +148,7 @@ static int sectionOrder(OutputSection *osec) {
+       return std::numeric_limits<int>::max();
+     default:
+       return StringSwitch<int>(osec->name)
++          .Case(section_names::authGot, -4)
+           .Case(section_names::got, -3)
+           .Case(section_names::lazySymbolPtr, -2)
+           .Case(section_names::const_, -1)
+diff --git a/lld/MachO/Relocations.h b/lld/MachO/Relocations.h
+index f5d4c37082968a1..e7da9abc134cc03 100644
+--- a/lld/MachO/Relocations.h
++++ b/lld/MachO/Relocations.h
+@@ -41,7 +41,8 @@ enum class RelocAttrBits {
+   LOAD = 1 << 13,      // Relaxable indirect load
+   POINTER = 1 << 14,   // Non-relaxable indirect load (pointer is taken)
+   UNSIGNED = 1 << 15,  // *_UNSIGNED relocs
+-  LLVM_MARK_AS_BITMASK_ENUM(/*LargestValue*/ (1 << 16) - 1),
++  AUTH = 1 << 16,      // ARM64e ptrauth relocs
++  LLVM_MARK_AS_BITMASK_ENUM(/*LargestValue*/ (1 << 17) - 1),
+ };
+ // Note: SUBTRACTOR always pairs with UNSIGNED (a delta between two symbols).
+ 
+@@ -51,16 +52,37 @@ struct RelocAttrs {
+   bool hasAttr(RelocAttrBits b) const { return (bits & b) == b; }
+ };
+ 
++// PAC key indices used by ARM64e. Values match the runtime ABI (ptrauth.h).
++enum class PtrAuthKey : uint8_t { IA = 0, IB = 1, DA = 2, DB = 3 };
++
++// ARM64e ptrauth metadata. Sized to keep AuthReloc the same size as int64_t.
++struct AuthInfo {
++  uint16_t diversity;
++  PtrAuthKey key;
++  uint8_t addrDiv;
++};
++
++struct AuthReloc {
++  int32_t addend;
++  AuthInfo info;
++};
++static_assert(sizeof(AuthReloc) == sizeof(int64_t),
++              "AuthReloc must match int64_t size");
++
+ struct Relocation {
+   uint8_t type = llvm::MachO::GENERIC_RELOC_INVALID;
+   bool pcrel = false;
+   uint8_t length = 0;
++  bool hasAuth = false; // ARM64e AUTH reloc; selects union member below.
+   // The offset from the start of the subsection that this relocation belongs
+   // to.
+   uint32_t offset = 0;
+   // Adding this offset to the address of the referent symbol or subsection
+   // gives the destination that this relocation refers to.
+-  int64_t addend = 0;
++  union {
++    int64_t addend = 0;
++    AuthReloc authData; // when hasAuth: 32-bit addend + auth fields
++  };
+   llvm::PointerUnion<Symbol *, InputSection *> referent = nullptr;
+ 
+   Relocation() = default;
+@@ -71,6 +93,21 @@ struct Relocation {
+       : type(type), pcrel(pcrel), length(length), offset(offset),
+         addend(addend), referent(referent) {}
+ 
++  // Convenience accessors for auth metadata.
++  const AuthInfo *getAuthInfo() const {
++    return hasAuth ? &authData.info : nullptr;
++  }
++  int64_t getAddend() const {
++    return hasAuth ? static_cast<int64_t>(authData.addend) : addend;
++  }
++  // Write the addend without clobbering AuthInfo on AUTH relocations.
++  void setAddend(int64_t a) {
++    if (hasAuth)
++      authData.addend = static_cast<int32_t>(a);
++    else
++      addend = a;
++  }
++
+   InputSection *getReferentInputSection() const;
+ 
+   // Must point to an offset within a CStringInputSection or a
+diff --git a/lld/MachO/Symbols.cpp b/lld/MachO/Symbols.cpp
+index 9faf01e09de059e..d77f95783bc3f69 100644
+--- a/lld/MachO/Symbols.cpp
++++ b/lld/MachO/Symbols.cpp
+@@ -49,7 +49,19 @@ uint64_t Symbol::getStubVA() const { return in.stubs->getVA(stubsIndex); }
+ uint64_t Symbol::getLazyPtrVA() const {
+   return in.lazyPointers->getVA(stubsIndex);
+ }
+-uint64_t Symbol::getGotVA() const { return in.got->getVA(gotIndex); }
++uint64_t Symbol::getGotVA() const {
++  // On arm64e a symbol can land in both __got and __auth_got; prefer the
++  // signed slot (used by POINTER_TO_GOT for eh_frame personalities).
++  if (isInAuthGot())
++    return getAuthGotVA();
++  if (isInGot())
++    return in.got->getVA(gotIndex);
++  llvm_unreachable("symbol not in any GOT section");
++}
++uint64_t Symbol::getAuthGotVA() const {
++  assert(isInAuthGot());
++  return in.authgot->getVA(authGotIndex);
++}
+ uint64_t Symbol::getTlvVA() const { return in.tlvPointers->getVA(gotIndex); }
+ 
+ Defined::Defined(StringRef name, InputFile *file, InputSection *isec,
+diff --git a/lld/MachO/Symbols.h b/lld/MachO/Symbols.h
+index beb97b35bf8817e..7b7b604751c664f 100644
+--- a/lld/MachO/Symbols.h
++++ b/lld/MachO/Symbols.h
+@@ -45,7 +45,7 @@ class Symbol {
+ 
+   virtual ~Symbol() {}
+ 
+-  Kind kind() const { return symbolKind; }
++  Kind kind() const { return static_cast<Kind>(symbolKind); }
+ 
+   StringRef getName() const { return {nameData, nameSize}; }
+ 
+@@ -68,24 +68,31 @@ class Symbol {
+   // Whether this symbol is in the GOT or TLVPointer sections.
+   bool isInGot() const { return gotIndex != UINT32_MAX; }
+ 
++  // Whether this symbol is in the AuthGotSection (arm64e).
++  bool isInAuthGot() const { return authGotIndex != UINT32_MAX; }
++
+   // Whether this symbol is in the StubsSection.
+   bool isInStubs() const { return stubsIndex != UINT32_MAX; }
+ 
+   uint64_t getStubVA() const;
+   uint64_t getLazyPtrVA() const;
+   uint64_t getGotVA() const;
++  uint64_t getAuthGotVA() const;
+   uint64_t getTlvVA() const;
+   uint64_t resolveBranchVA() const {
+     assert(isa<Defined>(this) || isa<DylibSymbol>(this));
+     return isInStubs() ? getStubVA() : getVA();
+   }
+-  uint64_t resolveGotVA() const { return isInGot() ? getGotVA() : getVA(); }
++  uint64_t resolveGotVA() const {
++    return (isInGot() || isInAuthGot()) ? getGotVA() : getVA();
++  }
+   uint64_t resolveTlvVA() const { return isInGot() ? getTlvVA() : getVA(); }
+ 
+   // The index of this symbol in the GOT or the TLVPointer section, depending
+   // on whether it is a thread-local. A given symbol cannot be referenced by
+   // both these sections at once.
+   uint32_t gotIndex = UINT32_MAX;
++  uint32_t authGotIndex = UINT32_MAX;
+   uint32_t lazyBindOffset = UINT32_MAX;
+   uint32_t stubsHelperIndex = UINT32_MAX;
+   uint32_t stubsIndex = UINT32_MAX;
+@@ -95,16 +102,19 @@ class Symbol {
+ 
+ protected:
+   Symbol(Kind k, StringRef name, InputFile *file)
+-      : symbolKind(k), nameData(name.data()), file(file), nameSize(name.size()),
++      : nameData(name.data()), file(file), nameSize(name.size()), symbolKind(k),
+         isUsedInRegularObj(!file || isa<ObjFile>(file)),
+         used(!config->deadStrip) {}
+ 
+-  Kind symbolKind;
+   const char *nameData;
+   InputFile *file;
+   uint32_t nameSize;
+ 
+ public:
++  // Packed to share its byte with the booleans below; keeps sizeof(Symbol)==56.
++  LLVM_PREFERRED_TYPE(Kind)
++  uint8_t symbolKind : 3;
++
+   // True if this symbol was referenced by a regular (non-bitcode) object.
+   bool isUsedInRegularObj : 1;
+ 
+diff --git a/lld/MachO/SyntheticSections.cpp b/lld/MachO/SyntheticSections.cpp
+index 36d15419a109172..6fac95d0d5283f5 100644
+--- a/lld/MachO/SyntheticSections.cpp
++++ b/lld/MachO/SyntheticSections.cpp
+@@ -101,6 +101,11 @@ static uint32_t cpuSubtype() {
+       config->platformInfo.target.MinDeployment >= VersionTuple(10, 5))
+     subtype |= CPU_SUBTYPE_LIB64;
+ 
++  // arm64e dylibs/bundles use ptrauth version 0.
++  if (config->arch() == AK_arm64e &&
++      (config->outputType == MH_DYLIB || config->outputType == MH_BUNDLE))
++    subtype = CPU_SUBTYPE_ARM64E_WITH_PTRAUTH_VERSION(0, false);
++
+   return subtype;
+ }
+ 
+@@ -299,17 +304,18 @@ void RebaseSection::writeTo(uint8_t *buf) const {
+ }
+ 
+ NonLazyPointerSectionBase::NonLazyPointerSectionBase(const char *segname,
+-                                                     const char *name)
+-    : SyntheticSection(segname, name) {
++                                                     const char *name,
++                                                     bool isAuth)
++    : SyntheticSection(segname, name), isAuth(isAuth) {
+   align = target->wordSize;
+ }
+ 
+ void macho::addNonLazyBindingEntries(const Symbol *sym,
+                                      const InputSection *isec, uint64_t offset,
+-                                     int64_t addend) {
++                                     int64_t addend, bool forceOutlineAuth) {
+   if (config->emitChainedFixups) {
+     if (needsBinding(sym))
+-      in.chainedFixups->addBinding(sym, isec, offset, addend);
++      in.chainedFixups->addBinding(sym, isec, offset, addend, forceOutlineAuth);
+     else if (isa<Defined>(sym))
+       in.chainedFixups->addRebase(isec, offset);
+     else
+@@ -336,16 +342,104 @@ void macho::addNonLazyBindingEntries(const Symbol *sym,
+ 
+ void NonLazyPointerSectionBase::addEntry(Symbol *sym) {
+   if (entries.insert(sym)) {
+-    assert(!sym->isInGot());
+-    sym->gotIndex = entries.size() - 1;
++    // On arm64e, a symbol can be in both __got and __auth_got.
++    // Use the appropriate index field based on which section this is.
++    if (isAuth) {
++      assert(!sym->isInAuthGot());
++      sym->authGotIndex = entries.size() - 1;
++      addNonLazyBindingEntries(sym, isec, sym->authGotIndex * target->wordSize,
++                               0, isAuth);
++    } else {
++      assert(!sym->isInGot());
++      sym->gotIndex = entries.size() - 1;
++      addNonLazyBindingEntries(sym, isec, sym->gotIndex * target->wordSize, 0,
++                               isAuth);
++    }
++  }
++}
++
++// Pick the chained-fixup pointer format for this image. arm64e selects between
++// USERLAND24 (newer deployment targets) and the legacy ARM64E format; every
++// other arch uses DYLD_CHAINED_PTR_64.
++static uint16_t computePointerFormat() {
++  using namespace llvm::MachO;
++  if (config->arch() != AK_arm64e)
++    return DYLD_CHAINED_PTR_64;
+ 
+-    addNonLazyBindingEntries(sym, isec, sym->gotIndex * target->wordSize);
++  const VersionTuple &minVersion = config->platformInfo.target.MinDeployment;
++  switch (config->platform()) {
++  case PLATFORM_MACOS:
++  case PLATFORM_MACCATALYST:
++    if (minVersion >= VersionTuple(12, 0))
++      return DYLD_CHAINED_PTR_ARM64E_USERLAND24;
++    break;
++  case PLATFORM_IOS:
++  case PLATFORM_IOSSIMULATOR:
++  case PLATFORM_TVOS:
++  case PLATFORM_TVOSSIMULATOR:
++    if (minVersion >= VersionTuple(15, 0))
++      return DYLD_CHAINED_PTR_ARM64E_USERLAND24;
++    break;
++  case PLATFORM_WATCHOS:
++  case PLATFORM_WATCHOSSIMULATOR:
++    if (minVersion >= VersionTuple(8, 0))
++      return DYLD_CHAINED_PTR_ARM64E_USERLAND24;
++    break;
++  default:
++    break;
+   }
++  return DYLD_CHAINED_PTR_ARM64E;
+ }
+ 
+-void macho::writeChainedRebase(uint8_t *buf, uint64_t targetVA) {
++void macho::writeChainedRebase(uint8_t *buf, uint64_t targetVA,
++                               const AuthInfo *ai) {
+   assert(config->emitChainedFixups);
+   assert(target->wordSize == 8 && "Only 64-bit platforms are supported");
++  if (config->arch() == AK_arm64e) {
++    bool useUserland24 =
++        in.chainedFixups->pointerFormat == DYLD_CHAINED_PTR_ARM64E_USERLAND24;
++
++    if (!ai) {
++      auto *rebase = reinterpret_cast<dyld_chained_ptr_arm64e_rebase *>(buf);
++      uint64_t targetValue;
++      if (useUserland24) {
++        targetValue = targetVA - in.header->addr;
++      } else {
++        targetValue = targetVA;
++      }
++      rebase->target = targetValue & 0x7ff'ffff'ffff;
++      rebase->high8 = (targetValue >> 56);
++      // The target field is 43 bits and high8 covers bits 56-63; bits 43-55
++      // are not encodable. arm64e requires chained fixups (Driver.cpp rejects
++      // -no_fixup_chains for this arch), so report a hard error instead of a
++      // recommendation to disable them.
++      uint64_t encodedVA = static_cast<uint64_t>(rebase->target) |
++                           (static_cast<uint64_t>(rebase->high8) << 56);
++      if (encodedVA != targetValue)
++        error("rebase target 0x" + Twine::utohexstr(targetVA) +
++              " does not fit into arm64e chained-fixup target field");
++      rebase->next = 0;
++      rebase->bind = 0;
++      rebase->auth = 0;
++      return;
++    }
++    auto *rebase = reinterpret_cast<dyld_chained_ptr_arm64e_auth_rebase *>(buf);
++    uint64_t runtimeOffset = targetVA - in.header->addr;
++    if (runtimeOffset > 0xFFFF'FFFFULL)
++      error("rebase target 0x" + Twine::utohexstr(targetVA) +
++            " is more than 4 GiB away from image base 0x" +
++            Twine::utohexstr(in.header->addr) +
++            " and cannot be encoded in DYLD_CHAINED_PTR_ARM64E");
++
++    rebase->target = runtimeOffset;
++    rebase->diversity = ai->diversity;
++    rebase->addrDiv = ai->addrDiv;
++    rebase->key = static_cast<uint8_t>(ai->key);
++    rebase->next = 0;
++    rebase->bind = 0;
++    rebase->auth = 1;
++    return;
++  }
+   auto *rebase = reinterpret_cast<dyld_chained_ptr_64_rebase *>(buf);
+   rebase->target = targetVA & 0xf'ffff'ffff;
+   rebase->high8 = (targetVA >> 56);
+@@ -361,9 +455,66 @@ void macho::writeChainedRebase(uint8_t *buf, uint64_t targetVA) {
+           " does not fit into chained fixup. Re-link with -no_fixup_chains");
+ }
+ 
+-static void writeChainedBind(uint8_t *buf, const Symbol *sym, int64_t addend) {
++static void writeChainedBind(uint8_t *buf, const Symbol *sym, int64_t addend,
++                             const AuthInfo *ai) {
+   assert(config->emitChainedFixups);
+   assert(target->wordSize == 8 && "Only 64-bit platforms are supported");
++  if (config->arch() == AK_arm64e) {
++    bool useUserland24 =
++        in.chainedFixups->pointerFormat == DYLD_CHAINED_PTR_ARM64E_USERLAND24;
++
++    if (!ai) {
++      if (useUserland24) {
++        auto *bind = reinterpret_cast<dyld_chained_ptr_arm64e_bind24 *>(buf);
++        auto [ordinal, inlineAddend] =
++            in.chainedFixups->getBinding(sym, addend);
++        bind->ordinal = ordinal;
++        bind->zero = 0;
++        bind->addend = inlineAddend;
++        bind->next = 0;
++        bind->bind = 1;
++        bind->auth = 0;
++      } else {
++        auto *bind = reinterpret_cast<dyld_chained_ptr_arm64e_bind *>(buf);
++        auto [ordinal, inlineAddend] =
++            in.chainedFixups->getBinding(sym, addend);
++        bind->ordinal = ordinal;
++        bind->zero = 0;
++        bind->addend = inlineAddend;
++        bind->next = 0;
++        bind->bind = 1;
++        bind->auth = 0;
++      }
++      return;
++    }
++
++    if (useUserland24) {
++      auto *bind = reinterpret_cast<dyld_chained_ptr_arm64e_auth_bind24 *>(buf);
++      auto [ordinal, _] =
++          in.chainedFixups->getBinding(sym, addend, /*forceOutline=*/true);
++      bind->ordinal = ordinal;
++      bind->zero = 0;
++      bind->diversity = ai->diversity;
++      bind->addrDiv = ai->addrDiv;
++      bind->key = static_cast<uint8_t>(ai->key);
++      bind->next = 0;
++      bind->bind = 1;
++      bind->auth = 1;
++    } else {
++      auto *bind = reinterpret_cast<dyld_chained_ptr_arm64e_auth_bind *>(buf);
++      auto [ordinal, _] =
++          in.chainedFixups->getBinding(sym, addend, /*forceOutline=*/true);
++      bind->ordinal = ordinal;
++      bind->zero = 0;
++      bind->diversity = ai->diversity;
++      bind->addrDiv = ai->addrDiv;
++      bind->key = static_cast<uint8_t>(ai->key);
++      bind->next = 0;
++      bind->bind = 1;
++      bind->auth = 1;
++    }
++    return;
++  }
+   auto *bind = reinterpret_cast<dyld_chained_ptr_64_bind *>(buf);
+   auto [ordinal, inlineAddend] = in.chainedFixups->getBinding(sym, addend);
+   bind->ordinal = ordinal;
+@@ -373,17 +524,33 @@ static void writeChainedBind(uint8_t *buf, const Symbol *sym, int64_t addend) {
+   bind->bind = 1;
+ }
+ 
+-void macho::writeChainedFixup(uint8_t *buf, const Symbol *sym, int64_t addend) {
++void macho::writeChainedFixup(uint8_t *buf, const Symbol *sym,
++                              const Relocation &r) {
++  int64_t addend = r.getAddend();
++  const AuthInfo *ai = r.getAuthInfo();
++  if (needsBinding(sym))
++    writeChainedBind(buf, sym, addend, ai);
++  else
++    writeChainedRebase(buf, sym->getVA() + addend, ai);
++}
++
++void macho::writeChainedFixup(uint8_t *buf, const Symbol *sym, int64_t addend,
++                              const AuthInfo *ai) {
+   if (needsBinding(sym))
+-    writeChainedBind(buf, sym, addend);
++    writeChainedBind(buf, sym, addend, ai);
+   else
+-    writeChainedRebase(buf, sym->getVA() + addend);
++    writeChainedRebase(buf, sym->getVA() + addend, ai);
+ }
+ 
+ void NonLazyPointerSectionBase::writeTo(uint8_t *buf) const {
++  // Auth GOT entries use IA key, diversity=0, address-diversified.
++  static constexpr AuthInfo defaultAuthInfo = {/*diversity=*/0, PtrAuthKey::IA,
++                                               /*addrDiv=*/true};
+   if (config->emitChainedFixups) {
+-    for (const auto &[i, entry] : llvm::enumerate(entries))
+-      writeChainedFixup(&buf[i * target->wordSize], entry, 0);
++    for (const auto &[i, entry] : llvm::enumerate(entries)) {
++      const AuthInfo *ai = isAuth ? &defaultAuthInfo : nullptr;
++      writeChainedFixup(&buf[i * target->wordSize], entry, 0, ai);
++    }
+   } else {
+     for (const auto &[i, entry] : llvm::enumerate(entries))
+       if (auto *defined = dyn_cast<Defined>(entry))
+@@ -396,6 +563,12 @@ GotSection::GotSection()
+   flags = S_NON_LAZY_SYMBOL_POINTERS;
+ }
+ 
++AuthGotSection::AuthGotSection()
++    : NonLazyPointerSectionBase(segment_names::data, section_names::authGot,
++                                /*isAuth=*/true) {
++  flags = S_NON_LAZY_SYMBOL_POINTERS;
++}
++
+ TlvPointerSection::TlvPointerSection()
+     : NonLazyPointerSectionBase(segment_names::data,
+                                 section_names::threadPtrs) {
+@@ -702,7 +875,9 @@ void WeakBindingSection::writeTo(uint8_t *buf) const {
+ }
+ 
+ StubsSection::StubsSection()
+-    : SyntheticSection(segment_names::text, section_names::stubs) {
++    : SyntheticSection(segment_names::text, config->arch() == AK_arm64e
++                                                ? section_names::authStubs
++                                                : section_names::stubs) {
+   flags = S_SYMBOL_STUBS | S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
+   // The stubs section comprises machine instructions, which are aligned to
+   // 4 bytes on the archs we care about.
+@@ -717,8 +892,16 @@ uint64_t StubsSection::getSize() const {
+ void StubsSection::writeTo(uint8_t *buf) const {
+   size_t off = 0;
+   for (const Symbol *sym : entries) {
+-    uint64_t pointerVA =
+-        config->emitChainedFixups ? sym->getGotVA() : sym->getLazyPtrVA();
++    uint64_t pointerVA;
++    if (config->emitChainedFixups) {
++      // For arm64e, stubs use authgot instead of regular got.
++      if (config->arch() == AK_arm64e)
++        pointerVA = sym->getAuthGotVA();
++      else
++        pointerVA = sym->getGotVA();
++    } else {
++      pointerVA = sym->getLazyPtrVA();
++    }
+     target->writeStub(buf + off, *sym, pointerVA);
+     off += target->stubSize;
+   }
+@@ -758,10 +941,14 @@ void StubsSection::addEntry(Symbol *sym) {
+   if (inserted) {
+     sym->stubsIndex = entries.size() - 1;
+ 
+-    if (config->emitChainedFixups)
+-      in.got->addEntry(sym);
+-    else
++    if (config->emitChainedFixups) {
++      if (config->arch() == AK_arm64e)
++        in.authgot->addEntry(sym);
++      else
++        in.got->addEntry(sym);
++    } else {
+       addBindingsForStub(sym);
++    }
+   }
+ }
+ 
+@@ -924,8 +1111,12 @@ void ObjCStubsSection::setUp() {
+                          "lazy binding (normally in libobjc.dylib)");
+   objcMsgSend->used = true;
+   if (config->objcStubsMode == ObjCStubsMode::fast) {
+-    in.got->addEntry(objcMsgSend);
+-    assert(objcMsgSend->isInGot());
++    // For arm64e, use authgot since objc_msgSend requires authenticated calls.
++    if (config->arch() == AK_arm64e)
++      in.authgot->addEntry(objcMsgSend);
++    else
++      in.got->addEntry(objcMsgSend);
++    assert(objcMsgSend->isInGot() || objcMsgSend->isInAuthGot());
+   } else {
+     assert(config->objcStubsMode == ObjCStubsMode::small);
+     // In line with ld64's behavior, when objc_msgSend is a direct symbol,
+@@ -1477,23 +1668,25 @@ IndirectSymtabSection::IndirectSymtabSection()
+                       section_names::indirectSymbolTable) {}
+ 
+ uint32_t IndirectSymtabSection::getNumSymbols() const {
+-  uint32_t size = in.got->getEntries().size() +
+-                  in.tlvPointers->getEntries().size() +
+-                  in.stubs->getEntries().size();
++  uint32_t size =
++      in.got->getEntries().size() + in.authgot->getEntries().size() +
++      in.tlvPointers->getEntries().size() + in.stubs->getEntries().size();
+   if (!config->emitChainedFixups)
+     size += in.stubs->getEntries().size();
+   return size;
+ }
+ 
+ bool IndirectSymtabSection::isNeeded() const {
+-  return in.got->isNeeded() || in.tlvPointers->isNeeded() ||
+-         in.stubs->isNeeded();
++  return in.got->isNeeded() || in.authgot->isNeeded() ||
++         in.tlvPointers->isNeeded() || in.stubs->isNeeded();
+ }
+ 
+ void IndirectSymtabSection::finalizeContents() {
+   uint32_t off = 0;
+   in.got->reserved1 = off;
+   off += in.got->getEntries().size();
++  in.authgot->reserved1 = off;
++  off += in.authgot->getEntries().size();
+   in.tlvPointers->reserved1 = off;
+   off += in.tlvPointers->getEntries().size();
+   in.stubs->reserved1 = off;
+@@ -1515,6 +1708,10 @@ void IndirectSymtabSection::writeTo(uint8_t *buf) const {
+     write32le(buf + off * sizeof(uint32_t), indirectValue(sym));
+     ++off;
+   }
++  for (const Symbol *sym : in.authgot->getEntries()) {
++    write32le(buf + off * sizeof(uint32_t), indirectValue(sym));
++    ++off;
++  }
+   for (const Symbol *sym : in.tlvPointers->getEntries()) {
+     write32le(buf + off * sizeof(uint32_t), indirectValue(sym));
+     ++off;
+@@ -2040,7 +2237,7 @@ void InitOffsetsSection::setUp() {
+       if (!attrs.hasAttr(RelocAttrBits::UNSIGNED))
+         error(isec->getLocation(rel.offset) +
+               ": unsupported relocation type: " + attrs.name);
+-      if (rel.addend != 0)
++      if (rel.getAddend() != 0)
+         error(isec->getLocation(rel.offset) +
+               ": relocation addend is not representable in __init_offsets");
+       if (isa<InputSection *>(rel.referent))
+@@ -2345,7 +2542,8 @@ void macho::createSyntheticSymbols() {
+ }
+ 
+ ChainedFixupsSection::ChainedFixupsSection()
+-    : LinkEditSection(segment_names::linkEdit, section_names::chainFixups) {}
++    : LinkEditSection(segment_names::linkEdit, section_names::chainFixups),
++      pointerFormat(computePointerFormat()) {}
+ 
+ bool ChainedFixupsSection::isNeeded() const {
+   assert(config->emitChainedFixups);
+@@ -2357,9 +2555,10 @@ bool ChainedFixupsSection::isNeeded() const {
+ 
+ void ChainedFixupsSection::addBinding(const Symbol *sym,
+                                       const InputSection *isec, uint64_t offset,
+-                                      int64_t addend) {
++                                      int64_t addend, bool forceOutline) {
+   locations.emplace_back(isec, offset);
+-  int64_t outlineAddend = (addend < 0 || addend > 0xFF) ? addend : 0;
++  int64_t outlineAddend =
++      (forceOutline || addend < 0 || addend > 0xFF) ? addend : 0;
+   auto [it, inserted] = bindings.insert(
+       {{sym, outlineAddend}, static_cast<uint32_t>(bindings.size())});
+ 
+@@ -2374,8 +2573,10 @@ void ChainedFixupsSection::addBinding(const Symbol *sym,
+ }
+ 
+ std::pair<uint32_t, uint8_t>
+-ChainedFixupsSection::getBinding(const Symbol *sym, int64_t addend) const {
+-  int64_t outlineAddend = (addend < 0 || addend > 0xFF) ? addend : 0;
++ChainedFixupsSection::getBinding(const Symbol *sym, int64_t addend,
++                                 bool forceOutline) const {
++  int64_t outlineAddend =
++      (forceOutline || addend < 0 || addend > 0xFF) ? addend : 0;
+   auto it = bindings.find({sym, outlineAddend});
+   assert(it != bindings.end() && "binding not found in the imports table");
+   if (outlineAddend == 0)
+@@ -2425,7 +2626,7 @@ size_t ChainedFixupsSection::SegmentInfo::writeTo(uint8_t *buf) const {
+   segInfo->size = getSize();
+   segInfo->page_size = target->getPageSize();
+   // FIXME: Use DYLD_CHAINED_PTR_64_OFFSET on newer OS versions.
+-  segInfo->pointer_format = DYLD_CHAINED_PTR_64;
++  segInfo->pointer_format = in.chainedFixups->pointerFormat;
+   segInfo->segment_offset = oseg->addr - in.header->addr;
+   segInfo->max_valid_pointer = 0; // not used on 64-bit
+   segInfo->page_count = pageStarts.back().first + 1;
+diff --git a/lld/MachO/SyntheticSections.h b/lld/MachO/SyntheticSections.h
+index a37dd66107ee723..efd4fbb3edea1af 100644
+--- a/lld/MachO/SyntheticSections.h
++++ b/lld/MachO/SyntheticSections.h
+@@ -14,6 +14,7 @@
+ #include "InputSection.h"
+ #include "OutputSection.h"
+ #include "OutputSegment.h"
++#include "Relocations.h"
+ #include "Target.h"
+ #include "Writer.h"
+ 
+@@ -115,7 +116,8 @@ class PageZeroSection final : public SyntheticSection {
+ // TLVPointerSection stores references to thread-local variables.
+ class NonLazyPointerSectionBase : public SyntheticSection {
+ public:
+-  NonLazyPointerSectionBase(const char *segname, const char *name);
++  NonLazyPointerSectionBase(const char *segname, const char *name,
++                            bool isAuth = false);
+   const llvm::SetVector<const Symbol *> &getEntries() const { return entries; }
+   bool isNeeded() const override { return !entries.empty(); }
+   uint64_t getSize() const override {
+@@ -127,6 +129,8 @@ class NonLazyPointerSectionBase : public SyntheticSection {
+     return addr + gotIndex * target->wordSize;
+   }
+ 
++  const bool isAuth;
++
+ private:
+   llvm::SetVector<const Symbol *> entries;
+ };
+@@ -136,6 +140,11 @@ class GotSection final : public NonLazyPointerSectionBase {
+   GotSection();
+ };
+ 
++class AuthGotSection final : public NonLazyPointerSectionBase {
++public:
++  AuthGotSection();
++};
++
+ class TlvPointerSection final : public NonLazyPointerSectionBase {
+ public:
+   TlvPointerSection();
+@@ -787,19 +796,24 @@ class ChainedFixupsSection final : public LinkEditSection {
+     locations.emplace_back(isec, offset);
+   }
+   void addBinding(const Symbol *dysym, const InputSection *isec,
+-                  uint64_t offset, int64_t addend = 0);
++                  uint64_t offset, int64_t addend = 0,
++                  bool forceOutline = false);
+ 
+   void setHasNonWeakDefinition() { hasNonWeakDef = true; }
+ 
+   // Returns an (ordinal, inline addend) tuple used by dyld_chained_ptr_64_bind.
+-  std::pair<uint32_t, uint8_t> getBinding(const Symbol *sym,
+-                                          int64_t addend) const;
++  std::pair<uint32_t, uint8_t> getBinding(const Symbol *sym, int64_t addend,
++                                          bool forceOutline = false) const;
+ 
+   const std::vector<Location> &getLocations() const { return locations; }
+ 
+   bool hasWeakBinding() const { return hasWeakBind; }
+   bool hasNonWeakDefinition() const { return hasNonWeakDef; }
+ 
++  // Pointer format used by every fixup in this image. Set once at construction
++  // from arch + min-deployment; queried by per-fixup writers in the hot path.
++  const uint16_t pointerFormat;
++
+ private:
+   // Location::offset initially stores the offset within an InputSection, but
+   // contains output segment offsets after finalizeContents().
+@@ -829,8 +843,10 @@ class ChainedFixupsSection final : public LinkEditSection {
+   llvm::MachO::ChainedImportFormat importFormat;
+ };
+ 
+-void writeChainedRebase(uint8_t *buf, uint64_t targetVA);
+-void writeChainedFixup(uint8_t *buf, const Symbol *sym, int64_t addend);
++void writeChainedRebase(uint8_t *buf, uint64_t targetVA, const AuthInfo *ai);
++void writeChainedFixup(uint8_t *buf, const Symbol *sym, const Relocation &r);
++void writeChainedFixup(uint8_t *buf, const Symbol *sym, int64_t addend,
++                       const AuthInfo *ai);
+ 
+ struct InStruct {
+   const uint8_t *bufferStart = nullptr;
+@@ -847,6 +863,7 @@ struct InStruct {
+   LazyBindingSection *lazyBinding = nullptr;
+   ExportSection *exports = nullptr;
+   GotSection *got = nullptr;
++  AuthGotSection *authgot = nullptr;
+   TlvPointerSection *tlvPointers = nullptr;
+   LazyPointerSection *lazyPointers = nullptr;
+   StubsSection *stubs = nullptr;
+diff --git a/lld/MachO/Target.h b/lld/MachO/Target.h
+index 0c7c0c3817c97d1..d13ee50e3f112fe 100644
+--- a/lld/MachO/Target.h
++++ b/lld/MachO/Target.h
+@@ -160,6 +160,7 @@ class TargetInfo {
+ 
+ TargetInfo *createX86_64TargetInfo();
+ TargetInfo *createARM64TargetInfo();
++TargetInfo *createARM64eTargetInfo();
+ TargetInfo *createARM64_32TargetInfo();
+ 
+ struct LP64 {
+diff --git a/lld/MachO/UnwindInfoSection.cpp b/lld/MachO/UnwindInfoSection.cpp
+index 9775a723a92fdcc..5f87862f595e766 100644
+--- a/lld/MachO/UnwindInfoSection.cpp
++++ b/lld/MachO/UnwindInfoSection.cpp
+@@ -217,6 +217,15 @@ void UnwindInfoSectionImpl::prepare() {
+     }
+ }
+ 
++// On arm64e, personality pointers go in the authenticated GOT;
++// on other architectures they go in the regular GOT.
++static void addPersonalityGotEntry(Symbol *s) {
++  if (config->arch() == AK_arm64e)
++    in.authgot->addEntry(s);
++  else
++    in.got->addEntry(s);
++}
++
+ // Compact unwind relocations have different semantics, so we handle them in a
+ // separate code path from regular relocations. First, we do not wish to add
+ // rebase opcodes for __LD,__compact_unwind, because that section doesn't
+@@ -280,7 +289,7 @@ void UnwindInfoSectionImpl::prepareRelocations(ConcatInputSection *isec) {
+             personalityTable[{defined->isec(), defined->value}];
+         if (personality == nullptr) {
+           personality = defined;
+-          in.got->addEntry(defined);
++          addPersonalityGotEntry(defined);
+         } else if (personality != defined) {
+           r.referent = personality;
+         }
+@@ -288,7 +297,7 @@ void UnwindInfoSectionImpl::prepareRelocations(ConcatInputSection *isec) {
+       }
+ 
+       assert(isa<DylibSymbol>(s));
+-      in.got->addEntry(s);
++      addPersonalityGotEntry(s);
+       continue;
+     }
+ 
+@@ -300,12 +309,12 @@ void UnwindInfoSectionImpl::prepareRelocations(ConcatInputSection *isec) {
+       // in the GOT, use that to avoid creating a duplicate entry. All GOT
+       // entries needed by non-unwind sections will have already been added
+       // by this point.
+-      Symbol *&s = personalityTable[{referentIsec, r.addend}];
++      int64_t addend = r.getAddend();
++      Symbol *&s = personalityTable[{referentIsec, addend}];
+       if (s == nullptr) {
+         Defined *const *gotEntry =
+             llvm::find_if(referentIsec->symbols, [&](Defined const *d) {
+-              return d->value == static_cast<uint64_t>(r.addend) &&
+-                     d->isInGot();
++              return d->value == static_cast<uint64_t>(addend) && d->isInGot();
+             });
+         if (gotEntry != referentIsec->symbols.end()) {
+           s = *gotEntry;
+@@ -313,17 +322,17 @@ void UnwindInfoSectionImpl::prepareRelocations(ConcatInputSection *isec) {
+           // This runs after dead stripping, so the noDeadStrip argument does
+           // not matter.
+           s = make<Defined>("<internal>", /*file=*/nullptr, referentIsec,
+-                            r.addend, /*size=*/0, /*isWeakDef=*/false,
++                            addend, /*size=*/0, /*isWeakDef=*/false,
+                             /*isExternal=*/false, /*isPrivateExtern=*/false,
+                             /*includeInSymtab=*/true,
+                             /*isReferencedDynamically=*/false,
+                             /*noDeadStrip=*/false);
+           s->used = true;
+-          in.got->addEntry(s);
++          addPersonalityGotEntry(s);
+         }
+       }
+       r.referent = s;
+-      r.addend = 0;
++      r.setAddend(0);
+     }
+   }
+ }
+@@ -637,9 +646,13 @@ void UnwindInfoSectionImpl::writeTo(uint8_t *buf) const {
+   for (const auto &encoding : commonEncodings)
+     *i32p++ = encoding.first;
+ 
+-  // Personalities
+-  for (const Symbol *personality : personalities)
+-    *i32p++ = personality->getGotVA() - in.header->addr;
++  // Personalities - for arm64e, use authgot instead of got
++  for (const Symbol *personality : personalities) {
++    uint64_t personalityVA = config->arch() == AK_arm64e
++                                 ? personality->getAuthGotVA()
++                                 : personality->getGotVA();
++    *i32p++ = personalityVA - in.header->addr;
++  }
+ 
+   // FIXME: LD64 checks and warns aboutgaps or overlapse in cuEntries address
+   // ranges. We should do the same too
+diff --git a/lld/MachO/Writer.cpp b/lld/MachO/Writer.cpp
+index f9fd12a13dba335..6c2591f44a47104 100644
+--- a/lld/MachO/Writer.cpp
++++ b/lld/MachO/Writer.cpp
+@@ -681,8 +681,19 @@ static void prepareSymbolRelocation(Symbol *sym, const InputSection *isec,
+     if (needsBinding(sym))
+       in.stubs->addEntry(sym);
+   } else if (relocAttrs.hasAttr(RelocAttrBits::GOT)) {
+-    if (relocAttrs.hasAttr(RelocAttrBits::POINTER) || needsBinding(sym))
+-      in.got->addEntry(sym);
++    if (relocAttrs.hasAttr(RelocAttrBits::POINTER) || needsBinding(sym)) {
++      // GOT_LOAD consumers apply their own signing (paciza) and need a
++      // raw pointer from regular __got. Stubs independently add to
++      // __auth_got via StubsSection::addEntry(). AUTH relocations or
++      // eh_frame personality pointers go to authgot.
++      bool needsAuthGot =
++          relocAttrs.hasAttr(RelocAttrBits::AUTH) ||
++          (config->arch() == AK_arm64e && isEhFrameSection(isec));
++      if (needsAuthGot)
++        in.authgot->addEntry(sym);
++      else
++        in.got->addEntry(sym);
++    }
+   } else if (relocAttrs.hasAttr(RelocAttrBits::TLV)) {
+     if (needsBinding(sym))
+       in.tlvPointers->addEntry(sym);
+@@ -690,8 +701,11 @@ static void prepareSymbolRelocation(Symbol *sym, const InputSection *isec,
+     // References from thread-local variable sections are treated as offsets
+     // relative to the start of the referent section, and therefore have no
+     // need of rebase opcodes.
+-    if (!(isThreadLocalVariables(isec->getFlags()) && isa<Defined>(sym)))
+-      addNonLazyBindingEntries(sym, isec, r.offset, r.addend);
++    if (!(isThreadLocalVariables(isec->getFlags()) && isa<Defined>(sym))) {
++      bool forceOutline = relocAttrs.hasAttr(RelocAttrBits::AUTH);
++      addNonLazyBindingEntries(sym, isec, r.offset, r.getAddend(),
++                               forceOutline);
++    }
+   }
+ }
+ 
+@@ -1257,7 +1271,8 @@ void Writer::buildFixupChains() {
+   TimeTraceScope timeScope("Build fixup chains");
+ 
+   const uint64_t pageSize = target->getPageSize();
+-  constexpr uint32_t stride = 4; // for DYLD_CHAINED_PTR_64
++  // All ARM64E userland formats use 8-byte stride; DYLD_CHAINED_PTR_64 uses 4.
++  const uint32_t stride = config->arch() == AK_arm64e ? 8 : 4;
+ 
+   for (size_t i = 0, count = loc.size(); i < count;) {
+     const OutputSegment *oseg = loc[i].isec->parent->parent;
+@@ -1284,8 +1299,15 @@ void Writer::buildFixupChains() {
+             " is not a multiple of the stride). Re-link with -no_fixup_chains");
+ 
+       // The "next" field is in the same location for bind and rebase entries.
+-      reinterpret_cast<dyld_chained_ptr_64_bind *>(buf + loc[i - 1].offset)
+-          ->next = offset / stride;
++      uint8_t *prev = buf + loc[i - 1].offset;
++      if (config->arch() == AK_arm64e) {
++        auto *entry =
++            reinterpret_cast<dyld_chained_ptr_arm64e_auth_bind *>(prev);
++        entry->next = offset / stride;
++      } else {
++        auto *entry = reinterpret_cast<dyld_chained_ptr_64_bind *>(prev);
++        entry->next = offset / stride;
++      }
+       ++i;
+     }
+   }
+@@ -1395,6 +1417,7 @@ void macho::createSyntheticSections() {
+   }
+   in.exports = make<ExportSection>();
+   in.got = make<GotSection>();
++  in.authgot = make<AuthGotSection>();
+   in.tlvPointers = make<TlvPointerSection>();
+   in.stubs = make<StubsSection>();
+   in.objcStubs = make<ObjCStubsSection>();
+diff --git a/lld/MachO/Writer.h b/lld/MachO/Writer.h
+index 066a0fd5fd3aa13..aa24df9f0912a67 100644
+--- a/lld/MachO/Writer.h
++++ b/lld/MachO/Writer.h
+@@ -31,7 +31,8 @@ void createSyntheticSections();
+ 
+ // Add bindings for symbols that need weak or non-lazy bindings.
+ void addNonLazyBindingEntries(const Symbol *, const InputSection *,
+-                              uint64_t offset, int64_t addend = 0);
++                              uint64_t offset, int64_t addend = 0,
++                              bool forceOutlineAuth = false);
+ 
+ extern OutputSection *firstTLVDataSection;
+ 
+diff --git a/lld/test/MachO/arm64e-auth-data.s b/lld/test/MachO/arm64e-auth-data.s
+new file mode 100644
+index 000000000000000..7b038a1f69f8b17
+--- /dev/null
++++ b/lld/test/MachO/arm64e-auth-data.s
+@@ -0,0 +1,49 @@
++# REQUIRES: aarch64
++
++## Test that authenticated pointer relocations correctly encode auth metadata
++## (key, diversity, address diversity) through the Relocation union into
++## chained fixup entries. This verifies the union-based auth data storage.
++
++# RUN: rm -rf %t; split-file %s %t
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/foo.o %t/foo.s
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/test.o %t/test.s
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   -dylib -install_name @executable_path/libfoo.dylib %t/foo.o -o %t/libfoo.dylib
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   %t/libfoo.dylib %t/test.o -o %t/test
++
++## Verify the binary is valid arm64e with chained fixups.
++# RUN: llvm-objdump --macho --private-header %t/test | FileCheck %s --check-prefix=HEADER
++# RUN: llvm-objdump --macho --chained-fixups %t/test | FileCheck %s --check-prefix=FIXUPS
++
++# HEADER: ARM64          E
++
++## Verify chained fixups use the ARM64E_USERLAND24 format and import _foo.
++# FIXUPS: pointer_format = 12 (DYLD_CHAINED_PTR_ARM64E_USERLAND24)
++# FIXUPS: _foo
++
++## Verify the data section contains non-zero content (the auth pointer
++## should have been encoded, not left as zero).
++# RUN: llvm-objdump --macho -s --section __DATA,__data %t/test | FileCheck %s --check-prefix=DATA
++# DATA-NOT: 00000000 00000000
++
++#--- foo.s
++.globl _foo
++_foo:
++  ret
++
++#--- test.s
++.text
++.globl _main
++
++.p2align 2
++_main:
++  ret
++
++.data
++.p2align 3
++## Authenticated pointer with IA key, discriminator 0x1234, address diversity.
++_auth_ptr:
++.quad _foo@AUTH(ia,0x1234,addr)
+diff --git a/lld/test/MachO/arm64e-auth-got.s b/lld/test/MachO/arm64e-auth-got.s
+new file mode 100644
+index 000000000000000..feeee59af635fac
+--- /dev/null
++++ b/lld/test/MachO/arm64e-auth-got.s
+@@ -0,0 +1,66 @@
++# REQUIRES: aarch64
++
++## A symbol that is both branched to (BRANCH stub target) and address-taken
++## (GOT_LOAD) on arm64e must land in BOTH __auth_got and __got. The auth
++## slot feeds the stub (signed pointer); the regular slot feeds the
++## paciza-based address-of operation.
++
++# RUN: rm -rf %t; split-file %s %t
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/foo.o %t/foo.s
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/test.o %t/test.s
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   -dylib -install_name @executable_path/libfoo.dylib %t/foo.o \
++# RUN:   -o %t/libfoo.dylib
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   %t/libfoo.dylib %t/test.o -o %t/test
++
++# RUN: llvm-objdump --macho --section-headers %t/test \
++# RUN:   | FileCheck %s --check-prefix=SECT
++# RUN: llvm-objdump --macho --chained-fixups %t/test \
++# RUN:   | FileCheck %s --check-prefix=CHAIN
++# RUN: llvm-objdump --macho -s --section __DATA_CONST,__auth_got \
++# RUN:   --section __DATA_CONST,__got %t/test \
++# RUN:   | FileCheck %s --check-prefix=BYTES
++
++## __auth_got is laid out before __got (Writer places the signed slots first
++## so the chain's `next` pointer steps from the auth slot to the regular slot).
++# SECT:      __auth_got    00000008 [[#%x,AUTH:]] DATA
++# SECT-NEXT: __got         00000008 [[#%x,GOT:]] DATA
++
++## Exactly one import — the same _foo serves both slots.
++# CHAIN:      imports_count  = 1
++# CHAIN:      pointer_format = 12 (DYLD_CHAINED_PTR_ARM64E_USERLAND24)
++# CHAIN:      dyld chained import[0]
++# CHAIN:        name_offset = 0 (_foo)
++
++## __auth_got entry encodes an auth-bind24 (auth=1, bind=1, key=IA, addrDiv=1)
++## with next=1 so the chain advances to the __got slot 8 bytes later.
++## __got entry is a plain bind24 (auth=0, bind=1) terminating the chain.
++## Top byte 0xc0 in the auth slot = bind|auth bits set; 0x40 in the plain
++## slot = bind only.
++# BYTES-LABEL: Contents of (__DATA_CONST,__auth_got) section
++# BYTES:       {{0+}}4000 00000000 c0090000
++# BYTES-LABEL: Contents of (__DATA_CONST,__got) section
++# BYTES:       {{0+}}4008 00000000 40000000
++
++#--- foo.s
++.globl _foo
++_foo:
++  ret
++
++#--- test.s
++.text
++.globl _main
++
++.p2align 2
++_main:
++  ## Call _foo — emits a stub that loads its target from __auth_got.
++  bl _foo
++
++  ## Take the address of _foo — GOT_LOAD lowers to a plain __got entry.
++  adrp x0, _foo@GOTPAGE
++  ldr  x0, [x0, _foo@GOTPAGEOFF]
++
++  ret
+diff --git a/lld/test/MachO/arm64e-auth-reloc-local.s b/lld/test/MachO/arm64e-auth-reloc-local.s
+new file mode 100644
+index 000000000000000..9275f8730f7cf36
+--- /dev/null
++++ b/lld/test/MachO/arm64e-auth-reloc-local.s
+@@ -0,0 +1,45 @@
++# REQUIRES: aarch64
++
++## Verify ARM64_RELOC_AUTHENTICATED_POINTER targeting a local (non-extern)
++## symbol round-trips its (key, diversity, addrDiv) metadata into the
++## chained auth-rebase entry. Previously the non-extern path wrote the
++## full 64-bit r.addend after auth decoding, silently zeroing the AuthInfo
++## that shares those bits via union packing.
++
++# RUN: rm -rf %t; split-file %s %t
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/test.o %t/test.s
++
++## Sanity-check the .o has a non-extern AUTH reloc (the assembler folds
++## Lhidden into a section-relative reference to ltmp1).
++# RUN: llvm-objdump -r %t/test.o | FileCheck %s --check-prefix=OBJ
++
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   -dylib %t/test.o -o %t/test.dylib
++# RUN: llvm-objdump --macho -s --section __DATA,__data %t/test.dylib | \
++# RUN:   FileCheck %s --check-prefix=BYTES
++
++# OBJ: ARM64_RELOC_AUTHENTICATED_POINTER ltmp{{[0-9]+}}
++
++## The 8-byte auth-rebase entry is { target:32, diversity:16, addrDiv:1,
++## key:2, next:11, bind:1, auth:1 }. With target = 0x4000 (Lhidden's
++## runtime offset), diversity = 0x1234, key = DA (= 2), addrDiv = 1,
++## bind = 0, auth = 1, next = 0, the encoded uint64 is 0x80051234_00004000.
++## Printed by `objdump -s` (which loads each 4-byte word LE and formats
++## %08x) that becomes "00004000 80051234". Without the union-preserving
++## fix, the upper word would be "80000000" (auth flag set but metadata
++## clobbered).
++# BYTES: Contents of (__DATA,__data) section
++# BYTES: {{0+}}8000 00004000 80051234
++
++#--- test.s
++.section __DATA,__const
++.p2align 3
++Lhidden:
++  .quad 0xdeadbeef
++
++.section __DATA,__data
++.p2align 3
++.globl _ptr
++_ptr:
++  .quad Lhidden@AUTH(da, 0x1234, addr)
+diff --git a/lld/test/MachO/arm64e-auth-reloc.s b/lld/test/MachO/arm64e-auth-reloc.s
+new file mode 100644
+index 000000000000000..d4e81d4c72c6ee4
+--- /dev/null
++++ b/lld/test/MachO/arm64e-auth-reloc.s
+@@ -0,0 +1,46 @@
++# REQUIRES: aarch64
++
++## Test ARM64_RELOC_AUTHENTICATED_POINTER handling.
++## Verify that authenticated pointer relocations (@AUTH) are processed
++## correctly and result in auth chained fixup entries.
++
++# RUN: rm -rf %t; split-file %s %t
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/foo.o %t/foo.s
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/test.o %t/test.s
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   -dylib -install_name @executable_path/libfoo.dylib %t/foo.o -o %t/libfoo.dylib
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   %t/libfoo.dylib %t/test.o -o %t/test
++
++## Verify the output is a valid arm64e binary (ARM64 with E subtype).
++# RUN: llvm-objdump --macho --private-header %t/test | FileCheck %s --check-prefix=HEADER
++
++# HEADER: ARM64          E
++
++## Verify chained fixups contain the _foo import.
++# RUN: llvm-objdump --macho --chained-fixups %t/test | FileCheck %s --check-prefix=FIXUPS
++
++# FIXUPS: chained fixups header (LC_DYLD_CHAINED_FIXUPS)
++# FIXUPS: pointer_format = 12 (DYLD_CHAINED_PTR_ARM64E_USERLAND24)
++# FIXUPS: _foo
++
++#--- foo.s
++.globl _foo
++_foo:
++  ret
++
++#--- test.s
++.text
++.globl _main
++
++.p2align 2
++_main:
++  ret
++
++.data
++.p2align 3
++## Authenticated data pointer: sign _foo with IA key, discriminator 42,
++## address diversity enabled.
++.quad _foo@AUTH(ia,42,addr)
+diff --git a/lld/test/MachO/arm64e-chained-fixups-high8.s b/lld/test/MachO/arm64e-chained-fixups-high8.s
+new file mode 100644
+index 000000000000000..606b2477dd4e47c
+--- /dev/null
++++ b/lld/test/MachO/arm64e-chained-fixups-high8.s
+@@ -0,0 +1,47 @@
++# REQUIRES: aarch64
++
++## Smoke test: the high8 channel of an arm64e chained rebase round-trips a
++## non-zero byte from the addend in both USERLAND24 and legacy ARM64E formats.
++
++# RUN: rm -rf %t; split-file %s %t
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/test.o %t/test.s
++
++## USERLAND24 (macOS 13.0 — implicit chained fixups).
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   -dylib %t/test.o -o %t/test-u24.dylib
++# RUN: llvm-objdump --macho --chained-fixups %t/test-u24.dylib | \
++# RUN:   FileCheck %s --check-prefix=U24-FMT
++# RUN: llvm-objdump --macho -s --section __DATA,__data %t/test-u24.dylib | \
++# RUN:   FileCheck %s --check-prefix=U24-BYTES
++
++## Legacy ARM64E (macOS 11.0 + explicit -fixup_chains).
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 11.0 11.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem -fixup_chains \
++# RUN:   -dylib %t/test.o -o %t/test-legacy.dylib
++# RUN: llvm-objdump --macho --chained-fixups %t/test-legacy.dylib | \
++# RUN:   FileCheck %s --check-prefix=LEGACY-FMT
++# RUN: llvm-objdump --macho -s --section __DATA,__data %t/test-legacy.dylib | \
++# RUN:   FileCheck %s --check-prefix=LEGACY-BYTES
++
++# U24-FMT:    pointer_format = 12 (DYLD_CHAINED_PTR_ARM64E_USERLAND24)
++# LEGACY-FMT: pointer_format = 1 (DYLD_CHAINED_PTR_ARM64E)
++
++## Encoded uint64 is 0x0007F800_00004008 (target=0x4008, high8=0xFF, all other
++## fields 0). objdump -s prints each 4-byte word in LE host order, so the bytes
++## appear as "00004008 0007f800".
++# U24-BYTES:    Contents of (__DATA,__data) section
++# U24-BYTES:    {{0+}}4000 00004008 0007f800
++# LEGACY-BYTES: Contents of (__DATA,__data) section
++# LEGACY-BYTES: {{0+}}4000 00004008 0007f800
++
++#--- test.s
++.section __DATA,__data
++.p2align 3
++.globl _ptr
++_ptr:
++  .quad _target + 0xff00000000000000
++
++.p2align 3
++_target:
++  .quad 0
+diff --git a/lld/test/MachO/arm64e-chained-fixups.s b/lld/test/MachO/arm64e-chained-fixups.s
+new file mode 100644
+index 000000000000000..527942a9874df20
+--- /dev/null
++++ b/lld/test/MachO/arm64e-chained-fixups.s
+@@ -0,0 +1,52 @@
++# REQUIRES: aarch64
++
++## Test arm64e chained fixup pointer format selection.
++## macOS 12.0+ should use DYLD_CHAINED_PTR_ARM64E_USERLAND24;
++## older deployment targets use DYLD_CHAINED_PTR_ARM64E when
++## chained fixups are explicitly requested.
++
++# RUN: rm -rf %t; split-file %s %t
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/foo.o %t/foo.s
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/test.o %t/test.s
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   -dylib -install_name @executable_path/libfoo.dylib %t/foo.o -o %t/libfoo.dylib
++
++## Link with macOS 13.0 (>= 12.0) — should use USERLAND24.
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   %t/libfoo.dylib %t/test.o -o %t/test-new
++# RUN: llvm-objdump --macho --chained-fixups %t/test-new | \
++# RUN:   FileCheck %s --check-prefix=USERLAND24
++
++## Link with macOS 11.0 (< 12.0) with explicit -fixup_chains
++## — should use plain DYLD_CHAINED_PTR_ARM64E format.
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 11.0 11.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem -fixup_chains \
++# RUN:   %t/libfoo.dylib %t/test.o -o %t/test-old
++# RUN: llvm-objdump --macho --chained-fixups %t/test-old | \
++# RUN:   FileCheck %s --check-prefix=PLAIN
++
++# USERLAND24: chained fixups header (LC_DYLD_CHAINED_FIXUPS)
++# USERLAND24: pointer_format = 12 (DYLD_CHAINED_PTR_ARM64E_USERLAND24)
++
++# PLAIN: chained fixups header (LC_DYLD_CHAINED_FIXUPS)
++# PLAIN: pointer_format = 1 (DYLD_CHAINED_PTR_ARM64E)
++
++#--- foo.s
++.globl _foo
++_foo:
++  ret
++
++#--- test.s
++.text
++.globl _main
++
++.p2align 2
++_main:
++  bl _foo
++  ret
++
++.data
++.p2align 3
++.quad _foo
+diff --git a/lld/test/MachO/arm64e-icf.s b/lld/test/MachO/arm64e-icf.s
+new file mode 100644
+index 000000000000000..1974ab779905ad9
+--- /dev/null
++++ b/lld/test/MachO/arm64e-icf.s
+@@ -0,0 +1,48 @@
++# REQUIRES: aarch64
++
++## Test that ICF works correctly on arm64e binaries containing
++## authenticated pointer relocations. Identical functions should
++## still be folded, and auth relocations in data sections should
++## not cause ICF to crash or misbehave.
++
++# RUN: rm -rf %t; split-file %s %t
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/test.o %t/test.s
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   --icf=all %t/test.o -o %t/test
++# RUN: llvm-objdump --macho --syms %t/test | FileCheck %s
++
++## _func_a and _func_b have identical bodies (just ret) and should be
++## folded by ICF even in an arm64e binary with auth data present.
++# CHECK-DAG: [[#%x,FUNC:]] l     F __TEXT,__text _func_a
++# CHECK-DAG: [[#%x,FUNC]]  l     F __TEXT,__text _func_b
++
++#--- test.s
++.subsections_via_symbols
++
++.text
++.globl _main
++.p2align 2
++_main:
++  ret
++
++.globl _target
++.p2align 2
++_target:
++  ret
++
++## Two identical functions — should be folded.
++.p2align 2
++_func_a:
++  ret
++
++.p2align 2
++_func_b:
++  ret
++
++## Auth data in a data section — ensures auth relocs don't
++## interfere with ICF processing.
++.data
++.p2align 3
++_auth_ptr:
++  .quad _target@AUTH(ia,42,addr)
+diff --git a/lld/test/MachO/arm64e-no-fixup-chains.s b/lld/test/MachO/arm64e-no-fixup-chains.s
+new file mode 100644
+index 000000000000000..1207cccb43f9a2a
+--- /dev/null
++++ b/lld/test/MachO/arm64e-no-fixup-chains.s
+@@ -0,0 +1,25 @@
++# REQUIRES: aarch64
++
++## Test that arm64e linking with -no_fixup_chains produces a warning
++## and uses chained fixups anyway, since dyld requires them for arm64e.
++
++# RUN: rm -rf %t; split-file %s %t
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/test.o %t/test.s
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   -no_fixup_chains %t/test.o -o %t/test 2>&1 | FileCheck %s
++
++# CHECK: warning: -no_fixup_chains is incompatible with arm64e; using chained fixups
++
++## Verify the output still has chained fixups.
++# RUN: llvm-objdump --macho --all-headers %t/test | FileCheck %s --check-prefix=HEADERS
++
++# HEADERS: LC_DYLD_CHAINED_FIXUPS
++
++#--- test.s
++.text
++.globl _main
++
++.p2align 2
++_main:
++  ret
+diff --git a/lld/test/MachO/arm64e-reject-mixed.s b/lld/test/MachO/arm64e-reject-mixed.s
+new file mode 100644
+index 000000000000000..7968e8593ad934b
+--- /dev/null
++++ b/lld/test/MachO/arm64e-reject-mixed.s
+@@ -0,0 +1,43 @@
++# REQUIRES: aarch64
++
++## Test that mixing arm64 and arm64e object files is rejected.
++## Even though both have CPU_TYPE_ARM64, arm64e requires pointer
++## authentication and plain arm64 objects would cause PAC failures
++## at runtime.
++
++# RUN: rm -rf %t; split-file %s %t
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/test.o %t/test.s
++# RUN: llvm-mc -filetype=obj -triple=arm64-apple-macos  -o %t/arm64.o %t/lib.s
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/arm64e.o %t/lib.s
++
++## Linking arm64e main with arm64 object should produce a warning about
++## the architecture mismatch. The arm64 object is rejected, leading to
++## an undefined symbol error.
++# RUN: not %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   %t/test.o %t/arm64.o -o %t/out 2>&1 | FileCheck %s --check-prefix=WARN
++
++# WARN: warning: {{.*}}arm64.o has architecture arm64 which is incompatible with target architecture arm64e (arm64e requires pointer authentication)
++# WARN: error: undefined symbol: _helper
++
++## Linking arm64e main with arm64e object should succeed silently.
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem -fatal_warnings \
++# RUN:   %t/test.o %t/arm64e.o -o %t/out-ok
++
++#--- test.s
++.text
++.globl _main
++
++.p2align 2
++_main:
++  bl _helper
++  ret
++
++#--- lib.s
++.text
++.globl _helper
++
++.p2align 2
++_helper:
++  ret
+diff --git a/lld/test/MachO/arm64e-stubs.s b/lld/test/MachO/arm64e-stubs.s
+new file mode 100644
+index 000000000000000..13ebd043fba99a7
+--- /dev/null
++++ b/lld/test/MachO/arm64e-stubs.s
+@@ -0,0 +1,51 @@
++# REQUIRES: aarch64
++
++## Test arm64e authenticated stubs use braa with x17 context.
++## ARM64e stubs are 16 bytes (4 instructions), not 12 like arm64,
++## because they compute the GOT address in x17 for use as the
++## authentication context in the braa instruction.
++##
++## With chained fixups on arm64e, the stubs section is called
++## __auth_stubs and references the __auth_got section.
++
++# RUN: rm -rf %t; split-file %s %t
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/foo.o %t/foo.s
++# RUN: llvm-mc -filetype=obj -triple=arm64e-apple-macos -o %t/test.o %t/test.s
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   -dylib -install_name @executable_path/libfoo.dylib %t/foo.o -o %t/libfoo.dylib
++# RUN: %no-arg-lld -arch arm64e -platform_version macos 13.0 13.0 \
++# RUN:   -syslibroot %S/Inputs/MacOSX.sdk -lSystem \
++# RUN:   %t/libfoo.dylib %t/test.o -o %t/test
++# RUN: llvm-objdump --no-print-imm-hex --macho -d --no-show-raw-insn \
++# RUN:   --section="__TEXT,__auth_stubs" %t/test | FileCheck %s
++
++## Verify the main function calls through a stub.
++# CHECK-LABEL: _main:
++# CHECK:       bl {{.*}} ; symbol stub for: _foo
++
++## Verify the stub uses the arm64e 4-instruction sequence with braa.
++# CHECK-LABEL: Contents of (__TEXT,__auth_stubs) section
++# CHECK-NEXT:  {{[0-9a-f]+}}: adrp x17
++# CHECK-NEXT:                 add  x17, x17, {{.*}} ; literal pool symbol address: _foo
++# CHECK-NEXT:                 ldr  x16, [x17]
++# CHECK-NEXT:                 braa x16, x17
++
++## Verify that the __auth_got section exists in __DATA_CONST.
++# RUN: llvm-objdump --macho --all-headers %t/test | FileCheck %s --check-prefix=HEADERS
++# HEADERS:      sectname __auth_got
++# HEADERS-NEXT: segname __DATA_CONST
++
++#--- foo.s
++.globl _foo
++_foo:
++  ret
++
++#--- test.s
++.text
++.globl _main
++
++.p2align 2
++_main:
++  bl _foo
++  ret
+diff --git a/llvm/include/llvm/BinaryFormat/MachO.h b/llvm/include/llvm/BinaryFormat/MachO.h
+index 4dfc1ff204555bd..aaf397e6fe8a2c7 100644
+--- a/llvm/include/llvm/BinaryFormat/MachO.h
++++ b/llvm/include/llvm/BinaryFormat/MachO.h
+@@ -1192,6 +1192,80 @@ struct dyld_chained_ptr_64_rebase {
+   uint64_t bind : 1; // set to 0
+ };
+ 
++// ARM64_RELOC_AUTHENTICATED_POINTER: in-object representation of an
++// authenticated pointer. The low 32 bits are the addend; the upper bits
++// carry ptrauth metadata.
++struct arm64e_auth_embedded_pointer {
++  uint64_t addend : 32;
++  uint64_t diversity : 16;
++  uint64_t addrDiv : 1;
++  uint64_t key : 2;
++  uint64_t reserved : 12;
++  uint64_t auth : 1; // == 1 for authenticated
++};
++
++// DYLD_CHAINED_PTR_ARM64E / DYLD_CHAINED_PTR_ARM64E_USERLAND
++struct dyld_chained_ptr_arm64e_rebase {
++  uint64_t target : 43;
++  uint64_t high8 : 8;
++  uint64_t next : 11; // 4 or 8-byte stride
++  uint64_t bind : 1;  // == 0
++  uint64_t auth : 1;  // == 0
++};
++
++struct dyld_chained_ptr_arm64e_bind {
++  uint64_t ordinal : 16;
++  uint64_t zero : 16;
++  uint64_t addend : 19; // +/-256K
++  uint64_t next : 11;   // 4 or 8-byte stride
++  uint64_t bind : 1;    // == 1
++  uint64_t auth : 1;    // == 0
++};
++
++struct dyld_chained_ptr_arm64e_auth_bind {
++  uint64_t ordinal : 16;
++  uint64_t zero : 16;
++  uint64_t diversity : 16;
++  uint64_t addrDiv : 1;
++  uint64_t key : 2;
++  uint64_t next : 11; // 4 or 8-byte stride
++  uint64_t bind : 1;  // == 1
++  uint64_t auth : 1;  // == 1
++};
++
++struct dyld_chained_ptr_arm64e_auth_rebase {
++  uint64_t target : 32; // runtimeOffset
++  uint64_t diversity : 16;
++  uint64_t addrDiv : 1;
++  uint64_t key : 2;
++  uint64_t next : 11; // 4 or 8-byte stride
++  uint64_t bind : 1;  // == 0
++  uint64_t auth : 1;  // == 1
++};
++
++// DYLD_CHAINED_PTR_ARM64E_USERLAND24: 24-bit ordinal (vs 16) for more imports.
++// Rebase formats are shared with DYLD_CHAINED_PTR_ARM64E.
++struct dyld_chained_ptr_arm64e_bind24 {
++  uint64_t ordinal : 24;
++  uint64_t zero : 8;
++  uint64_t addend : 19; // +/-256K
++  uint64_t next : 11;   // 8-byte stride
++  uint64_t bind : 1;    // == 1
++  uint64_t auth : 1;    // == 0
++};
++
++// DYLD_CHAINED_PTR_ARM64E_USERLAND24
++struct dyld_chained_ptr_arm64e_auth_bind24 {
++  uint64_t ordinal : 24;
++  uint64_t zero : 8;
++  uint64_t diversity : 16;
++  uint64_t addrDiv : 1;
++  uint64_t key : 2;
++  uint64_t next : 11; // 8-byte stride
++  uint64_t bind : 1;  // == 1
++  uint64_t auth : 1;  // == 1
++};
++
+ // Byte order swapping functions for MachO structs
+ 
+ inline void swapStruct(fat_header &mh) {

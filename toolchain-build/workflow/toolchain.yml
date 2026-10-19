@@ -1,0 +1,178 @@
+name: Build iOS toolchain (clang+LLVM+ld64, arm64e)
+
+# Builds the in-process native toolchain on a macOS runner and publishes the
+# static libraries as artifacts.
+#
+# Why a runner and not the device: producing LLVM requires CMake, Ninja, a full
+# C++ compiler and an iOS SDK. None of that exists in the app sandbox, and an
+# app cannot build its own compiler without one. So the build happens here and
+# only the artifact travels back.
+#
+# Why a static library and not a dylib: iOS refuses to dlopen() a main
+# executable, so a host app can only own a compiler by linking it in.
+#
+# Budget: macos-15 gives ~3 vCPU. A release LLVM+clang (AArch64 only) takes
+# roughly 2.5 h per architecture, so arm64e alone fits the 350-minute job cap
+# comfortably and arm64+arm64e is tight. The arch list is an input for that
+# reason.
+
+on:
+  workflow_dispatch:
+    inputs:
+      llvm_commit:
+        description: 'LLVM commit (blank = pinned default)'
+        type: string
+        required: false
+      archs:
+        description: 'Space-separated architectures'
+        type: string
+        default: 'arm64e'
+        required: false
+      jobs:
+        description: 'Parallel compile jobs'
+        type: string
+        default: '3'
+        required: false
+      skip_ld64:
+        description: 'Skip ld64 (clang/LLVM only, faster smoke test)'
+        type: boolean
+        default: false
+  push:
+    paths:
+      - 'toolchain-build/**'
+      - '.github/workflows/toolchain.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: toolchain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Host toolchain inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          {
+            sw_vers
+            xcodebuild -version
+            echo "SDK: $(xcrun --sdk iphoneos --show-sdk-path)"
+            echo "SDK version: $(xcrun --sdk iphoneos --show-sdk-version)"
+            cmake --version | head -1 || true
+            ninja --version || true
+            echo "cores: $(sysctl -n hw.ncpu)"
+            echo "memory: $(sysctl -n hw.memsize)"
+            df -h /
+          } 2>&1 | tee ci-logs/host.txt
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install cmake ninja || true
+          cmake --version | head -1
+          ninja --version
+
+      - name: Free disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          # LLVM's build tree is large; reclaim what we can on a small runner.
+          sudo rm -rf /usr/local/share/boost 2>/dev/null || true
+          df -h / | tee ci-logs/disk-before.txt
+
+      - name: Fetch pinned sources
+        shell: bash
+        env:
+          LLVM_COMMIT: ${{ inputs.llvm_commit }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          bash toolchain-build/scripts/fetch-sources.sh 2>&1 | tee ci-logs/fetch.txt
+
+      - name: Verify arm64e patch set before building
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          # An unpatched toolchain links arm64e as arm64 and emits A-key PAC. It
+          # still "succeeds", which is the dangerous part. Fail here instead.
+          for p in llvm-arm64e-twork.diff llvm-pr-188378.diff llvm-pr-188638.diff; do
+            test -s "toolchain-build/deps/patches/$p" || { echo "missing $p" >&2; exit 1; }
+          done
+          {
+            echo '--- patch inventory ---'
+            wc -l toolchain-build/deps/patches/*.diff
+            echo '--- arm64e markers ---'
+            grep -c 'CPU_SUBTYPE_ARM64E_WITH_PTRAUTH_VERSION' \
+              toolchain-build/deps/patches/llvm-arm64e-twork.diff
+            grep -c 'isArm64e' toolchain-build/deps/patches/llvm-arm64e-twork.diff
+            grep -q 'ARM64e.cpp' toolchain-build/deps/patches/llvm-arm64e-twork.diff \
+              && echo 'lld ARM64e.cpp present in patch'
+          } 2>&1 | tee ci-logs/patch-verify.txt
+
+      - name: Build LLVM + clang + ld64
+        shell: bash
+        env:
+          JOBS: ${{ inputs.jobs }}
+          ARCHS: ${{ inputs.archs }}
+          LLVM_COMMIT: ${{ inputs.llvm_commit }}
+          SKIP_LD64: ${{ inputs.skip_ld64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          export SKIP_LD64="${SKIP_LD64:-false}"
+          bash toolchain-build/scripts/build-ios-toolchain.sh 2>&1 | tee ci-logs/build.txt
+
+      - name: Validate artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          {
+            echo '--- produced libraries ---'
+            ls -la toolchain-build/build/ios/ 2>/dev/null || echo '(none)'
+            for f in toolchain-build/build/ios/*.a; do
+              [ -e "$f" ] || continue
+              echo "== $(basename "$f")"
+              xcrun lipo -info "$f" || true
+              xcrun size "$f" 2>/dev/null | tail -2 || true
+            done
+            echo
+            echo '--- arm64e evidence in build log ---'
+            grep -niE 'arm64e|ptrauth' ci-logs/build.txt | head -40 || echo '(none)'
+            echo
+            echo '--- errors in build log ---'
+            grep -nE 'error:|undefined symbol|FAILED:' ci-logs/build.txt | head -60 || echo '(none)'
+            echo
+            echo '--- manifest ---'
+            cat toolchain-build/build/ios/toolchain.json 2>/dev/null || echo '(no manifest)'
+          } 2>&1 | tee ci-logs/artifact-validation.txt
+
+      - name: Upload toolchain artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-toolchain-${{ github.run_number }}
+          path: toolchain-build/build/ios/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload build diagnostics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-diagnostics-${{ github.run_number }}
+          path: ci-logs/
+          if-no-files-found: warn
+          retention-days: 7
