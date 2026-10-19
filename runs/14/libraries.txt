@@ -1,0 +1,7 @@
+# libraries
+total 0
+drwxr-xr-x  2 runner  staff  64 Oct 19 22:51 .
+drwxr-xr-x  3 runner  staff  96 Oct 19 22:51 ..
+
+# manifest
+(none)

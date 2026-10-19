@@ -1,0 +1,126 @@
+# build.txt digest
+
+## errors
+(none)
+
+## last 120 lines
+[2614/3942] Linking CXX static library lib/libclangDriver.a
+/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AMDGPU.cpp.o' from 'tools/clang/lib/Driver/CMakeFiles/obj.clangDriver.dir/ToolChains/AMDGPU.cpp.o(AMDGPU.cpp.o)' and 'tools/clang/lib/Driver/CMakeFiles/obj.clangDriver.dir/ToolChains/Arch/AMDGPU.cpp.o(AMDGPU.cpp.o)'
+[2615/3942] Building CXX object tools/clang/lib/Tooling/Inclusions/CMakeFiles/obj.clangToolingInclusions.dir/HeaderAnalysis.cpp.o
+[2616/3942] Building CXX object tools/clang/lib/Tooling/Inclusions/CMakeFiles/obj.clangToolingInclusions.dir/HeaderIncludes.cpp.o
+[2617/3942] Building CXX object lib/Target/AArch64/MCTargetDesc/CMakeFiles/LLVMAArch64Desc.dir/AArch64MCTargetDesc.cpp.o
+[2618/3942] Building CXX object tools/clang/lib/Tooling/Inclusions/CMakeFiles/obj.clangToolingInclusions.dir/IncludeStyle.cpp.o
+[2619/3942] Building CXX object tools/clang/lib/CodeGen/CMakeFiles/obj.clangCodeGen.dir/cmake_pch.hxx.pch
+[2620/3942] Building CXX object tools/clang/lib/InstallAPI/CMakeFiles/obj.clangInstallAPI.dir/DiagnosticBuilderWrappers.cpp.o
+[2621/3942] Building CXX object tools/clang/lib/InstallAPI/CMakeFiles/obj.clangInstallAPI.dir/DirectoryScanner.cpp.o
+[2622/3942] Building CXX object tools/clang/lib/InstallAPI/CMakeFiles/obj.clangInstallAPI.dir/DylibVerifier.cpp.o
+[2623/3942] Building CXX object tools/clang/lib/InstallAPI/CMakeFiles/obj.clangInstallAPI.dir/FileList.cpp.o
+[2624/3942] Building CXX object tools/clang/lib/InstallAPI/CMakeFiles/obj.clangInstallAPI.dir/Frontend.cpp.o
+[2625/3942] Building CXX object tools/clang/lib/InstallAPI/CMakeFiles/obj.clangInstallAPI.dir/HeaderFile.cpp.o
+[2626/3942] Building CXX object tools/clang/lib/InstallAPI/CMakeFiles/obj.clangInstallAPI.dir/Library.cpp.o
+[2627/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/Error.cpp.o
+[2628/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/DetailedRecordsBackend.cpp.o
+[2629/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/JSONBackend.cpp.o
+[2630/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/Main.cpp.o
+[2631/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/Parser.cpp.o
+[2632/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/SetTheory.cpp.o
+[2633/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/StringMatcher.cpp.o
+[2634/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/StringToOffsetTable.cpp.o
+[2635/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/Record.cpp.o
+[2636/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/TableGenBackend.cpp.o
+[2637/3942] Building CXX object tools/clang/lib/InstallAPI/CMakeFiles/obj.clangInstallAPI.dir/Visitor.cpp.o
+[2638/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/TableGenBackendSkeleton.cpp.o
+[2639/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/TGLexer.cpp.o
+[2640/3942] Linking CXX static library lib/libLLVMABI.a
+[2641/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/TGTimer.cpp.o
+[2642/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/ActionCache.cpp.o
+[2643/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/ActionCaches.cpp.o
+[2644/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/BuiltinCAS.cpp.o
+[2645/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/BuiltinObjectHasher.cpp.o
+[2646/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/BuiltinUnifiedCASDatabases.cpp.o
+[2647/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/CASNodeSchema.cpp.o
+[2648/3942] Building CXX object lib/TableGen/CMakeFiles/LLVMTableGen.dir/TGParser.cpp.o
+[2649/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/DatabaseFile.cpp.o
+[2650/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/InMemoryCAS.cpp.o
+[2651/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/MappedFileRegionArena.cpp.o
+[2652/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/NamedValuesSchema.cpp.o
+[2653/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/ObjectStore.cpp.o
+[2654/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/OnDiskCASLogger.cpp.o
+[2655/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/OnDiskCAS.cpp.o
+[2656/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/OnDiskDataAllocator.cpp.o
+[2657/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/OnDiskCommon.cpp.o
+[2658/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/OnDiskKeyValueDB.cpp.o
+[2659/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/OnDiskGraphDB.cpp.o
+[2660/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/OnDiskTrieRawHashMap.cpp.o
+[2661/3942] Linking CXX static library lib/libLLVMFrontendDriver.a
+[2662/3942] Linking CXX static library lib/libLLVMLTO.a
+[2663/3942] Linking CXX static library lib/libLLVMMCDisassembler.a
+[2664/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/PluginCAS.cpp.o
+[2665/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/CodeEmitter.cpp.o
+[2666/3942] Building CXX object lib/CAS/CMakeFiles/LLVMCAS.dir/UnifiedOnDiskCache.cpp.o
+[2667/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Context.cpp.o
+[2668/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/CustomBehaviour.cpp.o
+[2669/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/HWEventListener.cpp.o
+[2670/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/HardwareUnits/HardwareUnit.cpp.o
+[2671/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/HardwareUnits/LSUnit.cpp.o
+[2672/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/HardwareUnits/RetireControlUnit.cpp.o
+[2673/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/HardwareUnits/ResourceManager.cpp.o
+[2674/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/HardwareUnits/RegisterFile.cpp.o
+[2675/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/HardwareUnits/Scheduler.cpp.o
+[2676/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/IncrementalSourceMgr.cpp.o
+[2677/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Instruction.cpp.o
+[2678/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Pipeline.cpp.o
+[2679/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/InstrBuilder.cpp.o
+[2680/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Stages/DispatchStage.cpp.o
+[2681/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Stages/EntryStage.cpp.o
+[2682/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Stages/ExecuteStage.cpp.o
+[2683/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Stages/InOrderIssueStage.cpp.o
+[2684/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Stages/InstructionTables.cpp.o
+[2685/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Stages/MicroOpQueueStage.cpp.o
+[2686/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Stages/Stage.cpp.o
+[2687/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Support.cpp.o
+[2688/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/Stages/RetireStage.cpp.o
+[2689/3942] Linking CXX static library lib/libLLVMOrcJIT.a
+[2690/3942] Building CXX object lib/MCA/CMakeFiles/LLVMMCA.dir/View.cpp.o
+[2691/3942] Building CXX object lib/ExecutionEngine/MCJIT/CMakeFiles/LLVMMCJIT.dir/MCJIT.cpp.o
+[2692/3942] Building CXX object lib/ExecutionEngine/Orc/Debugging/CMakeFiles/LLVMOrcDebugging.dir/DebugInfoSupport.cpp.o
+[2693/3942] Building CXX object lib/ExecutionEngine/Orc/Debugging/CMakeFiles/LLVMOrcDebugging.dir/DebuggerSupport.cpp.o
+[2694/3942] Building CXX object lib/ExecutionEngine/Orc/Debugging/CMakeFiles/LLVMOrcDebugging.dir/LLJITUtilsCBindings.cpp.o
+[2695/3942] Building CXX object lib/ExecutionEngine/Orc/Debugging/CMakeFiles/LLVMOrcDebugging.dir/DebuggerSupportPlugin.cpp.o
+[2696/3942] Building CXX object lib/ExecutionEngine/Orc/Debugging/CMakeFiles/LLVMOrcDebugging.dir/ELFDebugObjectPlugin.cpp.o
+[2697/3942] Building CXX object lib/ExecutionEngine/Orc/Debugging/CMakeFiles/LLVMOrcDebugging.dir/PerfSupportPlugin.cpp.o
+[2698/3942] Building CXX object lib/ExecutionEngine/Orc/Debugging/CMakeFiles/LLVMOrcDebugging.dir/VTuneSupportPlugin.cpp.o
+[2699/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/GISel/AArch64GlobalISelUtils.cpp.o
+[2700/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/GISel/AArch64CallLowering.cpp.o
+[2701/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/GISel/AArch64O0PreLegalizerCombiner.cpp.o
+[2702/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/GISel/AArch64InstructionSelector.cpp.o
+[2703/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/GISel/AArch64LegalizerInfo.cpp.o
+[2704/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/GISel/AArch64PreLegalizerCombiner.cpp.o
+[2705/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/GISel/AArch64PostSelectOptimize.cpp.o
+[2706/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/GISel/AArch64PostLegalizerCombiner.cpp.o
+[2707/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/GISel/AArch64PostLegalizerLowering.cpp.o
+[2708/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/GISel/AArch64RegisterBankInfo.cpp.o
+[2709/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64CodeLayoutOpt.cpp.o
+[2710/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64A57FPLoadBalancing.cpp.o
+[2711/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64AdvSIMDScalarPass.cpp.o
+[2712/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64Arm64ECCallLowering.cpp.o
+[2713/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64BranchTargets.cpp.o
+[2714/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64AsmPrinter.cpp.o
+[2715/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64CallingConvention.cpp.o
+[2716/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64CleanupLocalDynamicTLSPass.cpp.o
+[2717/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64CollectLOH.cpp.o
+[2718/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64CondBrTuning.cpp.o
+[2719/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64ConditionalCompares.cpp.o
+[2720/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64DeadRegisterDefinitionsPass.cpp.o
+[2721/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64ExpandImm.cpp.o
+[2722/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64ExpandPseudoInsts.cpp.o
+[2723/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64FalkorHWPFFix.cpp.o
+[2724/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64FastISel.cpp.o
+[2725/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64A53Fix835769.cpp.o
+[2726/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64FrameLowering.cpp.o
+[2727/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64CompressJumpTables.cpp.o
+[2728/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64ConditionOptimizer.cpp.o
+[2729/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64RedundantCopyElimination.cpp.o
+[2730/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64RedundantCondBranchPass.cpp.o
+[2731/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64ISelDAGToDAG.cpp.o
+[2732/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64InstrInfo.cpp.o
