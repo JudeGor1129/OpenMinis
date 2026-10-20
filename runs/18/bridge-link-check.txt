@@ -1,0 +1,25 @@
+--- link check archives available ---
+total 540624
+-rw-r--r--  1 runner  staff    6847056 Oct 20 04:37 libomld64-arm64.a
+-rw-r--r--  1 runner  staff    6960000 Oct 20 04:37 libomld64-arm64e.a
+-rw-r--r--  1 runner  staff   13807104 Oct 20 04:37 libomld64.a
+-rw-r--r--  1 runner  staff  249173824 Oct 20 04:37 libomllvm-arm64e.a
+-rw-r--r--  1 runner  staff        382 Oct 20 04:37 toolchain.json
+
+std: c++17   arch: arm64e
+llvm archive: toolchain-build/build/ios/libomllvm-arm64e.a
+ld64 archive: toolchain-build/build/ios/libomld64-arm64e.a
+
+--- compiling OMToolchain.mm to an object ---
+compile exit code: 0
+--- linking OMToolchain.o + stub main against the archives ---
+ld: warning: -undefined error is deprecated
+ld: warning: ignoring duplicate libraries: '-lc++'
+duplicate symbol '___crashreporter_info__' in:
+    /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64-arm64e.a[10](ld_Options.cpp.o)
+    /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomllvm-arm64e.a[2700](PrettyStackTrace.cpp.o)
+ld: 1 duplicate symbols
+clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+link exit code: 1
+VERDICT: link failed with 0 undefined symbol line(s).
+--- first 40 undefined symbols ---

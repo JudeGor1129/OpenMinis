@@ -1,0 +1,51 @@
+# libraries
+total 540624
+drwxr-xr-x  7 runner  staff        224 Oct 20 04:37 .
+drwxr-xr-x  3 runner  staff         96 Oct 20 03:47 ..
+-rw-r--r--  1 runner  staff    6847056 Oct 20 04:37 libomld64-arm64.a
+-rw-r--r--  1 runner  staff    6960000 Oct 20 04:37 libomld64-arm64e.a
+-rw-r--r--  1 runner  staff   13807104 Oct 20 04:37 libomld64.a
+-rw-r--r--  1 runner  staff  249173824 Oct 20 04:37 libomllvm-arm64e.a
+-rw-r--r--  1 runner  staff        382 Oct 20 04:37 toolchain.json
+
+== libomld64-arm64.a
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64-arm64.a is architecture: arm64
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64-arm64.a is architecture: arm64
+
+== libomld64-arm64e.a
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64-arm64e.a is architecture: arm64e
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64-arm64e.a is architecture: arm64e
+
+== libomld64.a
+Architectures in the fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64.a are: arm64 arm64e 
+architecture arm64
+    cputype CPU_TYPE_ARM64
+    cpusubtype CPU_SUBTYPE_ARM64_ALL
+    align 2^3 (8)
+architecture arm64e
+    cputype CPU_TYPE_ARM64
+    cpusubtype CPU_SUBTYPE_ARM64E
+    align 2^3 (8)
+
+== libomllvm-arm64e.a
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomllvm-arm64e.a is architecture: arm64e
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomllvm-arm64e.a is architecture: arm64e
+
+# manifest
+{
+  "schema": 1,
+  "architectures": [
+    "arm64e"
+  ],
+  "artifacts": {
+    "libomllvm-arm64e.a": {
+      "arch": "arm64e",
+      "bytes": 249173824,
+      "sha256": "0158d4c0a921331a72435843ff7b6e7f05ddb7db730d5420bcbdaea35343f631"
+    },
+    "libomld64.a": {
+      "bytes": 13807104,
+      "sha256": "b236676f63e12ffef4d2a7e819c040b6afd33c6003dab25da8c124a9cf180f5d"
+    }
+  }
+}
