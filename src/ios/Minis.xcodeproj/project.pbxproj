@@ -369,6 +369,7 @@
 		E5Q000001 /* BPETokenizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5Q000011 /* BPETokenizer.swift */; };
 		E5Q000002 /* cl100k_base.tiktoken in Resources */ = {isa = PBXBuildFile; fileRef = E5Q000012 /* cl100k_base.tiktoken */; };
 		E5Q000003 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5Q000013 /* AppLogger.swift */; };
+		CL0C0A01 /* ContainerLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CL0C0A02 /* ContainerLocator.swift */; };
 		E5Q000004 /* FontSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5Q000014 /* FontSettings.swift */; };
 		A15000000000000000000001 /* MinisNavigationContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15000000000000000000002 /* MinisNavigationContainer.swift */; };
 		E5QA0001 /* QuickActionRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QA0101 /* QuickActionRouter.swift */; };
@@ -445,6 +446,7 @@
 		E5VC1000A /* SentenceSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00013 /* SentenceSplitter.swift */; };
 		E5VC1000B /* PhoneticNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00012 /* PhoneticNormalizer.swift */; };
 		E5VC1000C /* VoiceCorrectionDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00011 /* VoiceCorrectionDB.swift */; };
+		CL0C0A03 /* ContainerLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CL0C0A02 /* ContainerLocator.swift */; };
 		E5VC1000D /* CorrectionSignalSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00015 /* CorrectionSignalSource.swift */; };
 		E5VC1001A /* ConversationContextTruncator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00018 /* ConversationContextTruncator.swift */; };
 		E5VC1001D /* VoiceCorrectionDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC0001D /* VoiceCorrectionDiff.swift */; };
@@ -472,6 +474,7 @@
 		E5HF0001 /* AIChatViewModel+HostFileTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5HF0002 /* AIChatViewModel+HostFileTools.swift */; };
 		E5HW0001 /* AIChatViewModel+HostWriteTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5HW0002 /* AIChatViewModel+HostWriteTools.swift */; };
 		E5MB0001 /* AIChatViewModel+HostBinaryTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5MB0002 /* AIChatViewModel+HostBinaryTools.swift */; };
+		E5BT0001 /* AIChatViewModel+HostBuildTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BT0002 /* AIChatViewModel+HostBuildTools.swift */; };
 		E5VMC0003 /* AIChatViewModel+Offloading.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0013 /* AIChatViewModel+Offloading.swift */; };
 		E5VMC0004 /* AIChatViewModel+SSEStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0014 /* AIChatViewModel+SSEStream.swift */; };
 		E5VMC0005 /* AIChatViewModel+Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0015 /* AIChatViewModel+Persistence.swift */; };
@@ -1098,6 +1101,7 @@
 		E5Q000011 /* BPETokenizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BPETokenizer.swift; sourceTree = "<group>"; };
 		E5Q000012 /* cl100k_base.tiktoken */ = {isa = PBXFileReference; lastKnownFileType = text; path = cl100k_base.tiktoken; sourceTree = "<group>"; };
 		E5Q000013 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
+		CL0C0A02 /* ContainerLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerLocator.swift; sourceTree = "<group>"; };
 		E5Q000014 /* FontSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FontSettings.swift; sourceTree = "<group>"; };
 		A15000000000000000000002 /* MinisNavigationContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinisNavigationContainer.swift; sourceTree = "<group>"; };
 		E5QA0101 /* QuickActionRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionRouter.swift; sourceTree = "<group>"; };
@@ -1192,6 +1196,7 @@
 		E5HF0002 /* AIChatViewModel+HostFileTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+HostFileTools.swift"; sourceTree = "<group>"; };
 		E5HW0002 /* AIChatViewModel+HostWriteTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+HostWriteTools.swift"; sourceTree = "<group>"; };
 		E5MB0002 /* AIChatViewModel+HostBinaryTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+HostBinaryTools.swift"; sourceTree = "<group>"; };
+		E5BT0002 /* AIChatViewModel+HostBuildTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+HostBuildTools.swift"; sourceTree = "<group>"; };
 		E5VMC0013 /* AIChatViewModel+Offloading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Offloading.swift"; sourceTree = "<group>"; };
 		E5VMC0014 /* AIChatViewModel+SSEStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+SSEStream.swift"; sourceTree = "<group>"; };
 		E5VMC0015 /* AIChatViewModel+Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Persistence.swift"; sourceTree = "<group>"; };
@@ -1859,6 +1864,7 @@
 				E5G000014 /* AgentActivityAttributes.swift */,
 				E5AT00011 /* AudioTogglePlaybackIntent.swift */,
 				E5Q000013 /* AppLogger.swift */,
+				CL0C0A02 /* ContainerLocator.swift */,
 				LOC00002 /* AppLocalization.swift */,
 				E5Q000011 /* BPETokenizer.swift */,
 				E5MDS0013 /* MarkdownStripper.swift */,
@@ -2141,6 +2147,7 @@
 				E5HF0002 /* AIChatViewModel+HostFileTools.swift */,
 				E5HW0002 /* AIChatViewModel+HostWriteTools.swift */,
 				E5MB0002 /* AIChatViewModel+HostBinaryTools.swift */,
+				E5BT0002 /* AIChatViewModel+HostBuildTools.swift */,
 				E5VMD0011 /* MinisURLPathDecoding.swift */,
 				E5VMC0013 /* AIChatViewModel+Offloading.swift */,
 				E5VMC0014 /* AIChatViewModel+SSEStream.swift */,
@@ -2784,6 +2791,7 @@
 				E5VTS1001 /* VoiceTextSanitizer.swift in Sources */,
 				E5VC1000B /* PhoneticNormalizer.swift in Sources */,
 				E5VC1000C /* VoiceCorrectionDB.swift in Sources */,
+				CL0C0A03 /* ContainerLocator.swift in Sources */,
 				E5VC1001D /* VoiceCorrectionDiff.swift in Sources */,
 				E5CADM02 /* CorrectionAdmission.swift in Sources */,
 				E5VC1001E /* VocabularyFilter.swift in Sources */,
@@ -2905,6 +2913,7 @@
 				E5HF0001 /* AIChatViewModel+HostFileTools.swift in Sources */,
 				E5HW0001 /* AIChatViewModel+HostWriteTools.swift in Sources */,
 				E5MB0001 /* AIChatViewModel+HostBinaryTools.swift in Sources */,
+				E5BT0001 /* AIChatViewModel+HostBuildTools.swift in Sources */,
 				E5VMD0001 /* MinisURLPathDecoding.swift in Sources */,
 				E5VMC0003 /* AIChatViewModel+Offloading.swift in Sources */,
 				E5VMC0004 /* AIChatViewModel+SSEStream.swift in Sources */,
@@ -3178,6 +3187,7 @@
 				E5Q000001 /* BPETokenizer.swift in Sources */,
 				E5MDS0003 /* MarkdownStripper.swift in Sources */,
 				E5Q000003 /* AppLogger.swift in Sources */,
+				CL0C0A01 /* ContainerLocator.swift in Sources */,
 				LOC00001 /* AppLocalization.swift in Sources */,
 				F1S00012 /* ChatSessionIdEnvironment.swift in Sources */,
 				E5Q000004 /* FontSettings.swift in Sources */,

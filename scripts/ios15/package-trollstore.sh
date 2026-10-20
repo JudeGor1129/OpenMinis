@@ -59,7 +59,9 @@ Install the .ipa through TrollStore, not ordinary certificate sideloading.
 The package uses ad-hoc signatures; successful CI signing is not an install test.
 The iOS 16.2 Live Activity extension is excluded. Apple Weather needs iOS 16+.
 Apple-hosted capabilities (push/iCloud/WeatherKit) are not guaranteed by TrollStore.
-No extra platform, unsandboxed, or private entitlements have been added.
+This build adds platform-application and com.apple.private.security.no-sandbox so the
+agent can run the on-device Theos compiler (host_build_tweak). Those entitlements are
+only honoured under TrollStore; do not redistribute as a normally-signed app.
 Test launch, chat sizing/streaming/scrolling, sharing and File Provider on device.
 NOTES
 echo "IPA ready: $IPA"

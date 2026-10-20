@@ -84,12 +84,12 @@ final class SkillStore: ObservableObject {
     }
 
     private var dbPath: String {
-        let library = fm.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        let library = ContainerLocator.libraryDirectory
         return library.appendingPathComponent("MinisChat/skills.db").path
     }
 
     private var rootfsSkillsDir: URL {
-        let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let documents = ContainerLocator.documentsDirectory
         return documents.appendingPathComponent("alpine-rootfs/data/var/minis/skills")
     }
 
@@ -1684,7 +1684,7 @@ Do not create extraneous files: README.md, INSTALLATION_GUIDE.md, CHANGELOG.md, 
     private static let SQLITE_TRANSIENT_PTR = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     private var fakefsMetaDBPath: String {
-        let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let documents = ContainerLocator.documentsDirectory
         return documents.appendingPathComponent("alpine-rootfs/meta.db").path
     }
 

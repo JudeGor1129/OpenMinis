@@ -57,7 +57,7 @@ final class SyncLogStore: ObservableObject {
     /// is buffered: on iOS 27 an NSLog from inside a once token can itself park
     /// on a notification round trip. See AppLogger.withDeferredLogging.
     private init() {
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let logsDir = library.appendingPathComponent("Logs")
         try? FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
         self.fileURL = logsDir.appendingPathComponent("sync-log.json")
@@ -424,7 +424,7 @@ final class CloudSyncEngine: ObservableObject {
     }
 
     private init() {
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         self.stateURL = library.appendingPathComponent("MinisChat/sync_state.json")
         self.sessionCacheDir = library.appendingPathComponent("MinisChat/sync_etag_cache")
         self.globalEtagCacheURL = library.appendingPathComponent("MinisChat/sync_etag_global.plist")
@@ -1270,7 +1270,7 @@ final class CloudSyncEngine: ObservableObject {
             guard parts.count == 2 else { return nil }
             let sessionId = String(parts[0])
             let relativePath = String(parts[1])
-            let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            let library = ContainerLocator.libraryDirectory
             let fileURL = library.appendingPathComponent("MinisChat/minis/\(sessionId)/\(relativePath)")
             guard FileManager.default.fileExists(atPath: fileURL.path),
                   FileManager.default.isReadableFile(atPath: fileURL.path) else { return nil }
@@ -1353,7 +1353,7 @@ final class CloudSyncEngine: ObservableObject {
             //
             // The local on-disk `provider-config.json` is left untouched; we only
             // re-serialize a filtered copy for the wire.
-            let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            let library = ContainerLocator.libraryDirectory
             let configURL = library.appendingPathComponent("MinisChat/provider-config.json")
             guard let rawData = try? Data(contentsOf: configURL),
                   var uploadConfig = try? JSONDecoder().decode(ProviderConfig.self, from: rawData) else {
@@ -1383,7 +1383,7 @@ final class CloudSyncEngine: ObservableObject {
 
         case "EnvVar":
             // Sync env var keys and base64-encoded values.
-            let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            let library = ContainerLocator.libraryDirectory
             let envURL = library.appendingPathComponent("MinisChat/env-vars.json")
             guard let data = try? Data(contentsOf: envURL) else { return nil }
             let envJson = String(data: data, encoding: .utf8) ?? "[]"
@@ -1511,7 +1511,7 @@ final class CloudSyncEngine: ObservableObject {
             let sessionId = record["sessionId"] as? String ?? ""
             let relativePath = record["relativePath"] as? String ?? ""
             if let asset = record["asset"] as? CKAsset, let srcURL = asset.fileURL {
-                let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+                let library = ContainerLocator.libraryDirectory
                 let destURL = library.appendingPathComponent("MinisChat/minis/\(sessionId)/\(relativePath)")
                 let fm = FileManager.default
                 try? fm.createDirectory(at: destURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -2531,7 +2531,7 @@ final class CloudSyncEngine: ObservableObject {
             return
         }
 
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let localURL = library.appendingPathComponent("MinisChat/env-vars.json")
         let localVars: [EnvVarEntry]
         if let data = try? Data(contentsOf: localURL),

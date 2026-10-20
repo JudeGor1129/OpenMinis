@@ -35,5 +35,15 @@
 	<array>
 		<string>group.com.openminis.app</string>
 	</array>
+	<!-- [T-host-process-exec] Required to run the on-device Theos toolchain.
+	     Twork has exactly these two entitlements and uses them to posix_spawn
+	     /var/jb/usr/bin/clang. Without them a sandboxed app cannot exec a
+	     process outside its own container, so no on-device build is possible.
+	     Honoured only because the IPA is installed through TrollStore, which
+	     re-signs with an authority that grants arbitrary entitlements. -->
+	<key>platform-application</key>
+	<true/>
+	<key>com.apple.private.security.no-sandbox</key>
+	<true/>
 </dict>
 </plist>
