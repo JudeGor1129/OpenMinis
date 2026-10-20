@@ -1,0 +1,12 @@
+==> cloning cctools-port
+Cloning into '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/cctools-port'...
+==> checking out 904de2a71d4da6a9b30d2efaf912a10ddc7d9ddb
+HEAD is now at 904de2a Merge pull request #191 from locriandev/fix-blobcore-clone-missing-implementation
+==> patch inventory complete
+   llvm-arm64e-twork.diff:     2657 lines
+   llvm-pr-188378.diff:     2400 lines
+   llvm-pr-188638.diff:      391 lines
+
+==> sources ready in /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work
+    LLVM commit to check out: 40f30ea173b50c130c01d843b612f9563ca63930
+    next: scripts/build-ios-toolchain.sh

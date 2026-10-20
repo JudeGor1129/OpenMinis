@@ -1,0 +1,9 @@
+--- patch inventory ---
+    2657 toolchain-build/deps/patches/llvm-arm64e-twork.diff
+    2400 toolchain-build/deps/patches/llvm-pr-188378.diff
+     391 toolchain-build/deps/patches/llvm-pr-188638.diff
+    5448 total
+--- arm64e markers ---
+2
+12
+lld ARM64e.cpp present in patch

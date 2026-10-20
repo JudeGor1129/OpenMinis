@@ -1,0 +1,15 @@
+--- headers available ---
+toolchain-build/work/llvm-project/clang/include
+toolchain-build/work/llvm-project/llvm/include
+
+--- compiling OMToolchain.mm (syntax + type check only) ---
+C++ standard from toolchain-build/work/build-ios-arm64e/CMakeCache.txt: c++17
+using -std=c++17 for the bridge check
+SDK: /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk
+compiler: /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
+include paths: -I toolchain-build/src -I toolchain-build/work/llvm-project/clang/include -I toolchain-build/work/llvm-project/llvm/include -I toolchain-build/work/build-ios-arm64e/include -I toolchain-build/work/build-ios-arm64e/tools/clang/include -I toolchain-build/work/build-ios-arm64e/tools/clang/lib/Headers
+toolchain-build/src/OMToolchain.mm:40:10: fatal error: 'llvm/Support/Host.h' file not found
+   40 | #include "llvm/Support/Host.h"
+      |          ^~~~~~~~~~~~~~~~~~~~~
+1 error generated.
+bridge syntax-check exit code: 1
