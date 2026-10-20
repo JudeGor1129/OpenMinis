@@ -3946,15 +3946,14 @@ struct AIChatView: View {
 
                 inputFieldOrWaveform
 
-                Button {
-                    showFileBrowser = true
-                } label: {
-                    Label("打开工作区文件夹", systemImage: "folder")
-                        .font(.caption)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.horizontal, 16)
-
+                // [T-workspace-folder-in-menu] The "打开工作区文件夹" button used
+                // to sit here, as a full-width row between the field and the
+                // bottom row. It was the only fixed row in the composer that
+                // did nothing while typing, and it duplicated the "Browse Chat
+                // Files" entry that already existed in the trailing "..."
+                // menu — both open `showFileBrowser`, and that sheet is rooted
+                // at the session workspace. Removed rather than restyled: one
+                // affordance, one place.
                 inputBottomRow
                     // [T-ios-de-voice-toolbar] Measure the row so the
                     // read-aloud toggle can decide whether its label fits.
@@ -5753,8 +5752,15 @@ private struct ChatTrailingMenu: View, Equatable {
                 Label(AppLocalized("Open Browser"), systemImage: "globe")
             }
 
+            // [T-workspace-folder-in-menu] This entry already pointed at
+            // `showFileBrowser`, whose sheet is rooted at the session
+            // workspace (AIChatViewModel.minisWorkspacePersistentDir), so the
+            // affordance was already here and needed no new logic. Only the
+            // label changed, to name the destination the way the composer
+            // button used to. The key is localised in all 18 languages of
+            // Localizable.xcstrings, so no locale falls back to Chinese.
             Button { onBrowseFiles() } label: {
-                Label(AppLocalized("Browse Chat Files"), systemImage: "folder")
+                Label(AppLocalized("打开工作区文件夹"), systemImage: "folder")
             }
 
             Divider()
@@ -6018,7 +6024,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
                      image: UIImage(systemName: "terminal")) { _ in coordinator.parent.onOpenTerminal() },
             UIAction(title: AppLocalized("Open Browser"),
                      image: UIImage(systemName: "globe")) { _ in coordinator.parent.onOpenBrowser() },
-            UIAction(title: AppLocalized("Browse Chat Files"),
+            UIAction(title: AppLocalized("打开工作区文件夹"),
                      image: UIImage(systemName: "folder")) { _ in coordinator.parent.onBrowseFiles() },
         ]))
 
