@@ -1,0 +1,13 @@
+ProductName:		macOS
+ProductVersion:		15.7.9
+BuildVersion:		24G830
+Xcode 16.4
+Build version 16F6
+SDK: /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk
+SDK version: 18.5
+cmake version 4.4.3
+1.13.2
+cores: 3
+memory: 7516192768
+Filesystem        Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk2s1s1   320Gi    10Gi    43Gi    20%    427k  446M    0%   /

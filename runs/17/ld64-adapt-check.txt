@@ -1,0 +1,52 @@
+{
+  "mode": "check",
+  "edits": {
+    "cctools/ld64/src/ld/InputFiles.cpp": {
+      "libdispatch_disabled": true
+    },
+    "cctools/ld64/src/ld/InputFiles.h": {
+      "pthreads_disabled": true
+    },
+    "cctools/ld64/src/ld/Mangling.cpp": {
+      "mangling_statics_made_local": 2
+    },
+    "cctools/ld64/src/ld/Options.cpp": {
+      "options_exit_to_throw": 2
+    },
+    "cctools/ld64/src/ld/OutputFile.cpp": {
+      "sigint_handler_removed": 1
+    },
+    "cctools/ld64/src/ld/ld.cpp": {
+      "prelude_removed_lines": 73,
+      "prelude_removed_symbols": [
+        "execute_ld64_lld",
+        "checkWhetherToUseLLD"
+      ],
+      "main_exit_to_return": 3,
+      "assert_exit_to_abort": 1,
+      "remaining_exit_calls": [],
+      "roots_promoted": 6,
+      "atexit_tail_removed_lines": 12,
+      "reset_segments_inserted_after_line": 139,
+      "internal_reset_state_inserted_after_line": 128,
+      "lines_before": 1756,
+      "lines_after": 1693
+    },
+    "cctools/ld64/src/ld/passes/branch_island.cpp": {
+      "branch_island_resets": 2
+    },
+    "cctools/ld64/src/ld/passes/thread_starts.cpp": {
+      "thread_starts_resets": 1
+    }
+  }
+}
+
+All assertions hold. 8 file(s) would be adapted:
+  cctools/ld64/src/ld/InputFiles.cpp
+  cctools/ld64/src/ld/InputFiles.h
+  cctools/ld64/src/ld/Mangling.cpp
+  cctools/ld64/src/ld/Options.cpp
+  cctools/ld64/src/ld/OutputFile.cpp
+  cctools/ld64/src/ld/ld.cpp
+  cctools/ld64/src/ld/passes/branch_island.cpp
+  cctools/ld64/src/ld/passes/thread_starts.cpp
