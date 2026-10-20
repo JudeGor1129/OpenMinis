@@ -1,0 +1,22 @@
+# run summary
+run: 16
+sha: 14cdfe002f3cbda8602a400d54fd82a1539e586a
+archs input: 
+llvm commit input: 
+skip ld64 input: 
+
+## lipo -info on the produced libraries
+Architectures in the fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64.a are: arm64 arm64e 
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64-arm64.a is architecture: arm64
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64-arm64e.a is architecture: arm64e
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomllvm-arm64e.a is architecture: arm64e
+
+## bridge syntax-check verdict
+using -std=c++17 for the bridge check
+include paths: -I toolchain-build/src -I toolchain-build/work/llvm-project/clang/include -I toolchain-build/work/llvm-project/llvm/include -I toolchain-build/work/build-ios-arm64e/include -I toolchain-build/work/build-ios-arm64e/tools/clang/include -I toolchain-build/work/build-ios-arm64e/tools/clang/lib/Headers
+toolchain-build/src/OMToolchain.mm:154:36: error: no matching constructor for initialization of 'clang::TextDiagnosticPrinter'
+toolchain-build/src/OMToolchain.mm:183:37: error: no matching constructor for initialization of 'clang::CompilerInstance'
+toolchain-build/src/OMToolchain.mm:184:22: error: no member named 'setInvocation' in 'clang::CompilerInstance'
+toolchain-build/work/llvm-project/llvm/include/llvm/ADT/IntrusiveRefCntPtr.h:164:37: error: no member named 'Retain' in 'clang::DiagnosticOptions'
+toolchain-build/work/llvm-project/llvm/include/llvm/ADT/IntrusiveRefCntPtr.h:165:38: error: no member named 'Release' in 'clang::DiagnosticOptions'
+bridge syntax-check exit code: 1

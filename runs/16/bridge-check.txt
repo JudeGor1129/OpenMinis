@@ -1,0 +1,67 @@
+--- headers available ---
+toolchain-build/work/llvm-project/clang/include
+toolchain-build/work/llvm-project/llvm/include
+
+--- compiling OMToolchain.mm (syntax + type check only) ---
+C++ standard from toolchain-build/work/build-ios-arm64e/CMakeCache.txt: c++17
+using -std=c++17 for the bridge check
+SDK: /Applications/Xcode_16.4.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk
+compiler: /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
+include paths: -I toolchain-build/src -I toolchain-build/work/llvm-project/clang/include -I toolchain-build/work/llvm-project/llvm/include -I toolchain-build/work/build-ios-arm64e/include -I toolchain-build/work/build-ios-arm64e/tools/clang/include -I toolchain-build/work/build-ios-arm64e/tools/clang/lib/Headers
+toolchain-build/src/OMToolchain.mm:154:36: error: no matching constructor for initialization of 'clang::TextDiagnosticPrinter'
+  154 |             auto *diagClient = new clang::TextDiagnosticPrinter(errStream, diagOpts.get());
+      |                                    ^                            ~~~~~~~~~~~~~~~~~~~~~~~~~
+toolchain-build/work/llvm-project/clang/include/clang/Frontend/TextDiagnosticPrinter.h:41:3: note: candidate constructor not viable: no known conversion from 'clang::DiagnosticOptions *' to 'DiagnosticOptions &' for 2nd argument; dereference the argument with *
+   41 |   TextDiagnosticPrinter(raw_ostream &os, DiagnosticOptions &DiagOpts,
+      |   ^                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+toolchain-build/work/llvm-project/clang/include/clang/Frontend/TextDiagnosticPrinter.h:27:7: note: candidate constructor (the implicit copy constructor) not viable: requires 1 argument, but 2 were provided
+   27 | class TextDiagnosticPrinter : public DiagnosticConsumer {
+      |       ^~~~~~~~~~~~~~~~~~~~~
+toolchain-build/src/OMToolchain.mm:183:37: error: no matching constructor for initialization of 'clang::CompilerInstance'
+  183 |             clang::CompilerInstance instance(pchContainer);
+      |                                     ^        ~~~~~~~~~~~~
+toolchain-build/work/llvm-project/clang/include/clang/Frontend/CompilerInstance.h:206:3: note: candidate constructor not viable: no known conversion from 'shared_ptr<PCHContainerOperations>' to 'const CompilerInstance' for 1st argument
+  206 |   CompilerInstance(const CompilerInstance &) = delete;
+      |   ^                ~~~~~~~~~~~~~~~~~~~~~~~~
+toolchain-build/work/llvm-project/clang/include/clang/Frontend/CompilerInstance.h:209:12: note: candidate constructor not viable: no known conversion from 'shared_ptr<clang::PCHContainerOperations>' to 'shared_ptr<CompilerInvocation>' for 1st argument
+  209 |   explicit CompilerInstance(
+      |            ^
+  210 |       std::shared_ptr<CompilerInvocation> Invocation =
+      |       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  211 |           std::make_shared<CompilerInvocation>(),
+      |           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+toolchain-build/src/OMToolchain.mm:184:22: error: no member named 'setInvocation' in 'clang::CompilerInstance'
+  184 |             instance.setInvocation(invocation);
+      |             ~~~~~~~~ ^
+In file included from toolchain-build/src/OMToolchain.mm:32:
+In file included from toolchain-build/work/llvm-project/clang/include/clang/Basic/Diagnostic.h:17:
+In file included from toolchain-build/work/llvm-project/clang/include/clang/Basic/DiagnosticIDs.h:19:
+toolchain-build/work/llvm-project/llvm/include/llvm/ADT/IntrusiveRefCntPtr.h:164:37: error: no member named 'Retain' in 'clang::DiagnosticOptions'
+  164 |   static void retain(T *obj) { obj->Retain(); }
+      |                                ~~~  ^
+toolchain-build/work/llvm-project/llvm/include/llvm/ADT/IntrusiveRefCntPtr.h:229:34: note: in instantiation of member function 'llvm::IntrusiveRefCntPtrInfo<clang::DiagnosticOptions>::retain' requested here
+  229 |       IntrusiveRefCntPtrInfo<T>::retain(Obj);
+      |                                  ^
+toolchain-build/work/llvm-project/llvm/include/llvm/ADT/IntrusiveRefCntPtr.h:181:43: note: in instantiation of member function 'llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions>::retain' requested here
+  181 |   IntrusiveRefCntPtr(T *obj) : Obj(obj) { retain(); }
+      |                                           ^
+toolchain-build/src/OMToolchain.mm:153:17: note: in instantiation of member function 'llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions>::IntrusiveRefCntPtr' requested here
+  153 |                 new clang::DiagnosticOptions();
+      |                 ^
+In file included from toolchain-build/src/OMToolchain.mm:32:
+In file included from toolchain-build/work/llvm-project/clang/include/clang/Basic/Diagnostic.h:17:
+In file included from toolchain-build/work/llvm-project/clang/include/clang/Basic/DiagnosticIDs.h:19:
+toolchain-build/work/llvm-project/llvm/include/llvm/ADT/IntrusiveRefCntPtr.h:165:38: error: no member named 'Release' in 'clang::DiagnosticOptions'
+  165 |   static void release(T *obj) { obj->Release(); }
+      |                                 ~~~  ^
+toolchain-build/work/llvm-project/llvm/include/llvm/ADT/IntrusiveRefCntPtr.h:234:34: note: in instantiation of member function 'llvm::IntrusiveRefCntPtrInfo<clang::DiagnosticOptions>::release' requested here
+  234 |       IntrusiveRefCntPtrInfo<T>::release(Obj);
+      |                                  ^
+toolchain-build/work/llvm-project/llvm/include/llvm/ADT/IntrusiveRefCntPtr.h:197:27: note: in instantiation of member function 'llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions>::release' requested here
+  197 |   ~IntrusiveRefCntPtr() { release(); }
+      |                           ^
+toolchain-build/src/OMToolchain.mm:153:17: note: in instantiation of member function 'llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions>::~IntrusiveRefCntPtr' requested here
+  153 |                 new clang::DiagnosticOptions();
+      |                 ^
+5 errors generated.
+bridge syntax-check exit code: 1
