@@ -1,5 +1,7 @@
 #!/bin/bash
 # Source guards, not compilation or evidence that a runtime crash is fixed.
+# Build70 restart guard: this file is intentionally under scripts/ios15 so
+# changes to the active baseline reliably trigger the diagnostic workflow.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 view=src/ios/Views/Chat/AIChatView.swift
