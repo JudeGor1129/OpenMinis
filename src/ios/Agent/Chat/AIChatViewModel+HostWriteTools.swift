@@ -337,9 +337,8 @@ extension AIChatViewModel {
                 }
                 // Do not let `delete .` or a deep ancestor wipe the sandbox by
                 // accident: refuse the app container roots and "/" itself.
-                let guardPaths = ["/", NSHomeDirectory(),
-                                  ContainerLocator.documentsDirectory.path]
-                    .compactMap { $0 }
+                let guardPaths: [String] = ["/", NSHomeDirectory(),
+                                            ContainerLocator.documentsDirectory.path]
                 if guardPaths.contains(url.path) {
                     return ("Error: Refused to recursively delete \(url.path) — it is a container root.", false)
                 }
