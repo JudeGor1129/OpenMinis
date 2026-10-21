@@ -70,24 +70,67 @@ struct SwipeToSendHint: View {
 
 // MARK: - Flow Layout
 
-/// Preserves native wrapping on iOS 16+, with an overflow-safe stack on iOS 15.
-private struct FlowLayout<Content: View>: View {
+/// Uses the official wrapping layout on modern iOS and the same tile packing
+/// on iOS 15, without requiring SwiftUI's iOS 16 Layout protocol.
+private struct FlowLayout<Item: Identifiable, Content: View>: View {
+    let items: [Item]
     var hSpacing: CGFloat = 8
     var vSpacing: CGFloat = 8
     var alignment: HorizontalAlignment = .leading
-    @ViewBuilder var content: () -> Content
+    @ViewBuilder var content: (Item) -> Content
+    @State private var availableWidth: CGFloat = 0
+
+    private var columns: Int {
+        let tile = UserAttachmentTileMetrics.tile
+        return max(1, Int((max(0, availableWidth) + hSpacing) / (tile + hSpacing)))
+    }
+
+    private var rowCount: Int {
+        (items.count + columns - 1) / columns
+    }
 
     var body: some View {
         if #available(iOS 16.0, *) {
             NativeFlowLayout(hSpacing: hSpacing, vSpacing: vSpacing, alignment: alignment) {
-                content()
+                ForEach(items) { item in
+                    content(item)
+                }
             }
         } else {
+            // All three callers render fixed 64pt attachment tiles. Explicit
+            // rows preserve the official trailing alignment on the LAST row,
+            // unlike an adaptive grid, whose last row starts in column one.
             VStack(alignment: alignment, spacing: vSpacing) {
-                content()
+                ForEach(0..<rowCount, id: \.self) { row in
+                    HStack(spacing: hSpacing) {
+                        ForEach(Array(items.dropFirst(row * columns).prefix(columns))) { item in
+                            content(item)
+                        }
+                    }
+                    .frame(maxWidth: .infinity,
+                           alignment: alignment == .trailing ? .trailing : .leading)
+                }
             }
             .frame(maxWidth: .infinity, alignment: alignment == .trailing ? .trailing : .leading)
+            .background(
+                GeometryReader { geometry in
+                    Color.clear.preference(key: AttachmentFlowWidthKey.self,
+                                           value: geometry.size.width)
+                }
+            )
+            .onPreferenceChange(AttachmentFlowWidthKey.self) { width in
+                guard width.isFinite, width > 0, availableWidth != width else { return }
+                availableWidth = width
+            }
         }
+    }
+}
+
+private struct AttachmentFlowWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        // Do not keep the maximum: a narrower split view must rewrap too.
+        value = nextValue()
     }
 }
 
@@ -196,9 +239,27 @@ struct InputAttachmentGridView: View {
 
     @State private var draggingID: UUID?
 
+    private enum Tile: Identifiable {
+        case attachment(InputAttachment)
+        case loading(Int)
+
+        var id: String {
+            switch self {
+            case .attachment(let attachment): return "attachment-\(attachment.id)"
+            case .loading(let index): return "loading-\(index)"
+            }
+        }
+    }
+
+    private var tiles: [Tile] {
+        attachments.map { Tile.attachment($0) }
+            + (0..<max(0, loadingVideoCount)).map { Tile.loading($0) }
+    }
+
     var body: some View {
-        FlowLayout(hSpacing: 8, vSpacing: 8) {
-            ForEach(attachments) { attachment in
+        FlowLayout(items: tiles, hSpacing: 8, vSpacing: 8) { tile in
+            switch tile {
+            case .attachment(let attachment):
                 AttachmentChip(attachment: attachment) {
                     onRemove(attachment)
                 }
@@ -212,8 +273,7 @@ struct InputAttachmentGridView: View {
                     draggingID: $draggingID,
                     onMove: onMove
                 ))
-            }
-            ForEach(0..<loadingVideoCount, id: \.self) { _ in
+            case .loading:
                 VideoLoadingChip()
             }
         }
@@ -781,19 +841,17 @@ struct UserAttachmentList: View {
     }
 
     var body: some View {
-        FlowLayout(hSpacing: UserAttachmentTileMetrics.gap, vSpacing: UserAttachmentTileMetrics.gap, alignment: .trailing) {
-            ForEach(attachments) { meta in
-                if meta.isImage {
-                    AsyncImageTile(meta: meta, tileSize: tileSize) {
-                        openGallery(startingAt: meta)
-                    }
-                } else if meta.isVideo {
-                    AsyncVideoTile(meta: meta, tileSize: tileSize)
-                } else if meta.pastedId != nil {
-                    pastedTile(meta)
-                } else {
-                    fileTile(meta)
+        FlowLayout(items: attachments, hSpacing: UserAttachmentTileMetrics.gap, vSpacing: UserAttachmentTileMetrics.gap, alignment: .trailing) { meta in
+            if meta.isImage {
+                AsyncImageTile(meta: meta, tileSize: tileSize) {
+                    openGallery(startingAt: meta)
                 }
+            } else if meta.isVideo {
+                AsyncVideoTile(meta: meta, tileSize: tileSize)
+            } else if meta.pastedId != nil {
+                pastedTile(meta)
+            } else {
+                fileTile(meta)
             }
         }
     }
@@ -961,17 +1019,15 @@ struct QueuedAttachmentPreview: View {
     private let tileSize: CGFloat = UserAttachmentTileMetrics.tile
 
     var body: some View {
-        FlowLayout(hSpacing: UserAttachmentTileMetrics.gap, vSpacing: UserAttachmentTileMetrics.gap, alignment: .trailing) {
-            ForEach(attachments) { attachment in
-                switch attachment.kind {
-                case .image:
-                    AsyncCacheURLImageTile(cacheURL: attachment.cacheURL, tileSize: tileSize)
-                        .opacity(0.7)
-                case .video:
-                    placeholderTile(icon: "film", fileName: attachment.fileName)
-                case .document:
-                    placeholderTile(icon: "doc.fill", fileName: attachment.fileName)
-                }
+        FlowLayout(items: attachments, hSpacing: UserAttachmentTileMetrics.gap, vSpacing: UserAttachmentTileMetrics.gap, alignment: .trailing) { attachment in
+            switch attachment.kind {
+            case .image:
+                AsyncCacheURLImageTile(cacheURL: attachment.cacheURL, tileSize: tileSize)
+                    .opacity(0.7)
+            case .video:
+                placeholderTile(icon: "film", fileName: attachment.fileName)
+            case .document:
+                placeholderTile(icon: "doc.fill", fileName: attachment.fileName)
             }
         }
     }

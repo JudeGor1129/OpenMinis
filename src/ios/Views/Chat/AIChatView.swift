@@ -5444,9 +5444,141 @@ struct NavBarStyleModifier: ViewModifier {
                     }
                 }
         } else {
-            // iOS 15 uses the system navigation-bar appearance. Avoid global
-            // UINavigationBar.appearance changes that would leak into sheets.
-            content
+            // Match the official opaque pre-glass background on iOS 15 too.
+            // Item-scoped appearances leave home and sheet navigation alone.
+            content.background(
+                LegacyChatNavigationBarBackground(background: UIColor(ChatColors.background))
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+            )
+        }
+    }
+}
+
+/// iOS 15 Adapter for the chat navigation background. Only the owning stack
+/// entry is changed; never mutate UINavigationBar.appearance or the shared bar.
+private struct LegacyChatNavigationBarBackground: UIViewControllerRepresentable {
+    let background: UIColor
+
+    func makeUIViewController(context: Context) -> Controller {
+        Controller(background: background)
+    }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.background = background
+        controller.applyAppearance()
+    }
+
+    static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
+        controller.restoreAppearance()
+    }
+
+    final class Controller: UIViewController {
+        var background: UIColor
+        private weak var styledItem: UINavigationItem?
+        private var savedStandard: UINavigationBarAppearance?
+        private var savedCompact: UINavigationBarAppearance?
+        private var savedScrollEdge: UINavigationBarAppearance?
+        private var savedCompactScrollEdge: UINavigationBarAppearance?
+        private var installedAppearance: UINavigationBarAppearance?
+        private var installedCompact: UINavigationBarAppearance?
+        private var installedScrollEdge: UINavigationBarAppearance?
+        private var installedCompactScrollEdge: UINavigationBarAppearance?
+        private var appliedBackground: UIColor?
+
+        init(background: UIColor) {
+            self.background = background
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func loadView() {
+            view = UIView(frame: .zero)
+            view.backgroundColor = .clear
+            view.isUserInteractionEnabled = false
+        }
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            applyAppearance()
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            applyAppearance()
+        }
+
+        func applyAppearance() {
+            // The representable may be nested in hosting/container controllers.
+            // Find OUR stack entry, not topViewController: that could be a page
+            // pushed over this one while SwiftUI updates the hidden chat.
+            var ancestor = parent
+            while let candidate = ancestor {
+                if let navigation = candidate.navigationController,
+                   navigation.viewControllers.contains(where: { $0 === candidate }) {
+                    let item = candidate.navigationItem
+                    if styledItem !== item {
+                        restoreAppearance()
+                        styledItem = item
+                        savedStandard = item.standardAppearance
+                        savedCompact = item.compactAppearance
+                        savedScrollEdge = item.scrollEdgeAppearance
+                        savedCompactScrollEdge = item.compactScrollEdgeAppearance
+                    }
+                    if appliedBackground?.isEqual(background) == true,
+                       let installed = installedAppearance,
+                       item.standardAppearance === installed,
+                       item.compactAppearance === installedCompact,
+                       item.scrollEdgeAppearance === installedScrollEdge,
+                       item.compactScrollEdgeAppearance === installedCompactScrollEdge {
+                        return // Streaming body updates must not restyle the bar.
+                    }
+                    // Copy first to retain native title/button appearance.
+                    let appearance = (savedStandard ?? navigation.navigationBar.standardAppearance)
+                        .copy() as! UINavigationBarAppearance
+                    appearance.configureWithOpaqueBackground()
+                    appearance.backgroundColor = background
+                    appearance.shadowColor = .clear
+                    item.standardAppearance = appearance
+                    item.compactAppearance = appearance
+                    item.scrollEdgeAppearance = appearance
+                    item.compactScrollEdgeAppearance = appearance
+                    // Appearance properties copy on assignment; retain the
+                    // installed values, not the pre-assignment object.
+                    installedAppearance = item.standardAppearance
+                    installedCompact = item.compactAppearance
+                    installedScrollEdge = item.scrollEdgeAppearance
+                    installedCompactScrollEdge = item.compactScrollEdgeAppearance
+                    appliedBackground = background
+                    return
+                }
+                ancestor = candidate.parent
+            }
+        }
+
+        func restoreAppearance() {
+            if let item = styledItem {
+                // Do not undo another owner's later appearance change.
+                if let installed = installedAppearance, item.standardAppearance === installed {
+                    item.standardAppearance = savedStandard
+                }
+                if let installed = installedCompact, item.compactAppearance === installed {
+                    item.compactAppearance = savedCompact
+                }
+                if let installed = installedScrollEdge, item.scrollEdgeAppearance === installed {
+                    item.scrollEdgeAppearance = savedScrollEdge
+                }
+                if let installed = installedCompactScrollEdge, item.compactScrollEdgeAppearance === installed {
+                    item.compactScrollEdgeAppearance = savedCompactScrollEdge
+                }
+            }
+            styledItem = nil
+            installedAppearance = nil
+            installedCompact = nil
+            installedScrollEdge = nil
+            installedCompactScrollEdge = nil
+            appliedBackground = nil
         }
     }
 }
