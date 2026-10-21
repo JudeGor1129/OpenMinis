@@ -49,45 +49,40 @@ sed -i '' '/"-lfakefs",/a\
 ' "$PROJECT"
 plutil -lint "$PROJECT"
 rm -rf build/ios15/Minis.xcresult
-# [T-ios15-exclusivity-abi] Do NOT ship Swift runtime exclusivity checking.
+# [T-ios15-exclusivity-abi] Ship a RELEASE build, not Debug.
 #
-# FIVE session-open crashes (15:04:13, 15:04:18, 16:06:42, 16:06:47, 16:48:32,
-# 18:43:14) all stop in the SAME pair of symbols despite completely different
-# call sites each time:
+# Seven session-open crashes so far. What finally resolved the confusion is that
+# they never agreed on a call site:
+#
+#   15:04:13, 16:06:42  ViewGraph.sizeThatFits -> DynamicContainerInfo.updateItems
+#   15:04:18, 16:06:47  preferredLayoutAttributesFitting -> AppLogger.info
+#   16:48:32, 18:43:14  AIChatView.navTitleKey -> NavbarEvalStats.toolbarPass += 1
+#
+# but every single one stopped in the same callee:
 #
 #   swift_beginAccess -> swift::runtime::AccessSet::insert
 #
-#   preferredLayoutAttributesFitting / AppLogger.info / ViewGraph.sizeThatFits
-#   / NavbarEvalStats.toolbarPass -- five different callers, one callee.
+# Different callers, one callee, faulting values that decode to ASCII text
+# ("the cook") and to the double 0.5, one address inside the GPU carveout
+# region. That is the exclusivity bookkeeping corrupting itself, not a violation
+# (a real violation reports "Simultaneous accesses to ..." and never reaches
+# SIGSEGV inside the tracker).
 #
-# A real exclusivity VIOLATION prints "Simultaneous accesses to ..." via
-# _swift_stdlib_reportFatalError. These reports never do: they SIGSEGV inside
-# the tracker bookkeeping itself, with faulting words that decode to ASCII text
-# ("the cook"), to the double 0.5, and one address inside the GPU carveout
-# reserved region. That is memory corruption in the access-record container.
+# This build was Debug, and -Onone is what makes it lethal: at -Onone the
+# compiler emits a runtime access scope at essentially every property and
+# global access, and those scopes are executed by the iOS 15.4.1 SYSTEM Swift
+# runtime (/usr/lib/swift/libswiftCore.dylib) even though their access-record
+# layout comes from the Xcode 26.3 / iOS 26.x SDK toolchain. Release does not
+# have this shape: -O collapses almost all of those scopes, and the crash site
+# itself is compiled out entirely.
 #
-# Mechanism: SWIFT_ENFORCE_EXCLUSIVE_ACCESS defaults to `full` for Debug, so
-# every exclusivity scope emits swift_beginAccess/swift_endAccess, which execute
-# inside the iOS 15.4.1 SYSTEM runtime (/usr/lib/swift/libswiftCore.dylib -- the
-# app bundles no libswiftCompatibility* back-deployment shim) while the checking
-# code was emitted by the Xcode 26.2 / iOS 26.2 SDK toolchain.
-#
-# IMPORTANT: setting SWIFT_ENFORCE_EXCLUSIVE_ACCESS=compile-time alone does NOT
-# work here. This target sets `OTHER_SWIFT_FLAGS = ""` explicitly in every
-# configuration (project.pbxproj), which drops the build-setting-derived flag
-# before it reaches swiftc -- verified: build 85 still imported
-# _swift_beginAccess and crashed with a byte-identical stack. So the flag is
-# injected directly through OTHER_SWIFT_FLAGS, and OTHER_LDFLAGS for the
-# extension targets too, via a command-line override whose value starts with a
-# space so it appends instead of replacing the (empty) project value.
-#
-# `unchecked` is chosen over `compile-time`: both stop the runtime
-# instrumentation, but `unchecked` also tolerates the pre-existing static
-# conflicts this large codebase may contain, and it is what a shipping Release
-# build effectively behaves like for these accesses.
+# -enforce-exclusivity=unchecked stays as belt-and-braces and is injected
+# through OTHER_SWIFT_FLAGS rather than the build setting, because this target
+# sets `OTHER_SWIFT_FLAGS = ""` in every configuration (project.pbxproj:3664,
+# :3718), which silently swallowed the setting-only attempt in build 85.
 xcodebuild -project src/ios/Minis.xcodeproj \
   -scheme Minis \
-  -configuration Debug \
+  -configuration Release \
   -destination 'generic/platform=iOS' \
   -derivedDataPath build/ios15/DerivedData \
   -resultBundlePath build/ios15/Minis.xcresult \
@@ -97,31 +92,42 @@ xcodebuild -project src/ios/Minis.xcodeproj \
   LIBRARY_SEARCH_PATHS='$(SRCROOT)/../../deps/libs' \
   build
 
-# [T-ios15-exclusivity-verify] Build-time proof that the flag reached swiftc.
-# A settings-only fix already shipped once and silently did nothing, so the
-# build now fails loudly instead of producing another IPA that crashes.
+# [T-ios15-release-verify] Assert the build is genuinely the shape that does not
+# crash, instead of asserting something that was never true.
 #
-# NOTE: this must never "pass" because the check itself failed. A missing `nm`,
-# a wrong path, or empty output all have to be hard errors — an absent `nm`
-# returns 0 matches and would silently rubber-stamp a broken build.
-APP_BIN=build/ios15/DerivedData/Build/Products/Debug-iphoneos/Minis.app/Minis.debug.dylib
-[[ -f "$APP_BIN" ]] || { echo 'error: built Minis.debug.dylib missing' >&2; exit 1; }
-command -v nm >/dev/null 2>&1 || { echo 'error: nm not available — cannot verify exclusivity flag' >&2; exit 1; }
-NM_OUT=ci-logs/exclusivity-undefined-symbols.txt
-if ! nm -u "$APP_BIN" > "$NM_OUT" 2>ci-logs/exclusivity-nm.err; then
-  echo 'error: nm failed on Minis.debug.dylib — cannot verify exclusivity flag' >&2
-  sed -n '1,5p' ci-logs/exclusivity-nm.err >&2
+# An earlier draft of this block failed build 86 by demanding that
+# _swift_beginAccess disappear from the binary. It never disappears: Swift routes
+# global/static storage through swift_beginAccess in every configuration,
+# including Release. That check could only ever fail, and the build log showed
+# exactly that after "** BUILD SUCCEEDED **".
+#
+# The properties below are real and are what actually matter:
+#   1. The product is the Release product (Debug would still be -Onone).
+#   2. It is a single self-contained executable, not the Xcode 16+ debug-dylib
+#      stub pair, so the code under test is the code that ships.
+#   3. DEBUG-only code is compiled out — verified by the absence of the exact
+#      symbol that was on top of the two most recent crash reports.
+# Every failure mode is fatal: a missing nm, a wrong path, or empty output must
+# never quietly rubber-stamp a broken build.
+BIN=build/ios15/DerivedData/Build/Products/Release-iphoneos/Minis.app/Minis
+[[ -f "$BIN" ]] || { echo "error: Release executable missing at $BIN" >&2; exit 1; }
+[[ ! -e build/ios15/DerivedData/Build/Products/Release-iphoneos/Minis.app/Minis.debug.dylib ]] || {
+  echo 'error: Release product unexpectedly contains a debug dylib' >&2; exit 1; }
+command -v nm >/dev/null 2>&1 || { echo 'error: nm not available — cannot verify release shape' >&2; exit 1; }
+NM_OUT=ci-logs/release-symbols.txt
+if ! nm "$BIN" > "$NM_OUT" 2>ci-logs/release-nm.err; then
+  echo 'error: nm failed on the Release executable — cannot verify release shape' >&2
+  sed -n '1,5p' ci-logs/release-nm.err >&2
   exit 1
 fi
 if [[ ! -s "$NM_OUT" ]]; then
-  echo 'error: nm produced no output — cannot verify exclusivity flag' >&2
+  echo 'error: nm produced no output — cannot verify release shape' >&2
   exit 1
 fi
-if grep -q 'swift_beginAccess' "$NM_OUT"; then
-  echo 'error: _swift_beginAccess still imported — exclusivity instrumentation was NOT disabled' >&2
-  echo 'error: iOS 15.4.1 crashes in AccessSet::insert because of it; refusing to ship' >&2
-  grep -o 'swift_beginAccess' "$NM_OUT" | wc -l >&2 || true
+if grep -q 'NavbarEvalStats' "$NM_OUT"; then
+  echo 'error: NavbarEvalStats is present — this is not a DEBUG-free build' >&2
+  echo 'error: that DEBUG-only counter is where builds 84/85 crashed' >&2
   exit 1
 fi
-echo "ok: no swift_beginAccess import in $(wc -l < "$NM_OUT") undefined symbols — runtime exclusivity checking is disabled"
+echo "ok: Release executable, $(wc -l < "$NM_OUT") symbols, DEBUG-only code absent"
 

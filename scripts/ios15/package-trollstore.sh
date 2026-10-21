@@ -2,7 +2,7 @@
 # CI-only TrollStore test package. No developer certificate/profile required.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-SOURCE=build/ios15/DerivedData/Build/Products/Debug-iphoneos/Minis.app
+SOURCE=build/ios15/DerivedData/Build/Products/Release-iphoneos/Minis.app
 STAGE=build/ios15/trollstore-stage
 OUT=build/ios15/artifacts
 [[ -d "$SOURCE" ]] || { echo 'error: built Minis.app missing' >&2; exit 1; }
@@ -54,7 +54,7 @@ rm -f "$IPA"
 unzip -t "$IPA" | tail -1
 shasum -a 256 "$IPA" | tee "$OUT/SHA256SUMS.txt"
 cat > "$OUT/INSTALL-NOTES.txt" <<'NOTES'
-Minis iOS 15 TrollStore TEST build (Debug configuration).
+Minis iOS 15 TrollStore TEST build (Release configuration).
 Install the .ipa through TrollStore, not ordinary certificate sideloading.
 The package uses ad-hoc signatures; successful CI signing is not an install test.
 The iOS 16.2 Live Activity extension is excluded. Apple Weather needs iOS 16+.
