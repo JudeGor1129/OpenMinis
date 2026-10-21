@@ -49,6 +49,31 @@ sed -i '' '/"-lfakefs",/a\
 ' "$PROJECT"
 plutil -lint "$PROJECT"
 rm -rf build/ios15/Minis.xcresult
+# [T-ios15-exclusivity-abi] Do NOT ship Swift runtime exclusivity checking.
+#
+# SWIFT_ENFORCE_EXCLUSIVE_ACCESS defaults to `full` for Debug and
+# `compile-time` for Release, and this project never overrides it. Because the
+# whole app is compiled Debug (the IPA is packaged from Debug-iphoneos), every
+# `swift_beginAccess` carries a runtime check emitted by the Xcode 26.2 /
+# iOS 26.2 SDK toolchain, which is then executed by the iOS 15.4.1 SYSTEM
+# Swift runtime (/usr/lib/swift/libswiftCore.dylib — the app bundles none).
+#
+# That mismatch is fatal and explains all four session-open crashes
+# (15:04:13, 15:04:18, 16:06:42, 16:06:47, 16:48:32): every report stops in
+# swift_beginAccess -> swift::runtime::AccessSet::insert, reached from a
+# completely different call site each time (preferredLayoutAttributesFitting,
+# AppLogger.info, ViewGraph.sizeThatFits, NavbarEvalStats.toolbarPass). A
+# genuine exclusivity VIOLATION prints "Simultaneous accesses to ..." through
+# _swift_stdlib_reportFatalError; it does not SIGSEGV inside the tracker.
+# Instead the faulting words decode to ASCII text ("the cook") and to the
+# double 0.5 — the tracker's own container memory being scribbled over — and
+# one report lands in the GPU carveout reserved region.
+#
+# compile-time keeps the optimisation-time guarantee (the compiler still
+# diagnoses statically knowable conflicts) and only stops emitting the
+# runtime instrumentation that the older system runtime cannot execute.
+# Set on the command line so it applies to every target, including the
+# extensions, without editing the project file.
 xcodebuild -project src/ios/Minis.xcodeproj \
   -scheme Minis \
   -configuration Debug \
@@ -56,6 +81,7 @@ xcodebuild -project src/ios/Minis.xcodeproj \
   -derivedDataPath build/ios15/DerivedData \
   -resultBundlePath build/ios15/Minis.xcresult \
   CODE_SIGNING_ALLOWED=NO \
+  SWIFT_ENFORCE_EXCLUSIVE_ACCESS=compile-time \
   'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) MINIS_LEGACY_FILE_PROVIDER' \
   LIBRARY_SEARCH_PATHS='$(SRCROOT)/../../deps/libs' \
   build
