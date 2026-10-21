@@ -161,8 +161,8 @@ class StorageManagementViewModel: ObservableObject {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
 
-            let libraryURL = self.ContainerLocator.libraryDirectory
-            let documentsURL = self.ContainerLocator.documentsDirectory
+            let libraryURL = ContainerLocator.libraryDirectory
+            let documentsURL = ContainerLocator.documentsDirectory
             let tmpURL = self.fm.temporaryDirectory
 
             let chatSessions = await ChatStore.shared.listSessions()
