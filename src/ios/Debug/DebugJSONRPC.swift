@@ -1831,14 +1831,14 @@ final class DebugJSONRPC: @unchecked Sendable {
         // Support Library/ prefix to access app Library directory
         if stripped.hasPrefix("Library/") {
             let fm = FileManager.default
-            let library = ContainerLocator.libraryDirectory
+            let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
             let relative = String(stripped.dropFirst("Library/".count))
             return relative.isEmpty ? library : library.appendingPathComponent(relative)
         }
         // Support Documents/ prefix to access app Documents directory
         if stripped.hasPrefix("Documents/") {
             let fm = FileManager.default
-            let docs = ContainerLocator.documentsDirectory
+            let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
             let relative = String(stripped.dropFirst("Documents/".count))
             return relative.isEmpty ? docs : docs.appendingPathComponent(relative)
         }
@@ -2285,10 +2285,10 @@ final class DebugJSONRPC: @unchecked Sendable {
 
     private func handleAppInfo(params: [String: Any] = [:]) -> Any {
         let fm = FileManager.default
-        let docs = ContainerLocator.documentsDirectory
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
         let dataPath = RootfsManager.shared.dataPath
         let bundlePath = Bundle.main.bundlePath
-        let library = ContainerLocator.libraryDirectory
+        let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
 
         // Binary modification date as build date
         let executableURL = Bundle.main.executableURL
@@ -3175,7 +3175,7 @@ final class DebugJSONRPC: @unchecked Sendable {
         // ChatStore, ProviderConfigDB, VoiceCorrectionDB, AlarmOffloadBridge),
         // except the rootfs meta.db which lives inside the iSH rootfs.
         let fm = FileManager.default
-        let library = ContainerLocator.libraryDirectory
+        let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
         let chatBase = library.appendingPathComponent("MinisChat", isDirectory: true)
         let rootfs = RootfsManager.shared.rootfsPath
         return [

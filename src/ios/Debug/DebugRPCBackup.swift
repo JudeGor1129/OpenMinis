@@ -55,7 +55,8 @@ enum DebugRPCBackup {
 
         var packagePath = summary.packageURL.path
         if params["keep"] as? Bool == true {
-            let docs = ContainerLocator.documentsDirectory
+            let docs = FileManager.default.urls(for: .documentDirectory,
+                                                in: .userDomainMask)[0]
             let dest = docs.appendingPathComponent(summary.packageURL.lastPathComponent)
             try? FileManager.default.removeItem(at: dest)
             try FileManager.default.moveItem(at: summary.packageURL, to: dest)
@@ -564,7 +565,7 @@ enum DebugRPCBackup {
     /// Scoped to Documents and to the `.minisbak` extension so it cannot touch
     /// anything else.
     static func cleanup(params: [String: Any]) async throws -> [String: Any] {
-        let docs = ContainerLocator.documentsDirectory
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         var removed: [String] = []
         var freed: Int64 = 0
         // Also sweep the real delivery directory, so device tests don't leave

@@ -35,32 +35,5 @@
 	<array>
 		<string>group.com.openminis.app</string>
 	</array>
-	<!-- [T-host-process-exec] Required to run the on-device Theos toolchain.
-	     Twork has exactly these two entitlements and uses them to posix_spawn
-	     /var/jb/usr/bin/clang. Without them a sandboxed app cannot exec a
-	     process outside its own container, so no on-device build is possible.
-	     Honoured only because the IPA is installed through TrollStore, which
-	     re-signs with an authority that grants arbitrary entitlements. -->
-	<key>platform-application</key>
-	<true/>
-	<key>com.apple.private.security.no-sandbox</key>
-	<true/>
-	<!-- [T-container-path-drift] Required for the app to reach its OWN data
-	     container once `no-sandbox` is in effect.
-	     `no-sandbox` drops the implicit container mapping, and data containers
-	     are then protected by a per-container sandbox profile that is keyed on
-	     the process's entitlement set. Observed on 2026-10-21 with run 79: the
-	     binary contained ContainerLocator, resolved to the only container
-	     (2AE68285) and read minis.db, but every write into Documents and
-	     Library was refused with NSFileWriteNoPermissionError — including
-	     meta.db. The reference process on this device (Twork, also uid 501,
-	     also no-sandbox) writes into that very container without trouble, and
-	     the only relevant difference in its entitlement set is these two
-	     container-storage grants. POSIX permissions are not the blocker:
-	     mode 0755, owner mobile:mobile. -->
-	<key>com.apple.private.security.storage.AppDataContainers</key>
-	<true/>
-	<key>com.apple.private.security.storage.AppBundles</key>
-	<true/>
 </dict>
 </plist>

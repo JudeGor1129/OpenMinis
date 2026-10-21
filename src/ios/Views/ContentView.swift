@@ -5858,7 +5858,7 @@ struct ModernContentView: View {
 
     private nonisolated static func computeDeleteInfo(for ids: Set<String>, totalSessions: Int) -> DeleteInfo {
         let fm = FileManager.default
-        let libBase = ContainerLocator.libraryDirectory
+        let libBase = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
         let minisBase = libBase.appendingPathComponent("MinisChat/minis", isDirectory: true)
         let dbPath = libBase.appendingPathComponent("MinisChat/minis.db")
 

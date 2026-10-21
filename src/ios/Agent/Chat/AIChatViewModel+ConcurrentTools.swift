@@ -472,13 +472,6 @@ extension AIChatViewModel {
             }
             toolOutput = result.output
             toolSuccess = result.success
-        case "host_build_tweak":
-            let result = await executeHostBuildTweak(from: argsJson)
-            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
-                messages[msgIdx].blocks[blockIdx].content = result.output
-            }
-            toolOutput = result.output
-            toolSuccess = result.success
         case "ask_user":
             guard AgentToolSwitch.interaction.isEnabled else {
                 toolOutput = Self.toolsDisabledMessage

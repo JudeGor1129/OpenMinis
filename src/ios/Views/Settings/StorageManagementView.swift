@@ -161,8 +161,8 @@ class StorageManagementViewModel: ObservableObject {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
 
-            let libraryURL = ContainerLocator.libraryDirectory
-            let documentsURL = ContainerLocator.documentsDirectory
+            let libraryURL = self.fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            let documentsURL = self.fm.urls(for: .documentDirectory, in: .userDomainMask).first!
             let tmpURL = self.fm.temporaryDirectory
 
             let chatSessions = await ChatStore.shared.listSessions()
@@ -380,7 +380,7 @@ struct SessionStorageDetailView: View {
     }()
 
     private var minisURL: URL {
-        let lib = ContainerLocator.libraryDirectory
+        let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         return lib.appendingPathComponent("MinisChat/minis/\(session.id)", isDirectory: true)
     }
 
@@ -449,7 +449,7 @@ struct SessionStorageDetailView: View {
         let descendants = session.descendantIds
         Task.detached(priority: .userInitiated) {
             let fm = FileManager.default
-            let lib = ContainerLocator.libraryDirectory
+            let lib = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
             let minisBase = lib.appendingPathComponent("MinisChat/minis", isDirectory: true)
             // [T-child-delete-storage] The row aggregates its agent children,
             // so clearing it clears their directories too.

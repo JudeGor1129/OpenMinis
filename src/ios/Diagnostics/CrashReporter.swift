@@ -14,7 +14,7 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
     private var crashReportsDir: URL {
         // Keep crash reports alongside running logs (LoggingManager.logDirectory)
         // so the unified Logs UI can list both from one directory.
-        let lib = ContainerLocator.libraryDirectory
+        let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         return lib.appendingPathComponent("Logs", isDirectory: true)
     }
 

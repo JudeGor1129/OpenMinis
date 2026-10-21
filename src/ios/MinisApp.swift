@@ -1194,7 +1194,7 @@ struct MinisApp: App {
     /// 4. Old App Group MinisShared/ → App Group MinisFileProvider/shared/
     private static func migrateSharedDirToAppGroup() {
         let fm = FileManager.default
-        let library = ContainerLocator.libraryDirectory
+        let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
         let container = fm.containerURL(forSecurityApplicationGroupIdentifier: "group.com.openminis.app")!
 
         let migrations: [(source: URL, dest: URL, label: String)] = [

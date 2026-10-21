@@ -2,11 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-# Keep the chat styling checks in the existing CI navigation entry point.
-# Typecheck the real UIKit Adapter before the broader compatibility callers.
-bash scripts/ios15/check-chat-attachment-layout.sh
-bash scripts/ios15/check-chat-navbar-source.sh
-bash scripts/ios15/check-chat-navbar-typecheck.sh
+bash scripts/ios15/check-build70-chat-style.sh
 
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 

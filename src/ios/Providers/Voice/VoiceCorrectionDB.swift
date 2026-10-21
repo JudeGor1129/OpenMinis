@@ -36,7 +36,8 @@ actor VoiceCorrectionDB {
 
     /// Same MinisChat folder the other databases live in.
     static func defaultURL() -> URL {
-        let library = ContainerLocator.libraryDirectory
+        let library = FileManager.default
+            .urls(for: .libraryDirectory, in: .userDomainMask)[0]
         let base = library.appendingPathComponent("MinisChat", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("voice-correction.db")

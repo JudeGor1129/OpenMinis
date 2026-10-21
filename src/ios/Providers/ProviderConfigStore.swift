@@ -185,7 +185,7 @@ final class ProviderConfigStore: ObservableObject {
     /// snapshot it before a restore. Read-only accessor — the file itself is
     /// still written exclusively through `save()`.
     nonisolated static var configFileURLForBackup: URL {
-        let library = ContainerLocator.libraryDirectory
+        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
         return library.appendingPathComponent("MinisChat/provider-config.json")
     }
 
@@ -219,7 +219,7 @@ final class ProviderConfigStore: ObservableObject {
     private(set) var compositeKeyMigrationInFlight = false
 
     init() {
-        let libraryURL = ContainerLocator.libraryDirectory
+        let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         let baseURL = libraryURL.appendingPathComponent("MinisChat", isDirectory: true)
         try? FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
         self.fileURL = baseURL.appendingPathComponent("provider-config.json")

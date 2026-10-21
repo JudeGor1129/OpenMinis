@@ -2807,25 +2807,7 @@ struct AIChatView: View {
 
     private var messagesArea: some View {
         ZStack {
-            // [T-ios15-modern-message-list] This used to read
-            // `if #available(iOS 16.0, *)`, which sent the whole iOS 15 port
-            // down the `MinisLegacyTranscript` path: a plain ScrollView + VStack
-            // + ForEach with one "load earlier" button. That fallback predates
-            // the iOS 15 port and shares none of the real chat UI — no collapsible
-            // tool-call cards, no "深度思考" chip, no context-usage footer, no
-            // up/down scroll buttons. Users on iOS 15 therefore saw a plainer
-            // transcript that looked like an older build.
-            //
-            // The gate was never doing anything for iOS 15. The one API that
-            // genuinely needs iOS 16 is UIHostingConfiguration, and it already
-            // has a live fallback (MessageListInfrastructure ~1211 returns
-            // LegacyMessageHostingView below iOS 16), so the modern list
-            // compiles and runs against a 15.0 deployment target untouched:
-            // no @available(iOS 16) annotation on the type, no onChange(of:)
-            // two-parameter form, and none of selfSizingInvalidation,
-            // registerForTraitChanges or UIContentUnavailableConfiguration.
-            // MinisLegacyTranscript stays in the tree as a compile-time
-            // reference; nothing routes to it now.
+            if #available(iOS 16.0, *) {
             CollectionViewMessageListV3(
                 vm: vm,
                 inputFocused: inputFocused,
@@ -2868,6 +2850,19 @@ struct AIChatView: View {
                 floatingBarHeight: floatingBarHeight,
                 inputBarHeight: inputBarHeight
             )
+            } else {
+                // [T-ios15-floating-preview-inset] The modern list receives the
+                // measured `floatingBarHeight`, but this legacy transcript only
+                // reserved room for the composer. When the floating tool preview
+                // ("Minis 电脑" panel) was on screen it covered the newest
+                // message, so the last bubble could only be read by scrolling.
+                // Reserve the same measured height here, plus a small gap so the
+                // text does not touch the panel's edge.
+                MinisLegacyTranscript(
+                    vm: vm,
+                    bottomInset: inputBarHeight + floatingBarHeight + 32
+                )
+            }
             // Empty/loading overlay for tap-to-dismiss-keyboard.
             // Placed BEFORE the directory timeline in the ZStack so the
             // timeline can sit on top and receive its own taps (folder-card
@@ -3951,14 +3946,15 @@ struct AIChatView: View {
 
                 inputFieldOrWaveform
 
-                // [T-workspace-folder-in-menu] The "打开工作区文件夹" button used
-                // to sit here, as a full-width row between the field and the
-                // bottom row. It was the only fixed row in the composer that
-                // did nothing while typing, and it duplicated the "Browse Chat
-                // Files" entry that already existed in the trailing "..."
-                // menu — both open `showFileBrowser`, and that sheet is rooted
-                // at the session workspace. Removed rather than restyled: one
-                // affordance, one place.
+                Button {
+                    showFileBrowser = true
+                } label: {
+                    Label("打开工作区文件夹", systemImage: "folder")
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 16)
+
                 inputBottomRow
                     // [T-ios-de-voice-toolbar] Measure the row so the
                     // read-aloud toggle can decide whether its label fits.
@@ -5444,141 +5440,9 @@ struct NavBarStyleModifier: ViewModifier {
                     }
                 }
         } else {
-            // Match the official opaque pre-glass background on iOS 15 too.
-            // Item-scoped appearances leave home and sheet navigation alone.
-            content.background(
-                LegacyChatNavigationBarBackground(background: UIColor(ChatColors.background))
-                    .frame(width: 0, height: 0)
-                    .allowsHitTesting(false)
-            )
-        }
-    }
-}
-
-/// iOS 15 Adapter for the chat navigation background. Only the owning stack
-/// entry is changed; never mutate UINavigationBar.appearance or the shared bar.
-private struct LegacyChatNavigationBarBackground: UIViewControllerRepresentable {
-    let background: UIColor
-
-    func makeUIViewController(context: Context) -> Controller {
-        Controller(background: background)
-    }
-
-    func updateUIViewController(_ controller: Controller, context: Context) {
-        controller.background = background
-        controller.applyAppearance()
-    }
-
-    static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
-        controller.restoreAppearance()
-    }
-
-    final class Controller: UIViewController {
-        var background: UIColor
-        private weak var styledItem: UINavigationItem?
-        private var savedStandard: UINavigationBarAppearance?
-        private var savedCompact: UINavigationBarAppearance?
-        private var savedScrollEdge: UINavigationBarAppearance?
-        private var savedCompactScrollEdge: UINavigationBarAppearance?
-        private var installedAppearance: UINavigationBarAppearance?
-        private var installedCompact: UINavigationBarAppearance?
-        private var installedScrollEdge: UINavigationBarAppearance?
-        private var installedCompactScrollEdge: UINavigationBarAppearance?
-        private var appliedBackground: UIColor?
-
-        init(background: UIColor) {
-            self.background = background
-            super.init(nibName: nil, bundle: nil)
-        }
-
-        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-        override func loadView() {
-            view = UIView(frame: .zero)
-            view.backgroundColor = .clear
-            view.isUserInteractionEnabled = false
-        }
-
-        override func viewWillAppear(_ animated: Bool) {
-            super.viewWillAppear(animated)
-            applyAppearance()
-        }
-
-        override func viewDidAppear(_ animated: Bool) {
-            super.viewDidAppear(animated)
-            applyAppearance()
-        }
-
-        func applyAppearance() {
-            // The representable may be nested in hosting/container controllers.
-            // Find OUR stack entry, not topViewController: that could be a page
-            // pushed over this one while SwiftUI updates the hidden chat.
-            var ancestor = parent
-            while let candidate = ancestor {
-                if let navigation = candidate.navigationController,
-                   navigation.viewControllers.contains(where: { $0 === candidate }) {
-                    let item = candidate.navigationItem
-                    if styledItem !== item {
-                        restoreAppearance()
-                        styledItem = item
-                        savedStandard = item.standardAppearance
-                        savedCompact = item.compactAppearance
-                        savedScrollEdge = item.scrollEdgeAppearance
-                        savedCompactScrollEdge = item.compactScrollEdgeAppearance
-                    }
-                    if appliedBackground?.isEqual(background) == true,
-                       let installed = installedAppearance,
-                       item.standardAppearance === installed,
-                       item.compactAppearance === installedCompact,
-                       item.scrollEdgeAppearance === installedScrollEdge,
-                       item.compactScrollEdgeAppearance === installedCompactScrollEdge {
-                        return // Streaming body updates must not restyle the bar.
-                    }
-                    // Copy first to retain native title/button appearance.
-                    let appearance = (savedStandard ?? navigation.navigationBar.standardAppearance)
-                        .copy() as! UINavigationBarAppearance
-                    appearance.configureWithOpaqueBackground()
-                    appearance.backgroundColor = background
-                    appearance.shadowColor = .clear
-                    item.standardAppearance = appearance
-                    item.compactAppearance = appearance
-                    item.scrollEdgeAppearance = appearance
-                    item.compactScrollEdgeAppearance = appearance
-                    // Appearance properties copy on assignment; retain the
-                    // installed values, not the pre-assignment object.
-                    installedAppearance = item.standardAppearance
-                    installedCompact = item.compactAppearance
-                    installedScrollEdge = item.scrollEdgeAppearance
-                    installedCompactScrollEdge = item.compactScrollEdgeAppearance
-                    appliedBackground = background
-                    return
-                }
-                ancestor = candidate.parent
-            }
-        }
-
-        func restoreAppearance() {
-            if let item = styledItem {
-                // Do not undo another owner's later appearance change.
-                if let installed = installedAppearance, item.standardAppearance === installed {
-                    item.standardAppearance = savedStandard
-                }
-                if let installed = installedCompact, item.compactAppearance === installed {
-                    item.compactAppearance = savedCompact
-                }
-                if let installed = installedScrollEdge, item.scrollEdgeAppearance === installed {
-                    item.scrollEdgeAppearance = savedScrollEdge
-                }
-                if let installed = installedCompactScrollEdge, item.compactScrollEdgeAppearance === installed {
-                    item.compactScrollEdgeAppearance = savedCompactScrollEdge
-                }
-            }
-            styledItem = nil
-            installedAppearance = nil
-            installedCompact = nil
-            installedScrollEdge = nil
-            installedCompactScrollEdge = nil
-            appliedBackground = nil
+            // iOS 15 uses the system navigation-bar appearance. Avoid global
+            // UINavigationBar.appearance changes that would leak into sheets.
+            content
         }
     }
 }
@@ -5889,15 +5753,8 @@ private struct ChatTrailingMenu: View, Equatable {
                 Label(AppLocalized("Open Browser"), systemImage: "globe")
             }
 
-            // [T-workspace-folder-in-menu] This entry already pointed at
-            // `showFileBrowser`, whose sheet is rooted at the session
-            // workspace (AIChatViewModel.minisWorkspacePersistentDir), so the
-            // affordance was already here and needed no new logic. Only the
-            // label changed, to name the destination the way the composer
-            // button used to. The key is localised in all 18 languages of
-            // Localizable.xcstrings, so no locale falls back to Chinese.
             Button { onBrowseFiles() } label: {
-                Label(AppLocalized("打开工作区文件夹"), systemImage: "folder")
+                Label(AppLocalized("Browse Chat Files"), systemImage: "folder")
             }
 
             Divider()
@@ -6161,7 +6018,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
                      image: UIImage(systemName: "terminal")) { _ in coordinator.parent.onOpenTerminal() },
             UIAction(title: AppLocalized("Open Browser"),
                      image: UIImage(systemName: "globe")) { _ in coordinator.parent.onOpenBrowser() },
-            UIAction(title: AppLocalized("打开工作区文件夹"),
+            UIAction(title: AppLocalized("Browse Chat Files"),
                      image: UIImage(systemName: "folder")) { _ in coordinator.parent.onBrowseFiles() },
         ]))
 
@@ -7470,13 +7327,99 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
 
 private struct MinisLegacyTranscriptRow: View {
     @ObservedObject var message: ChatMessage
+    @ObservedObject private var fontSettings = FontSettings.shared
 
+    // Match the official user row: attachment metadata is not visible text.
+    private var userDisplayText: String {
+        var text = message.content
+        if let start = text.range(of: "<user-attached-files>") {
+            let end = text.range(of: "</user-attached-files>", range: start.upperBound..<text.endIndex)
+            let endBound = end?.upperBound ?? text.endIndex
+            text = String(text[text.startIndex..<start.lowerBound] + text[endBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return text
+    }
+
+    @ViewBuilder
+    private var userBubble: some View {
+        if !userDisplayText.isEmpty {
+            Text(userDisplayText)
+                .font(.system(size: fontSettings.scaledMessage(16.5)))
+                .foregroundStyle(message.isQueued ? ChatColors.secondaryText : ChatColors.primaryText)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 18)
+                        .fill(message.isQueued ? Color.clear : ChatColors.userBubble)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                        .foregroundStyle(ChatColors.secondaryText.opacity(message.isQueued ? 0.5 : 0))
+                )
+        }
+    }
+
+    @ViewBuilder
+    private var systemDivider: some View {
+        HStack(spacing: 10) {
+            Divider()
+            HStack(spacing: 5) {
+                if message.isCompactLoading {
+                    ProgressView().scaleEffect(0.6).frame(width: 12, height: 12)
+                } else {
+                    Image(systemName: message.role == .compactDivider
+                          ? "arrow.down.right.and.arrow.up.left" : (message.systemIcon ?? "info.circle"))
+                        .font(.system(size: 10))
+                }
+                Text(message.content)
+                    .font(.system(size: 12, weight: .medium))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+            .foregroundStyle(.secondary)
+            .layoutPriority(1)
+            Divider()
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.vertical, message.role == .compactDivider ? 16 : 6)
+    }
+
+    @ViewBuilder
     var body: some View {
-        VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 10) {
-            Label(message.role == .user ? "我" : "模型", systemImage: message.role == .user ? "person.fill" : "sparkles")
-                .font(.caption.weight(.semibold))
-                .foregroundColor(message.role == .user ? Color.blue : Color.secondary)
-                .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+        if message.role == .compactDivider || message.role == .systemInfo {
+            systemDivider
+        } else {
+            conversationRow
+                .opacity(message.isCompactedHistory ? 0.5 : 1)
+        }
+    }
+
+    private var conversationRow: some View {
+        VStack(alignment: message.role == .user ? .trailing : .leading,
+               spacing: message.role == .user ? 6 : 8) {
+            if message.role == .assistant {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color(red: 0.72, green: 0.69, blue: 0.59),
+                                         Color(red: 0.6, green: 0.6, blue: 0.55)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    AssistantSoulName()
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(ChatColors.primaryText)
+                }
+                .padding(.top, 4)
+            }
             // Match the normal transcript: persisted metadata wins over the
             // temporary input cache, so drain/reload never duplicates a file.
             if !message.attachments.isEmpty {
@@ -7484,7 +7427,9 @@ private struct MinisLegacyTranscriptRow: View {
             } else if !message.inputAttachments.isEmpty {
                 QueuedAttachmentPreview(attachments: message.inputAttachments)
             }
-            if !message.content.isEmpty {
+            if message.role == .user {
+                userBubble
+            } else if !message.content.isEmpty {
                 // [T-ios15-markdown-verbatim] This used to be
                 // `Text(verbatim:)`, which renders the model's markdown as
                 // literal text: `**bold**`, backticks and `- ` bullets all
@@ -7523,7 +7468,10 @@ private struct MinisLegacyTranscriptRow: View {
                 MinisLegacyTranscriptBlock(block: block, isUser: message.role == .user)
             }
         }
-        .padding(message.role == .user ? 12 : 0)
+        // Match the official user row's 60pt leading gutter. The transcript
+        // already supplies horizontal margins; do not inset the trailing edge
+        // again or expand the bubble's own background to the full row width.
+        .padding(.leading, message.role == .user ? 60 : 0)
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     }
 }

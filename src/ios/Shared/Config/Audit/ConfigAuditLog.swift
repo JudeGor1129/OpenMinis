@@ -24,7 +24,7 @@ final class ConfigAuditLog: ObservableObject {
     private let dbURL: URL
 
     init() {
-        let library = ContainerLocator.libraryDirectory
+        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         let base = library.appendingPathComponent("MinisChat", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         self.dbURL = base.appendingPathComponent("minis-config-audit.db")
