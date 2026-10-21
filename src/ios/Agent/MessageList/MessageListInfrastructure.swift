@@ -297,6 +297,40 @@ class SelfSizingCell: UICollectionViewCell {
             return layoutAttributes
         }
 
+        // [T-ios15-hosting-apply-measure] Do not enter the SwiftUI hosting graph
+        // while a diffable snapshot is being applied.
+        //
+        // Minis-2026-10-21-160642.ips / -160647.ips (build 83, iOS 15.4.1) crash
+        // on session open with the exact stacks this file has been fighting:
+        //   -160647 (diffing queue inside the batch update):
+        //     dataSource.apply → _performBatchUpdates → performWithoutAnimation
+        //       → _endItemAnimationsWithInvalidationContext
+        //       → _createPreparedCellForItemAtIndexPath
+        //       → _checkForPreferredAttributesInView
+        //       → SelfSizingCell.preferredLayoutAttributesFitting
+        //   -160642 (main thread, SwiftUI):
+        //     ViewGraph.sizeThatFits → DynamicContainerInfo.updateItems
+        // Both die in swift_beginAccess/AccessSet::insert with a faulting word
+        // that decodes to ASCII text ("the cook") and address space landing in
+        // the GPU carveout reserved region — a corrupted pointer, i.e. the
+        // hosting view graph was being mutated concurrently while UIKit asked
+        // a freshly-configured cell to size itself.
+        //
+        // `isApplyingSnapshot` already exists for exactly this window and is
+        // set around every dataSource.apply in CollectionViewMessageListV3.
+        // Returning the proposed attributes here means UIKit lays out this
+        // batch from the layout's estimated/precalc heights instead of a live
+        // hosting measure.
+        //
+        // Heights are NOT left stale: applySnapshot calls cv.layoutIfNeeded()
+        // after clearing isApplyingSnapshot, and that pass re-asks this cell
+        // with the flag down, so each cell is measured for real once the
+        // transaction is over. Precalc-seeded cells short-circuit anyway, so
+        // the common case does not even reach the graph twice.
+        if let cv = superview as? NoAnimationCollectionView, cv.isApplyingSnapshot {
+            return layoutAttributes
+        }
+
         // [T-ios-plaf-interaction-graph-reentry, crash 2026-07-23 20:59]
         // SIGSEGV at 0x8000000000000040 in Update.begin()'s _MovableLockLock
         // while THIS cell's explicit hosting measure ran on the main thread
