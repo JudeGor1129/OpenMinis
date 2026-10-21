@@ -778,7 +778,7 @@ extension AIChatViewModel {
     /// `Library/MinisChat/minis/<sid>/offloads/`.
     func migrateOffloadsIfNeeded(for sid: String) {
         let fm = FileManager.default
-        let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let lib = ContainerLocator.libraryDirectory
         let oldDir = lib.appendingPathComponent("MinisChat/offloads/\(sid)", isDirectory: true)
         guard fm.fileExists(atPath: oldDir.path) else { return }
 

@@ -33,9 +33,64 @@ class RootfsManager {
     private init() {}
 
     var rootfsPath: URL {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documents.appendingPathComponent("alpine-rootfs")
+        return Self.baseDirectory.appendingPathComponent("alpine-rootfs")
     }
+
+    /// Where the rootfs lives. `ContainerLocator` resolves the app's real data
+    /// container; the writability probe below only covers the case where even
+    /// that comes back unusable.
+    ///
+    /// [T-container-path-drift] The important change is the first candidate:
+    /// asking FileManager for `.documentDirectory` stopped returning our own
+    /// container once `no-sandbox` was added for the host toolchain, which is
+    /// what made the old rootfs and the whole session store vanish. See
+    /// ContainerLocator for the evidence.
+    ///
+    /// [T-rootfs-unwritable-documents] The probe stays because a resolved
+    /// container can still be unwritable: `discardOldRootfs()` then failed twice
+    /// (`removeItem`, then the `moveItem` fallback), and because that error
+    /// propagated, `installIfNeeded()` aborted on every launch. The probe
+    /// creates and removes a temp file rather than trusting permissions: an
+    /// unprivileged process stat-ing a directory it does not own learns nothing
+    /// about whether `rename(2)` into it will succeed.
+    private static let baseDirectory: URL = {
+        let fm = FileManager.default
+        let logger = AppLogger(category: "RootfsManager")
+        var candidates: [URL] = [ContainerLocator.documentsDirectory]
+        // Caches and tmp come last: they survive long enough for a shell to
+        // boot, but the OS may evict them, so they are a repair path rather
+        // than a normal home.
+        candidates.append(fm.urls(for: .cachesDirectory, in: .userDomainMask)[0])
+        candidates.append(URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true))
+
+        for dir in candidates where Self.isWritableDirectory(dir) {
+            if dir != candidates.first {
+                logger.warning("[Rootfs] Documents not writable — falling back to \(dir.path)")
+            }
+            return dir
+        }
+        // Nothing writable: return Documents anyway and let the caller surface a
+        // real error instead of pretending a temp dir will work.
+        return candidates.first ?? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+    }()
+
+    /// True when a probe file can be created AND removed here.
+    private static func isWritableDirectory(_ dir: URL) -> Bool {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: dir.path, isDirectory: &isDir), isDir.boolValue else {
+            return false
+        }
+        let probe = dir.appendingPathComponent(".minis-write-probe-\(UUID().uuidString)")
+        do {
+            try Data().write(to: probe, options: .atomic)
+            try? fm.removeItem(at: probe)
+            return true
+        } catch {
+            return false
+        }
+    }
+
 
     var dataPath: URL {
         return rootfsPath.appendingPathComponent("data")
@@ -130,11 +185,23 @@ class RootfsManager {
             try fm.moveItem(at: rootfsPath, to: aside)
             logger.warning("[Rootfs] moved undeletable rootfs aside to \(aside.lastPathComponent); install will continue")
         } catch {
-            // Nothing left to try: we can neither delete nor move the old tree,
-            // so installing on top of it would produce a mixed-version rootfs.
-            // Fail loudly rather than silently corrupting it.
-            logger.error("[Rootfs] move-aside ALSO failed for \(rootfsPath.path): \(error.localizedDescription)")
-            throw error
+            // [T-rootfs-unwritable-documents] Neither removing nor moving
+            // worked. Old code threw here, which aborted installIfNeeded() and
+            // took the whole launch with it: no shell, no session list, and a
+            // storage page reading 0 bytes. We cannot clear the old tree, but
+            // that is a disk-space problem, not a reason to refuse to boot.
+            //
+            // Returning instead of throwing means the caller unzips a fresh
+            // rootfs on top of whatever survived. unzipFile overwrites file by
+            // file, so a partial tree still yields a usable shell; the worst
+            // case is a mixed-version rootfs, which is strictly better than an
+            // app that cannot start. The stale tree is logged so it can be
+            // reclaimed by hand.
+            logger.error(
+                "[Rootfs] cannot delete or move \(rootfsPath.path): \(error.localizedDescription). "
+                + "Install will overwrite in place; stale files may remain."
+            )
+            return
         }
 
         // Best-effort reclaim. Expected to fail for exactly the reason the
@@ -168,7 +235,42 @@ class RootfsManager {
 
     func installIfNeeded() throws {
         if FileManager.default.fileExists(atPath: rootfsPath.path) && !isInstalled {
-            logger.warning("[Rootfs] arch tag missing or mismatched — will delete and reinstall \(currentArch). archTag=\(archTagDiagnostic()) path=\(rootfsPath.path)")
+            // [T-rootfs-unwritable-documents] A missing `.arch` tag is NOT proof
+            // that the tree is unusable. `isInstalled` folds four very different
+            // states into one `false` (see archTagDiagnostic), and only one of
+            // them is a real arch mismatch. A complete `data/` tree with a
+            // missing tag is almost always a tag that was never written or got
+            // lost — reinstalling throws away a working Alpine install and every
+            // skill/MCP file under it, and on 2026-10-20 it also threw away the
+            // launch, because the delete failed and the error propagated.
+            //
+            // So: if `data/` is present and non-empty, adopt the tree by writing
+            // the tag. Only a genuine arch mismatch, or an empty/absent data dir,
+            // justifies the delete-and-reinstall path.
+            let archTag = archTagDiagnostic()
+            let dataDirLooksComplete =
+                FileManager.default.fileExists(atPath: dataPath.appendingPathComponent("etc").path)
+                || FileManager.default.fileExists(atPath: dataPath.appendingPathComponent("bin").path)
+                || FileManager.default.fileExists(atPath: dataPath.appendingPathComponent("usr").path)
+
+            if archTag != "ok(\(currentArch))" && dataDirLooksComplete {
+                logger.warning(
+                    "[Rootfs] adopting existing rootfs instead of reinstalling — "
+                    + "archTag=\(archTag) path=\(rootfsPath.path)"
+                )
+                if (try? currentArch.write(to: archTagPath, atomically: true, encoding: .utf8)) == nil {
+                    logger.error("[Rootfs] could not write arch tag at \(archTagPath.path); continuing anyway")
+                }
+                if isInstalled {
+                    logger.info("[Rootfs] adopted (\(currentArch)) at \(rootfsPath.path)")
+                    return
+                }
+                // Tag write failed and the tree still does not verify — fall
+                // through to the reinstall path rather than booting blind.
+                logger.warning("[Rootfs] adoption did not verify; reinstalling")
+            }
+
+            logger.warning("[Rootfs] arch tag missing or mismatched — will delete and reinstall \(currentArch). archTag=\(archTag) path=\(rootfsPath.path)")
             try discardOldRootfs()
         }
 

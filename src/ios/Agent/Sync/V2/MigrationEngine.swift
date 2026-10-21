@@ -57,8 +57,7 @@ struct MigrationState: Codable {
 final class MigrationEngine {
     static let shared = MigrationEngine()
     private init() {
-        let dir = FileManager.default
-            .urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        let dir = ContainerLocator.libraryDirectory
             .appendingPathComponent("MinisChat/cloud-sync-v2", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         self.stateURL = dir.appendingPathComponent("migration-state.json")

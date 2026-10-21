@@ -191,7 +191,7 @@ final class SyncDirtyScanner {
     /// Scan provider-config.json and env-vars.json for changes not caught by event-driven markDirty
     /// (e.g. file modified by backup restore or share extension).
     private func scanConfigFiles() async {
-        let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let files: [(path: String, recordType: String, recordId: String)] = [
             ("MinisChat/provider-config.json", "ProviderConfig", "provider-config"),
             ("MinisChat/env-vars.json", "EnvVar", "env-vars"),

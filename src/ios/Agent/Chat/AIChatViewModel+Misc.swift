@@ -145,7 +145,7 @@ extension AIChatViewModel {
 
     /// iOS persistent base for all minis data (Library/MinisChat/minis/).
     nonisolated static var minisPersistentBase: URL {
-        let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let lib = ContainerLocator.libraryDirectory
         return lib.appendingPathComponent("MinisChat/minis", isDirectory: true)
     }
 

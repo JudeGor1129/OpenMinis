@@ -15,7 +15,7 @@ final class LoggingManager: ObservableObject {
     }
 
     let logDirectory: URL = {
-        let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let lib = ContainerLocator.libraryDirectory
         let dir = lib.appendingPathComponent("Logs", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
