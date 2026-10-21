@@ -10,6 +10,7 @@
 //
 
 import Combine
+import Foundation
 import SwiftUI
 import UIKit
 
@@ -75,6 +76,30 @@ class SelfSizingCell: UICollectionViewCell {
     /// display-link thread (FB13213926).
     private var lastComputedWidth: CGFloat?
 
+    /// [T-ios15-plaf-generation-key] `configGeneration` value that
+    /// `lastComputedHeight` was measured against.
+    ///
+    /// The iOS 15 branch used to clear the cache UNCONDITIONALLY at the top of
+    /// every `preferredLayoutAttributesFitting` call, on the theory that the
+    /// legacy hosting view can change height after TextKit wraps a paragraph.
+    /// The cost was that the cache-hit short-circuits below could never fire on
+    /// iOS 15, so EVERY layout pass drove a full
+    /// `super.preferredLayoutAttributesFitting` → UIHostingContentView
+    /// → ViewRendererHost.sizeThatFits → AttributeGraph update. Re-entering the
+    /// hosting view graph dozens of times per second is precisely the
+    /// FB13213926 race the rest of this file is built to avoid, and on iOS 15
+    /// it produced the reproducible open-a-session crash
+    /// (Minis-2026-10-21-150413.ips: EXC_BAD_ACCESS in
+    /// DynamicContainerInfo.updateItems under ViewGraph.sizeThatFits, faulting
+    /// address inside the GPU carveout reserved region).
+    ///
+    /// Keying staleness to the generation is strictly better: content changes
+    /// already bump `configGeneration` via `applyContentConfiguration`, which is
+    /// the only thing that can rewrap TextKit, and that path also clears the
+    /// height itself. Unchanged content now reuses its measured height, so the
+    /// graph is entered once per configuration instead of once per layout pass.
+    private var lastComputedGeneration: UInt = .max
+
     /// CACurrentMediaTime() of the last successful self-measure.
     ///
     /// [T-ios-plaf-quiescent-graph-reentry] This no longer GATES the cache —
@@ -132,6 +157,7 @@ class SelfSizingCell: UICollectionViewCell {
         configGeneration &+= 1
         lastComputedHeight = nil
         lastComputedWidth = nil
+        lastComputedGeneration = .max
         lastMeasureMediaTime = nil
         // [T-ios-scroll-decel-height-drift] Drop any prior seed — content just
         // changed, so a seed from the old content would be wrong. configureCell
@@ -143,6 +169,22 @@ class SelfSizingCell: UICollectionViewCell {
     private static let sizingLogger = AppLogger(category: "CellSizing")
 
     // [ScrollStall] 1Hz-aggregated cache-hit counters.
+    //
+    // [T-plaf-static-counter-race] These used to be plain `static var`s,
+    // mutated and read inside `preferredLayoutAttributesFitting`. That method
+    // is NOT main-thread-only: UIKit calls it from
+    // `com.apple.uikit.datasource.diffing` while preparing a diff
+    // (Minis-2026-10-21-150418.ips reaches AppLogger.info here from exactly
+    // that queue), so two threads could race the read-modify-write of the
+    // counters and the paired flush timestamp. The crash landed in
+    // `swift_beginAccess`/`AccessSet::insert` — Swift's exclusivity check
+    // observing corrupted state — with the faulting word reading as the ASCII
+    // text "the cook", i.e. a pointer smeared by a concurrent write.
+    //
+    // A lock costs three uncontended acquisitions per cache hit, which is far
+    // cheaper than the crash it removes, and the counters stay exactly as they
+    // were semantically (diagnostics only, 1Hz summary).
+    private static let stallCounterLock = NSLock()
     private static var dedupHits: Int = 0
     private static var dedupLastFlush: CFTimeInterval = 0
     private static var broadHits: Int = 0
@@ -151,10 +193,19 @@ class SelfSizingCell: UICollectionViewCell {
     override func preferredLayoutAttributesFitting(
         _ layoutAttributes: UICollectionViewLayoutAttributes
     ) -> UICollectionViewLayoutAttributes {
-        // iOS 15's legacy hosting view can change height after TextKit has
-        // wrapped a paragraph. Do not reuse its previous ideal-size result.
-        if #unavailable(iOS 16.0) {
+        // [T-ios15-plaf-generation-key] iOS 15's legacy hosting view can change
+        // height after TextKit has wrapped a paragraph, so a height measured
+        // for a DIFFERENT configuration must not be reused. This used to be
+        // expressed as an unconditional clear on every call, which disabled
+        // both cache short-circuits below and forced a full hosting-graph
+        // re-entry per layout pass — the FB13213926 race, and on iOS 15 the
+        // reproducible open-a-session crash. Staleness is now keyed to
+        // `configGeneration`: content changes bump it (and clear the height)
+        // in `applyContentConfiguration`, so re-wrapping is still detected,
+        // while an unchanged configuration reuses its measurement graph-free.
+        if #unavailable(iOS 16.0), lastComputedGeneration != configGeneration {
             lastComputedHeight = nil
+            lastComputedWidth = nil
             seededHeight = nil
         }
         // Cache-hit short-circuit BEFORE super: when UIKit re-asks a cell to
@@ -193,17 +244,29 @@ class SelfSizingCell: UICollectionViewCell {
         // if a height-staleness case this reasoning missed ever shows up.
         if let cached = lastComputedHeight,
            let cachedW = lastComputedWidth,
+           lastComputedGeneration == configGeneration,
            abs(layoutAttributes.size.width - cachedW) < 1 {
             let copy = layoutAttributes.copy() as! UICollectionViewLayoutAttributes
             copy.size.width = cachedW
             copy.size.height = cached
             // [ScrollStall] Count short-window cache hits; flush summary 1Hz.
+            //
+            // [T-plaf-static-counter-race] Read-modify-write under the lock,
+            // then log OUTSIDE it — NSLog can block for an unbounded time on
+            // the os_log state-request path, and holding the counter lock
+            // across it would serialise every cell's cache hit behind it.
+            var dedupSummary: Int?
+            Self.stallCounterLock.lock()
             Self.dedupHits &+= 1
             let now = CACurrentMediaTime()
             if now - Self.dedupLastFlush > 1.0 {
-                AppLogger(category: "ScrollStall").debug("[CACHE-DEDUP] last1s hits=\(Self.dedupHits)")
+                dedupSummary = Self.dedupHits
                 Self.dedupHits = 0
                 Self.dedupLastFlush = now
+            }
+            Self.stallCounterLock.unlock()
+            if let dedupSummary {
+                AppLogger(category: "ScrollStall").debug("[CACHE-DEDUP] last1s hits=\(dedupSummary)")
             }
             return copy
         }
@@ -316,6 +379,7 @@ class SelfSizingCell: UICollectionViewCell {
             seededWidth = nil
             lastComputedHeight = sh
             lastComputedWidth = layoutAttributes.size.width
+            lastComputedGeneration = configGeneration
             lastMeasureMediaTime = CACurrentMediaTime()
             let copy = layoutAttributes.copy() as! UICollectionViewLayoutAttributes
             copy.size.height = sh
@@ -367,15 +431,24 @@ class SelfSizingCell: UICollectionViewCell {
         // dedup-window above but covers the broader "width never changed"
         // case across longer scroll runs.
         if let cached = lastComputedHeight,
+           lastComputedGeneration == configGeneration,
            abs(layoutAttributes.size.width - attrs.size.width) < 1 {
             attrs.size.height = cached
             // [ScrollStall] Count broad cache hits; flush summary 1Hz.
+            // [T-plaf-static-counter-race] Same lock-then-log-outside pattern
+            // as the dedup counter above.
+            var broadSummary: Int?
+            Self.stallCounterLock.lock()
             Self.broadHits &+= 1
             let now = CACurrentMediaTime()
             if now - Self.broadLastFlush > 1.0 {
-                AppLogger(category: "ScrollStall").debug("[CACHE-BROAD] last1s hits=\(Self.broadHits)")
+                broadSummary = Self.broadHits
                 Self.broadHits = 0
                 Self.broadLastFlush = now
+            }
+            Self.stallCounterLock.unlock()
+            if let broadSummary {
+                AppLogger(category: "ScrollStall").debug("[CACHE-BROAD] last1s hits=\(broadSummary)")
             }
             return attrs
         }
@@ -553,6 +626,7 @@ class SelfSizingCell: UICollectionViewCell {
         if fittingSize.height >= 4 {
             lastComputedHeight = fittingSize.height
             lastComputedWidth = layoutAttributes.size.width
+            lastComputedGeneration = gen
             lastMeasureMediaTime = CACurrentMediaTime()
             // [T-ios-scroll-decel-height-drift] Memoize the real height under the
             // content key so a later re-entry can seed it and skip this measure.
@@ -633,6 +707,7 @@ class SelfSizingCell: UICollectionViewCell {
     func clearCachedHeight() {
         lastComputedHeight = nil
         lastComputedWidth = nil
+        lastComputedGeneration = .max
         lastMeasureMediaTime = nil
     }
 
@@ -640,6 +715,7 @@ class SelfSizingCell: UICollectionViewCell {
         super.prepareForReuse()
         lastComputedHeight = nil
         lastComputedWidth = nil
+        lastComputedGeneration = .max
         lastMeasureMediaTime = nil
         // [T-ios-contextmenu-liquidmorph-reuse] Cancel any context-menu
         // presentation still in flight for THIS cell before UIKit hands it to a
