@@ -42,9 +42,20 @@ printf 'PASS: built-in backend allowlist, cooperative cancellation and empty-res
 ! grep -q 'if cached.isNew || (vm.messages.isEmpty' "$view"
 ! grep -q 'await vm.reloadMessagesFromDB(reason: "AIChatView.onAppear-reuse")' "$view"
 grep -q '.background(MinisLegacyScrollFollow(' "$view"
-# The floating tool preview must be reserved in the legacy transcript's bottom
-# inset, otherwise the "Minis 电脑" panel covers the newest message on iOS 15.
-grep -q 'bottomInset: inputBarHeight + floatingBarHeight' "$view"
+# The floating tool preview must be reserved in the transcript's bottom inset,
+# otherwise the "Minis 电脑" panel covers the newest message on iOS 15.
+#
+# [T-ios15-modern-message-list] iOS 15 now renders CollectionViewMessageListV3,
+# which receives floatingBarHeight and inputBarHeight as separate arguments and
+# does its own inset arithmetic internally. The old guard asserted the legacy
+# path's `bottomInset: inputBarHeight + floatingBarHeight ...` expression, which
+# only ever existed in the removed MinisLegacyTranscript branch — asserting it
+# now would demand the very code this change deleted. Guard the live wiring
+# instead: both measurements must still reach the modern list, and the legacy
+# transcript must stay unrouted.
+grep -q 'floatingBarHeight: floatingBarHeight' "$view"
+grep -q 'inputBarHeight: inputBarHeight' "$view"
+! grep -q 'bottomInset: inputBarHeight + floatingBarHeight' "$view"
 ! grep -q 'MinisLegacyTranscript(vm: vm, bottomInset: inputBarHeight + 24)' "$view"
 
 # [T-ios15-openurl-bridge] Every SelectableMarkdownView that renders MESSAGE
