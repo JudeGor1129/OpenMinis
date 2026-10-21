@@ -63,7 +63,7 @@ class RootfsManager {
         candidates.append(fm.urls(for: .cachesDirectory, in: .userDomainMask)[0])
         candidates.append(URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true))
 
-        for dir in candidates where Self.isWritableDirectory(dir) {
+        for dir in candidates where RootfsManager.isWritableDirectory(dir) {
             if dir != candidates.first {
                 logger.warning("[Rootfs] Documents not writable — falling back to \(dir.path)")
             }
