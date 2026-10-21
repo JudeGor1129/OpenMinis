@@ -2807,7 +2807,25 @@ struct AIChatView: View {
 
     private var messagesArea: some View {
         ZStack {
-            if #available(iOS 16.0, *) {
+            // [T-ios15-modern-message-list] This used to read
+            // `if #available(iOS 16.0, *)`, which sent the whole iOS 15 port
+            // down the `MinisLegacyTranscript` path: a plain ScrollView + VStack
+            // + ForEach with one "load earlier" button. That fallback predates
+            // the iOS 15 port and shares none of the real chat UI — no collapsible
+            // tool-call cards, no "深度思考" chip, no context-usage footer, no
+            // up/down scroll buttons. Users on iOS 15 therefore saw a plainer
+            // transcript that looked like an older build.
+            //
+            // The gate was never doing anything for iOS 15. The one API that
+            // genuinely needs iOS 16 is UIHostingConfiguration, and it already
+            // has a live fallback (MessageListInfrastructure ~1211 returns
+            // LegacyMessageHostingView below iOS 16), so the modern list
+            // compiles and runs against a 15.0 deployment target untouched:
+            // no @available(iOS 16) annotation on the type, no onChange(of:)
+            // two-parameter form, and none of selfSizingInvalidation,
+            // registerForTraitChanges or UIContentUnavailableConfiguration.
+            // MinisLegacyTranscript stays in the tree as a compile-time
+            // reference; nothing routes to it now.
             CollectionViewMessageListV3(
                 vm: vm,
                 inputFocused: inputFocused,
@@ -2850,19 +2868,6 @@ struct AIChatView: View {
                 floatingBarHeight: floatingBarHeight,
                 inputBarHeight: inputBarHeight
             )
-            } else {
-                // [T-ios15-floating-preview-inset] The modern list receives the
-                // measured `floatingBarHeight`, but this legacy transcript only
-                // reserved room for the composer. When the floating tool preview
-                // ("Minis 电脑" panel) was on screen it covered the newest
-                // message, so the last bubble could only be read by scrolling.
-                // Reserve the same measured height here, plus a small gap so the
-                // text does not touch the panel's edge.
-                MinisLegacyTranscript(
-                    vm: vm,
-                    bottomInset: inputBarHeight + floatingBarHeight + 32
-                )
-            }
             // Empty/loading overlay for tap-to-dismiss-keyboard.
             // Placed BEFORE the directory timeline in the ZStack so the
             // timeline can sit on top and receive its own taps (folder-card
