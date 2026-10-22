@@ -18,7 +18,9 @@ grep -q 'VStack(alignment: message.role == .user ? .trailing : .leading' "$view"
 # Text(verbatim:), which showed raw ** / ` / - and blocked text selection.
 ! grep -q 'Text(verbatim: message.content)' "$view"
 ! grep -q 'Text(verbatim: block.content)' "$view"
-grep -q 'cachedContent: block.cachedMarkdown' "$view"
+# The legacy row now delegates typed blocks to the build70 official renderer.
+grep -q 'AssistantBlockView(' "$view"
+grep -q 'cachedContent: block.cachedMarkdown' src/ios/Views/Chat/AssistantBlockView.swift
 grep -q 'scroll.isTracking || scroll.isDragging || scroll.isDecelerating' "$view"
 grep -q '.frame(width: max(0, viewport.size.width - 36)' "$view"
 ! grep -q 'else if followingBottom && !nearBottom' "$view"

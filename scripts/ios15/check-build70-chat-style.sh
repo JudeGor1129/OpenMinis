@@ -13,6 +13,10 @@ require() {
 }
 require 'Text(userDisplayText)'
 require 'fontSettings.scaledMessage(16.5)'
+require 'AssistantBlockView('
+require '.environmentObject(vm)'
+require 'ToolLiveSheet(toolBlocks: tools,'
+require 'toolSnapshots: vm.toolSnapshots'
 require '.textSelection(.enabled)'
 require '.fixedSize(horizontal: false, vertical: true)'
 require 'private var systemDivider: some View'
@@ -26,7 +30,10 @@ require 'StrokeStyle(lineWidth: 1.5, dash: [6, 4])'
 require '.padding(.leading, message.role == .user ? 60 : 0)'
 require 'range: start.upperBound..<text.endIndex'
 require 'AssistantSoulName()'
-require 'Image(systemName: "sparkles")'
+require 'Image("AssistantAvatar")'
+grep -Fq '.onReceive(vm.forceScrollToTop)' "$view"
+grep -Fq 'vm.isNearBottom = follows' "$view"
+grep -Fq 'ContextUsageHint.make(usage: $0, generation: -1)' "$view"
 require 'UserAttachmentList(attachments: message.attachments)'
 require 'QueuedAttachmentPreview(attachments: message.inputAttachments)'
 require '.modifier(MinisOpenURLHandler())'

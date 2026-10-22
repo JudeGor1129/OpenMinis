@@ -3735,7 +3735,9 @@ struct AIChatView: View {
             placeholderRotatesOnFirstFocus: !vm.messages.isEmpty,
             // [T-ios-context-usage-hint] One request per finished turn; the
             // Coordinator debounces and shows it for a few seconds.
-            contextUsageHint: vm.contextUsageHint,
+            contextUsageHint: vm.contextUsageHint ?? vm.contextUsage.map {
+                ContextUsageHint.make(usage: $0, generation: -1)
+            },
             // [T-ios-crash-objectdestroy-composer-uaf] Every stored closure
             // below captures ONLY a class reference (`vm`, `composerActions`),
             // never this view. Passing `handleReturnKey` & co. (instance
@@ -7228,7 +7230,7 @@ private struct MinisLegacyTranscript: View {
                         }
                     }
                     ForEach(Array(vm.messages.suffix(visibleLimit))) { message in
-                        MinisLegacyTranscriptRow(message: message)
+                        MinisLegacyTranscriptRow(message: message, vm: vm)
                             .id(message.id)
                     }
                     if vm.isProcessing || vm.isCompacting {
@@ -7253,7 +7255,26 @@ private struct MinisLegacyTranscript: View {
             .frame(width: viewport.size.width, height: viewport.size.height)
             .clipped()
             .coordinateSpace(name: "legacyTranscriptViewport")
-            .onReceive(vm.forceScrollToBottom) { _ in followingBottom = true }
+            .onReceive(vm.forceScrollToBottom) { _ in
+                followingBottom = true
+                proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
+            }
+            .onReceive(vm.forceScrollToTop) { _ in
+                followingBottom = false
+                vm.isNearBottom = false
+                if vm.isAtFirstTurn == false && visibleLimit < vm.messages.count {
+                    visibleLimit += 40
+                }
+                let visible = Array(vm.messages.suffix(visibleLimit))
+                if let first = visible.first {
+                    DispatchQueue.main.async { proxy.scrollTo(first.id, anchor: .top) }
+                }
+                vm.isAtFirstTurn = visibleLimit >= vm.messages.count
+            }
+            .onChange(of: followingBottom) { follows in
+                vm.isNearBottom = follows
+                if follows { vm.isAtFirstTurn = false }
+            }
             .onChange(of: vm.isLoadingSession) { loading in
                 if !loading { followingBottom = true }
             }
@@ -7327,7 +7348,14 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
 
 private struct MinisLegacyTranscriptRow: View {
     @ObservedObject var message: ChatMessage
+    @ObservedObject var vm: AIChatViewModel
     @ObservedObject private var fontSettings = FontSettings.shared
+    @State private var highlightedBlockId: UUID?
+    @State private var detailBlock: AssistantBlock?
+
+    private var isActiveMessage: Bool {
+        vm.isProcessing && vm.messages.last?.id == message.id
+    }
 
     // Match the official user row: attachment metadata is not visible text.
     private var userDisplayText: String {
@@ -7404,16 +7432,12 @@ private struct MinisLegacyTranscriptRow: View {
                spacing: message.role == .user ? 6 : 8) {
             if message.role == .assistant {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color(red: 0.72, green: 0.69, blue: 0.59),
-                                         Color(red: 0.6, green: 0.6, blue: 0.55)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                    Image("AssistantAvatar")
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 26, height: 26)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .accessibilityHidden(true)
                     AssistantSoulName()
                         .font(.body.weight(.semibold))
                         .foregroundStyle(ChatColors.primaryText)
@@ -7465,41 +7489,31 @@ private struct MinisLegacyTranscriptRow: View {
                 // read-aloud entries), so nothing is lost by dropping it.
             }
             ForEach(message.blocks) { block in
-                MinisLegacyTranscriptBlock(block: block, isUser: message.role == .user)
+                AssistantBlockView(
+                    block: block,
+                    message: message,
+                    isActiveMessage: isActiveMessage,
+                    commandStartTime: vm.commandStartTime,
+                    onStop: { [vm] in vm.cancel() },
+                    browserPool: vm.browserTabPool,
+                    toolSnapshots: vm.toolSnapshots,
+                    highlightedBlockId: $highlightedBlockId,
+                    detailBlock: $detailBlock
+                )
+                .environmentObject(vm)
             }
+        }
+        .sheet(item: $detailBlock) { block in
+            let tools = message.blocks.filter { $0.toolStatus != nil }
+            ToolLiveSheet(toolBlocks: tools,
+                          initialIdx: tools.firstIndex(where: { $0.id == block.id }) ?? 0,
+                          toolSnapshots: vm.toolSnapshots, browserPool: vm.browserTabPool)
+                .environmentObject(vm)
         }
         // Match the official user row's 60pt leading gutter. The transcript
         // already supplies horizontal margins; do not inset the trailing edge
         // again or expand the bubble's own background to the full row width.
         .padding(.leading, message.role == .user ? 60 : 0)
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-    }
-}
-
-private struct MinisLegacyTranscriptBlock: View {
-    @ObservedObject var block: AssistantBlock
-    let isUser: Bool
-
-    var body: some View {
-        if !block.content.isEmpty {
-            // Same fix as the row body above: a plain `Text` here is what made
-            // assistant replies look like raw markdown (`**`, `` ` ``, `- `)
-            // and blocked text selection on iOS 15.
-            SelectableMarkdownView(
-                markdown: block.content,
-                cachedContent: block.cachedMarkdown,
-                cachedAttributedString: block.cachedAttributedString,
-                blockId: block.id
-            )
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
-            // [T-ios15-openurl-bridge] Same bridge as the row body above: the
-            // assistant's actual reply text lives in blocks, so this is the
-            // path that most file links take on iOS 15.
-            .modifier(MinisOpenURLHandler())
-            // [T-ios15-longpress-blank-menu] Deliberately no `.contextMenu`
-            // here either — see the row body above. It suppressed the native
-            // edit menu (selection/copy) and showed an empty menu instead.
-        }
     }
 }
