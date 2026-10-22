@@ -1,0 +1,16 @@
+# run summary
+run: 23
+sha: 8b93c960c2bedfce68082b145eb156437c144224
+archs input: 
+llvm commit input: 
+skip ld64 input: 
+
+## lipo -info on the produced libraries
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64-arm64e.a is architecture: arm64e
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64.a is architecture: arm64e
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomllvm-arm64e.a is architecture: arm64e
+
+## bridge syntax-check verdict
+using -std=c++17 for the bridge check
+include paths: -I toolchain-build/src -I toolchain-build/work/llvm-project/clang/include -I toolchain-build/work/llvm-project/llvm/include -I toolchain-build/work/build-ios-arm64e/include -I toolchain-build/work/build-ios-arm64e/tools/clang/include -I toolchain-build/work/build-ios-arm64e/tools/clang/lib/Headers
+bridge syntax-check exit code: 0

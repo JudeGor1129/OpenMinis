@@ -1,0 +1,39 @@
+# libraries
+total 513880
+drwxr-xr-x  6 runner  staff        192 Oct 22 04:17 .
+drwxr-xr-x  3 runner  staff         96 Oct 22 03:31 ..
+-rw-r--r--  1 runner  staff    6960000 Oct 22 04:17 libomld64-arm64e.a
+-rw-r--r--  1 runner  staff    6960000 Oct 22 04:17 libomld64.a
+-rw-r--r--  1 runner  staff  249173824 Oct 22 04:17 libomllvm-arm64e.a
+-rw-r--r--  1 runner  staff        381 Oct 22 04:17 toolchain.json
+
+== libomld64-arm64e.a
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64-arm64e.a is architecture: arm64e
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64-arm64e.a is architecture: arm64e
+
+== libomld64.a
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64.a is architecture: arm64e
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64.a is architecture: arm64e
+
+== libomllvm-arm64e.a
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomllvm-arm64e.a is architecture: arm64e
+Non-fat file: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomllvm-arm64e.a is architecture: arm64e
+
+# manifest
+{
+  "schema": 1,
+  "architectures": [
+    "arm64e"
+  ],
+  "artifacts": {
+    "libomllvm-arm64e.a": {
+      "arch": "arm64e",
+      "bytes": 249173824,
+      "sha256": "88f0cb957737e965c8df71bd683a28b9c2badddc460c00f1d3fd748284d08bdd"
+    },
+    "libomld64.a": {
+      "bytes": 6960000,
+      "sha256": "c01c24ea976be8122e320188d58134de7dc17448be325a9692fdce51c620d168"
+    }
+  }
+}

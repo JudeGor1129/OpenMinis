@@ -1,0 +1,22 @@
+--- link check archives available ---
+total 513880
+-rw-r--r--  1 runner  staff    6960000 Oct 22 04:17 libomld64-arm64e.a
+-rw-r--r--  1 runner  staff    6960000 Oct 22 04:17 libomld64.a
+-rw-r--r--  1 runner  staff  249173824 Oct 22 04:17 libomllvm-arm64e.a
+-rw-r--r--  1 runner  staff        381 Oct 22 04:17 toolchain.json
+
+== arch: arm64 ==
+std: c++17   arch: arm64
+llvm archive: toolchain-build/build/ios/libomllvm-arm64.a
+ld64 archive: toolchain-build/build/ios/libomld64-arm64.a
+SKIPPED: thin archives for arm64 are absent (build step failed?); nothing to link against.
+== arch: arm64e ==
+std: c++17   arch: arm64e
+llvm archive: toolchain-build/build/ios/libomllvm-arm64e.a
+ld64 archive: toolchain-build/build/ios/libomld64-arm64e.a
+
+--- compiling OMToolchain.mm to an object ---
+compile exit code: 0
+--- linking OMToolchain.o + stub main against the archives ---
+link exit code: 0
+VERDICT[arm64e]: the bridge links against the produced archives.

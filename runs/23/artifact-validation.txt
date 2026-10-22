@@ -1,0 +1,86 @@
+--- produced libraries ---
+total 513880
+drwxr-xr-x  6 runner  staff        192 Oct 22 04:17 .
+drwxr-xr-x  3 runner  staff         96 Oct 22 03:31 ..
+-rw-r--r--  1 runner  staff    6960000 Oct 22 04:17 libomld64-arm64e.a
+-rw-r--r--  1 runner  staff    6960000 Oct 22 04:17 libomld64.a
+-rw-r--r--  1 runner  staff  249173824 Oct 22 04:17 libomllvm-arm64e.a
+-rw-r--r--  1 runner  staff        381 Oct 22 04:17 toolchain.json
+== libomld64-arm64e.a
+Non-fat file: toolchain-build/build/ios/libomld64-arm64e.a is architecture: arm64e
+68	0	0	32	100	64	toolchain-build/build/ios/libomld64-arm64e.a(3rd_reallocf.c.o)
+23151	3200	0	3680	30031	754f	toolchain-build/build/ios/libomld64-arm64e.a(ld_passes_branch_island.cpp.o)
+== libomld64.a
+Non-fat file: toolchain-build/build/ios/libomld64.a is architecture: arm64e
+68	0	0	32	100	64	toolchain-build/build/ios/libomld64.a(3rd_reallocf.c.o)
+23151	3200	0	3680	30031	754f	toolchain-build/build/ios/libomld64.a(ld_passes_branch_island.cpp.o)
+== libomllvm-arm64e.a
+Non-fat file: toolchain-build/build/ios/libomllvm-arm64e.a is architecture: arm64e
+20287	80	0	1632	21999	55ef	toolchain-build/build/ios/libomllvm-arm64e.a(ThinLTOBitcodeWriter.cpp.o)
+164277	4200	0	10784	179261	2bc3d	toolchain-build/build/ios/libomllvm-arm64e.a(WholeProgramDevirt.cpp.o)
+
+--- arm64e evidence in build log ---
+3:==> architectures: arm64e
+10:==> applying llvm-arm64e-twork.diff
+11:   consolidated arm64e diff applied
+12:==> verifying arm64e support landed
+13:   clang CodeGen: arm64e branches present
+14:   lld MachO: ARM64e.cpp present
+609:==> configuring LLVM for arm64e -> /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e
+854:-- Build files have been written to: /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e
+855:==> building clang+LLVM for arm64e (long step)
+3568:[2712/3942] Building CXX object lib/Target/AArch64/CMakeFiles/LLVMAArch64CodeGen.dir/AArch64Arm64ECCallLowering.cpp.o
+4059:[3203/3942] Copying clang's ptrauth.h...
+4863:==> compiling ld64 for arm64e (-j3)
+4865:    /Users/runner/work/OpenMinis/OpenMinis/toolchain-build/build/ios/libomld64-arm64e.a
+4868:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AArch64.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMABI.a(AArch64.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangBasic.a(AArch64.cpp.o)'
+4869:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AArch64.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangBasic.a(AArch64.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangDriver.a(AArch64.cpp.o)'
+4870:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AArch64.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangDriver.a(AArch64.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(AArch64.cpp.o)'
+4871:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AMDGPU.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangDriver.a(AMDGPU.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangDriver.a(AMDGPU.cpp.o)'
+4872:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AMDGPU.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangDriver.a(AMDGPU.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(AMDGPU.cpp.o)'
+4873:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AMDGPU.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(AMDGPU.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangBasic.a(AMDGPU.cpp.o)'
+4874:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AMDGPU.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangBasic.a(AMDGPU.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(AMDGPU.cpp.o)'
+4875:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'ARC.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangBasic.a(ARC.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(ARC.cpp.o)'
+4876:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'ARM.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangDriver.a(ARM.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(ARM.cpp.o)'
+4877:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'ARM.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(ARM.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(ARM.cpp.o)'
+4878:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'ARM.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(ARM.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangBasic.a(ARM.cpp.o)'
+4879:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AVR.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangBasic.a(AVR.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangDriver.a(AVR.cpp.o)'
+4880:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AVR.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangDriver.a(AVR.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(AVR.cpp.o)'
+4881:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AVR.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(AVR.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(AVR.cpp.o)'
+4882:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'AllocToken.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMSupport.a(AllocToken.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMInstrumentation.a(AllocToken.cpp.o)'
+4883:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'Analysis.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMCodeGen.a(Analysis.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMExegesis.a(Analysis.cpp.o)'
+4884:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'Analysis.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMExegesis.a(Analysis.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMAnalysis.a(Analysis.cpp.o)'
+4885:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'Archive.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMObjCopy.a(Archive.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMObject.a(Archive.cpp.o)'
+4886:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'Atomic.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMSupport.a(Atomic.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMFrontendAtomic.a(Atomic.cpp.o)'
+4887:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'Attributes.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMCore.a(Attributes.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMTableGenBasic.a(Attributes.cpp.o)'
+4888:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'Attributes.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMTableGenBasic.a(Attributes.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangBasic.a(Attributes.cpp.o)'
+4889:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'BPF.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMABI.a(BPF.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangBasic.a(BPF.cpp.o)'
+4890:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'BPF.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangBasic.a(BPF.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangCodeGen.a(BPF.cpp.o)'
+4891:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'BasicBlock.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMCore.a(BasicBlock.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMSandboxIR.a(BasicBlock.cpp.o)'
+4892:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'BoundsChecking.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMInstrumentation.a(BoundsChecking.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangStaticAnalyzerCheckers.a(BoundsChecking.cpp.o)'
+4893:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'CFG.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libclangAnalysis.a(CFG.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMAnalysis.a(CFG.cpp.o)'
+4894:/Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool: warning duplicate member name 'COFF.cpp.o' from '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMBinaryFormat.a(COFF.cpp.o)' and '/Users/runner/work/OpenMinis/OpenMinis/toolchain-build/work/build-ios-arm64e/lib/libLLVMJITLink.a(COFF.cpp.o)'
+grep: stdout: Broken pipe
+(none)
+
+--- errors in build log ---
+(none)
+
+--- manifest ---
+{
+  "schema": 1,
+  "architectures": [
+    "arm64e"
+  ],
+  "artifacts": {
+    "libomllvm-arm64e.a": {
+      "arch": "arm64e",
+      "bytes": 249173824,
+      "sha256": "88f0cb957737e965c8df71bd683a28b9c2badddc460c00f1d3fd748284d08bdd"
+    },
+    "libomld64.a": {
+      "bytes": 6960000,
+      "sha256": "c01c24ea976be8122e320188d58134de7dc17448be325a9692fdce51c620d168"
+    }
+  }
+}
