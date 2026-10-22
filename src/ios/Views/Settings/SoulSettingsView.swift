@@ -521,7 +521,7 @@ private struct SoulEmojiPickerSheet: View {
 /// `body` expression past what the type-checker will solve ("unable to
 /// type-check this expression in reasonable time"). A ViewModifier gives the
 /// solver a fresh, small expression to work on.
-private struct SoulIconEditing: ViewModifier {
+struct SoulIconEditing: ViewModifier {
     @Binding var icon: String
     @Binding var showEmojiPrompt: Bool
     @Binding var emojiDraft: String

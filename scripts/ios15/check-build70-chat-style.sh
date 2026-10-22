@@ -30,7 +30,7 @@ require 'StrokeStyle(lineWidth: 1.5, dash: [6, 4])'
 require '.padding(.leading, message.role == .user ? 60 : 0)'
 require 'range: start.upperBound..<text.endIndex'
 require 'AssistantSoulName()'
-require 'Image("AssistantAvatar")'
+require 'SoulIconView(icon: groupIcon ?? SoulStore.cachedMetadata.icon, size: 26)'
 grep -Fq '.onReceive(vm.forceScrollToTop)' "$view"
 grep -Fq 'vm.isNearBottom = follows' "$view"
 grep -Fq 'ContextUsageHint.make(usage: $0, generation: -1)' "$view"

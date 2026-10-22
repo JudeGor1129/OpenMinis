@@ -7210,6 +7210,8 @@ private struct MinisLegacyTranscript: View {
     @ObservedObject var vm: AIChatViewModel
     let bottomInset: CGFloat
     @State private var followingBottom = true
+    @State private var jumpRequest = 0
+    @State private var jumpToBottom = true
     var body: some View {
         GeometryReader { viewport in
         ScrollViewReader { proxy in
@@ -7237,6 +7239,7 @@ private struct MinisLegacyTranscript: View {
                 .padding(.top, 12)
                 .background(MinisLegacyScrollFollow(
                     enabled: followingBottom,
+                    jumpRequest: jumpRequest, jumpToBottom: jumpToBottom,
                     onFollowingChanged: { followingBottom = $0 }
                 ))
             }
@@ -7245,14 +7248,14 @@ private struct MinisLegacyTranscript: View {
             .coordinateSpace(name: "legacyTranscriptViewport")
             .onReceive(vm.forceScrollToBottom) { _ in
                 followingBottom = true
-                proxy.scrollTo("legacyTranscriptBottom", anchor: .bottom)
+                jumpToBottom = true
+                jumpRequest += 1
             }
             .onReceive(vm.forceScrollToTop) { _ in
                 followingBottom = false
                 vm.isNearBottom = false
-                if let first = vm.messages.first {
-                    DispatchQueue.main.async { proxy.scrollTo(first.id, anchor: .top) }
-                }
+                jumpToBottom = false
+                jumpRequest += 1
                 vm.isAtFirstTurn = true
             }
             .onChange(of: followingBottom) { follows in
@@ -7271,17 +7274,25 @@ private struct MinisLegacyTranscript: View {
 // delegate (SwiftUI owns it), and never move it during a drag/deceleration.
 private struct MinisLegacyScrollFollow: UIViewRepresentable {
     let enabled: Bool
+    let jumpRequest: Int
+    let jumpToBottom: Bool
     let onFollowingChanged: (Bool) -> Void
 
     func makeUIView(context: Context) -> Probe { Probe() }
     func updateUIView(_ view: Probe, context: Context) {
         view.following = enabled
+        view.jumpToBottom = jumpToBottom
+        view.jumpRequest = jumpRequest
         view.onFollowingChanged = onFollowingChanged
     }
     static func dismantleUIView(_ view: Probe, coordinator: ()) { view.stop() }
 
     final class Probe: UIView {
         var following = true
+        var jumpRequest = 0
+        var jumpToBottom = true
+        private var handledJump = 0
+        private var jumpAnimator: UIViewPropertyAnimator?
         var onFollowingChanged: ((Bool) -> Void)?
         private var timer: Timer?
         private var wasMoving = false
@@ -7296,7 +7307,10 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             self.timer = timer
             RunLoop.main.add(timer, forMode: .common)
         }
-        func stop() { timer?.invalidate(); timer = nil }
+        func stop() {
+            timer?.invalidate(); timer = nil
+            jumpAnimator?.stopAnimation(true); jumpAnimator = nil
+        }
         deinit { timer?.invalidate() }
 
         private func report(_ value: Bool) {
@@ -7313,10 +7327,31 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             let bottom = max(-inset.top, scroll.contentSize.height - scroll.bounds.height + inset.bottom)
             let moving = scroll.isTracking || scroll.isDragging || scroll.isDecelerating
             if moving {
+                jumpAnimator?.stopAnimation(true)
+                jumpAnimator = nil
                 wasMoving = true
                 report(bottom - scroll.contentOffset.y <= 80)
                 return
             }
+            if jumpRequest != handledJump {
+                handledJump = jumpRequest
+                jumpAnimator?.stopAnimation(true)
+                scroll.layoutIfNeeded()
+                let target = CGPoint(x: scroll.contentOffset.x, y: jumpToBottom ? bottom : -inset.top)
+                if UIAccessibility.isReduceMotionEnabled {
+                    scroll.setContentOffset(target, animated: false)
+                    jumpAnimator = nil
+                } else {
+                    let animator = UIViewPropertyAnimator(duration: 0.35, curve: .easeInOut) {
+                        scroll.contentOffset = target
+                    }
+                    jumpAnimator = animator
+                    animator.startAnimation()
+                }
+                return
+            }
+            if jumpAnimator?.isRunning == true { return }
+            jumpAnimator = nil
             if wasMoving {
                 wasMoving = false
                 report(bottom - scroll.contentOffset.y <= 80)
@@ -7336,6 +7371,7 @@ private struct MinisLegacyTranscriptRow: View {
     @ObservedObject private var fontSettings = FontSettings.shared
     @State private var highlightedBlockId: UUID?
     @State private var detailBlock: AssistantBlock?
+    @State private var groupIcon: String?
 
     private var isActiveMessage: Bool {
         vm.isProcessing && vm.messages.last?.id == message.id
@@ -7415,12 +7451,13 @@ private struct MinisLegacyTranscriptRow: View {
                spacing: message.role == .user ? 6 : 8) {
             if message.role == .assistant {
                 HStack(spacing: 6) {
-                    Image("AssistantAvatar")
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 26, height: 26)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    SoulIconView(icon: groupIcon ?? SoulStore.cachedMetadata.icon, size: 26)
                         .accessibilityHidden(true)
+                        .task(id: vm.sessionId) {
+                            guard let id = vm.sessionId else { groupIcon = nil; return }
+                            let folder = await ChatStore.shared.getSession(id)?.folderId
+                            groupIcon = folder.flatMap { MinisGroupConfigurationStore.load($0).soulIcon }
+                        }
                     AssistantSoulName()
                         .font(.body.weight(.semibold))
                         .foregroundStyle(ChatColors.primaryText)

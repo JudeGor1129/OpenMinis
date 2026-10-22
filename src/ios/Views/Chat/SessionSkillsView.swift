@@ -330,6 +330,10 @@ struct MinisGroupConfigurationView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var skills = SkillStore.shared
     @State private var configuration: MinisGroupConfiguration
+    @State private var showEmojiPrompt = false
+    @State private var emojiDraft = ""
+    @State private var showPhotoPicker = false
+    @State private var iconError: String?
     @State private var saveError: String?
 
     init(folder: ChatFolder) {
@@ -362,11 +366,16 @@ struct MinisGroupConfigurationView: View {
                     NavigationLink {
                         Form {
                             Section {
-                                HStack {
-                                    TextField("图标", text: Binding(get: { configuration.soulIcon ?? "✨" }, set: { configuration.soulIcon = $0 }))
-                                        .frame(width: 60)
+                                HStack(spacing: 12) {
+                                    SoulIconView(icon: configuration.soulIcon ?? SoulStore.cachedMetadata.icon, size: 44)
                                     Text(configuration.soulName ?? folder.name).font(.headline)
                                 }
+                                Button("从照片选择头像") { showPhotoPicker = true }
+                                Button("选择表情头像") {
+                                    emojiDraft = configuration.soulIcon ?? ""
+                                    showEmojiPrompt = true
+                                }
+                                Button("继承全局头像") { configuration.soulIcon = nil }
                             }
                             Section("标识") {
                                 TextField("名称", text: Binding(get: { configuration.soulName ?? "" }, set: { configuration.soulName = $0 }))
@@ -390,6 +399,11 @@ struct MinisGroupConfigurationView: View {
                                 configuration.soulIcon = nil
                             }
                         }.navigationTitle("灵魂")
+                        .modifier(SoulIconEditing(
+                            icon: Binding(get: { configuration.soulIcon ?? "" }, set: { configuration.soulIcon = $0 }),
+                            showEmojiPrompt: $showEmojiPrompt, emojiDraft: $emojiDraft,
+                            showPhotoPicker: $showPhotoPicker, iconError: $iconError
+                        ))
                     } label: { Label("灵魂", systemImage: "sparkles") }
                     NavigationLink {
                         MinisGroupMemorySettings(configuration: $configuration, folderID: folder.id)
