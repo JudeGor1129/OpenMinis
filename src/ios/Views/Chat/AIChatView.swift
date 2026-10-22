@@ -2268,7 +2268,8 @@ struct AIChatView: View {
             thinkingLevelName: vm.currentThinkingLevel.displayName,
             fallbackTrigger: vm.fallbackTrigger,
             fallbackPulse: fallbackPulseOpacity,
-            titleLocked: titleIsVisuallyLocked
+            titleLocked: titleIsVisuallyLocked,
+            isRunning: vm.isProcessing || vm.isCompacting
         )
     }
 
@@ -2346,6 +2347,7 @@ struct AIChatView: View {
                 // wrapped under the trailing "…" button. Drop one point
                 // on legacy iOS so they fit cleanly; keep the iOS 26
                 // size unchanged.
+                HStack(spacing: 6) {
                 Text(sessionTitle ?? soulName)
                     // [T-navbar-title-size 2026-05-18 / -19 / -20] iOS 16-18
                     // principal toolbar is a fixed ~44pt band sitting just
@@ -2388,6 +2390,20 @@ struct AIChatView: View {
                         let n = SoulStore.cachedMetadata.name
                         soulName = n.isEmpty ? "Minis" : n
                     }
+                if vm.isProcessing || vm.isCompacting {
+                    HStack(spacing: 4) {
+                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .blue))
+                            .scaleEffect(0.65).frame(width: 12, height: 12)
+                        Text("运行中").font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Color(UIColor.secondarySystemBackground), in: Capsule())
+                    .fixedSize()
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("运行中")
+                }
+                }
             }
             .buttonStyle(.plain)
             .disabled(!canEditTitle)
@@ -5541,6 +5557,7 @@ private struct NavTitleKey: Equatable {
     /// gate too. Without this field the chat body unblurred on unlock while
     /// the navbar title stayed frozen at blur 8 (user report 2026-07-24).
     let titleLocked: Bool
+    let isRunning: Bool
 }
 
 /// [T-ios-navbar-toolbar-host] Combined display key for the WHOLE toolbar:
@@ -7473,6 +7490,26 @@ private struct MinisLegacyTranscriptRow: View {
             }
             if message.role == .user {
                 userBubble
+                    .contextMenu {
+                        Button {
+                            vm.editMessage(message.id)
+                        } label: {
+                            Label("编辑并重发（替换后续记录）", systemImage: "pencil")
+                        }
+                        .disabled(vm.isProcessing || vm.isRestoringFullHistory || message.isQueued)
+                        Button {
+                            vm.retryFromMessage(message.id)
+                        } label: {
+                            Label("从此处重发（替换后续记录）", systemImage: "arrow.clockwise")
+                        }
+                        .disabled(vm.isProcessing || vm.isRestoringFullHistory || message.isQueued)
+                        Button {
+                            UIPasteboard.general.string = userDisplayText
+                        } label: {
+                            Label("拷贝", systemImage: "doc.on.doc")
+                        }
+                        .disabled(userDisplayText.isEmpty)
+                    }
             } else if !message.content.isEmpty && !message.blocks.contains(where: { $0.kind == .text && !$0.content.isEmpty }) {
                 // [T-ios15-markdown-verbatim] This used to be
                 // `Text(verbatim:)`, which renders the model's markdown as
