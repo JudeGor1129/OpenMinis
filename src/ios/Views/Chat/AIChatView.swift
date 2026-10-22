@@ -7238,6 +7238,7 @@ private struct MinisLegacyTranscript: View {
                 VStack(alignment: .leading, spacing: 20) {
                     ForEach(vm.messages) { message in
                         MinisLegacyTranscriptRow(message: message, vm: vm)
+                            .equatable()
                             .id(message.id)
                     }
                     if vm.isProcessing || vm.isCompacting {
@@ -7382,13 +7383,39 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
     }
 }
 
-private struct MinisLegacyTranscriptRow: View {
+private struct MinisLegacyTranscriptRow: View, Equatable {
     @ObservedObject var message: ChatMessage
     @ObservedObject var vm: AIChatViewModel
     @ObservedObject private var fontSettings = FontSettings.shared
     @State private var highlightedBlockId: UUID?
     @State private var detailBlock: AssistantBlock?
     @State private var groupIcon: String?
+
+    // [T-ios15-typing-lag] Value-equality gate so a keystroke in the composer
+    // does NOT re-evaluate every message row.
+    //
+    // `vm` is an @ObservedObject here, and `vm.inputText` is @Published, so
+    // every keystroke sends objectWillChange through the view model. Before
+    // this gate the enclosing non-lazy `VStack { ForEach(vm.messages) }` had
+    // no equality barrier, so each keystroke re-ran the body of EVERY row —
+    // each of which hosts a SelectableMarkdownView. With a long transcript
+    // that is the reported "keyboard typing is laggy" symptom.
+    //
+    // Comparing only the fields that actually affect this row's rendering
+    // lets SwiftUI skip unchanged rows entirely. Anything not compared here
+    // must not be rendered by this row, or it would go stale.
+    static func == (lhs: MinisLegacyTranscriptRow, rhs: MinisLegacyTranscriptRow) -> Bool {
+        lhs.message === rhs.message
+            && lhs.message.content == rhs.message.content
+            && lhs.message.blocks.count == rhs.message.blocks.count
+            && lhs.message.isQueued == rhs.message.isQueued
+            && lhs.message.error == rhs.message.error
+            && lhs.message.isCompactLoading == rhs.message.isCompactLoading
+            && lhs.message.isAwaitingModelResponse == rhs.message.isAwaitingModelResponse
+            && lhs.vm.sessionId == rhs.vm.sessionId
+            && lhs.vm.isProcessing == rhs.vm.isProcessing
+            && lhs.vm.messages.last?.id == rhs.vm.messages.last?.id
+    }
 
     private var isActiveMessage: Bool {
         vm.isProcessing && vm.messages.last?.id == message.id
