@@ -21,7 +21,7 @@ require '.textSelection(.enabled)'
 require '.fixedSize(horizontal: false, vertical: true)'
 require 'private var systemDivider: some View'
 require 'message.role == .compactDivider || message.role == .systemInfo'
-require '.opacity(message.isCompactedHistory ? 0.5 : 1)'
+! grep -Fq '.opacity(message.isCompactedHistory ? 0.5 : 1)' <<< "$row"
 require '.padding(.horizontal, 14)'
 require '.padding(.vertical, 10)'
 require 'RoundedRectangle(cornerRadius: 18)'
@@ -44,7 +44,8 @@ fi
 area=$(sed -n '/private var messagesArea:/,/private struct MinisLegacyTranscript:/p' "$view")
 grep -Fq 'if #available(iOS 16.0, *)' <<< "$area"
 grep -Fq 'MinisLegacyTranscript(' <<< "$area"
-grep -Fq '@State private var visibleLimit = 12' "$view"
+grep -Fq 'ForEach(vm.messages)' "$view"
+! grep -Fq 'visibleLimit' "$view"
 grep -Fq 'scroll.isTracking || scroll.isDragging || scroll.isDecelerating' "$view"
 attachments=src/ios/Views/Chat/ChatInputBar.swift
 grep -Fq 'private struct UserAttachmentTileLayout<Content: View>: View' "$attachments"

@@ -84,5 +84,5 @@ printf 'PASS: cached re-entry and native scroll follow wiring.\n'
 # Native mount overlay must not be recopied per session VM.
 grep -q 'guard !defaultOverlayApplied else { return }' src/ios/iSH/RootfsManager.swift
 grep -q 'defaultOverlayApplied = !overlayFailed' src/ios/iSH/RootfsManager.swift
-grep -q 'visibleLimit = 12' "$view"
+grep -Fq 'ForEach(vm.messages)' "$view"
 printf 'PASS: process-local mount overlay guard and smaller initial layout batch.\n'

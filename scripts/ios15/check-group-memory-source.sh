@@ -36,8 +36,8 @@ grep -q 'guard isChatViewVisible' src/ios/Views/Chat/AIChatView.swift
 printf 'PASS: group memory/soul, edit/revoke, legacy menu and share-visibility source wiring.\n'
 printf 'NOTE: full Swift compilation and device share/scroll/isolation tests are still required.\n'
 
-# Version 48 follow-up guards: bounded eager layout, bulk skills and scoped UI.
-grep -q 'vm.messages.suffix(visibleLimit)' src/ios/Views/Chat/AIChatView.swift
+# Full scrollable history, bulk skills and scoped UI.
+grep -Fq 'ForEach(vm.messages)' src/ios/Views/Chat/AIChatView.swift
 grep -q 'lastSize != scroll.contentSize || lastBounds != scroll.bounds.size' src/ios/Views/Chat/AIChatView.swift
 grep -q 'Button("全部开启")' "$skills"
 grep -q 'Button("全部关闭")' "$skills"

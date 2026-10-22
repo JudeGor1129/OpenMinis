@@ -7210,26 +7210,14 @@ private struct MinisLegacyTranscript: View {
     @ObservedObject var vm: AIChatViewModel
     let bottomInset: CGFloat
     @State private var followingBottom = true
-    @State private var visibleLimit = 12
-
     var body: some View {
         GeometryReader { viewport in
         ScrollViewReader { proxy in
             ScrollView {
-                // Bound the initial eager layout: retain stable iOS 15 row
-                // heights without laying out years of history on entry.
+                // All restored messages participate in normal scrolling. No
+                // manual history gate or hidden suffix on the iOS15 path.
                 VStack(alignment: .leading, spacing: 20) {
-                    if vm.messages.count > visibleLimit {
-                        Button("加载更早的消息（剩余 \(vm.messages.count - visibleLimit) 条）") {
-                            let first = vm.messages.suffix(visibleLimit).first?.id
-                            followingBottom = false
-                            visibleLimit += 40
-                            if let first {
-                                DispatchQueue.main.async { proxy.scrollTo(first, anchor: .top) }
-                            }
-                        }
-                    }
-                    ForEach(Array(vm.messages.suffix(visibleLimit))) { message in
+                    ForEach(vm.messages) { message in
                         MinisLegacyTranscriptRow(message: message, vm: vm)
                             .id(message.id)
                     }
@@ -7262,14 +7250,10 @@ private struct MinisLegacyTranscript: View {
             .onReceive(vm.forceScrollToTop) { _ in
                 followingBottom = false
                 vm.isNearBottom = false
-                if vm.isAtFirstTurn == false && visibleLimit < vm.messages.count {
-                    visibleLimit += 40
-                }
-                let visible = Array(vm.messages.suffix(visibleLimit))
-                if let first = visible.first {
+                if let first = vm.messages.first {
                     DispatchQueue.main.async { proxy.scrollTo(first.id, anchor: .top) }
                 }
-                vm.isAtFirstTurn = visibleLimit >= vm.messages.count
+                vm.isAtFirstTurn = true
             }
             .onChange(of: followingBottom) { follows in
                 vm.isNearBottom = follows
@@ -7423,7 +7407,6 @@ private struct MinisLegacyTranscriptRow: View {
             systemDivider
         } else {
             conversationRow
-                .opacity(message.isCompactedHistory ? 0.5 : 1)
         }
     }
 
