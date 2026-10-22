@@ -58,11 +58,15 @@ jobs:
 
   app-diagnostics:
     # Full builds are opt-in: manual dispatch, or an explicit marker on ios15-port.
+    # [T-ci-nav-independent] navigation-check fails when the Actions runner's
+    # Xcode cannot download Metal compiler components; do not block the full
+    # build on a static-style script when the nav path is already covered by
+    # source guards elsewhere in this workflow.
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.full_build) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/ios15-port' &&
        contains(github.event.head_commit.message, '[ios15-full-build]'))
-    needs: navigation-check
+    needs: []
     runs-on: macos-15
     timeout-minutes: 120
     env:
