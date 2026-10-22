@@ -2928,9 +2928,9 @@ struct AIChatView: View {
                 .frame(maxWidth: maxContentWidth ?? .infinity, alignment: .trailing)
                 .padding(.horizontal, 12)
                 .padding(.bottom, inputBarHeight + (hasFloatingPreview ? 80 : 12))
-                .animation(.easeInOut(duration: 0.2), value: vm.isNearBottom)
-                .animation(.easeInOut(duration: 0.2), value: vm.isAtFirstTurn)
-                .animation(.easeInOut(duration: 0.2), value: hasFloatingPreview)
+                .animation(MinisMotion.transition, value: vm.isNearBottom)
+                .animation(MinisMotion.transition, value: vm.isAtFirstTurn)
+                .animation(MinisMotion.transition, value: hasFloatingPreview)
                 // The capsule must not cover these floating scroll-jump buttons.
                 .capsuleProtectedFrame("scrollButtons")
             }
@@ -4398,8 +4398,8 @@ struct AIChatView: View {
         // Single spring drives both popups' show/hide transitions. Short
         // snappy curve (~0.22s) — instant on `/` / `@` keypress with a
         // touch of overshoot to read as iOS 26-native.
-        .animation(.spring(response: 0.18, dampingFraction: 0.82), value: vm.showSlashMenu)
-        .animation(.spring(response: 0.18, dampingFraction: 0.82), value: vm.showMentionMenu)
+        .animation(MinisMotion.layout, value: vm.showSlashMenu)
+        .animation(MinisMotion.layout, value: vm.showMentionMenu)
     }
 
     /// [T-ipad-inputbar-height-zero] Bounds of the window hosting the chat, in

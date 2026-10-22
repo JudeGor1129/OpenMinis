@@ -224,6 +224,7 @@ struct MinisApp: App {
                 SpeechPlayerControl()
                 AppLockOverlay()
             }
+                .minisMotionAccessibility()
                 .onReceive(SessionLockStore.shared.$appIsLocked) { locked in
                     guard !locked, let url = pendingURLWhileLocked else { return }
                     pendingURLWhileLocked = nil

@@ -283,7 +283,7 @@ struct AddProviderView: View {
         List {
             steppedContent
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.88), value: currentStep)
+        .animation(MinisMotion.layout, value: currentStep)
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

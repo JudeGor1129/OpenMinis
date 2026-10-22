@@ -61,8 +61,7 @@ struct SwipeToSendHint: View {
             // = 17pt. ~60pt above the fingertip ≈ one thumb-tip away.
             .offset(x: location.x - 17, y: location.y - 60 - 17)
             .allowsHitTesting(false)
-            .animation(.interactiveSpring(response: 0.18,
-                                           dampingFraction: 0.85),
+            .animation(MinisMotion.feedback,
                        value: progress >= armFraction)
         }
     }

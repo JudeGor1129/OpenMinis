@@ -263,7 +263,7 @@ struct BackupRestoreView: View {
                         // The stage text changes underneath a fixed layout, so
                         // the row must not resize as the wording changes.
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .animation(.easeInOut(duration: 0.2), value: inspectStage)
+                        .animation(MinisMotion.transition, value: inspectStage)
                 }
                 Spacer(minLength: 8)
                 Button {

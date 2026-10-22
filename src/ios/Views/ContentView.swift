@@ -1696,7 +1696,7 @@ struct ModernContentView: View {
                         .padding(.top, 8)
                 }
             }
-            .animation(.easeInOut(duration: 0.25), value: forceSyncToast)
+            .animation(MinisMotion.transition, value: forceSyncToast)
             .onChange(of: wide) { newWide in
                 isWideLayout = newWide
             }
@@ -6765,7 +6765,7 @@ private struct DraggableFAB<Label: View>: View {
                             // For inverted FAB: dropping on left means the *other* FAB goes right
                             let newFabOnLeft = inverted ? !droppedOnLeft : droppedOnLeft
                             let changed = fabOnLeft != newFabOnLeft
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                            withAnimation(MinisMotion.layout) {
                                 fabOnLeft = newFabOnLeft
                                 dragOffset = 0
                             }

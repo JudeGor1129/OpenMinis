@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// A navigation Module for modal roots without programmatic path bindings.
 ///
@@ -16,11 +17,11 @@ struct MinisNavigationContainer<Content: View>: View {
     var body: some View {
         if #available(iOS 16.0, *) {
             NavigationStack {
-                content
+                content.minisMotionAccessibility()
             }
         } else {
             NavigationView {
-                content
+                content.minisMotionAccessibility()
             }
             .navigationViewStyle(.stack)
         }
@@ -405,5 +406,39 @@ extension View {
             // ScrollView shows indicators by default on iOS 15.
             self
         }
+    }
+}
+
+// Shared motion vocabulary for the whole app. Do not apply an implicit
+// animation to the app root: streaming text, file progress and database
+// updates must remain unanimated. Native navigation/sheets own their motion.
+enum MinisMotion {
+    static var feedback: Animation? {
+        UIAccessibility.isReduceMotionEnabled ? nil : .easeOut(duration: 0.18)
+    }
+    static var transition: Animation? {
+        UIAccessibility.isReduceMotionEnabled ? nil : .easeInOut(duration: 0.25)
+    }
+    static var layout: Animation? {
+        UIAccessibility.isReduceMotionEnabled ? nil : .spring(response: 0.36, dampingFraction: 0.92)
+    }
+}
+
+private struct MinisMotionAccessibility: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.transaction { transaction in
+            if reduceMotion {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+        }
+    }
+}
+
+extension View {
+    func minisMotionAccessibility() -> some View {
+        modifier(MinisMotionAccessibility())
     }
 }

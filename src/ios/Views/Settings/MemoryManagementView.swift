@@ -87,7 +87,7 @@ struct MemoryManagementView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.3), value: forceSyncToast)
+        .animation(MinisMotion.layout, value: forceSyncToast)
         .onAppear { loadFiles() }
         // Refresh when an inbound iCloud merge / memory_write tool / another
         // view writes a memory file. Cheap operation (directory list +

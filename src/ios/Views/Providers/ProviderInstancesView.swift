@@ -236,7 +236,7 @@ struct ProviderInstancesView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.3), value: forceSyncToast)
+        .animation(MinisMotion.layout, value: forceSyncToast)
     }
 
     @available(iOS 17.0, *)

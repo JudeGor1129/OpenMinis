@@ -52,7 +52,7 @@ struct AppLockOverlay: View {
             let reason = AppLocalized("Unlock Minis")
             let ok = await BiometricAuth.authenticate(reason: reason)
             if ok {
-                withAnimation(.easeOut(duration: 0.25)) {
+                withAnimation(MinisMotion.transition) {
                     store.noteAppUnlock()
                 }
             }

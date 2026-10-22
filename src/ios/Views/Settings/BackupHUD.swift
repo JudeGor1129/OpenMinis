@@ -55,6 +55,6 @@ extension View {
                     }
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: message.wrappedValue)
+        .animation(MinisMotion.feedback, value: message.wrappedValue)
     }
 }

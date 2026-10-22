@@ -177,7 +177,7 @@ struct SkillsManagementView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.3), value: forceSyncAllToast)
+        .animation(MinisMotion.layout, value: forceSyncAllToast)
     }
 
     private func forceSyncAllSkills() {
@@ -925,7 +925,7 @@ struct MinisSkillsBrowserView: View {
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                         Spacer().frame(height: 60)
                     }
-                    .animation(.spring(response: 0.3), value: coordinator.hudState)
+                    .animation(MinisMotion.layout, value: coordinator.hudState)
                 }
             }
             .navigationTitle("Minis Skills")
