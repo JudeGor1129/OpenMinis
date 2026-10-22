@@ -1,0 +1,579 @@
+name: Build iOS toolchain (clang+LLVM+ld64, arm64 + arm64e)
+
+# Builds the in-process native toolchain on a macOS runner and publishes the
+# static libraries as artifacts.
+#
+# Why a runner and not the device: producing LLVM requires CMake, Ninja, a full
+# C++ compiler and an iOS SDK. None of that exists in the app sandbox, and an
+# app cannot build its own compiler without one. So the build happens here and
+# only the artifact travels back.
+#
+# Why a static library and not a dylib: iOS refuses to dlopen() a main
+# executable, so a host app can only own a compiler by linking it in.
+#
+# Budget: macos-15 gives ~3 vCPU. A release LLVM+clang (AArch64 only) takes
+# roughly 2.5 h per architecture, so arm64e alone fits the 350-minute job cap
+# comfortably and arm64+arm64e is tight. The arch list is an input for that
+# reason.
+
+on:
+  workflow_dispatch:
+    inputs:
+      llvm_commit:
+        description: 'LLVM commit (blank = pinned default)'
+        type: string
+        required: false
+      archs:
+        description: 'Space-separated architectures'
+        type: string
+        default: 'arm64 arm64e'
+        required: false
+      jobs:
+        description: 'Parallel compile jobs'
+        type: string
+        default: '3'
+        required: false
+      skip_ld64:
+        description: 'Skip ld64 (clang/LLVM only, faster smoke test)'
+        type: boolean
+        default: false
+  push:
+    paths:
+      - 'toolchain-build/**'
+      - '.github/workflows/toolchain.yml'
+
+permissions:
+  # write, so the build can publish its own results to the ci-results branch.
+  # See the "Publish results" step for why the results go to a branch at all.
+  contents: write
+
+concurrency:
+  group: toolchain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Host toolchain inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          {
+            sw_vers
+            xcodebuild -version
+            echo "SDK: $(xcrun --sdk iphoneos --show-sdk-path)"
+            echo "SDK version: $(xcrun --sdk iphoneos --show-sdk-version)"
+            cmake --version | head -1 || true
+            ninja --version || true
+            echo "cores: $(sysctl -n hw.ncpu)"
+            echo "memory: $(sysctl -n hw.memsize)"
+            df -h /
+          } 2>&1 | tee ci-logs/host.txt
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install cmake ninja || true
+          cmake --version | head -1
+          ninja --version
+
+      - name: Free disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          # LLVM's build tree is large; reclaim what we can on a small runner.
+          sudo rm -rf /usr/local/share/boost 2>/dev/null || true
+          df -h / | tee ci-logs/disk-before.txt
+
+      - name: Fetch pinned sources
+        shell: bash
+        env:
+          LLVM_COMMIT: ${{ inputs.llvm_commit }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          # The Contents API cannot carry a file mode, so a script pushed that
+          # way arrives without its executable bit and invoking it directly
+          # fails with "Permission denied". Restore it here instead of relying
+          # on how the tree happened to be pushed.
+          chmod +x toolchain-build/scripts/*.sh
+          ls -l toolchain-build/scripts/ | tee ci-logs/script-modes.txt
+          bash toolchain-build/scripts/fetch-sources.sh 2>&1 | tee ci-logs/fetch.txt
+
+      - name: Verify arm64e patch set before building
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          # An unpatched toolchain links arm64e as arm64 and emits A-key PAC. It
+          # still "succeeds", which is the dangerous part. Fail here instead.
+          for p in llvm-arm64e-twork.diff llvm-pr-188378.diff llvm-pr-188638.diff; do
+            test -s "toolchain-build/deps/patches/$p" || { echo "missing $p" >&2; exit 1; }
+          done
+          {
+            echo '--- patch inventory ---'
+            wc -l toolchain-build/deps/patches/*.diff
+            echo '--- arm64e markers ---'
+            grep -c 'CPU_SUBTYPE_ARM64E_WITH_PTRAUTH_VERSION' \
+              toolchain-build/deps/patches/llvm-arm64e-twork.diff
+            grep -c 'isArm64e' toolchain-build/deps/patches/llvm-arm64e-twork.diff
+            grep -q 'ARM64e.cpp' toolchain-build/deps/patches/llvm-arm64e-twork.diff \
+              && echo 'lld ARM64e.cpp present in patch'
+          } 2>&1 | tee ci-logs/patch-verify.txt
+
+      - name: Verify ld64 adaptation before the long build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          # The ld64 port rewrites the CLI entry point. Its assertions are cheap
+          # and catch the failure modes that produce no compile error: a
+          # surviving exit() that would kill the host, a lost reset hook, a
+          # reset method inserted where a free function cannot reach it.
+          bash toolchain-build/scripts/fetch-sources.sh > /dev/null 2>&1 || true
+          python3 toolchain-build/scripts/build-ld64-inprocess.py --check 2>&1 \
+            | tee ci-logs/ld64-adapt-check.txt
+
+      - name: Build LLVM + clang + ld64
+        shell: bash
+        env:
+          JOBS: ${{ inputs.jobs }}
+          ARCHS: ${{ inputs.archs }}
+          LLVM_COMMIT: ${{ inputs.llvm_commit }}
+          SKIP_LD64: ${{ inputs.skip_ld64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          export SKIP_LD64="${SKIP_LD64:-false}"
+          bash toolchain-build/scripts/build-ios-toolchain.sh 2>&1 | tee ci-logs/build.txt
+
+      - name: Validate artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          {
+            echo '--- produced libraries ---'
+            ls -la toolchain-build/build/ios/ 2>/dev/null || echo '(none)'
+            for f in toolchain-build/build/ios/*.a; do
+              [ -e "$f" ] || continue
+              echo "== $(basename "$f")"
+              xcrun lipo -info "$f" || true
+              xcrun size "$f" 2>/dev/null | tail -2 || true
+            done
+            echo
+            echo '--- arm64e evidence in build log ---'
+            grep -niE 'arm64e|ptrauth' ci-logs/build.txt | head -40 || echo '(none)'
+            echo
+            echo '--- errors in build log ---'
+            grep -nE 'error:|undefined symbol|FAILED:' ci-logs/build.txt | head -60 || echo '(none)'
+            echo
+            echo '--- manifest ---'
+            cat toolchain-build/build/ios/toolchain.json 2>/dev/null || echo '(no manifest)'
+          } 2>&1 | tee ci-logs/artifact-validation.txt
+
+      # The bridge is the only consumer of these libraries' C++ API, and it is
+      # the one piece nothing else type-checks: the libraries build from
+      # upstream sources regardless of what OMToolchain.mm expects from them.
+      # An API drift between the pinned LLVM commit and the bridge would
+      # otherwise surface only in the host app. Compile it here against the
+      # real produced headers and libraries.
+      - name: Syntax-check the host bridge against the produced libraries
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          {
+            echo '--- headers available ---'
+            ls -d toolchain-build/work/llvm-project/clang/include 2>/dev/null || echo '(no clang headers)'
+            ls -d toolchain-build/work/llvm-project/llvm/include 2>/dev/null || echo '(no llvm headers)'
+            echo
+            echo '--- compiling OMToolchain.mm (syntax + type check only) ---'
+          } 2>&1 | tee ci-logs/bridge-check.txt
+
+          # Take the C++ standard from LLVM's own configure, not a guess. The
+          # pinned commit decides it, and a too-old -std fails inside LLVM's
+          # headers -- a false positive that says nothing about the bridge.
+          # CMAKE_CXX_STANDARD is set as a *normal* variable by LLVM, so it is
+          # often absent from CMakeCache.txt; fall back to reading the source.
+          CXX_STD=""
+          for cache in toolchain-build/work/build-ios-*/CMakeCache.txt; do
+            [ -e "$cache" ] || continue
+            found="$(sed -n 's/^CMAKE_CXX_STANDARD:[^=]*=//p' "$cache" | head -1)"
+            if [ -n "$found" ]; then
+              CXX_STD="c++$found"
+              echo "C++ standard from $cache: $CXX_STD" | tee -a ci-logs/bridge-check.txt
+              break
+            fi
+          done
+          if [ -z "$CXX_STD" ]; then
+            found="$(sed -n 's/.*set(CMAKE_CXX_STANDARD[[:space:]]*\([0-9][0-9]*\)).*/\1/p' \
+                     toolchain-build/work/llvm-project/llvm/CMakeLists.txt 2>/dev/null | head -1)"
+            [ -n "$found" ] && CXX_STD="c++$found" \
+              && echo "C++ standard from llvm/CMakeLists.txt: $CXX_STD" | tee -a ci-logs/bridge-check.txt
+          fi
+          [ -n "$CXX_STD" ] || CXX_STD="c++17"
+          echo "using -std=$CXX_STD for the bridge check" | tee -a ci-logs/bridge-check.txt
+
+          echo "SDK: $(xcrun --sdk iphoneos --show-sdk-path)" | tee -a ci-logs/bridge-check.txt
+          echo "compiler: $(xcrun --sdk iphoneos --find clang++)" | tee -a ci-logs/bridge-check.txt
+
+          # -fsyntax-only: we are checking the bridge's use of the clang/LLVM
+          # APIs, not linking it. Generated headers (Config/*.h, Targets.def)
+          # only exist inside the build trees, so the source tree and every
+          # requested slice's build tree both have to be on the path. Discover
+          # them rather than naming one arch: the arch list is an input, and a
+          # hardcoded arm64e makes the check vacuous when arm64 is requested.
+          INCS="-I toolchain-build/src"
+          INCS="$INCS -I toolchain-build/work/llvm-project/clang/include"
+          INCS="$INCS -I toolchain-build/work/llvm-project/llvm/include"
+          for d in toolchain-build/work/build-ios-*/; do
+            [ -d "$d" ] || continue
+            for sub in include tools/clang/include tools/clang/lib/Headers; do
+              [ -d "$d$sub" ] && INCS="$INCS -I $d$sub"
+            done
+          done
+          echo "include paths: $INCS" | tee -a ci-logs/bridge-check.txt
+
+          set +e
+          # shellcheck disable=SC2086
+          xcrun --sdk iphoneos clang++ -arch arm64e -std="$CXX_STD" -fsyntax-only \
+            -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
+            -miphoneos-version-min=14.0 \
+            -fobjc-arc -x objective-c++ \
+            $INCS \
+            -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS \
+            toolchain-build/src/OMToolchain.mm \
+            >> ci-logs/bridge-check.txt 2>&1
+          BRIDGE_RC=$?
+          set -e
+          echo "bridge syntax-check exit code: $BRIDGE_RC" >> ci-logs/bridge-check.txt
+
+          # Reported, not fatal. A bridge/vendor API mismatch is a real finding
+          # worth surfacing, but it must not mask whether the libraries built.
+          if [ "$BRIDGE_RC" -ne 0 ]; then
+            echo "::warning title=Bridge syntax check failed::OMToolchain.mm did not type-check; see ci-logs/bridge-check.txt"
+          fi
+          cat ci-logs/bridge-check.txt || true
+
+      # A type check cannot see whether the bridge's *references* resolve. The
+      # host app will link OMToolchain.o against these archives, so do the same
+      # thing here: compile the bridge to an object, then link it with a stub
+      # main against libomllvm + libomld64. OMToolchain.o is an explicit input
+      # rather than an archive member, so every symbol it references must
+      # resolve -- which is exactly the property under test. Undefined symbols
+      # are reported with their names so the gap is actionable.
+      - name: Link-check the host bridge against the produced libraries
+        shell: bash
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          WORK="$RUNNER_TEMP/bridge-linkcheck"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+          {
+            echo '--- link check archives available ---'
+            ls -l toolchain-build/build/ios/ 2>/dev/null || echo '(no build/ios)'
+            echo
+          } 2>&1 | tee ci-logs/bridge-link-check.txt
+
+          # Reuse the standard the syntax check resolved, so both checks agree
+          # on -std and a failure here is about symbols, not language level.
+          CXX_STD=""
+          for cache in toolchain-build/work/build-ios-*/CMakeCache.txt; do
+            [ -e "$cache" ] || continue
+            found="$(sed -n 's/^CMAKE_CXX_STANDARD:[^=]*=//p' "$cache" | head -1)"
+            [ -n "$found" ] && CXX_STD="c++$found" && break
+          done
+          if [ -z "$CXX_STD" ]; then
+            found="$(sed -n 's/.*set(CMAKE_CXX_STANDARD[[:space:]]*\([0-9][0-9]*\)).*/\1/p' \
+                     toolchain-build/work/llvm-project/llvm/CMakeLists.txt 2>/dev/null | head -1)"
+            [ -n "$found" ] && CXX_STD="c++$found"
+          fi
+          [ -n "$CXX_STD" ] || CXX_STD="c++17"
+
+          INCS="-I toolchain-build/src"
+          INCS="$INCS -I toolchain-build/work/llvm-project/clang/include"
+          INCS="$INCS -I toolchain-build/work/llvm-project/llvm/include"
+          for d in toolchain-build/work/build-ios-*/; do
+            [ -d "$d" ] || continue
+            for sub in include tools/clang/include tools/clang/lib/Headers; do
+              [ -d "$d$sub" ] && INCS="$INCS -I $d$sub"
+            done
+          done
+
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          # Test EVERY requested architecture, not just arm64e. A single-arch
+          # check cannot tell whether arm64 links, and this workflow is asked
+          # for both -- testing one and shipping both is exactly how a broken
+          # slice would reach the host app.
+          BRIDGE_ARCHS="${BRIDGE_ARCHS:-${{ inputs.archs }}}"
+          BRIDGE_ARCHS="${BRIDGE_ARCHS:-arm64 arm64e}"
+          BRIDGE_FAILURES=0
+          BRIDGE_TESTED=0
+          for ARCH in $BRIDGE_ARCHS; do
+          # Prefer the thin archive for the arch under test: the fat one mixes
+          # slices and would let the linker pick arm64 silently.
+          LLVM_LIB="toolchain-build/build/ios/libomllvm-$ARCH.a"
+          LD64_LIB="toolchain-build/build/ios/libomld64-$ARCH.a"
+
+          echo "== arch: $ARCH ==" | tee -a ci-logs/bridge-link-check.txt
+          echo "std: $CXX_STD   arch: $ARCH" | tee -a ci-logs/bridge-link-check.txt
+          echo "llvm archive: $LLVM_LIB" | tee -a ci-logs/bridge-link-check.txt
+          echo "ld64 archive: $LD64_LIB" | tee -a ci-logs/bridge-link-check.txt
+
+          if [ ! -f "$LLVM_LIB" ] || [ ! -f "$LD64_LIB" ]; then
+            # Not a bridge failure: absent archives mean the LLVM build step
+            # itself failed, which already marks the run red. Counting this as
+            # a bridge failure would report "did not link", pointing at the
+            # wrong subsystem.
+            echo "SKIPPED: thin archives for $ARCH are absent (build step failed?); nothing to link against." \
+              | tee -a ci-logs/bridge-link-check.txt
+            continue
+          fi
+
+          cat > "$WORK/linkcheck_main.mm" <<'EOF'
+          // Exists only to give the linker an entry point; the object under
+          // test is OMToolchain.o, passed explicitly, so its undefined symbols
+          // are what this step is really measuring.
+          int main() { return 0; }
+          EOF
+
+          # Marker so per-arch diagnostics are counted per architecture rather
+          # than cumulatively across the whole appended log.
+          MARK=$(wc -l < ci-logs/bridge-link-check.txt)
+          BRIDGE_TESTED=$((BRIDGE_TESTED + 1))
+          set +e
+          echo | tee -a ci-logs/bridge-link-check.txt
+          echo '--- compiling OMToolchain.mm to an object ---' | tee -a ci-logs/bridge-link-check.txt
+          # shellcheck disable=SC2086
+          xcrun --sdk iphoneos clang++ -arch "$ARCH" -std="$CXX_STD" \
+            -isysroot "$SDK" -miphoneos-version-min=14.0 \
+            -fobjc-arc -x objective-c++ \
+            $INCS \
+            -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS \
+            -c toolchain-build/src/OMToolchain.mm -o "$WORK/OMToolchain-$ARCH.o" \
+            >> ci-logs/bridge-link-check.txt 2>&1
+          COMPILE_RC=$?
+          echo "compile exit code: $COMPILE_RC" >> ci-logs/bridge-link-check.txt
+
+          LINK_RC=1
+          if [ "$COMPILE_RC" -eq 0 ]; then
+            echo '--- linking OMToolchain.o + stub main against the archives ---' \
+              >> ci-logs/bridge-link-check.txt
+            # OMToolchain.o is passed as an explicit input rather than an
+            # archive member, so all of its references are demanded of the
+            # archives. Undefined symbols are already an error for executables,
+            # so -undefined,error is not passed: ld64 deprecates it.
+            #
+            # -lc++ is not passed either; clang++ adds it, and naming it again
+            # only produces "ignoring duplicate libraries".
+            xcrun --sdk iphoneos clang++ -arch "$ARCH" -std="$CXX_STD" \
+              -isysroot "$SDK" -miphoneos-version-min=14.0 -fobjc-arc \
+              "$WORK/linkcheck_main.mm" "$WORK/OMToolchain-$ARCH.o" \
+              "$LLVM_LIB" "$LD64_LIB" \
+              -framework Foundation -framework CoreFoundation -lz \
+              -o "$WORK/linkcheck-$ARCH" \
+              >> ci-logs/bridge-link-check.txt 2>&1
+            LINK_RC=$?
+          fi
+          set -e
+          echo "link exit code: $LINK_RC" >> ci-logs/bridge-link-check.txt
+
+          # Turn a wall of linker output into a verdict plus a symbol list.
+          # Only this architecture's slice of the log is inspected.
+          ARCH_LOG="$WORK/bridge-link-$ARCH.txt"
+          tail -n "+$((MARK + 1))" ci-logs/bridge-link-check.txt > "$ARCH_LOG" || true
+          if [ "$LINK_RC" -eq 0 ]; then
+            echo "VERDICT[$ARCH]: the bridge links against the produced archives." \
+              >> ci-logs/bridge-link-check.txt
+          elif [ "$COMPILE_RC" -ne 0 ]; then
+            echo "VERDICT[$ARCH]: could not even compile the object; see above." \
+              >> ci-logs/bridge-link-check.txt
+            BRIDGE_FAILURES=$((BRIDGE_FAILURES + 1))
+          else
+            # ld64's undefined-symbol lines look like:  "_symbol", referenced from:
+            # Duplicate definitions are reported separately, and this step hit
+            # exactly that case first, so count both or the verdict reads
+            # "0 undefined symbols" on a real failure.
+            UNDEF_TOTAL="$(grep -cE '^[[:space:]]+"_' "$ARCH_LOG" || true)"
+            DUP_TOTAL="$(grep -cE '^duplicate symbol ' "$ARCH_LOG" || true)"
+            echo "VERDICT[$ARCH]: link failed with ${UNDEF_TOTAL} undefined symbol line(s)" \
+              "and ${DUP_TOTAL} duplicate-symbol diagnostic(s)." \
+              >> ci-logs/bridge-link-check.txt
+            echo "--- first 40 undefined symbols ($ARCH) ---" >> ci-logs/bridge-link-check.txt
+            grep -E '^[[:space:]]+"_' "$ARCH_LOG" | head -40 \
+              >> ci-logs/bridge-link-check.txt || true
+            echo "--- duplicate symbols ($ARCH) ---" >> ci-logs/bridge-link-check.txt
+            grep -E '^duplicate symbol ' "$ARCH_LOG" | head -20 \
+              >> ci-logs/bridge-link-check.txt || true
+            BRIDGE_FAILURES=$((BRIDGE_FAILURES + 1))
+          fi
+          done
+
+          # A warning here is not enough: build 18 reported "success" while the
+          # bridge did not link at all, because this step only warned. The
+          # artifact is useless if the host cannot link it, so fail the run.
+          if [ "$BRIDGE_FAILURES" -ne 0 ]; then
+            echo "::error title=Bridge link check failed::${BRIDGE_FAILURES} architecture(s) did not link against the produced archives; see ci-logs/bridge-link-check.txt"
+            cat ci-logs/bridge-link-check.txt || true
+            exit 1
+          fi
+          if [ "$BRIDGE_TESTED" -eq 0 ]; then
+            echo "SKIPPED: no architecture had thin archives, so nothing was link-checked."
+            cat ci-logs/bridge-link-check.txt || true
+            exit 0
+          fi
+          echo "VERDICT: the bridge links against the produced archives for ${BRIDGE_TESTED} architecture(s): ${BRIDGE_ARCHS}"
+          cat ci-logs/bridge-link-check.txt || true
+
+      - name: Upload toolchain artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-toolchain-${{ github.run_number }}
+          path: toolchain-build/build/ios/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload build diagnostics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolchain-diagnostics-${{ github.run_number }}
+          path: ci-logs/
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Artifacts can only be fetched over the API, which some clients cannot
+      # reach. Committing the logs and the library inventory to a branch keeps
+      # every result readable with a plain `git fetch`, so a run can be
+      # diagnosed without any HTTP client.
+      - name: Publish results to the ci-results branch
+        shell: bash
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+
+          OUT="$RUNNER_TEMP/ci-results"
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
+          cd "$OUT"
+          git init -q
+          git remote add origin \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          # Continue from the branch if it already exists. `git checkout
+          # --orphan` is deliberately not used: it keeps the index, which would
+          # commit the entire source tree into this branch.
+          if git ls-remote --exit-code --heads origin ci-results >/dev/null 2>&1; then
+            # The branch exists. A fetch failure here is then a real error, not
+            # "first run", so do not fall through to creating it: that would
+            # try to push a fresh root commit over the existing history.
+            if ! git fetch --depth=1 origin ci-results; then
+              echo "::error title=Result publication failed::ci-results exists but could not be fetched"
+              exit 1
+            fi
+            git checkout -q -B ci-results FETCH_HEAD
+          else
+            echo "ci-results does not exist yet; starting it"
+            git checkout -q -b ci-results
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # One directory per run; the branch is an append-only log.
+          DEST="runs/${{ github.run_number }}"
+          mkdir -p "$DEST"
+
+          # The decisive part of the build log, not all 460 KB of it: every
+          # error, plus the tail, plus whether this was a success.
+          LOG="$GITHUB_WORKSPACE/ci-logs/build.txt"
+          if [ -f "$LOG" ]; then
+            {
+              echo "# build.txt digest"
+              echo
+              echo "## errors"
+              grep -nE 'error:|undefined symbol|FAILED:|Permission denied' "$LOG" | head -80 \
+                || echo '(none)'
+              echo
+              echo "## last 120 lines"
+              tail -120 "$LOG"
+            } > "$DEST/build-digest.txt"
+            cp "$LOG" "$DEST/build-full.txt" 2>/dev/null || true
+          fi
+
+          for f in bridge-check.txt bridge-link-check.txt artifact-validation.txt \
+                   fetch.txt host.txt disk-before.txt patch-verify.txt \
+                   ld64-adapt-check.txt script-modes.txt; do
+            [ -f "$GITHUB_WORKSPACE/ci-logs/$f" ] && cp "$GITHUB_WORKSPACE/ci-logs/$f" "$DEST/" || true
+          done
+
+          # The library inventory, taken here rather than trusted from the
+          # build log: this is the evidence that the slices are what we claim.
+          {
+            echo "# libraries"
+            ls -la "$GITHUB_WORKSPACE/toolchain-build/build/ios/" 2>/dev/null || echo '(none)'
+            for f in "$GITHUB_WORKSPACE"/toolchain-build/build/ios/*.a; do
+              [ -e "$f" ] || continue
+              echo
+              echo "== $(basename "$f")"
+              xcrun lipo -info "$f" 2>&1 || true
+              xcrun lipo -detailed_info "$f" 2>&1 | grep -iE 'architecture|subtype|cputype|align' || true
+            done
+            echo
+            echo "# manifest"
+            cat "$GITHUB_WORKSPACE/toolchain-build/build/ios/toolchain.json" 2>/dev/null || echo '(none)'
+          } > "$DEST/libraries.txt" 2>&1
+
+          # arm64e proof: cpusubtype must carry the ptrauth capability bit.
+          {
+            echo "# run summary"
+            echo "run: ${{ github.run_number }}"
+            echo "sha: ${{ github.sha }}"
+            echo "archs input: ${{ inputs.archs }}"
+            echo "llvm commit input: ${{ inputs.llvm_commit }}"
+            echo "skip ld64 input: ${{ inputs.skip_ld64 }}"
+            echo
+            echo "## lipo -info on the produced libraries"
+            xcrun lipo -info "$GITHUB_WORKSPACE"/toolchain-build/build/ios/*.a 2>&1 \
+              || echo '(no libraries produced)'
+            echo
+            echo "## bridge syntax-check verdict"
+            if [ -f "$GITHUB_WORKSPACE/ci-logs/bridge-check.txt" ]; then
+              grep -E 'bridge syntax-check exit code|error:|include paths|using -std=' \
+                "$GITHUB_WORKSPACE/ci-logs/bridge-check.txt" | head -40 || echo '(no verdict line)'
+            else
+              echo '(bridge check never ran)'
+            fi
+          } > "$DEST/SUMMARY.txt" 2>&1
+
+          git add -A "$DEST"
+          if git diff --cached --quiet; then
+            echo "nothing to publish"
+          else
+            git commit -q -m "results: run ${{ github.run_number }} (${GITHUB_SHA:0:10})"
+
+            # Not `git push && echo`: without -e a rejected push would still
+            # leave this step green, making "push failed" indistinguishable
+            # from "the run has not reached here yet" to anyone reading the
+            # ci-results branch.
+            if ! git push origin ci-results; then
+              echo "::error title=Result publication failed::the run produced results but they could not be pushed to ci-results"
+              exit 1
+            fi
+            echo "published to ci-results"
+          fi
