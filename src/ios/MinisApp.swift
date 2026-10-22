@@ -225,6 +225,13 @@ struct MinisApp: App {
                 AppLockOverlay()
             }
                 .minisMotionAccessibility()
+                // [T-scene-onreceive] Share polling moved here from the Scene
+                // (Scene has no .onReceive). Same 1s cadence, same active-only
+                // gate; mounted on the WindowGroup root so it lives exactly as
+                // long as the previous scene-level subscription did.
+                .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+                    if scenePhase == .active { shareCoordinator.checkForPendingShare() }
+                }
                 .onReceive(SessionLockStore.shared.$appIsLocked) { locked in
                     guard !locked, let url = pendingURLWhileLocked else { return }
                     pendingURLWhileLocked = nil
@@ -475,10 +482,6 @@ struct MinisApp: App {
                         }
                     }
                 }
-                .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-                    // Handle shares completed after the scene-active callback.
-                    if scenePhase == .active { shareCoordinator.checkForPendingShare() }
-                }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -490,6 +493,11 @@ struct MinisApp: App {
         }
         .onChange(of: scenePhase) { newPhase in
             handleScenePhaseChange(newPhase)
+            // Handle shares completed after the scene-active callback.
+            // [T-scene-onreceive] Timer-driven .onReceive lived on the Scene,
+            // which has no such modifier (build 98 broke here). Folded into
+            // the existing scenePhase onChange plus the active-phase timer
+            // in the view tree below.
         }
     }
 
