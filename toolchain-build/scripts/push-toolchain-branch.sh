@@ -31,6 +31,19 @@ FILES=$($G ls-files | wc -l | tr -d ' ')
 TREE=$($G write-tree) || { echo "FAIL write-tree"; exit 1; }
 echo "tree $TREE with $FILES files"
 
+# Optional parent, so the pushed commit is an ordinary child of the branch's
+# current tip.
+#
+# Why this matters: GitHub decides whether `on.push.paths` matches by diffing
+# before..after. A parentless commit has no before, so the path filter never
+# matches and NO run is created — verified: pushing 1c3d9ff to toolchain-ci
+# produced zero workflow runs. Building the commit on top of the remote tip
+# restores a normal fast-forward push with a real diff.
+PARENT="${PARENT:-}"
+if [ -n "$PARENT" ]; then
+  echo "parent: $PARENT"
+fi
+
 COMMIT=$(printf '%s\n' \
   "toolchain: build arm64 + arm64e, and link-check every arch" \
   "" \
@@ -56,7 +69,7 @@ COMMIT=$(printf '%s\n' \
   "3. Arch list default is now 'arm64 arm64e'. Only AArch64 is built (-O" \
   "   release, single target), which is why one arch takes ~50 min and two fit" \
   "   inside the 350-minute cap." \
-  | $G commit-tree "$TREE") || { echo "FAIL commit-tree"; exit 1; }
+  | $G commit-tree "$TREE" ${PARENT:+-p "$PARENT"}) || { echo "FAIL commit-tree"; exit 1; }
 
 echo "commit $COMMIT"
 $G log --oneline -1 "$COMMIT"
