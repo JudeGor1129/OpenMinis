@@ -770,6 +770,7 @@ enum UserAttachmentTileMetrics {
 // The official wrapping Layout needs iOS16. On iOS15 use a native grid
 // for the fixed-size message tiles, not the recovery renderer's vertical stack.
 private struct UserAttachmentTileLayout<Content: View>: View {
+    let count: Int
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -779,12 +780,18 @@ private struct UserAttachmentTileLayout<Content: View>: View {
                 content()
             }
         } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: UserAttachmentTileMetrics.tile,
-                                                   maximum: UserAttachmentTileMetrics.tile),
-                                         spacing: UserAttachmentTileMetrics.gap,
-                                         alignment: .trailing)],
-                      alignment: .trailing, spacing: UserAttachmentTileMetrics.gap) {
-                content()
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                // Explicit trailing columns: an adaptive grid centers unused
+                // space even when its alignment is trailing (notably one tile).
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(UserAttachmentTileMetrics.tile),
+                                                             spacing: UserAttachmentTileMetrics.gap),
+                                         count: max(1, min(count, 3))),
+                          alignment: .trailing, spacing: UserAttachmentTileMetrics.gap) {
+                    content()
+                }
+                .frame(width: CGFloat(max(1, min(count, 3))) * UserAttachmentTileMetrics.tile
+                       + CGFloat(max(0, min(count, 3) - 1)) * UserAttachmentTileMetrics.gap)
             }
         }
     }
@@ -804,7 +811,7 @@ struct UserAttachmentList: View {
     }
 
     var body: some View {
-        UserAttachmentTileLayout {
+        UserAttachmentTileLayout(count: attachments.count) {
             ForEach(attachments) { meta in
                 if meta.isImage {
                     AsyncImageTile(meta: meta, tileSize: tileSize) {
@@ -984,7 +991,7 @@ struct QueuedAttachmentPreview: View {
     private let tileSize: CGFloat = UserAttachmentTileMetrics.tile
 
     var body: some View {
-        UserAttachmentTileLayout {
+        UserAttachmentTileLayout(count: attachments.count) {
             ForEach(attachments) { attachment in
                 switch attachment.kind {
                 case .image:

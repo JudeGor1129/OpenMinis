@@ -1,105 +1,76 @@
 import UIKit
 
-/// The Share Extension's principal view controller.
+/// Stages files before completing the source app's share request.
 class ShareViewController: UIViewController {
-
-    /// Set to true once async processing + redirect is done, so viewDidAppear can dismiss.
-    private var processingDone = false
+    private var finished = false
+    private var processingTask: Task<Void, Never>?
+    private var watchdog: DispatchWorkItem?
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .clear
-        NSLog("[ShareExt] viewDidLoad — starting processing")
+        view.backgroundColor = .systemBackground
+        let spinner = UIActivityIndicatorView(style: .medium)
+        spinner.center = view.center
+        spinner.autoresizingMask = [.flexibleTopMargin, .flexibleBottomMargin,
+                                    .flexibleLeftMargin, .flexibleRightMargin]
+        view.addSubview(spinner)
+        spinner.startAnimating()
 
-        Task { @MainActor in
+        // A broken provider must not hold the source app's share sheet forever.
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, !self.finished else { return }
+            self.processingTask?.cancel()
+            self.finish(openHost: false)
+        }
+        watchdog = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: timeout)
+
+        processingTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             let vm = ShareViewModel()
-            let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
-            NSLog("[ShareExt] inputItems count: %d", items.count)
+            let items = (self.extensionContext?.inputItems as? [NSExtensionItem]) ?? []
             await vm.processExtensionItems(items)
+            guard !Task.isCancelled, !self.finished else { return }
             let saved = vm.save()
-            NSLog("[ShareExt] save() returned: %@", saved ? "true" : "false")
-
-            // Verify what was saved
-            if let pending = SharedContainerStore.loadPendingShare() {
-                NSLog("[ShareExt] Verified pending share: %d items", pending.items.count)
-                for (i, item) in pending.items.enumerated() {
-                    NSLog("[ShareExt]   item[%d] kind=%@ value=%@", i, item.kind.rawValue, String(item.value.prefix(100)))
-                }
-            } else {
-                NSLog("[ShareExt] WARNING: loadPendingShare returned nil after save!")
-            }
-
-            // Verify shared file directory
-            if let dir = SharedContainerStore.sharedFileDirectory {
-                let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-                NSLog("[ShareExt] Shared file dir: %@ — files: %@", dir.path, files.description)
-            } else {
-                NSLog("[ShareExt] WARNING: sharedFileDirectory is nil!")
-            }
-
-            // Verify sharedDefaults accessible
-            if let defaults = SharedContainerStore.sharedDefaults {
-                let hasKey = defaults.data(forKey: "pendingShare") != nil
-                NSLog("[ShareExt] sharedDefaults accessible, pendingShare key present: %@", hasKey ? "YES" : "NO")
-            } else {
-                NSLog("[ShareExt] WARNING: sharedDefaults is nil — App Group not configured?")
-            }
-
             guard saved, SharedContainerStore.loadPendingShare() != nil else {
-                let alert = UIAlertController(title: "文件分享失败", message: "未能读取文件或保存到共享容器。请尝试从“文件”App 分享，或在 OpenMinis 内添加文件。", preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: "确定", style: .default) { _ in
-                    self.extensionContext?.completeRequest(returningItems: [])
-                })
-                present(alert, animated: true)
+                self.finished = true
+                self.watchdog?.cancel()
+                self.extensionContext?.cancelRequest(withError: NSError(
+                    domain: "OpenMinis.Share", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "无法读取或保存共享文件，请在 OpenMinis 内添加文件。"]
+                ))
                 return
             }
-            redirectToHostApp()
-
-            // Mark done and dismiss — if viewDidAppear already ran, dismiss now
-            processingDone = true
-            NSLog("[ShareExt] Processing done, completing request")
-            extensionContext?.completeRequest(returningItems: [])
+            self.finish(openHost: true)
         }
     }
 
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        // Only dismiss if async processing is already done.
-        // If not done yet, the Task completion above will dismiss.
-        if processingDone {
-            NSLog("[ShareExt] viewDidAppear — processingDone, completing request")
-            extensionContext?.completeRequest(returningItems: [])
-        } else {
-            NSLog("[ShareExt] viewDidAppear — processing still in progress, deferring dismiss")
-        }
-    }
+    @MainActor
+    private func finish(openHost: Bool) {
+        guard !finished else { return }
+        finished = true
+        watchdog?.cancel()
+        watchdog = nil
 
-    // MARK: - Redirect to main app
-
-    private func redirectToHostApp() {
-        guard let url = URL(string: "minis://share") else {
-            NSLog("[ShareExt] ERROR: Failed to create minis://share URL")
-            return
-        }
-
-        let selectorOpenURL = sel_registerName("openURL:")
+        // Capture the application before dismissing the extension. Release the
+        // source app first; opening the host synchronously while the source is
+        // still waiting on completeRequest can wedge the iOS15 transition.
         var responder: UIResponder? = self
-        var found = false
-        while responder != nil {
-            if let application = responder as? UIApplication {
-                NSLog("[ShareExt] Found UIApplication in responder chain, opening URL")
-                if #available(iOS 18.0, *) {
-                    application.open(url, options: [:], completionHandler: nil)
-                } else {
-                    application.perform(selectorOpenURL, with: url)
-                }
-                found = true
-                break
-            }
-            responder = responder?.next
+        var application: UIApplication?
+        while let current = responder {
+            if let app = current as? UIApplication { application = app; break }
+            responder = current.next
         }
-        if !found {
-            NSLog("[ShareExt] WARNING: UIApplication not found in responder chain!")
+        let host = application
+        extensionContext?.completeRequest(returningItems: []) { _ in
+            guard openHost, let host, let url = URL(string: "minis://share") else { return }
+            DispatchQueue.main.async {
+                if #available(iOS 18.0, *) {
+                    host.open(url, options: [:], completionHandler: nil)
+                } else {
+                    host.perform(sel_registerName("openURL:"), with: url)
+                }
+            }
         }
     }
 }

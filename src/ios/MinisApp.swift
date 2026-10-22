@@ -483,6 +483,11 @@ struct MinisApp: App {
                 .keyboardShortcut("n", modifiers: .command)
             }
         }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            // A share may finish after the scene's active callback, or the
+            // extension URL may fail. Check the tiny manifest, not attachments.
+            if scenePhase == .active { shareCoordinator.checkForPendingShare() }
+        }
         .onChange(of: scenePhase) { newPhase in
             handleScenePhaseChange(newPhase)
         }

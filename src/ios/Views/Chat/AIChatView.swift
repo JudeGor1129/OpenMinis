@@ -7453,7 +7453,7 @@ private struct MinisLegacyTranscriptRow: View {
             }
             if message.role == .user {
                 userBubble
-            } else if !message.content.isEmpty {
+            } else if !message.content.isEmpty && !message.blocks.contains(where: { $0.kind == .text && !$0.content.isEmpty }) {
                 // [T-ios15-markdown-verbatim] This used to be
                 // `Text(verbatim:)`, which renders the model's markdown as
                 // literal text: `**bold**`, backticks and `- ` bullets all

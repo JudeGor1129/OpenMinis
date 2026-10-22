@@ -955,6 +955,16 @@ extension AIChatViewModel {
                 // incrementally via `.thinkingDelta`; no end-of-turn overwrite
                 // (would conflate multiple reasoning items into block #0).
                 result.reasoningContent = rc
+                // Some providers deliver only the final reasoning payload,
+                // without thinkingDelta events. Preserve a visible thinking
+                // block in that case, without duplicating streamed segments.
+                if currentThinkingBlockIdx == nil, result.thinkingText.isEmpty, !rc.isEmpty {
+                    await MainActor.run {
+                        guard msgIdx < self.messages.count else { return }
+                        self.messages[msgIdx].blocks.append(AssistantBlock(kind: .thinking, content: rc))
+                        self.publishUnlessTransitioning()
+                    }
+                }
 
             case .reasoningEcho(let echo):
                 // In-memory only; replayed by convertMessagesResponsesAPI on

@@ -5877,7 +5877,7 @@ extension RawMessage {
         }
 
         // Prepend thinking block if reasoning content was stored and thinking display is enabled
-        if showThinking, role == .assistant, let rc = reasoningContent, !rc.isEmpty {
+        if role == .assistant, let rc = reasoningContent, !rc.isEmpty {
             blocks.insert(AssistantBlock(kind: .thinking, content: rc), at: 0)
         }
 

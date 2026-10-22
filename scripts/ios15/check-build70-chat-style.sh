@@ -48,7 +48,8 @@ grep -Fq '@State private var visibleLimit = 12' "$view"
 grep -Fq 'scroll.isTracking || scroll.isDragging || scroll.isDecelerating' "$view"
 attachments=src/ios/Views/Chat/ChatInputBar.swift
 grep -Fq 'private struct UserAttachmentTileLayout<Content: View>: View' "$attachments"
-[ "$(grep -Fc '        UserAttachmentTileLayout {' "$attachments")" -eq 2 ]
-grep -Fq 'LazyVGrid(columns: [GridItem(.adaptive(minimum: UserAttachmentTileMetrics.tile,' "$attachments"
+[ "$(grep -Fc '        UserAttachmentTileLayout(count: attachments.count) {' "$attachments")" -eq 2 ]
+grep -Fq 'LazyVGrid(columns: Array(repeating: GridItem(.fixed(UserAttachmentTileMetrics.tile),' "$attachments"
+require '!message.blocks.contains(where: { $0.kind == .text && !$0.content.isEmpty })'
 echo 'PASS: build70 chat bubble metrics, assistant identity, system dividers, metadata range, attachment grid and legacy-renderer source guards.'
 echo 'NOTE: Swift compilation, selection, long-text wrapping and session entry must still be tested on iOS15.'
