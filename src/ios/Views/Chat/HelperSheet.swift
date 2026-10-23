@@ -422,15 +422,23 @@ private struct HelperTranscript: View {
 
     var body: some View {
         GeometryReader { geo in
-            CollectionViewMessageListV3(
-                vm: vm,
-                inputFocused: false,
-                onBrowserTakeover: { vm.browserTakeoverActive = true },
-                onTakeoverDone: { vm.resumeFromBrowserTakeover() },
-                maxContentWidth: geo.size.width,
-                floatingBarHeight: 0,
-                inputBarHeight: 0
-            )
+            if #available(iOS 16.0, *) {
+                CollectionViewMessageListV3(
+                    vm: vm,
+                    inputFocused: false,
+                    onBrowserTakeover: { vm.browserTakeoverActive = true },
+                    onTakeoverDone: { vm.resumeFromBrowserTakeover() },
+                    maxContentWidth: geo.size.width,
+                    floatingBarHeight: 0,
+                    inputBarHeight: 0
+                )
+            } else {
+                // The parent chat uses this iOS15 path as well. Do not enter
+                // the self-sizing UICollectionView/legacy host bridge from a
+                // nested task sheet; opening it must not create a second
+                // hosting graph inside an in-flight sheet transition.
+                MinisLegacyTranscript(vm: vm, bottomInset: 16, readOnly: true)
+            }
         }
     }
 }

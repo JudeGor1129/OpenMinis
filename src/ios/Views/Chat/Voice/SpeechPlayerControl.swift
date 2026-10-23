@@ -114,7 +114,7 @@ struct SpeechPlayerControl: View {
                         }
                     )
                     .offset(y: -avoidLift)
-                    .animation(.easeInOut(duration: 0.2), value: avoidLift)
+                    .animation(MinisMotion.transition, value: avoidLift)
                     // [T-voice-capsule-cramped-hide] Fade out when there's no
                     // stable place to lift the button into (keyboard + tall voice
                     // panel while editing the transcript). It fades smoothly back
@@ -122,12 +122,12 @@ struct SpeechPlayerControl: View {
                     // hidden so the invisible button can't intercept taps.
                     .opacity(spaceInsufficient ? 0 : 1)
                     .allowsHitTesting(!spaceInsufficient)
-                    .animation(.easeInOut(duration: 0.2), value: spaceInsufficient)
+                    .animation(MinisMotion.feedback, value: spaceInsufficient)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .ignoresSafeArea(.keyboard)
-        .animation(.easeInOut(duration: 0.2), value: isActive)
+        .animation(MinisMotion.transition, value: isActive)
         .onReceive(placement.$protectedRects) { _ in scheduleRecompute() }
         // Window resize (rotation / iPad Stage Manager / Split View): the
         // resting corner moves with the layout, but a dragged offset that was
@@ -193,7 +193,7 @@ struct SpeechPlayerControl: View {
         let shouldHide = headroom < threshold
         if shouldHide != spaceInsufficient {
             VoiceLog.log("[capsule] space \(shouldHide ? "INSUFFICIENT → hide" : "recovered → show") (headroom=\(Int(headroom)) liftedTop=\(Int(liftedTop)) safeTop=\(Int(safeTop)))")
-            withAnimation(.easeInOut(duration: 0.2)) { spaceInsufficient = shouldHide }
+            withAnimation(MinisMotion.feedback) { spaceInsufficient = shouldHide }
         }
 
         // Only track the lift while we actually have somewhere to put the button.
@@ -426,7 +426,7 @@ struct SpeechPlayerControl: View {
             let clamped = clampedOffset(dragOffset)
             if abs(clamped.width - dragOffset.width) > 0.5 || abs(clamped.height - dragOffset.height) > 0.5 {
                 VoiceLog.log("[capsule] window-resize reclamp offset (\(Int(dragOffset.width)),\(Int(dragOffset.height))) → (\(Int(clamped.width)),\(Int(clamped.height)))")
-                withAnimation(.easeInOut(duration: 0.2)) { dragOffset = clamped }
+                withAnimation(MinisMotion.transition) { dragOffset = clamped }
             }
             scheduleRecompute()
         }
@@ -435,7 +435,7 @@ struct SpeechPlayerControl: View {
     private func setExpanded(_ v: Bool) {
         guard expandedState != v else { return }
         VoiceLog.log("[capsule] expanded → \(v)")
-        withAnimation(.easeInOut(duration: 0.16)) { expandedState = v }
+        withAnimation(MinisMotion.layout) { expandedState = v }
     }
 
     // MARK: - Compact
@@ -459,7 +459,7 @@ struct SpeechPlayerControl: View {
                     RotatingArc(diameter: ring)
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: showFailureFlash)
+            .animation(MinisMotion.feedback, value: showFailureFlash)
     }
 
     private var compactButton: some View {

@@ -15,7 +15,8 @@ require 'Text(userDisplayText)'
 require 'fontSettings.scaledMessage(16.5)'
 require 'AssistantBlockView('
 require '.environmentObject(vm)'
-require 'ToolLiveSheet(toolBlocks: tools,'
+grep -Fq 'ToolLiveSheet(toolBlocks: target.blocks,' "$view"
+require 'tools.append(selected)'
 require 'toolSnapshots: vm.toolSnapshots'
 require '.textSelection(.enabled)'
 require '.fixedSize(horizontal: false, vertical: true)'
@@ -49,7 +50,7 @@ require 'vm.editMessage(message.id)'
 area=$(sed -n '/private var messagesArea:/,/private struct MinisLegacyTranscript:/p' "$view")
 grep -Fq 'if #available(iOS 16.0, *)' <<< "$area"
 grep -Fq 'MinisLegacyTranscript(' <<< "$area"
-grep -Fq 'ForEach(vm.messages)' "$view"
+grep -Fq 'ForEach(vm.messages.reversed())' "$view"
 ! grep -Fq 'visibleLimit' "$view"
 grep -Fq 'scroll.isTracking || scroll.isDragging || scroll.isDecelerating' "$view"
 attachments=src/ios/Views/Chat/ChatInputBar.swift

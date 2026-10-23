@@ -1,5 +1,5 @@
 #!/bin/bash
-# Regression guards only: CI Swift compilation and on-device UX checks required.
+# Regression guards only: CI compilation and on-device UX checks required.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 python3 - <<'PY'
@@ -9,42 +9,54 @@ chat = (root / 'Views/Chat/AIChatView.swift').read_text()
 model = (root / 'Agent/Chat/AIChatViewModel.swift').read_text()
 load = (root / 'Agent/Chat/AIChatViewModel+Persistence.swift').read_text()
 modern = (root / 'Agent/MessageList/CollectionViewMessageListV3.swift').read_text()
+helper = (root / 'Views/Chat/HelperSheet.swift').read_text()
 motion = (root / 'Shared/MinisNavigationContainer.swift').read_text()
 def require(ok, message):
     if not ok: raise SystemExit('FAIL: ' + message)
-legacy = chat.split('private struct MinisLegacyTranscript:', 1)[1].split('private struct MinisLegacyTranscriptRow:', 1)[0]
-require('Timer(' not in legacy and 'setContentOffset(' not in legacy,
-        'legacy restoration must not chase lazy numeric content offsets')
-require('proxy.scrollTo(bottomAnchor, anchor: .bottom)' in legacy,
-        'restore through the real tail anchor')
-require('transaction.disablesAnimations = true' in legacy,
-        'session restoration must not animate through history')
-require('scroll.isTracking || scroll.isDragging || scroll.isDecelerating' in legacy,
+legacy = chat.split('struct MinisLegacyTranscript:', 1)[1].split('private struct MinisLegacyTranscriptRow:', 1)[0]
+container = legacy.split('private struct MinisLegacyToolDetailTarget:', 1)[0]
+probe = legacy.split('private struct MinisLegacyScrollFollow:', 1)[1]
+row = chat.split('private struct MinisLegacyTranscriptRow:', 1)[1]
+require('ForEach(vm.messages.reversed())' in container and '.rotationEffect(.degrees(180))' in container,
+        'latest messages must be laid out at native offset zero')
+require('Timer(' not in legacy and 'setContentOffset(' not in legacy and 'scrollTo(' not in probe,
+        'legacy viewport must never chase lazy numeric offsets or content growth')
+# Only the two explicit user jump handlers can command scrolling.
+require(container.count('proxy.scrollTo(') == 2 and
+        'proxy.scrollTo(bottomAnchor, anchor: .top)' in container,
+        'entry and history replacement must not issue automatic scroll commands')
+for event in ['.onAppear {', '.onChange(of: vm.latestSessionAnchorRequest) {']:
+    body = container.split(event, 1)[1].split('\n                }', 1)[0]
+    require('scrollTo(' not in body, 'session restoration must not scroll')
+require('scroll.isTracking || scroll.isDragging || scroll.isDecelerating' in probe,
         'native gestures and momentum take priority')
-require('scrollView?.panGestureRecognizer.removeTarget' in legacy and 'observations.removeAll()' in legacy,
+require('scrollView?.panGestureRecognizer.removeTarget' in probe and 'observations.removeAll()' in probe,
         'scroll observations must be dismantled')
-require('interactionEndCheck?.cancel()' in legacy and 'if userInteractionActive { checkInteractionEnd() }' in legacy,
+require('interactionEndCheck?.cancel()' in probe and 'if userInteractionActive { checkInteractionEnd() }' in probe,
         'native momentum end must be detected without an idle timer')
+require('.sheet(item: $toolDetail)' in container and '.sheet(' not in row,
+        'task windows must be owned by a stable transcript, never recycled rows')
+require('tools.append(selected)' in row and 'detailBlock: detailBlock' in row,
+        'task selection must keep the tapped block in a nonempty snapshot')
+require('if #available(iOS 16.0, *)' in helper and
+        'MinisLegacyTranscript(vm: vm, bottomInset: 16, readOnly: true)' in helper,
+        'child transcripts must use the same iOS15 read-only renderer')
+require('@Published private(set) var latestSessionAnchorRequest' in model and
+        'vm.$latestSessionAnchorRequest' in modern and 'vm.requestLatestSessionAnchor()' in chat,
+        'cached session intent must survive renderer binding timing')
+require('!vm.isLoadingSession || vm.isShowingHistoryPreview' in modern and
+        load.index('isShowingHistoryPreview = !preview.isEmpty') < load.index('messages = preview'),
+        'tail preview must publish before the full-history reconstruction completes')
 require('lastSessionAnchorRequest = vm?.latestSessionAnchorRequest' in modern and
         '!cv.isTracking, !cv.isDragging, !cv.isDecelerating' in modern,
-        'dragging must discard stale session-restoration requests')
-require('@Published private(set) var latestSessionAnchorRequest' in model,
-        'session restore intent must survive renderer subscription timing')
-require('vm.$latestSessionAnchorRequest' in modern and 'vm.requestLatestSessionAnchor()' in chat,
-        'cached-session entry must use a replayable restoration request')
-require('!vm.isLoadingSession || vm.isShowingHistoryPreview' in modern,
-        'tail preview must be displayable during full reconstruction')
-require(load.index('isShowingHistoryPreview = !preview.isEmpty') < load.index('messages = preview'),
-        'publish preview permission before messages')
+        'dragging must discard stale restoration requests')
 require('UIAccessibility.isReduceMotionEnabled' in motion and 'dampingFraction: 1' in motion,
         'shared motion must support Reduce Motion and avoid layout bounce')
-require('.animation(MinisMotion.feedback, value: forcePullToast)' in chat,
-        'chat feedback must use the local short motion token')
 build = Path('scripts/ios15/build-diagnostics.sh').read_text()
 package = Path('scripts/ios15/package-trollstore.sh').read_text()
 require('-configuration Release' in build and 'SWIFT_OPTIMIZATION_LEVEL=-O' in build,
         'test IPA must use optimized Release compilation')
 require('Release-iphoneos/Minis.app' in package and 'Debug-iphoneos' not in package,
-        'package must consume the optimized app, not a Debug product')
-print('PASS: motion tokens, replayable entry, visible tail preview, native gesture priority, teardown and optimized IPA.')
+        'package must consume the optimized app')
+print('PASS: zero-travel session entry, native gestures, stable task sheets, child renderer and optimized IPA.')
 PY

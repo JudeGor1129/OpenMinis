@@ -682,18 +682,26 @@ struct AIChatView: View {
                             // tool result (nav bar + bottom status bar), with
                             // HelperDetailCard as the body.
                             ToolLiveSheet(toolBlocks: [target.block], initialIdx: 0, browserPool: nil)
+                                .environmentObject(vm)
+                                .environment(\.chatSessionId, vm.sessionId)
                         }
-                        .onReceive(NotificationCenter.default.publisher(for: .openAgentCallback)) { note in
+                        .onReceive(NotificationCenter.default.publisher(for: .openAgentCallback)
+                            .receive(on: DispatchQueue.main)) { note in
+                            guard isChatViewVisible else { return }
+                            // Both real blocks and synthetic callbacks must be
+                            // scoped before touching presentation state.
+                            if let sid = note.userInfo?["sessionId"] as? String, !sid.isEmpty,
+                               sid != vm.sessionId { return }
                             if let block = note.userInfo?["block"] as? AssistantBlock {
                                 agentCallbackDetail = AgentCallbackDetailTarget(block: block)
                                 return
                             }
                             guard let cb = note.userInfo?["callback"] as? AgentCallback else { return }
-                            if let sid = note.userInfo?["sessionId"] as? String, !sid.isEmpty,
-                               let mine = vm.sessionId, sid != mine { return }
                             agentCallbackDetail = AgentCallbackDetailTarget(callback: cb)
                         }
-                        .onReceive(NotificationCenter.default.publisher(for: .openHelperSheet)) { note in
+                        .onReceive(NotificationCenter.default.publisher(for: .openHelperSheet)
+                            .receive(on: DispatchQueue.main)) { note in
+                            guard isChatViewVisible else { return }
                             guard let childId = note.userInfo?["childSessionId"] as? String else { return }
                             if let parent = note.userInfo?["parentSessionId"] as? String, !parent.isEmpty,
                                let mine = vm.sessionId, parent != mine { return }
@@ -7227,27 +7235,26 @@ private struct MinisSessionPresentationModifier: ViewModifier {
     }
 }
 
-// iOS 15 recovery renderer: no UICollectionView height cache, TextKit bridge,
-// or database writes. Keep the existing transcript untouched on newer systems.
-private struct MinisLegacyTranscript: View {
+// iOS 15 starts at the newest edge of the transcript. Native offset zero is
+// already the latest position: cold load and preview → full history never
+// issue scrollTo/contentOffset commands or wait for estimated row heights.
+struct MinisLegacyTranscript: View {
     @ObservedObject var vm: AIChatViewModel
     let bottomInset: CGFloat
+    var readOnly = false
     @State private var followingBottom = true
-    @State private var positioned = false
+    @State private var toolDetail: MinisLegacyToolDetailTarget?
     private let bottomAnchor = "legacyTranscriptBottom"
 
     var body: some View {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView {
-                    // Retain the entire history in the data source. Lazy layout
-                    // estimates are NOT valid destinations for session restoration.
                     LazyVStack(alignment: .leading, spacing: 20) {
-                        ForEach(vm.messages) { message in
-                            MinisLegacyTranscriptRow(message: message, vm: vm)
-                                .equatable()
-                                .id(message.id)
-                        }
+                        // This is the native TOP, displayed at the physical
+                        // bottom after inversion. It reserves composer space.
+                        Color.clear.frame(height: max(1, bottomInset))
+                            .id(bottomAnchor)
                         if vm.isProcessing || vm.isCompacting {
                             HStack(spacing: 8) {
                                 ProgressView()
@@ -7256,127 +7263,108 @@ private struct MinisLegacyTranscript: View {
                                     .foregroundStyle(.secondary)
                             }
                             .accessibilityElement(children: .combine)
+                            .rotationEffect(.degrees(180))
                         }
-                        Color.clear.frame(height: max(1, bottomInset))
-                            .id(bottomAnchor)
+                        ForEach(vm.messages.reversed()) { message in
+                            MinisLegacyTranscriptRow(
+                                message: message, vm: vm, readOnly: readOnly,
+                                detailTarget: $toolDetail
+                            )
+                                .equatable()
+                                .id(message.id)
+                                .rotationEffect(.degrees(180))
+                        }
+                        Color.clear.frame(height: 12)
                     }
                     .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
                     .padding(.horizontal, 18)
-                    .padding(.top, 12)
                     .background(MinisLegacyScrollFollow(
                         enabled: followingBottom,
                         onFollowingChanged: { follows in
                             if followingBottom != follows { followingBottom = follows }
                             if vm.isNearBottom != follows { vm.isNearBottom = follows }
                             if follows && vm.isAtFirstTurn { vm.isAtFirstTurn = false }
-                        },
-                        onLayoutChanged: {
-                            guard followingBottom else { return }
-                            positionLatest(proxy, animated: false)
                         }
                     ))
                 }
+                .rotationEffect(.degrees(180))
                 .frame(width: viewport.size.width, height: viewport.size.height)
                 .clipped()
-                // Layout still runs while hidden; reveal only after positioning,
-                // so entry never displays the top before jumping to the latest.
-                .opacity(positioned || vm.messages.isEmpty ? 1 : 0)
-                .allowsHitTesting(positioned || vm.messages.isEmpty)
-                .accessibilityHidden(!positioned && !vm.messages.isEmpty)
-                .overlay {
-                    if !positioned && !vm.messages.isEmpty {
-                        SessionLoadingCard().allowsHitTesting(false)
-                    }
-                }
-                .coordinateSpace(name: "legacyTranscriptViewport")
+                // Re-entry recreates only this native scroll viewport at offset
+                // zero. It never animates a preserved top/mid-history offset.
+                .id(vm.latestSessionAnchorRequest)
                 .onAppear {
                     followingBottom = true
-                    positionLatest(proxy, animated: false)
-                }
-                .onReceive(vm.forceScrollToBottom) { _ in
-                    followingBottom = true
-                    vm.isNearBottom = true
-                    positionLatest(proxy, animated: positioned)
-                }
-                .onReceive(vm.forceScrollToTop) { _ in
-                    followingBottom = false
-                    vm.isNearBottom = false
-                    guard let first = vm.messages.first?.id else { return }
-                    withAnimation(MinisMotion.transition) { proxy.scrollTo(first, anchor: .top) }
-                    vm.isAtFirstTurn = true
-                }
-                .onChange(of: vm.messages.count) { _ in
-                    if followingBottom { positionLatest(proxy, animated: false) }
-                }
-                .onChange(of: vm.isLoadingSession) { loading in
-                    // Preview → full-history replacement must stay at the tail,
-                    // unless the reader has already started browsing backwards.
-                    if !loading && followingBottom { positionLatest(proxy, animated: false) }
+                    if !vm.isNearBottom { vm.isNearBottom = true }
                 }
                 .onChange(of: vm.latestSessionAnchorRequest) { _ in
                     followingBottom = true
-                    positionLatest(proxy, animated: false)
+                    if !vm.isNearBottom { vm.isNearBottom = true }
                 }
-                .onChange(of: bottomInset) { _ in
-                    if followingBottom { positionLatest(proxy, animated: false) }
+                // These are EXPLICIT user actions, not session entry or load.
+                .onReceive(vm.forceScrollToBottom) { _ in
+                    followingBottom = true
+                    if !vm.isNearBottom { vm.isNearBottom = true }
+                    withAnimation(MinisMotion.transition) {
+                        proxy.scrollTo(bottomAnchor, anchor: .top)
+                    }
+                }
+                .onReceive(vm.forceScrollToTop) { _ in
+                    followingBottom = false
+                    if vm.isNearBottom { vm.isNearBottom = false }
+                    guard let first = vm.messages.first?.id else { return }
+                    withAnimation(MinisMotion.transition) { proxy.scrollTo(first, anchor: .bottom) }
+                    vm.isAtFirstTurn = true
                 }
             }
         }
-    }
-
-    private func positionLatest(_ proxy: ScrollViewProxy, animated: Bool) {
-        guard !vm.messages.isEmpty else { return }
-        // The next main turn contains the new ForEach IDs after @Published
-        // delivery. Resolve the real tail ID, never contentSize's lazy estimate.
-        DispatchQueue.main.async {
-            guard followingBottom else { return }
-            if animated {
-                withAnimation(MinisMotion.transition) { proxy.scrollTo(bottomAnchor, anchor: .bottom) }
-            } else {
-                var transaction = Transaction(animation: nil)
-                transaction.disablesAnimations = true
-                withTransaction(transaction) { proxy.scrollTo(bottomAnchor, anchor: .bottom) }
-            }
-            positioned = true
+        // Lazy rows are recycled while streaming/resizing. A sheet owned by
+        // a row could lose its presenter as the child task publishes. Own the
+        // selection and a nonempty snapshot at the stable transcript instead.
+        .sheet(item: $toolDetail) { target in
+            ToolLiveSheet(toolBlocks: target.blocks,
+                          initialIdx: target.index,
+                          toolSnapshots: vm.toolSnapshots, browserPool: vm.browserTabPool)
+                .environmentObject(vm)
+                .environment(\.chatSessionId, vm.sessionId)
         }
     }
 }
 
-// Observe SwiftUI's hosting scroll view without replacing its delegate.
-// Layout events are coalesced on the next runloop; there is no idle timer and
-// no numeric contentOffset chase against LazyVStack's estimated heights.
+private struct MinisLegacyToolDetailTarget: Identifiable {
+    let id: UUID
+    let blocks: [AssistantBlock]
+    let index: Int
+}
+
+// Observe SwiftUI's native scroll view without replacing its delegate. The
+// inverted list stays at the newest edge naturally, so this probe NEVER
+// writes an offset or requests another tail scroll on layout/content growth.
 private struct MinisLegacyScrollFollow: UIViewRepresentable {
     let enabled: Bool
     let onFollowingChanged: (Bool) -> Void
-    let onLayoutChanged: () -> Void
 
     func makeUIView(context: Context) -> Probe { Probe() }
     func updateUIView(_ view: Probe, context: Context) {
         view.following = enabled
         view.onFollowingChanged = onFollowingChanged
-        view.onLayoutChanged = onLayoutChanged
         view.connectIfNeeded()
     }
     static func dismantleUIView(_ view: Probe, coordinator: ()) {
         view.stop()
         view.onFollowingChanged = nil
-        view.onLayoutChanged = nil
     }
 
     final class Probe: UIView {
         var following = true
         var onFollowingChanged: ((Bool) -> Void)?
-        var onLayoutChanged: (() -> Void)?
         private weak var scrollView: UIScrollView?
         private var observations: [NSKeyValueObservation] = []
         private var userInteractionActive = false
         private var updateScheduled = false
-        private var needsAnchor = false
-        // Only alive during a user's drag/deceleration. UIKit may finish
-        // deceleration without one final contentOffset KVO notification.
+        // Only checks for the terminal UIKit drag/deceleration event; idle
+        // screens have no timer and this never moves the content.
         private var interactionEndCheck: DispatchWorkItem?
-        private var lastSize = CGSize.zero
-        private var lastBounds = CGSize.zero
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -7399,23 +7387,10 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             scroll.keyboardDismissMode = .interactive
             scroll.panGestureRecognizer.addTarget(self, action: #selector(panChanged(_:)))
             observations = [
-                scroll.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
-                    self?.scheduleUpdate(layoutChanged: true)
-                },
-                scroll.observe(\.bounds, options: [.new]) { [weak self] scroll, _ in
-                    guard let self else { return }
-                    let resized = self.lastBounds != scroll.bounds.size
-                    self.lastBounds = scroll.bounds.size
-                    self.scheduleUpdate(layoutChanged: resized)
-                },
                 scroll.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
-                    self?.scheduleUpdate(layoutChanged: false)
-                },
-                scroll.observe(\.adjustedContentInset, options: [.new]) { [weak self] _, _ in
-                    self?.scheduleUpdate(layoutChanged: true)
+                    self?.scheduleUpdate()
                 }
             ]
-            scheduleUpdate(layoutChanged: true)
         }
         func stop() {
             scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(panChanged(_:)))
@@ -7424,20 +7399,16 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             interactionEndCheck = nil
             scrollView = nil
             userInteractionActive = false
-            needsAnchor = false
         }
         @objc private func panChanged(_ pan: UIPanGestureRecognizer) {
             if (pan.state == .began || pan.state == .changed) && !userInteractionActive {
                 userInteractionActive = true
-                // Exit follow immediately, including while still near the tail.
-                // UIKit's drag and momentum always have priority over auto-scroll.
                 following = false
                 onFollowingChanged?(false)
             }
-            scheduleUpdate(layoutChanged: false)
+            scheduleUpdate()
         }
-        private func scheduleUpdate(layoutChanged: Bool) {
-            needsAnchor = needsAnchor || layoutChanged
+        private func scheduleUpdate() {
             guard !updateScheduled else { return }
             updateScheduled = true
             DispatchQueue.main.async { [weak self] in
@@ -7460,26 +7431,16 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             guard window != nil, let scroll = scrollView, scroll.bounds.height > 0 else { return }
             let moving = scroll.isTracking || scroll.isDragging || scroll.isDecelerating
             if moving {
-                // Never queue an anchor correction to replay after a drag.
-                needsAnchor = false
                 if userInteractionActive { checkInteractionEnd() }
                 return
             }
             interactionEndCheck?.cancel()
             interactionEndCheck = nil
-            if userInteractionActive {
-                userInteractionActive = false
-                let inset = scroll.adjustedContentInset
-                let bottom = max(-inset.top, scroll.contentSize.height - scroll.bounds.height + inset.bottom)
-                following = abs(bottom - scroll.contentOffset.y) <= 24
-                onFollowingChanged?(following)
-                needsAnchor = false
-                return
-            }
-            let changed = lastSize != scroll.contentSize || needsAnchor
-            lastSize = scroll.contentSize
-            needsAnchor = false
-            if following && changed { onLayoutChanged?() }
+            guard userInteractionActive else { return }
+            userInteractionActive = false
+            // In inverted native coordinates, the newest edge is the TOP.
+            following = abs(scroll.contentOffset.y + scroll.adjustedContentInset.top) <= 24
+            onFollowingChanged?(following)
         }
     }
 }
@@ -7487,10 +7448,28 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
 private struct MinisLegacyTranscriptRow: View, Equatable {
     @ObservedObject var message: ChatMessage
     @ObservedObject var vm: AIChatViewModel
+    var readOnly = false
     @ObservedObject private var fontSettings = FontSettings.shared
     @State private var highlightedBlockId: UUID?
-    @State private var detailBlock: AssistantBlock?
+    @Binding var detailTarget: MinisLegacyToolDetailTarget?
     @State private var groupIcon: String?
+
+    private var detailBlock: Binding<AssistantBlock?> {
+        Binding(
+            get: { detailTarget?.blocks.first(where: { $0.id == detailTarget?.id }) },
+            set: { selected in
+                guard let selected else { detailTarget = nil; return }
+                var tools = message.blocks.filter { $0.toolStatus != nil }
+                // Synthetic callbacks and blocks being reclassified may not
+                // have toolStatus yet. The selected block must always survive.
+                if !tools.contains(where: { $0.id == selected.id }) { tools.append(selected) }
+                detailTarget = MinisLegacyToolDetailTarget(
+                    id: selected.id, blocks: tools,
+                    index: tools.firstIndex(where: { $0.id == selected.id }) ?? 0
+                )
+            }
+        )
+    }
 
     // [T-ios15-typing-lag] Value-equality gate so a keystroke in the composer
     // does NOT re-evaluate every message row.
@@ -7506,7 +7485,8 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
     // lets SwiftUI skip unchanged rows entirely. Anything not compared here
     // must not be rendered by this row, or it would go stale.
     static func == (lhs: MinisLegacyTranscriptRow, rhs: MinisLegacyTranscriptRow) -> Bool {
-        lhs.message === rhs.message
+        lhs.readOnly == rhs.readOnly
+            && lhs.message === rhs.message
             && lhs.message.content == rhs.message.content
             && lhs.message.blocks.count == rhs.message.blocks.count
             && lhs.message.isQueued == rhs.message.isQueued
@@ -7624,13 +7604,13 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                         } label: {
                             Label("编辑并重发（替换后续记录）", systemImage: "pencil")
                         }
-                        .disabled(vm.isProcessing || vm.isRestoringFullHistory || message.isQueued)
+                        .disabled(readOnly || vm.isProcessing || vm.isRestoringFullHistory || message.isQueued)
                         Button {
                             vm.retryFromMessage(message.id)
                         } label: {
                             Label("从此处重发（替换后续记录）", systemImage: "arrow.clockwise")
                         }
-                        .disabled(vm.isProcessing || vm.isRestoringFullHistory || message.isQueued)
+                        .disabled(readOnly || vm.isProcessing || vm.isRestoringFullHistory || message.isQueued)
                         Button {
                             UIPasteboard.general.string = userDisplayText
                         } label: {
@@ -7706,17 +7686,10 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                     browserPool: vm.browserTabPool,
                     toolSnapshots: vm.toolSnapshots,
                     highlightedBlockId: $highlightedBlockId,
-                    detailBlock: $detailBlock
+                    detailBlock: detailBlock
                 )
                 .environmentObject(vm)
             }
-        }
-        .sheet(item: $detailBlock) { block in
-            let tools = message.blocks.filter { $0.toolStatus != nil }
-            ToolLiveSheet(toolBlocks: tools,
-                          initialIdx: tools.firstIndex(where: { $0.id == block.id }) ?? 0,
-                          toolSnapshots: vm.toolSnapshots, browserPool: vm.browserTabPool)
-                .environmentObject(vm)
         }
         // Match the official user row's 60pt leading gutter. The transcript
         // already supplies horizontal margins; do not inset the trailing edge

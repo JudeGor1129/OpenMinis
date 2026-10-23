@@ -772,6 +772,7 @@ struct HelperThumbnailView: View {
 struct HelperDetailCard: View {
     @ObservedObject var block: AssistantBlock
     @State private var latestImagePath: String?
+    @State private var loadingLatestImage = false
     private let refresh = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     private var childId: String? {
@@ -1075,11 +1076,15 @@ struct HelperDetailCard: View {
     /// works after a restart too.
     @MainActor
     private func loadLatestImage() async {
-        guard let childId else { latestImagePath = nil; return }
+        guard !loadingLatestImage else { return }
+        guard let requestedChildId = childId else { latestImagePath = nil; return }
+        loadingLatestImage = true
+        defer { loadingLatestImage = false }
         // [T-vmcache-pools] Still the child pool: opening a child to read a
         // thumbnail must not move it into the user's own budget.
-        let (vm, fresh) = ViewModelCache.shared.getOrCreate(for: childId, kind: .child)
+        let (vm, fresh) = ViewModelCache.shared.getOrCreate(for: requestedChildId, kind: .child)
         if fresh || vm.messages.isEmpty { await vm.loadSession() }
+        guard !Task.isCancelled, childId == requestedChildId else { return }
         for msg in vm.messages.reversed() where msg.role == .assistant {
             for b in msg.blocks.reversed() {
                 if let path = b.imageFilePath, !path.isEmpty, FileManager.default.fileExists(atPath: path) {

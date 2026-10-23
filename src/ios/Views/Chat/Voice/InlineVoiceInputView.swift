@@ -286,7 +286,7 @@ struct InlineVoiceInputView: View {
                             viewModel.setTranscript(joined)
                             if !expanded {
                                 VoiceLog.log("paste → expand")
-                                withAnimation(.easeInOut(duration: 0.28)) { expanded = true }
+                                withAnimation(MinisMotion.layout) { expanded = true }
                             }
                             VoiceLog.log("voice panel paste: +\(text.count) chars")
                         } label: {
@@ -385,17 +385,17 @@ struct InlineVoiceInputView: View {
                 if dy > 0 {
                     if expanded {
                         VoiceLog.log("drag down → collapse")
-                        withAnimation(.easeInOut(duration: 0.28)) { expanded = false }
+                        withAnimation(MinisMotion.layout) { expanded = false }
                     }
                 } else {
                     if !expanded {
                         VoiceLog.log("drag up → expand")
-                        withAnimation(.easeInOut(duration: 0.28)) { expanded = true }
+                        withAnimation(MinisMotion.layout) { expanded = true }
                     }
                 }
             }
         ))
-        .animation(.easeInOut(duration: 0.28), value: expanded)
+        .animation(MinisMotion.layout, value: expanded)
         .background(
             GeometryReader { geo in
                 Color.clear
@@ -544,7 +544,7 @@ struct InlineVoiceInputView: View {
                 VoiceLog.log("external input → transcript sync: \"\(newValue.prefix(40))\"")
                 if !expanded, !newValue.isEmpty {
                     VoiceLog.log("external input → expand (text=\(newValue.count) chars)")
-                    withAnimation(.easeInOut(duration: 0.28)) { expanded = true }
+                    withAnimation(MinisMotion.layout) { expanded = true }
                 }
             }
         }
@@ -560,7 +560,7 @@ struct InlineVoiceInputView: View {
             // path won't re-expand.)
             if !expanded, !newValue.isEmpty {
                 VoiceLog.log("transcript change → expand (text=\(newValue.count) chars)")
-                withAnimation(.easeInOut(duration: 0.28)) { expanded = true }
+                withAnimation(MinisMotion.layout) { expanded = true }
             }
         }
         .onChange(of: viewModel.collapseAfterSendToken) { _ in
@@ -570,7 +570,7 @@ struct InlineVoiceInputView: View {
             // SAME gesture sequence) can't win the race and leave it expanded.
             VoiceLog.log("collapseAfterSendToken → collapse to compact")
             DispatchQueue.main.async {
-                withAnimation(.easeInOut(duration: 0.28)) { expanded = false }
+                withAnimation(MinisMotion.layout) { expanded = false }
             }
         }
         .onChange(of: voiceSelection.inputEntryId) { _ in
@@ -651,21 +651,21 @@ struct InlineVoiceInputView: View {
                 voiceUsageHintGeneration = hint.generation
                 try? await Task.sleep(nanoseconds: UInt64(Self.usageHintDebounce * 1_000_000_000))
                 guard !Task.isCancelled else { return }
-                withAnimation(.easeInOut(duration: 0.25)) { voiceUsageHint = hint }
+                withAnimation(MinisMotion.feedback) { voiceUsageHint = hint }
                 try? await Task.sleep(nanoseconds: UInt64(Self.usageHintDuration * 1_000_000_000))
                 guard !Task.isCancelled, voiceUsageHint?.generation == hint.generation else { return }
-                withAnimation(.easeInOut(duration: 0.25)) { voiceUsageHint = nil }
+                withAnimation(MinisMotion.feedback) { voiceUsageHint = nil }
             }
             // Starting a recording is the voice-panel analogue of "input
             // began": the line yields immediately instead of finishing its
             // window over the live recording tips.
             .onChange(of: viewModel.state) { newState in
                 if newState == .recording, voiceUsageHint != nil {
-                    withAnimation(.easeInOut(duration: 0.2)) { voiceUsageHint = nil }
+                    withAnimation(MinisMotion.feedback) { voiceUsageHint = nil }
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: viewModel.state)
-            .animation(.easeInOut(duration: 0.2), value: viewModel.isEditingTranscript)
+            .animation(MinisMotion.feedback, value: viewModel.state)
+            .animation(MinisMotion.layout, value: viewModel.isEditingTranscript)
 
             // Absorbs spare vertical space so the controls below are pushed to the
             // bottom of the panel. When transcript text grows, this spacer shrinks
@@ -749,7 +749,7 @@ struct InlineVoiceInputView: View {
     /// Compact↔expand toggle. Mirrors the globe's pill styling.
     private var expandCollapseButton: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.28)) { expanded.toggle() }
+            withAnimation(MinisMotion.layout) { expanded.toggle() }
         } label: {
             Image(systemName: expanded ? "chevron.down" : "chevron.up")
                 .font(.system(size: 14, weight: .semibold))
@@ -881,9 +881,9 @@ struct InlineVoiceInputView: View {
                 }
                 // Auto-scroll to the newest text as it streams in.
                 .onChange(of: viewModel.transcript) { _ in
-                    withAnimation(.linear(duration: 0.12)) {
-                        proxy.scrollTo("voiceTranscriptTail", anchor: .bottom)
-                    }
+                    // Transcription is a frequent content update, not a
+                    // navigation gesture: avoid repeated text layout animations.
+                    proxy.scrollTo("voiceTranscriptTail", anchor: .bottom)
                 }
             }
             // Double-tap to correct by keyboard (pauses VAD).
@@ -1289,7 +1289,7 @@ private final class DeleteButtonState: ObservableObject {
     func startHoldTimer(after seconds: TimeInterval) {
         stopHoldTimer()
         let t = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
-            withAnimation(.easeInOut(duration: 0.2)) { self?.canClearAll = true }
+            withAnimation(MinisMotion.feedback) { self?.canClearAll = true }
         }
         RunLoop.main.add(t, forMode: .common)
         holdTimer = t
@@ -1340,7 +1340,7 @@ private struct VoiceDeleteButton: View {
                     },
                     onEnded: { [state] in
                         state.reset()
-                        withAnimation(.easeInOut(duration: 0.15)) { pressing = false }
+                        withAnimation(MinisMotion.feedback) { pressing = false }
                     }
                 )
             )

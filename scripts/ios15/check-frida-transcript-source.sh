@@ -77,17 +77,15 @@ echo "  every message-content markdown view bridges openURL to the app handler"
 # Use awk to extract content from MinisLegacyTranscript (excluding the
 # struct declaration line) until the next struct definition. Avoid
 # head -n -1 which fails on macOS BSD head (negative args not allowed).
-transcript=$(awk '/^private struct MinisLegacyTranscript:/{found=1; next} found && /^private struct [A-Z]/{exit} found' "$view")
+transcript=$(awk '/^struct MinisLegacyTranscript:/{found=1; next} found && /^private struct [A-Z]/{exit} found' "$view")
 if printf '%s\n' "$transcript" | grep -qE '^[[:space:]]*\.contextMenu'; then
     echo "FAIL: AIChatView.swift reintroduced a SwiftUI .contextMenu inside MinisLegacyTranscript — this suppresses the native edit menu on iOS 15"
     exit 1
 fi
 echo "  legacy transcript raises the native edit menu (no SwiftUI contextMenu)"
-# A LazyVStack's contentSize is an estimate. Restore through ScrollViewReader's
-# real tail ID; numeric-offset polling would crawl through history on entry.
-grep -Fq 'proxy.scrollTo(bottomAnchor, anchor: .bottom)' "$view"
-grep -Fq 'scroll.observe(\.contentSize' "$view"
-grep -Fq 'lastSize != scroll.contentSize' "$view"
+# Latest messages occupy native offset zero; only explicit jumps can scroll.
+grep -Fq 'proxy.scrollTo(bottomAnchor, anchor: .top)' "$view"
+grep -Fq 'scroll.observe(\.contentOffset' "$view"
 ! grep -Fq 'Timer(timeInterval: 0.1' "$view"
 grep -Fq 'scrollView?.panGestureRecognizer.removeTarget' "$view"
 bash scripts/ios15/check-motion-source.sh
@@ -96,5 +94,5 @@ printf 'PASS: cached re-entry and event-driven native scroll follow wiring.\n'
 # Native mount overlay must not be recopied per session VM.
 grep -q 'guard !defaultOverlayApplied else { return }' src/ios/iSH/RootfsManager.swift
 grep -q 'defaultOverlayApplied = !overlayFailed' src/ios/iSH/RootfsManager.swift
-grep -Fq 'ForEach(vm.messages)' "$view"
+grep -Fq 'ForEach(vm.messages.reversed())' "$view"
 printf 'PASS: process-local mount overlay guard and smaller initial layout batch.\n'

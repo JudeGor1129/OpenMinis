@@ -357,7 +357,7 @@ struct MinisVideoFullscreenPlayer: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: showControls)
+        .animation(MinisMotion.feedback, value: showControls)
         .onAppear {
             let p: AVPlayer
             if let externalPlayer {
