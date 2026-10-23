@@ -1,6 +1,6 @@
 name: iOS 15 port diagnostics
 
-# Rebuild request (updated 2026-10-23, [ios15-full-build]): regenerate the
+# Rebuild request (updated 2026-10-23b, [ios15-full-build]): regenerate the
 # deleted build 50 IPA without changing app source.
 on:
   push:
