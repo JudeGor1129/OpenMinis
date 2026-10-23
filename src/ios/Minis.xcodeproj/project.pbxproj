@@ -28,6 +28,7 @@
 		AA0838A02F3B941A00049557 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0838A12F3B941A00049557 /* AboutView.swift */; };
 		AA0838C02F3B941A00049557 /* RootfsResetButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0838BF2F3B941A00049557 /* RootfsResetButton.swift */; };
 		AA0838C32F3B941A00049557 /* RootfsManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0838BE2F3B941A00049557 /* RootfsManagementView.swift */; };
+		AA0838CA2F3B941A0004955A /* ToolchainStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0838C92F3B941A0004955A /* ToolchainStatusView.swift */; };
 		AA0838CC2F3B941A00049557 /* StorageManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0838CD2F3B941A00049557 /* StorageManagementView.swift */; };
 		AA0838D02F3B941A00049557 /* CurrentRoot.m in Sources */ = {isa = PBXBuildFile; fileRef = AA0838D12F3B941A00049557 /* CurrentRoot.m */; };
 		AA0838D22F3B941A00049557 /* RootfsPatch.bundle in Resources */ = {isa = PBXBuildFile; fileRef = AA0838D32F3B941A00049557 /* RootfsPatch.bundle */; };
@@ -659,6 +660,7 @@
 		A1B2C3D4E5F60718293A4B5D /* SystemVoiceCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SystemVoiceCatalog.swift; sourceTree = "<group>"; };
 		AA0838A12F3B941A00049557 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		AA0838BE2F3B941A00049557 /* RootfsManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootfsManagementView.swift; sourceTree = "<group>"; };
+		AA0838C92F3B941A0004955A /* ToolchainStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolchainStatusView.swift; sourceTree = "<group>"; };
 		AA0838BF2F3B941A00049557 /* RootfsResetButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootfsResetButton.swift; sourceTree = "<group>"; };
 		AA0838CD2F3B941A00049557 /* StorageManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageManagementView.swift; sourceTree = "<group>"; };
 		AA0838D12F3B941A00049557 /* CurrentRoot.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CurrentRoot.m; sourceTree = "<group>"; };
@@ -2399,6 +2401,7 @@
 				AA26CCBD2F31080100AECF2D /* ISHTerminalView.swift */,
 				AA0838FE2F3B941A00049557 /* MirrorSpeedTestView.swift */,
 				AA0838BE2F3B941A00049557 /* RootfsManagementView.swift */,
+				AA0838C92F3B941A0004955A /* ToolchainStatusView.swift */,
 				AA0838BF2F3B941A00049557 /* RootfsResetButton.swift */,
 			);
 			path = Rootfs;
@@ -2845,6 +2848,7 @@
 				E5QA0002 /* AppDelegate.swift in Sources */,
 				AA0838C02F3B941A00049557 /* RootfsResetButton.swift in Sources */,
 				AA0838C32F3B941A00049557 /* RootfsManagementView.swift in Sources */,
+				AA0838CA2F3B941A0004955A /* ToolchainStatusView.swift in Sources */,
 				AA0838FF2F3B941A00049557 /* MirrorSpeedTestView.swift in Sources */,
 				AA0838CC2F3B941A00049557 /* StorageManagementView.swift in Sources */,
 				E5MNT0001 /* MountedFoldersManager.swift in Sources */,

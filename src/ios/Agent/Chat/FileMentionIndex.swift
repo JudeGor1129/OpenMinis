@@ -136,6 +136,11 @@ final class FileMentionIndex: ObservableObject {
 
     private var lastScanAt: Date?
     private var lastScannedSessionId: String?
+    /// Throttle: don't start a new scan within 1s of the previous one unless
+    /// the cache is stale. Prevents rapid `@`-typing bursts from spawning
+    /// overlapping scans that compete for disk I/O and spam the main thread
+    /// with incremental publish events.
+    private var lastScanStartAt: Date?
     private var scanQueue = DispatchQueue(label: "com.openminis.filementionindex", qos: .userInitiated)
     /// Monotonic token — cancels stale scans when a new one starts.
     private var currentScanToken: UUID?
@@ -188,9 +193,16 @@ final class FileMentionIndex: ObservableObject {
             #endif
             return
         }
-        // Keep the existing rows on screen while this rescan runs — a TTL lapse
-        // during typing must not blank an open menu. `forceRefresh` still clears
-        // them when the session actually changed.
+        // [T-ios-typing-lag-fix] Throttle: if a scan already started within the
+        // last second, skip starting another one now — the current scan will
+        // finish soon and publish fresh entries. Only bypass throttle when the
+        // cache is stale (force-rescan needed) or session changed.
+        let timeSinceLastStart = lastScanStartAt.map { now.timeIntervalSince($0) } ?? .infinity
+        let needsForceRescan = !cacheFresh || !sessionMatches
+        guard timeSinceLastStart > 1.0 || needsForceRescan else {
+            logger.debug("[MentionScan] SKIP throttle — last scan started \(Int(timeSinceLastStart * 1000))ms ago")
+            return
+        }
         forceRefresh(sessionId: sessionId, keepingEntries: true)
     }
 
@@ -212,6 +224,7 @@ final class FileMentionIndex: ObservableObject {
         let sessionChanged = (lastScannedSessionId != sessionId)
         lastScannedSessionId = sessionId
         lastScanAt = Date()
+        lastScanStartAt = Date()  // [T-ios-typing-lag-fix] Record scan start for throttle
         if !keepingEntries || sessionChanged { entries = [] }
         scanAccumulator = []
         isScanning = true

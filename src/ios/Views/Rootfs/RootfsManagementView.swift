@@ -153,6 +153,9 @@ struct RootfsManagementView: View {
                 }
             }
 
+            // [T-ios-toolchain-status] Show iSH toolchain status for all installed tools
+            ToolchainStatusView()
+
             Section("Info") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("About Rootfs")

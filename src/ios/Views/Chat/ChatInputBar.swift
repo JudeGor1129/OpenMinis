@@ -2365,10 +2365,13 @@ struct PastableTextView: UIViewRepresentable {
             if let label = textView.viewWithTag(999) as? UILabel {
                 label.isHidden = !textView.text.isEmpty
             }
-            // Publish caret position for `@`-mention detection. The selectedRange
-            // here is in UTF-16 units, which matches NSString offsets used by the
-            // view model's mention detector.
-            parent.onCaretChange?(textView.selectedRange.location)
+            // [T-ios-typing-lag-fix] Throttle caret change to avoid spawning
+            // mention-menu scans on every keystroke. Defer to next runloop tick
+            // so rapid typing batches into a single update.
+            if let caretChange = parent.onCaretChange {
+                let caret = textView.selectedRange.location
+                DispatchQueue.main.async { caretChange(caret) }
+            }
         }
 
         /// Touch-keyboard Return interception. The hardware Return key is
