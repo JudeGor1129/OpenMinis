@@ -1152,8 +1152,16 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// immediately type their question without an extra tap on the field).
     let requestComposerFocusSignal = PassthroughSubject<Void, Never>()
     /// Force scroll-to-bottom AND re-enable auto-scroll. Used only for explicit user actions
-    /// (send, enqueue, session reuse) — NOT during streaming, so user scroll position is respected.
+    /// (send, enqueue, retry) — NOT during streaming, so user scroll position is respected.
+    /// Explicit actions use a short, purposeful scroll animation.
     let forceScrollToBottom = PassthroughSubject<Void, Never>()
+    /// Monotonic, replayable request for restoring a session's latest position.
+    /// The counter cannot be lost when SwiftUI mounts before the UIKit list
+    /// coordinator binds, so session entry never opens at a blank/old offset.
+    @Published private(set) var latestSessionAnchorRequest: UInt = 0
+    func requestLatestSessionAnchor() {
+        latestSessionAnchorRequest &+= 1
+    }
     /// Force scroll-to-top (first message). Used by the floating "scroll to
     /// first message" button — a counterpart to forceScrollToBottom that does
     /// NOT change auto-scroll mode (jumping to the top is always a browse action).

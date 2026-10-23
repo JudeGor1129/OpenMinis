@@ -409,18 +409,19 @@ extension View {
     }
 }
 
-// Shared motion vocabulary for the whole app. Do not apply an implicit
-// animation to the app root: streaming text, file progress and database
-// updates must remain unanimated. Native navigation/sheets own their motion.
+// Shared, deliberately brief motion vocabulary (HIG motion.md › Providing
+// feedback). Apply at the changed control, never at the app root: streaming,
+// progress and restored history have no animation. Native navigation/sheets
+// keep their system transitions and interactive cancellation.
 enum MinisMotion {
     static var feedback: Animation? {
-        UIAccessibility.isReduceMotionEnabled ? nil : .easeOut(duration: 0.18)
+        UIAccessibility.isReduceMotionEnabled ? nil : .easeOut(duration: 0.14)
     }
     static var transition: Animation? {
-        UIAccessibility.isReduceMotionEnabled ? nil : .easeInOut(duration: 0.25)
+        UIAccessibility.isReduceMotionEnabled ? nil : .easeInOut(duration: 0.22)
     }
     static var layout: Animation? {
-        UIAccessibility.isReduceMotionEnabled ? nil : .spring(response: 0.36, dampingFraction: 0.92)
+        UIAccessibility.isReduceMotionEnabled ? nil : .spring(response: 0.28, dampingFraction: 1)
     }
 }
 

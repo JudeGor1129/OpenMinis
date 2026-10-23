@@ -725,7 +725,7 @@ private struct CodeBlockCopyButton: View {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(copied ? .green : .white.opacity(0.5))
-                .animation(.easeInOut(duration: 0.2), value: copied)
+                .animation(MinisMotion.feedback, value: copied)
         }
         .buttonStyle(.plain)
     }

@@ -863,7 +863,7 @@ struct UnifiedModelPicker: View {
             }
 
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(MinisMotion.layout) {
                     if expandedGroupIds.contains(group.id) {
                         _ = expandedGroupIds.remove(group.id)
                     } else {
@@ -1263,7 +1263,7 @@ struct UnifiedModelPicker: View {
             }
             if isCollapsed && item.entries.count > 1 {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(MinisMotion.layout) {
                         _ = collapsedInstanceIds.remove(item.instance.id)
                     }
                 } label: {
@@ -1283,7 +1283,7 @@ struct UnifiedModelPicker: View {
                 if searchText.isEmpty && item.entries.count > 1 {
                     let collapsed = collapsedInstanceIds.contains(item.instance.id)
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(MinisMotion.layout) {
                             if collapsed {
                                 _ = collapsedInstanceIds.remove(item.instance.id)
                             } else {

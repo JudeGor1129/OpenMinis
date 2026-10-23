@@ -321,9 +321,9 @@ private struct MemoryContentView: View {
                 Task { await ChatStore.shared.markDirty(recordType: "SoulV2", recordId: "soul") }
             }
             isEditing = false
-            withAnimation { saved = true }
+            withAnimation(MinisMotion.feedback) { saved = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                withAnimation { saved = false }
+                withAnimation(MinisMotion.feedback) { saved = false }
             }
         } catch {
             // stay in editing mode on failure
@@ -432,9 +432,9 @@ private struct MemoryWriteDetailView: View {
         let result = replaceEntryInLog(oldContent: written, newContent: editedContent)
         if result != nil {
             isEditing = false
-            withAnimation { saved = true }
+            withAnimation(MinisMotion.feedback) { saved = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                withAnimation { saved = false }
+                withAnimation(MinisMotion.feedback) { saved = false }
             }
         }
     }

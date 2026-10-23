@@ -1178,7 +1178,7 @@ struct ServerPackageListView: View {
                     // Keep the current folder visible as the user descends;
                     // otherwise a deep path scrolls its tail out of sight.
                     .onChange(of: path) { _ in
-                        withAnimation { proxy.scrollTo("crumbs", anchor: .trailing) }
+                        withAnimation(MinisMotion.transition) { proxy.scrollTo("crumbs", anchor: .trailing) }
                     }
                     // ...and on first appearance too. Without this a view
                     // restored at a deep path opens anchored to the LEADING

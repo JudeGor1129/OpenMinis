@@ -192,7 +192,7 @@ struct BrowserManagementView: View {
             pool.setGlobalViewport(width: 0, height: 0)
             viewportWidthText = ""
             viewportHeightText = ""
-            withAnimation { showCustomViewportEditor = false }
+            withAnimation(MinisMotion.layout) { showCustomViewportEditor = false }
         } label: {
             HStack {
                 Label("Default (auto by UA)", systemImage: "arrow.counterclockwise")
@@ -208,7 +208,7 @@ struct BrowserManagementView: View {
 
     private var customViewportRow: some View {
         Button {
-            withAnimation { showCustomViewportEditor = true }
+            withAnimation(MinisMotion.layout) { showCustomViewportEditor = true }
             commitCustomViewport()
         } label: {
             HStack {

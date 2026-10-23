@@ -197,7 +197,7 @@ struct CollectionViewMessageListV3: UIViewControllerRepresentable {
             coord.lastInputFocused = inputFocused
             if wasNearBottom {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak coord] in
-                    coord?.scrollToBottomNow(animated: true)
+                    coord?.scrollToBottomNow(animated: false)
                 }
             }
         }
@@ -919,6 +919,8 @@ extension CollectionViewMessageListV3 {
         }
         /// True during settleAfterInteraction flush — suppresses contentSize KVO offset changes.
         private var isFlushing = false
+        /// Monotonic session-entry anchor request last consumed by this coordinator.
+        private var lastSessionAnchorRequest: UInt = 0
         /// True while an animated setContentOffset is in flight. KVO grow events must not
         /// directly mutate contentOffset during this window — UIKit animation interpolation
         /// can produce a corrupted final offset. Instead, defer via scheduleCoalescedScroll().
@@ -1866,6 +1868,7 @@ extension CollectionViewMessageListV3 {
             lastMessageSub?.cancel(); lastMessageSub = nil
             lastMessageBlockCountSub?.cancel(); lastMessageBlockCountSub = nil
             lastMessageId = nil
+            lastSessionAnchorRequest = 0
             vm = newVM
             bindViewModel(newVM)
             // Re-apply from the new VM's authoritative messages (identity may
@@ -1896,12 +1899,17 @@ extension CollectionViewMessageListV3 {
                     // flipped false in the same cycle), nothing ever re-applied —
                     // the list stayed on its stale/empty snapshot while the VM
                     // (and toolbar) had the full messages.
-                    if self.vm?.isLoadingSession == true {
+                    if self.vm?.isLoadingSession == true && self.vm?.isShowingHistoryPreview != true {
                         self.hasPendingSnapshot = true
                         return
                     }
+                    let isFirstDisplay = self.previousSnapshotIds.isEmpty && !msgs.isEmpty
                     self.flushPendingSnapshotIfNeeded(caller: "bind1-messages")
                     self.applySnapshot(messages: msgs, caller: "bind1-messages")
+                    if isFirstDisplay {
+                        self.reanchorLatestMessageWithoutAnimation(caller: "bind1-preview")
+                    }
+                    self.consumeSessionAnchorIfNeeded()
                 }
                 .store(in: &subscriptions)
 
@@ -2024,7 +2032,16 @@ extension CollectionViewMessageListV3 {
                 }
                 .store(in: &subscriptions)
 
-            // 2c. Up-button: walk back one user turn at a time. Browse action —
+            // 2c. Replayed on bind, unlike the old fire-and-forget subject.
+            // Consume after the initial $messages snapshot is queued and outside
+            // updateUIViewController's SwiftUI render transaction.
+            vm.$latestSessionAnchorRequest
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.consumeSessionAnchorIfNeeded() }
+                .store(in: &subscriptions)
+
+            // 2d. Up-button: walk back one user turn at a time. Browse action —
             // do NOT re-enable auto-scroll (leave scrollMode as-is so streaming
             // doesn't yank the user back down after they jump up).
             vm.forceScrollToTop
@@ -2066,16 +2083,17 @@ extension CollectionViewMessageListV3 {
                         self.applySnapshot(messages: msgs, caller: "bind3-sessionLoad")
                     }
                     if isFirstLoad {
-                        // First load: scroll to bottom and clamp.
-                        // 8s window (was 2s) so async video thumbnail
-                        // generation can complete and the cell-height
-                        // correction reaches the user before we release
-                        // the bottom pin.
-                        self.scrollMode = .autoScrolling
-                        self.clampAfterSessionLoad = true
-                        self.clampDeadline = Date().addingTimeInterval(8.0)
-                        self.scrollToLastItem()
+                        // First load is state restoration, not user-requested
+                        // navigation. Defer one main-queue turn so the
+                        // diffable snapshot has laid out its content size,
+                        // then snap directly to the latest message.
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self, self.vm?.isLoadingSession == false,
+                                  self.scrollMode == .autoScrolling else { return }
+                            self.reanchorLatestMessageWithoutAnimation(caller: "bind3-sessionLoad-async")
+                        }
                     }
+                    self.consumeSessionAnchorIfNeeded()
                     // Sync reload: keep current scroll position, just update data
                 }
                 .store(in: &subscriptions)
@@ -2679,7 +2697,7 @@ extension CollectionViewMessageListV3 {
         }
 
         private func applySnapshot(messages rawMessages: [ChatMessage], caller: String = "?") {
-            guard let vm, !vm.isLoadingSession else { return }
+            guard let vm, !vm.isLoadingSession || vm.isShowingHistoryPreview else { return }
 
             // [T-bridge-message-ui-leak] Single UI-collection sink for EVERY
             // path that pushes messages to the list (loadSession, live inject,
@@ -4399,6 +4417,32 @@ extension CollectionViewMessageListV3 {
             return cv.contentOffset.y <= -cv.adjustedContentInset.top + threshold
         }
 
+        private func consumeSessionAnchorIfNeeded() {
+            guard let vm, !vm.isLoadingSession, !vm.messages.isEmpty,
+                  !previousSnapshotIds.isEmpty,
+                  vm.latestSessionAnchorRequest != lastSessionAnchorRequest else { return }
+            lastSessionAnchorRequest = vm.latestSessionAnchorRequest
+            reanchorLatestMessageWithoutAnimation(caller: "sessionAnchor-request")
+        }
+
+        /// Restore the latest visible message position after session entry.
+        /// This is state restoration, not a user-requested scroll, so it must
+        /// never animate through a long transcript. The clamp remains active
+        /// briefly because image/text self-sizing can still correct heights.
+        func reanchorLatestMessageWithoutAnimation(caller: String = "?") {
+            guard let cv = viewController?.collectionView else { return }
+            vm?.setStreamingUIUpdatesSuspended(false)
+            scrollMode = .autoScrolling
+            lastJumpedUserId = nil
+            clampAfterSessionLoad = true
+            clampDeadline = Date().addingTimeInterval(8.0)
+            cv.layoutIfNeeded()
+            scrollToLastItem(animated: false)
+            scrollToBottomNow(animated: false)
+            syncScrollFlags()
+            AppLogger(category: "ScrollDiag").info("[ScrollDiag][sessionAnchor] caller=\(caller) offset=\(String(format: "%.0f", cv.contentOffset.y)) contentSize=\(String(format: "%.0f", cv.contentSize.height))")
+        }
+
         /// True when the content offset is within `threshold` pt of the
         /// maximum (bottom) offset.
         func isWithinBottom(_ threshold: CGFloat) -> Bool {
@@ -4414,7 +4458,8 @@ extension CollectionViewMessageListV3 {
             guard section >= 0 else { return }
             let item = cv.numberOfItems(inSection: section) - 1
             guard item >= 0 else { return }
-            cv.scrollToItem(at: IndexPath(item: item, section: section), at: .bottom, animated: animated)
+            let shouldAnimate = animated && !UIAccessibility.isReduceMotionEnabled
+            cv.scrollToItem(at: IndexPath(item: item, section: section), at: .bottom, animated: shouldAnimate)
         }
 
         /// The user-message id the up-button last jumped to, so a repeated tap
@@ -4455,6 +4500,7 @@ extension CollectionViewMessageListV3 {
         func scrollToPreviousUserTurn(animated: Bool = true) {
             guard let cv = viewController?.collectionView,
                   let vm, let ds = dataSource else { return }
+            let shouldAnimate = animated && !UIAccessibility.isReduceMotionEnabled
             let msgs = vm.messages
             guard !msgs.isEmpty else { return }
 
@@ -4463,7 +4509,7 @@ extension CollectionViewMessageListV3 {
             guard !userIds.isEmpty else {
                 // No user turns (rare) — fall back to the top of the list.
                 if cv.numberOfSections > 0, cv.numberOfItems(inSection: 0) > 0 {
-                    cv.scrollToItem(at: IndexPath(item: 0, section: 0), at: .top, animated: animated)
+                    cv.scrollToItem(at: IndexPath(item: 0, section: 0), at: .top, animated: shouldAnimate)
                 }
                 return
             }
@@ -4521,7 +4567,7 @@ extension CollectionViewMessageListV3 {
                 pos: "call buttonsVisible=\(!msgs.isEmpty && !nbNow)",
                 offset: Double(cv.contentOffset.y), note: Self.nbDump(cv))
             #endif
-            cv.scrollToItem(at: ip, at: .top, animated: animated)
+            cv.scrollToItem(at: ip, at: .top, animated: shouldAnimate)
             // Re-sync isNearBottom so the up/down buttons reflect the new
             // position. Two syncs on purpose:
             //  - the immediate main.async catches the common case;
@@ -4541,7 +4587,7 @@ extension CollectionViewMessageListV3 {
                 _ = nb
                 self.syncScrollFlags()
             }
-            if animated {
+            if shouldAnimate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                     guard let self else { return }
                     let cv2 = self.viewController?.collectionView
@@ -4714,7 +4760,8 @@ extension CollectionViewMessageListV3 {
             let maxOff = cv.contentSize.height - cv.bounds.height + cv.adjustedContentInset.bottom
             guard maxOff > 0 else { return }
             let target = CGPoint(x: 0, y: maxOff)
-            if animated {
+            let shouldAnimate = animated && !UIAccessibility.isReduceMotionEnabled
+            if shouldAnimate {
                 isAnimatingScrollToBottom = true
                 cv.setContentOffset(target, animated: true)
                 // The animated set's final scrollViewDidScroll should land within
@@ -4724,7 +4771,8 @@ extension CollectionViewMessageListV3 {
                 // the bottom. Re-sync once the animation settles.
                 DispatchQueue.main.async { [weak self] in self?.syncScrollFlags() }
             } else {
-                cv.contentOffset = target
+                isAnimatingScrollToBottom = false
+                cv.setContentOffset(target, animated: false)
                 syncScrollFlags()
             }
         }

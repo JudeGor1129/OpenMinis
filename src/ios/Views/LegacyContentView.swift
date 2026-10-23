@@ -55,7 +55,7 @@ private struct LegacyContentView: View {
             List {
                 Section {
                     Button {
-                        groupsExpanded.toggle()
+                        withAnimation(MinisMotion.transition) { groupsExpanded.toggle() }
                         if groupsExpanded { reloadFolders() }
                     } label: {
                         Label("会话分组", systemImage: groupsExpanded ? "folder.fill" : "folder")
@@ -296,8 +296,10 @@ private struct LegacyContentView: View {
     }
 
     private func toggleGroup(_ id: String) {
-        if expandedGroups.contains(id) { expandedGroups.remove(id) }
-        else { expandedGroups.insert(id) }
+        withAnimation(MinisMotion.transition) {
+            if expandedGroups.contains(id) { expandedGroups.remove(id) }
+            else { expandedGroups.insert(id) }
+        }
     }
 
     private func reload() {

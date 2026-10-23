@@ -235,7 +235,7 @@ struct ModelGroupDetailView: View {
                     Text("Models")
                     Spacer()
                     Button(editMode.isEditing ? AppLocalized("Done") : AppLocalized("Edit")) {
-                        withAnimation {
+                        withAnimation(MinisMotion.layout) {
                             editMode = editMode.isEditing ? .inactive : .active
                         }
                     }

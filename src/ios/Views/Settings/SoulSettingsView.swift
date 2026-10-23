@@ -338,9 +338,9 @@ struct SoulSettingsView: View {
             try SoulStore.save(f)
             loadedRef.value = f
             saveError = nil
-            withAnimation { didJustSave = true }
+            withAnimation(MinisMotion.feedback) { didJustSave = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                withAnimation { didJustSave = false }
+                withAnimation(MinisMotion.feedback) { didJustSave = false }
             }
         } catch {
             saveError = "Save failed: \(error.localizedDescription)"

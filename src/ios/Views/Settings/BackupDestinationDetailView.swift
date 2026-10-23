@@ -796,7 +796,7 @@ struct RcloneConnectionEditor: View {
                             SecureField("New password", text: $secret)
                                 .textContentType(.password)
                                 .disabled(clearSecret)
-                            Toggle("No password (anonymous)", isOn: $clearSecret.animation())
+                            Toggle("No password (anonymous)", isOn: $clearSecret.animation(MinisMotion.feedback))
                         } header: {
                             Text("Password")
                         } footer: {

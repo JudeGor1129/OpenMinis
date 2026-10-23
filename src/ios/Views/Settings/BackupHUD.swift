@@ -50,7 +50,7 @@ extension View {
                         // in the user's way.
                         Task {
                             try? await Task.sleep(nanoseconds: 4_000_000_000)
-                            withAnimation { message.wrappedValue = nil }
+                            withAnimation(MinisMotion.feedback) { message.wrappedValue = nil }
                         }
                     }
             }

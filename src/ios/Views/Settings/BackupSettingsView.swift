@@ -216,7 +216,7 @@ struct BackupSettingsView: View {
             // passphrase), so this is the UI expressing a real invariant, not
             // inventing one.
             Section {
-                Toggle(isOn: $encryptBackup.animation()) {
+                Toggle(isOn: $encryptBackup.animation(MinisMotion.layout)) {
                     HStack(spacing: 12) {
                         Image(systemName: encryptBackup ? "lock.fill" : "lock.open.fill")
                             .font(.system(size: 13, weight: .semibold))

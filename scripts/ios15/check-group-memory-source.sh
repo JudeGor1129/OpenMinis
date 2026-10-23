@@ -38,7 +38,9 @@ printf 'NOTE: full Swift compilation and device share/scroll/isolation tests are
 
 # Full scrollable history, bulk skills and scoped UI.
 grep -Fq 'ForEach(vm.messages)' src/ios/Views/Chat/AIChatView.swift
-grep -q 'lastSize != scroll.contentSize || lastBounds != scroll.bounds.size' src/ios/Views/Chat/AIChatView.swift
+# Layout observation replaces the 100ms timer, while retaining full history.
+grep -Fq 'lastSize != scroll.contentSize || needsAnchor' src/ios/Views/Chat/AIChatView.swift
+grep -Fq 'proxy.scrollTo(bottomAnchor, anchor: .bottom)' src/ios/Views/Chat/AIChatView.swift
 grep -q 'Button("全部开启")' "$skills"
 grep -q 'Button("全部关闭")' "$skills"
 grep -q 'MinisGroupMemorySettings(configuration:' "$skills"

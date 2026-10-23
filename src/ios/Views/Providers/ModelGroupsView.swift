@@ -182,7 +182,7 @@ struct ModelGroupsView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(MinisMotion.layout, value: forceSyncToast)
+        .animation(MinisMotion.feedback, value: forceSyncToast)
         // [T-provider-group-swipe-actions] Swipe-Edit reuses the row's own
         // destination.
         //

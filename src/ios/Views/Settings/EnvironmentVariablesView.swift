@@ -176,9 +176,9 @@ struct EnvironmentVariablesView: View {
 
                 Button {
                     UIPasteboard.general.string = "\(entry.key)=\(currentValue)"
-                    withAnimation { copiedId = entry.id }
+                    withAnimation(MinisMotion.feedback) { copiedId = entry.id }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        withAnimation { if copiedId == entry.id { copiedId = nil } }
+                        withAnimation(MinisMotion.feedback) { if copiedId == entry.id { copiedId = nil } }
                     }
                 } label: {
                     Image(systemName: copiedId == entry.id ? "checkmark" : "doc.on.clipboard")

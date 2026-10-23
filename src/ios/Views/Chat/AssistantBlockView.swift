@@ -159,6 +159,7 @@ struct AssistantBlockView: View {
 /// gradient stops every frame — avoids a CAGradientLayer colorspace teardown
 /// race during CATransaction flush (EXC_BAD_ACCESS at encode_colorspace).
 struct ShimmerOverlay: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @State private var offsetX: CGFloat = -1.0
 
@@ -201,6 +202,7 @@ struct ShimmerOverlay: View {
                 .frame(width: diag, height: geo.size.height)
                 .offset(x: offsetX * geo.size.width)
                 .onAppear {
+                    guard !reduceMotion else { return }
                     withAnimation(
                         .linear(duration: 2.8)
                         .repeatForever(autoreverses: false)
@@ -210,12 +212,17 @@ struct ShimmerOverlay: View {
                 }
         }
         .clipped()
+        .opacity(reduceMotion ? 0 : 1)
+        .onChange(of: reduceMotion) { reduced in
+            if reduced { offsetX = -1 }
+        }
     }
 }
 
 // MARK: - Tool Capsule View (unified pill for all tool types)
 
 struct ToolCapsuleView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var block: AssistantBlock
     let icon: String
     let accentColor: Color
@@ -395,9 +402,9 @@ struct ToolCapsuleView: View {
                             Text(".")
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(ChatColors.primaryText)
-                                .offset(y: dotsActive ? -2 : 1)
+                                .offset(y: reduceMotion ? 0 : (dotsActive ? -2 : 1))
                                 .animation(
-                                    .easeInOut(duration: 0.35)
+                                    reduceMotion ? nil : .easeInOut(duration: 0.35)
                                         .repeatForever(autoreverses: true)
                                         .delay(Double(i) * 0.12),
                                     value: dotsActive
@@ -962,16 +969,9 @@ struct ThinkingBlockView: View {
                         // building the interpolated string cost more than the log
                         // call. The two scroll-gesture lines above stay — they
                         // fire once per user drag, not per flush.
-                        // Animated follow only for short content — animating a
-                        // long text's scroll re-lays-out every frame of the
-                        // 0.15s animation; a jump is one layout.
-                        if len > 3000 {
-                            proxy.scrollTo("thinkingBottom", anchor: .bottom)
-                        } else {
-                            withAnimation(.linear(duration: 0.15)) {
-                                proxy.scrollTo("thinkingBottom", anchor: .bottom)
-                            }
-                        }
+                        // Stream flushes are frequent; animate none of them.
+                        // Each animated tick re-ran TextKit layout per frame.
+                        proxy.scrollTo("thinkingBottom", anchor: .bottom)
                     }
                     .onChange(of: isStreaming) { streaming in
                         if !streaming {
@@ -1073,6 +1073,7 @@ struct ThinkingBlockView: View {
 // MARK: - Typing Indicator
 
 struct TypingIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dotOffsets: [Bool] = [false, false, false]
     /// Live Soul name so the indicator reads "<custom name> is thinking…" when
     /// the user has renamed the assistant in Soul settings. Updates via
@@ -1092,7 +1093,7 @@ struct TypingIndicator: View {
             Text("\(soulName) is thinking")
             ForEach(0..<3, id: \.self) { i in
                 Text(".")
-                    .offset(y: dotOffsets[i] ? -3 : 1)
+                    .offset(y: reduceMotion ? 0 : (dotOffsets[i] ? -3 : 1))
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
@@ -1103,6 +1104,7 @@ struct TypingIndicator: View {
         .foregroundStyle(ChatColors.tertiaryText)
         .padding(.top, 0)
         .onAppear {
+            guard !reduceMotion else { return }
             for i in 0..<3 {
                 withAnimation(
                     .easeInOut(duration: 0.4)
@@ -1180,6 +1182,6 @@ private struct ToolCopyButton: View {
                 .frame(width: 16, height: 16)
                 .foregroundStyle(copied ? accentColor : accentColor.opacity(0.4))
         }
-        .animation(.easeInOut(duration: 0.15), value: copied)
+        .animation(MinisMotion.feedback, value: copied)
     }
 }

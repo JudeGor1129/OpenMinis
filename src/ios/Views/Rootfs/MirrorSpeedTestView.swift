@@ -477,7 +477,6 @@ struct MirrorsSectionView: View {
 
             if vm.isTesting {
                 ProgressView(value: vm.testProgress)
-                    .animation(.default, value: vm.testProgress)
             }
 
             ForEach(MirrorCategory.allCases) { category in

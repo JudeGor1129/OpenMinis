@@ -69,10 +69,13 @@ struct BrowserSheetView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
 
-                    if isAgentBusy {
-                        AgentBrowsingOverlay(onTakeover: onTakeover)
-                            .transition(.opacity)
+                    ZStack {
+                        if isAgentBusy {
+                            AgentBrowsingOverlay(onTakeover: onTakeover)
+                                .transition(.opacity)
+                        }
                     }
+                    .animation(MinisMotion.feedback, value: isAgentBusy)
 
                     // Fullscreen exit button
                     if isFullscreen {
@@ -80,7 +83,7 @@ struct BrowserSheetView: View {
                             HStack {
                                 Spacer()
                                 Button {
-                                    withAnimation(.easeInOut(duration: 0.25)) { isFullscreen = false }
+                                    withAnimation(MinisMotion.transition) { isFullscreen = false }
                                 } label: {
                                     Image(systemName: "arrow.down.right.and.arrow.up.left")
                                         .font(.system(size: 14, weight: .medium))
@@ -95,7 +98,6 @@ struct BrowserSheetView: View {
                         }
                     }
                 }
-                .animation(.easeInOut(duration: 0.3), value: isAgentBusy)
 
                 // Download progress banner — visible in both normal and
                 // fullscreen modes so an in-flight download is never silent.
@@ -138,7 +140,7 @@ struct BrowserSheetView: View {
                         }
 
                         Button {
-                            withAnimation(.easeInOut(duration: 0.25)) { isFullscreen = true }
+                            withAnimation(MinisMotion.transition) { isFullscreen = true }
                         } label: {
                             Image(systemName: "arrow.up.left.and.arrow.down.right")
                                 .frame(maxWidth: .infinity)
@@ -305,6 +307,7 @@ struct BrowserSheetView: View {
 /// Globe icon with a spinning arc border when loading.
 private struct BrowserAddressBarIcon: View {
     let isLoading: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var spinning = false
 
     var body: some View {
@@ -318,9 +321,13 @@ private struct BrowserAddressBarIcon: View {
                     .trim(from: 0, to: 0.3)
                     .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                     .frame(width: 22, height: 22)
-                    .rotationEffect(.degrees(spinning ? 360 : 0))
-                    .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: spinning)
-                    .onAppear { spinning = true }
+                    .rotationEffect(.degrees(reduceMotion ? 0 : (spinning ? 360 : 0)))
+                    .animation(spinning && !reduceMotion
+                               ? .linear(duration: 1).repeatForever(autoreverses: false)
+                               : nil,
+                               value: spinning)
+                    .onAppear { spinning = !reduceMotion }
+                    .onChange(of: reduceMotion) { spinning = !$0 }
                     .onDisappear { spinning = false }
                     .transition(.identity)
             }
@@ -335,6 +342,7 @@ private struct BrowserAddressBarIcon: View {
 /// Blocks all user interaction on the webview while providing a visual cue.
 private struct AgentBrowsingOverlay: View {
     var onTakeover: (() -> Void)?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var breathing = false
 
     var body: some View {
@@ -347,8 +355,13 @@ private struct AgentBrowsingOverlay: View {
                 Circle()
                     .fill(Color.accentColor)
                     .frame(width: 8, height: 8)
-                    .opacity(breathing ? 1.0 : 0.3)
-                    .shadow(color: Color.accentColor.opacity(breathing ? 0.8 : 0), radius: breathing ? 8 : 0)
+                    .opacity(reduceMotion ? 1.0 : (breathing ? 1.0 : 0.3))
+                    .shadow(color: Color.accentColor.opacity(reduceMotion ? 0 : (breathing ? 0.8 : 0)),
+                            radius: reduceMotion ? 0 : (breathing ? 8 : 0))
+                    .animation(breathing && !reduceMotion
+                               ? .easeInOut(duration: 1.5).repeatForever(autoreverses: true)
+                               : nil,
+                               value: breathing)
 
                 Text("Minis is browsing")
                     .font(.system(size: 13, weight: .medium))
@@ -375,11 +388,9 @@ private struct AgentBrowsingOverlay: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle()) // capture all touches
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-                breathing = true
-            }
-        }
+        .onAppear { breathing = !reduceMotion }
+        .onChange(of: reduceMotion) { breathing = !$0 }
+        .onDisappear { breathing = false }
     }
 }
 
@@ -469,21 +480,26 @@ struct BrowserDownloadFloatingButton: View {
 private struct DownloadPulseModifier: ViewModifier {
     let active: Bool
     @Binding var legacyPulse: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         if #available(iOS 17, *) {
-            content.symbolEffect(.pulse, options: .repeating, isActive: active)
+            content.symbolEffect(.pulse, options: .repeating, isActive: active && !reduceMotion)
         } else {
             content
-                .opacity(active && legacyPulse ? 0.35 : 1.0)
-                .animation(active
+                .opacity(active && legacyPulse && !reduceMotion ? 0.35 : 1.0)
+                .animation(active && legacyPulse && !reduceMotion
                            ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
-                           : .default,
+                           : nil,
                            value: legacyPulse)
-                .onAppear { if active { legacyPulse = true } }
+                .onAppear { legacyPulse = active && !reduceMotion }
                 .onChange(of: active) { nowActive in
-                    legacyPulse = nowActive
+                    legacyPulse = nowActive && !reduceMotion
                 }
+                .onChange(of: reduceMotion) { nowReduced in
+                    legacyPulse = active && !nowReduced
+                }
+                .onDisappear { legacyPulse = false }
         }
     }
 }

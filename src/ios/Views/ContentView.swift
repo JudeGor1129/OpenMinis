@@ -1690,13 +1690,15 @@ struct ModernContentView: View {
                 }
             }
             .overlay(alignment: .top) {
-                if let toast = forceSyncToast {
-                    ForceSyncToastBanner(text: toast)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .padding(.top, 8)
+                ZStack {
+                    if let toast = forceSyncToast {
+                        ForceSyncToastBanner(text: toast)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .padding(.top, 8)
+                    }
                 }
+                .animation(MinisMotion.feedback, value: forceSyncToast)
             }
-            .animation(MinisMotion.transition, value: forceSyncToast)
             .onChange(of: wide) { newWide in
                 isWideLayout = newWide
             }
@@ -2075,7 +2077,7 @@ struct ModernContentView: View {
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
                 }
                 .transition(.opacity)
-                .animation(.easeInOut(duration: 0.2), value: isExporting)
+                .animation(MinisMotion.feedback, value: isExporting)
             }
         }
         .task {
@@ -2208,7 +2210,7 @@ struct ModernContentView: View {
             if isWideLayout, let sid = selectedSessionId,
                let fid = sessions.first(where: { $0.id == sid })?.folderId,
                collapsedFolderIds.contains(fid) {
-                toggleFolderCollapsed(fid)
+                toggleFolderCollapsed(fid, animated: false)
             }
             didInitialLoad = true
             fetchAlarmsIfNeeded()
@@ -2925,7 +2927,7 @@ struct ModernContentView: View {
     /// Expansion is EXCLUSIVE (accordion): opening a folder closes every
     /// other one — only one folder interior is on screen at a time, which
     /// keeps the wrapped-container look unambiguous and the list short.
-    private func toggleFolderCollapsed(_ folderId: String, scrollProxy: ScrollViewProxy? = nil) {
+    private func toggleFolderCollapsed(_ folderId: String, scrollProxy: ScrollViewProxy? = nil, animated: Bool = true) {
         // [T-ios-folder-accordion-scroll-anchor] Keep the tapped folder in view
         // across the swap.
         //
@@ -2952,9 +2954,10 @@ struct ModernContentView: View {
         // segments re-rendering every animation frame (that structure is gone;
         // the group is now ONE card, one glass shape), and a springy curve
         // whose oscillation read as continuous wobble. Hence a short plain
-        // easeInOut: monotonic (no overshoot to re-measure), brief enough
-        // that the List's per-frame self-size pass stays cheap.
-        withAnimation(.easeInOut(duration: 0.25)) {
+        // transition token: monotonic (no overshoot to re-measure), brief
+        // enough that the List's per-frame self-size pass stays cheap.
+        // Restoring a saved selection must not animate the sidebar.
+        withAnimation(animated ? MinisMotion.transition : nil) {
             if collapsedFolderIds.contains(folderId) {
                 collapsedFolderIds = Set(folders.map(\.id))
                 collapsedFolderIds.remove(folderId)
@@ -2997,7 +3000,7 @@ struct ModernContentView: View {
                     // programmatically while off screen). Fall back to the old
                     // unconditional behaviour rather than risk leaving the user
                     // staring at the wrong part of the list.
-                    withAnimation(.easeInOut(duration: 0.25)) {
+                    withAnimation(MinisMotion.transition) {
                         scrollProxy.scrollTo("folderHeader-\(folderId)", anchor: .top)
                     }
                     return
@@ -3015,24 +3018,22 @@ struct ModernContentView: View {
                     // In place — the whole point of this refinement.
                     return
                 }
-                withAnimation(.easeInOut(duration: 0.25)) {
+                withAnimation(MinisMotion.transition) {
                     scrollProxy.scrollTo("folderHeader-\(folderId)", anchor: .top)
                 }
             }
         }
     }
 
-    /// Probe report sink. Animated so the mini-bar's insertion/removal
-    /// transition actually plays; guarded so the (per-frame-capable) probe
-    /// only ever mutates state on a real transition.
+    /// Probe report sink. Guarded so the (per-frame-capable) probe only
+    /// mutates state on a real transition. The mini-bar owns its animation;
+    /// geometry reports must not animate unrelated list updates.
     private func setFolderHeaderOffscreen(_ folderId: String, _ offscreen: Bool) {
         guard offscreenFolderHeaderIds.contains(folderId) != offscreen else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
-            if offscreen {
-                offscreenFolderHeaderIds.insert(folderId)
-            } else {
-                offscreenFolderHeaderIds.remove(folderId)
-            }
+        if offscreen {
+            offscreenFolderHeaderIds.insert(folderId)
+        } else {
+            offscreenFolderHeaderIds.remove(folderId)
         }
     }
 
@@ -3066,6 +3067,7 @@ struct ModernContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .top)
+            .animation(MinisMotion.transition, value: folderMiniBarFolder?.id)
             .onAppear {
                 folderMiniBarTopY = topY
                 folderListBottomY = geo.frame(in: .global).maxY
@@ -3092,7 +3094,7 @@ struct ModernContentView: View {
     private func folderMiniBar(for folder: ChatFolder, scrollProxy: ScrollViewProxy) -> some View {
         HStack(spacing: 8) {
             Button {
-                withAnimation(.easeInOut(duration: 0.25)) {
+                withAnimation(MinisMotion.transition) {
                     scrollProxy.scrollTo("folderHeader-\(folder.id)", anchor: .top)
                 }
             } label: {
@@ -3115,7 +3117,7 @@ struct ModernContentView: View {
                 // there is no probe alive to do it, and the display guard
                 // alone would leave a stale entry pinning the NEXT
                 // expansion's bar on.
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(MinisMotion.transition) {
                     _ = offscreenFolderHeaderIds.remove(folder.id)
                 }
                 toggleFolderCollapsed(folder.id)
@@ -4372,7 +4374,7 @@ struct ModernContentView: View {
                 openSession(Self.makeNewSessionId(groupId: groupId))
             case .openSearch:
                 if !searchDidDrag {
-                    withAnimation(.easeInOut(duration: 0.2)) { showSearchBar = true }
+                    withAnimation(MinisMotion.transition) { showSearchBar = true }
                 }
             }
         }
@@ -4780,7 +4782,7 @@ struct ModernContentView: View {
     }
 
     private func dismissSearch() {
-        withAnimation(.easeInOut(duration: 0.2)) { showSearchBar = false }
+        withAnimation(MinisMotion.transition) { showSearchBar = false }
         searchText = ""
         searchMatchedIds = nil
         searchMatchSnippets = [:]
@@ -4877,7 +4879,7 @@ struct ModernContentView: View {
     /// once the field exists in the view tree.
     private func focusSearch() {
         if !showSearchBar {
-            withAnimation(.easeInOut(duration: 0.2)) { showSearchBar = true }
+            withAnimation(MinisMotion.transition) { showSearchBar = true }
         }
         DispatchQueue.main.async { searchFocused = true }
     }
@@ -5897,7 +5899,7 @@ struct ModernContentView: View {
         if isSessionHighlighted(session.id) {
             selectedSessionId = nil
         }
-        withAnimation {
+        withAnimation(MinisMotion.transition) {
             sessions.removeAll { $0.id == session.id }
         }
         Task { @MainActor in
@@ -5928,7 +5930,7 @@ struct ModernContentView: View {
         if ids.contains(where: { isSessionHighlighted($0) }) {
             selectedSessionId = nil
         }
-        withAnimation {
+        withAnimation(MinisMotion.transition) {
             sessions.removeAll { ids.contains($0.id) }
         }
         // Clear deleteInfo to signal onDismiss that deletion occurred;
@@ -8784,13 +8786,17 @@ private struct SettingsSheet: View {
 /// chain on top of the previous one, doubling/quadrupling perceived
 /// rotation speed until the view tree rebuilt.
 private struct PulseRotateIcon: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var rotation: Double = 0
     var body: some View {
         Image(systemName: "arrow.triangle.2.circlepath")
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.primary)
-            .rotationEffect(.degrees(rotation))
-            .task { await pulseLoop() }
+            .rotationEffect(.degrees(reduceMotion ? 0 : rotation))
+            .task(id: reduceMotion) {
+                guard !reduceMotion else { return }
+                await pulseLoop()
+            }
     }
     /// Reads SyncCore's currentSendDelay (5s sync sheet → 60s background)
     /// and converts to an animation cadence: animation phase ≈ delay/4,

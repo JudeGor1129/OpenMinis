@@ -712,7 +712,7 @@ struct AIChatView: View {
                 .simultaneousGesture(
                     TapGesture().onEnded {
                         if vm.speakEnabled && vm.speechPlayerExpanded {
-                            withAnimation(.easeInOut(duration: 0.16)) {
+                            withAnimation(MinisMotion.feedback) {
                                 vm.speechPlayerExpanded = false
                             }
                         }
@@ -750,11 +750,11 @@ struct AIChatView: View {
                             // the blue entry dots read as a glitch, not
                             // feedback (user report 2026-07-06).
                             SessionLoadingCard()
-                                .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                                .transition(.opacity)
                                 .accessibilityIdentifier("sessionLoadingCard")
                         }
                     }
-                    .animation(.easeOut(duration: 0.28), value: vm.isLoadingSession)
+                    .animation(MinisMotion.feedback, value: vm.messages.isEmpty)
                     .allowsHitTesting(false)
                 }
                 .overlay {
@@ -849,18 +849,20 @@ struct AIChatView: View {
             onAttach: { url in vm.addFileAttachment(from: url) }
         ))
         .overlay(alignment: .top) {
-            if let msg = forcePullToast {
-                Text(msg)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Color.accentColor, in: Capsule())
-                    .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            ZStack {
+                if let msg = forcePullToast {
+                    Text(msg)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.accentColor, in: Capsule())
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
+            .animation(MinisMotion.feedback, value: forcePullToast)
         }
-        .animation(.spring(response: 0.3), value: forcePullToast)
         // [T-browser-download-ux-v2] Downloads panel opened from the floating
         // download button (mounted next to the scroll buttons, see
         // downloadFloatingButton). Completed rows jump to the file browser
@@ -1069,7 +1071,7 @@ struct AIChatView: View {
                 // fullScreenCover gets dismissed mid-animation.
                 guard !MinisOpenURLBroker.shared.toolSheetVisible,
                       !MinisOpenURLBroker.shared.terminalVisible else { return }
-                withAnimation { safariURL = url }
+                safariURL = url
             } else {
                 _ = handleMinisURLTap(url)
             }
@@ -1428,10 +1430,12 @@ struct AIChatView: View {
                     // every navigation appearance (which rebuilds all history).
                     vm.consumeDeferredSnapshotIfNeeded()
                     let mountElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
-                    // Cached VM already has messages — trigger scroll-to-bottom
-                    // since isLoadingSession won't transition and its onChange won't fire.
+                    // Cached VM already has messages — snap to the latest
+                    // message. Do not animate from the previous/zero offset;
+                    // that made re-entry look blank while the list slowly
+                    // traversed a long transcript.
                     if !vm.messages.isEmpty {
-                        vm.forceScrollToBottom.send()
+                        vm.requestLatestSessionAnchor()
                     }
                     let totalElapsed = (CFAbsoluteTimeGetCurrent() - reuseStart) * 1000
                     minisLogger.info("[SessionLoad] \(sessionId) — REUSE: \(String(format: "%.1f", totalElapsed))ms [mount: \(String(format: "%.1f", mountElapsed)) | msgs: \(vm.messages.count)]")
@@ -2603,7 +2607,7 @@ struct AIChatView: View {
         // list row, so all three sites lock and unlock in lockstep.
         .blur(radius: titleIsVisuallyLocked ? 8 : 0)
         .allowsHitTesting(!titleIsVisuallyLocked)
-        .animation(.easeInOut(duration: 0.15), value: titleIsVisuallyLocked)
+        .animation(MinisMotion.feedback, value: titleIsVisuallyLocked)
     }
 
     @ViewBuilder
@@ -2964,7 +2968,7 @@ struct AIChatView: View {
             .frame(maxWidth: maxContentWidth ?? .infinity, alignment: .trailing)
             .padding(.horizontal, 12)
             .padding(.bottom, inputBarHeight + (hasFloatingPreview ? 80 : 12) + 92)
-            .animation(.easeInOut(duration: 0.2), value: hasFloatingPreview)
+            .animation(MinisMotion.transition, value: hasFloatingPreview)
             .capsuleProtectedFrame("downloadButton")
         }
     }
@@ -3213,7 +3217,7 @@ struct AIChatView: View {
 
     private func handleMinisURLTap(_ url: URL) -> OpenURLAction.Result {
         if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
-            withAnimation { safariURL = url }
+            safariURL = url
             return .handled
         }
         guard url.scheme == "minis" else { return .systemAction }
@@ -3249,24 +3253,22 @@ struct AIChatView: View {
         // did to the frontmost pointer.
         if let fileURL = resolveMinisFileURL(url: url, sessionId: vm.sessionId) {
             let ext = url.pathExtension.lowercased()
-            withAnimation {
-                if minisImageExtensions.contains(ext) {
-                    previewImageFile = fileURL
-                } else if minisVideoExtensions.contains(ext) {
-                    previewVideoFile = fileURL
-                } else if minisAudioExtensions.contains(ext) {
-                    previewAudioFile = fileURL
-                } else if minisMarkdownExtensions.contains(ext) {
-                    previewMarkdownFile = fileURL
-                } else if minisTextExtensions.contains(ext) {
-                    previewTextFile = fileURL
-                } else if minisHTMLExtensions.contains(ext) {
-                    previewHTMLFile = fileURL
-                } else if minisDocumentExtensions.contains(ext) {
-                    previewDocumentFile = fileURL
-                } else {
-                    shareFile = fileURL
-                }
+            if minisImageExtensions.contains(ext) {
+                previewImageFile = fileURL
+            } else if minisVideoExtensions.contains(ext) {
+                previewVideoFile = fileURL
+            } else if minisAudioExtensions.contains(ext) {
+                previewAudioFile = fileURL
+            } else if minisMarkdownExtensions.contains(ext) {
+                previewMarkdownFile = fileURL
+            } else if minisTextExtensions.contains(ext) {
+                previewTextFile = fileURL
+            } else if minisHTMLExtensions.contains(ext) {
+                previewHTMLFile = fileURL
+            } else if minisDocumentExtensions.contains(ext) {
+                previewDocumentFile = fileURL
+            } else {
+                shareFile = fileURL
             }
         } else {
             // File doesn't exist on disk — likely deleted, from a pruned
@@ -3619,7 +3621,7 @@ struct AIChatView: View {
                 // composer mirrors it, so clearing here would empty the input
                 // box and lose the dictated text on the way back to keyboard.
                 voiceVM.reset(clearTranscript: false)
-                withAnimation(.easeInOut(duration: 0.2)) { voiceInputActive = false }
+                withAnimation(MinisMotion.layout) { voiceInputActive = false }
             } else {
                 // Mark the composition as voice-assisted (committed to the
                 // "voice" input-mode preference only at send time). Switch the
@@ -3628,7 +3630,7 @@ struct AIChatView: View {
                 // Switching text→voice opens the panel expanded this one time;
                 // afterwards it resumes the remembered expand/compact state.
                 VoiceModePreference.shared.enteredFromText = true
-                withAnimation(.easeInOut(duration: 0.2)) { voiceInputActive = true }
+                withAnimation(MinisMotion.layout) { voiceInputActive = true }
             }
         }, isVoiceActive: voiceInputActive)
     }
@@ -3705,9 +3707,9 @@ struct AIChatView: View {
                         .frame(height: min(max(transcriptHeight, 22), transcriptMaxHeight))
                         .onPreferenceChange(TranscriptHeightKey.self) { transcriptHeight = $0 }
                         .onReceive(speechManager.$recognizedText) { _ in
-                            withAnimation(.linear(duration: 0.1)) {
-                                proxy.scrollTo("transcriptTail", anchor: .bottom)
-                            }
+                            // Repeated recognition updates should not queue
+                            // animations and re-layout the text every frame.
+                            proxy.scrollTo("transcriptTail", anchor: .bottom)
                         }
                     }
                 }
@@ -3853,7 +3855,7 @@ struct AIChatView: View {
     /// dragged composer grows rather than collapsing unexpectedly.
     private func toggleComposerHeight() {
         let isExpanded = currentComposerHeight >= composerMaxHeight - 0.5
-        withAnimation(.easeOut(duration: 0.2)) {
+        withAnimation(MinisMotion.layout) {
             persistComposerHeight(isExpanded ? Self.composerDefaultHeight : composerMaxHeight)
         }
     }
@@ -4329,7 +4331,7 @@ struct AIChatView: View {
                                     performSend()
                                 }
                             }
-                            withAnimation(.easeOut(duration: 0.18)) {
+                            withAnimation(MinisMotion.feedback) {
                                 sendSwipeProgress = 0
                             }
                         } else if swipedUp && !hasText && !inputFocused {
@@ -4604,7 +4606,7 @@ struct AIChatView: View {
                         .frame(height: Self.slashPickerFixedHeight)
                         .onChange(of: vm.mentionSelectedIndex) { newIndex in
                             guard newIndex >= 0, newIndex < rows.count else { return }
-                            withAnimation(.easeOut(duration: 0.12)) {
+                            withAnimation(MinisMotion.feedback) {
                                 proxy.scrollTo(newIndex, anchor: .center)
                             }
                         }
@@ -4760,7 +4762,7 @@ struct AIChatView: View {
             loadingVideoCount: vm.loadingVideoCount,
             onRemove: { attachment in vm.removeAttachment(attachment) },
             onMove: { fromID, toID in
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(MinisMotion.layout) {
                     vm.moveAttachment(fromID: fromID, toID: toID)
                 }
             }
@@ -6917,6 +6919,7 @@ private struct EmptyChatDirectoryTimeline: View {
 struct LoadingDotsView: View {
     var dotSize: CGFloat = 10
     var color: Color = .accentColor
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animating = false
 
     var body: some View {
@@ -6925,17 +6928,20 @@ struct LoadingDotsView: View {
                 Circle()
                     .fill(color)
                     .frame(width: dotSize, height: dotSize)
-                    .scaleEffect(animating ? 1.0 : 0.55)
-                    .opacity(animating ? 0.95 : 0.3)
+                    .scaleEffect(reduceMotion ? 1.0 : (animating ? 1.0 : 0.55))
+                    .opacity(reduceMotion ? 0.75 : (animating ? 0.95 : 0.3))
                     .animation(
-                        .easeInOut(duration: 0.5)
+                        reduceMotion ? nil : .easeInOut(duration: 0.5)
                             .repeatForever(autoreverses: true)
                             .delay(Double(i) * 0.16),
                         value: animating
                     )
             }
         }
-        .onAppear { animating = true }
+        .onAppear { animating = !reduceMotion }
+        .onChange(of: reduceMotion) { reduced in
+            animating = !reduced
+        }
     }
 }
 
@@ -7227,161 +7233,236 @@ private struct MinisLegacyTranscript: View {
     @ObservedObject var vm: AIChatViewModel
     let bottomInset: CGFloat
     @State private var followingBottom = true
-    @State private var jumpRequest = 0
-    @State private var jumpToBottom = true
+    @State private var positioned = false
+    private let bottomAnchor = "legacyTranscriptBottom"
+
     var body: some View {
         GeometryReader { viewport in
-        ScrollViewReader { proxy in
-            ScrollView {
-                // All restored messages participate in normal scrolling. No
-                // manual history gate or hidden suffix on the iOS15 path.
-                // [T-ios15-perf-lazy-stack] Use LazyVStack for virtualized rendering:
-                // without it, 100+ messages all render simultaneously, causing
-                // severe lag when scrolling or typing.
-                LazyVStack(alignment: .leading, spacing: 20) {
-                    ForEach(vm.messages) { message in
-                        MinisLegacyTranscriptRow(message: message, vm: vm)
-                            .equatable()
-                            .id(message.id)
-                    }
-                    if vm.isProcessing || vm.isCompacting {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text(vm.isCompacting ? "正在整理上下文…" : "模型任务运行中（请求或工具处理中）…")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    // Retain the entire history in the data source. Lazy layout
+                    // estimates are NOT valid destinations for session restoration.
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        ForEach(vm.messages) { message in
+                            MinisLegacyTranscriptRow(message: message, vm: vm)
+                                .equatable()
+                                .id(message.id)
                         }
-                        .accessibilityElement(children: .combine)
+                        if vm.isProcessing || vm.isCompacting {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text(vm.isCompacting ? "正在整理上下文…" : "模型任务运行中（请求或工具处理中）…")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .accessibilityElement(children: .combine)
+                        }
+                        Color.clear.frame(height: max(1, bottomInset))
+                            .id(bottomAnchor)
                     }
-                    Color.clear.frame(height: bottomInset).id("legacyTranscriptBottom")
+                    .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 12)
+                    .background(MinisLegacyScrollFollow(
+                        enabled: followingBottom,
+                        onFollowingChanged: { follows in
+                            if followingBottom != follows { followingBottom = follows }
+                            if vm.isNearBottom != follows { vm.isNearBottom = follows }
+                            if follows && vm.isAtFirstTurn { vm.isAtFirstTurn = false }
+                        },
+                        onLayoutChanged: {
+                            guard followingBottom else { return }
+                            positionLatest(proxy, animated: false)
+                        }
+                    ))
                 }
-                .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
-                .padding(.horizontal, 18)
-                .padding(.top, 12)
-                .background(MinisLegacyScrollFollow(
-                    enabled: followingBottom,
-                    jumpRequest: jumpRequest, jumpToBottom: jumpToBottom,
-                    onFollowingChanged: { followingBottom = $0 }
-                ))
-            }
-            .frame(width: viewport.size.width, height: viewport.size.height)
-            .clipped()
-            .coordinateSpace(name: "legacyTranscriptViewport")
-            .onReceive(vm.forceScrollToBottom) { _ in
-                followingBottom = true
-                jumpToBottom = true
-                jumpRequest += 1
-            }
-            .onReceive(vm.forceScrollToTop) { _ in
-                followingBottom = false
-                vm.isNearBottom = false
-                jumpToBottom = false
-                jumpRequest += 1
-                vm.isAtFirstTurn = true
-            }
-            .onChange(of: followingBottom) { follows in
-                vm.isNearBottom = follows
-                if follows { vm.isAtFirstTurn = false }
-            }
-            .onChange(of: vm.isLoadingSession) { loading in
-                if !loading { followingBottom = true }
+                .frame(width: viewport.size.width, height: viewport.size.height)
+                .clipped()
+                // Layout still runs while hidden; reveal only after positioning,
+                // so entry never displays the top before jumping to the latest.
+                .opacity(positioned || vm.messages.isEmpty ? 1 : 0)
+                .allowsHitTesting(positioned || vm.messages.isEmpty)
+                .accessibilityHidden(!positioned && !vm.messages.isEmpty)
+                .overlay {
+                    if !positioned && !vm.messages.isEmpty {
+                        SessionLoadingCard().allowsHitTesting(false)
+                    }
+                }
+                .coordinateSpace(name: "legacyTranscriptViewport")
+                .onAppear {
+                    followingBottom = true
+                    positionLatest(proxy, animated: false)
+                }
+                .onReceive(vm.forceScrollToBottom) { _ in
+                    followingBottom = true
+                    vm.isNearBottom = true
+                    positionLatest(proxy, animated: positioned)
+                }
+                .onReceive(vm.forceScrollToTop) { _ in
+                    followingBottom = false
+                    vm.isNearBottom = false
+                    guard let first = vm.messages.first?.id else { return }
+                    withAnimation(MinisMotion.transition) { proxy.scrollTo(first, anchor: .top) }
+                    vm.isAtFirstTurn = true
+                }
+                .onChange(of: vm.messages.count) { _ in
+                    if followingBottom { positionLatest(proxy, animated: false) }
+                }
+                .onChange(of: vm.isLoadingSession) { loading in
+                    // Preview → full-history replacement must stay at the tail,
+                    // unless the reader has already started browsing backwards.
+                    if !loading && followingBottom { positionLatest(proxy, animated: false) }
+                }
+                .onChange(of: vm.latestSessionAnchorRequest) { _ in
+                    followingBottom = true
+                    positionLatest(proxy, animated: false)
+                }
+                .onChange(of: bottomInset) { _ in
+                    if followingBottom { positionLatest(proxy, animated: false) }
+                }
             }
         }
+    }
+
+    private func positionLatest(_ proxy: ScrollViewProxy, animated: Bool) {
+        guard !vm.messages.isEmpty else { return }
+        // The next main turn contains the new ForEach IDs after @Published
+        // delivery. Resolve the real tail ID, never contentSize's lazy estimate.
+        DispatchQueue.main.async {
+            guard followingBottom else { return }
+            if animated {
+                withAnimation(MinisMotion.transition) { proxy.scrollTo(bottomAnchor, anchor: .bottom) }
+            } else {
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { proxy.scrollTo(bottomAnchor, anchor: .bottom) }
+            }
+            positioned = true
         }
     }
 }
 
-// Read the real hosting scroll view after UIKit layout. Never replace its
-// delegate (SwiftUI owns it), and never move it during a drag/deceleration.
+// Observe SwiftUI's hosting scroll view without replacing its delegate.
+// Layout events are coalesced on the next runloop; there is no idle timer and
+// no numeric contentOffset chase against LazyVStack's estimated heights.
 private struct MinisLegacyScrollFollow: UIViewRepresentable {
     let enabled: Bool
-    let jumpRequest: Int
-    let jumpToBottom: Bool
     let onFollowingChanged: (Bool) -> Void
+    let onLayoutChanged: () -> Void
 
     func makeUIView(context: Context) -> Probe { Probe() }
     func updateUIView(_ view: Probe, context: Context) {
         view.following = enabled
-        view.jumpToBottom = jumpToBottom
-        view.jumpRequest = jumpRequest
         view.onFollowingChanged = onFollowingChanged
+        view.onLayoutChanged = onLayoutChanged
+        view.connectIfNeeded()
     }
-    static func dismantleUIView(_ view: Probe, coordinator: ()) { view.stop() }
+    static func dismantleUIView(_ view: Probe, coordinator: ()) {
+        view.stop()
+        view.onFollowingChanged = nil
+        view.onLayoutChanged = nil
+    }
 
     final class Probe: UIView {
         var following = true
-        var jumpRequest = 0
-        var jumpToBottom = true
-        private var handledJump = 0
-        private var jumpAnimator: UIViewPropertyAnimator?
         var onFollowingChanged: ((Bool) -> Void)?
-        private var timer: Timer?
-        private var wasMoving = false
+        var onLayoutChanged: (() -> Void)?
+        private weak var scrollView: UIScrollView?
+        private var observations: [NSKeyValueObservation] = []
+        private var userInteractionActive = false
+        private var updateScheduled = false
+        private var needsAnchor = false
         private var lastSize = CGSize.zero
         private var lastBounds = CGSize.zero
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            stop()
-            guard window != nil else { return }
-            let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.tick() }
-            self.timer = timer
-            RunLoop.main.add(timer, forMode: .common)
+            if window == nil { stop() } else { connectIfNeeded() }
         }
-        func stop() {
-            timer?.invalidate(); timer = nil
-            jumpAnimator?.stopAnimation(true); jumpAnimator = nil
+        override func didMoveToSuperview() {
+            super.didMoveToSuperview()
+            connectIfNeeded()
         }
-        deinit { timer?.invalidate() }
-
-        private func report(_ value: Bool) {
-            guard following != value else { return }
-            following = value
-            onFollowingChanged?(value)
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            connectIfNeeded()
         }
-        private func tick() {
+        func connectIfNeeded() {
+            guard window != nil, scrollView == nil else { return }
             var ancestor = superview
             while let view = ancestor, !(view is UIScrollView) { ancestor = view.superview }
-            guard let scroll = ancestor as? UIScrollView,
-                  scroll.bounds.height > 0, scroll.contentSize.height > 0 else { return }
-            let inset = scroll.adjustedContentInset
-            let bottom = max(-inset.top, scroll.contentSize.height - scroll.bounds.height + inset.bottom)
+            guard let scroll = ancestor as? UIScrollView else { return }
+            scrollView = scroll
+            scroll.keyboardDismissMode = .interactive
+            scroll.panGestureRecognizer.addTarget(self, action: #selector(panChanged(_:)))
+            observations = [
+                scroll.observe(\.contentSize, options: [.new]) { [weak self] _, _ in
+                    self?.scheduleUpdate(layoutChanged: true)
+                },
+                scroll.observe(\.bounds, options: [.new]) { [weak self] scroll, _ in
+                    guard let self else { return }
+                    let resized = self.lastBounds != scroll.bounds.size
+                    self.lastBounds = scroll.bounds.size
+                    self.scheduleUpdate(layoutChanged: resized)
+                },
+                scroll.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
+                    self?.scheduleUpdate(layoutChanged: false)
+                },
+                scroll.observe(\.adjustedContentInset, options: [.new]) { [weak self] _, _ in
+                    self?.scheduleUpdate(layoutChanged: true)
+                }
+            ]
+            scheduleUpdate(layoutChanged: true)
+        }
+        func stop() {
+            scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(panChanged(_:)))
+            observations.removeAll()
+            scrollView = nil
+            userInteractionActive = false
+            needsAnchor = false
+        }
+        @objc private func panChanged(_ pan: UIPanGestureRecognizer) {
+            if (pan.state == .began || pan.state == .changed) && !userInteractionActive {
+                userInteractionActive = true
+                // Exit follow immediately, including while still near the tail.
+                // UIKit's drag and momentum always have priority over auto-scroll.
+                following = false
+                onFollowingChanged?(false)
+            }
+            scheduleUpdate(layoutChanged: false)
+        }
+        private func scheduleUpdate(layoutChanged: Bool) {
+            needsAnchor = needsAnchor || layoutChanged
+            guard !updateScheduled else { return }
+            updateScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.updateScheduled = false
+                self.sample()
+            }
+        }
+        private func sample() {
+            guard window != nil, let scroll = scrollView, scroll.bounds.height > 0 else { return }
             let moving = scroll.isTracking || scroll.isDragging || scroll.isDecelerating
             if moving {
-                jumpAnimator?.stopAnimation(true)
-                jumpAnimator = nil
-                wasMoving = true
-                report(bottom - scroll.contentOffset.y <= 80)
+                if userInteractionActive { onFollowingChanged?(false) }
+                // Never queue an anchor correction to replay after a drag.
+                needsAnchor = false
                 return
             }
-            if jumpRequest != handledJump {
-                handledJump = jumpRequest
-                jumpAnimator?.stopAnimation(true)
-                scroll.layoutIfNeeded()
-                let target = CGPoint(x: scroll.contentOffset.x, y: jumpToBottom ? bottom : -inset.top)
-                if UIAccessibility.isReduceMotionEnabled {
-                    scroll.setContentOffset(target, animated: false)
-                    jumpAnimator = nil
-                } else {
-                    let animator = UIViewPropertyAnimator(duration: 0.35, curve: .easeInOut) {
-                        scroll.contentOffset = target
-                    }
-                    jumpAnimator = animator
-                    animator.startAnimation()
-                }
+            if userInteractionActive {
+                userInteractionActive = false
+                let inset = scroll.adjustedContentInset
+                let bottom = max(-inset.top, scroll.contentSize.height - scroll.bounds.height + inset.bottom)
+                following = abs(bottom - scroll.contentOffset.y) <= 24
+                onFollowingChanged?(following)
+                needsAnchor = false
                 return
             }
-            if jumpAnimator?.isRunning == true { return }
-            jumpAnimator = nil
-            if wasMoving {
-                wasMoving = false
-                report(bottom - scroll.contentOffset.y <= 80)
-            }
-            let changed = lastSize != scroll.contentSize || lastBounds != scroll.bounds.size
+            let changed = lastSize != scroll.contentSize || needsAnchor
             lastSize = scroll.contentSize
-            lastBounds = scroll.bounds.size
-            guard following, changed || abs(scroll.contentOffset.y - bottom) > 1 else { return }
-            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: bottom), animated: false)
+            needsAnchor = false
+            if following && changed { onLayoutChanged?() }
         }
     }
 }

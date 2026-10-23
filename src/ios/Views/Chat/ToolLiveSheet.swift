@@ -723,25 +723,25 @@ struct FloatingToolBar: View {
     /// ViewModelCache rather than using `toolBlocks`.
     private func openTool(_ block: AssistantBlock) {
         guard case .delegateTool = block.kind else {
-            withAnimation { expanded = true }
+            withAnimation(MinisMotion.layout) { expanded = true }
             return
         }
         let log = AppLogger(category: "ToolLiveSheet")
         guard let childId = block.helperChildSessionId else {
             log.info("[agent-tap] no childId — opening the agent sheet")
-            withAnimation { expanded = true }
+            withAnimation(MinisMotion.layout) { expanded = true }
             return
         }
         guard let childVM = ViewModelCache.shared.get(for: childId) else {
             log.info("[agent-tap] child \(childId.prefix(8)) has no live VM — opening the agent sheet")
-            withAnimation { expanded = true }
+            withAnimation(MinisMotion.layout) { expanded = true }
             return
         }
         guard let live = liveChildToolBlock(childSessionId: childId) else {
             // Between tools, starting up, or finished: the agent's own sheet is
             // the right destination then — there is no tool to show.
             log.info("[agent-tap] child \(childId.prefix(8)) has no running tool — opening the agent sheet")
-            withAnimation { expanded = true }
+            withAnimation(MinisMotion.layout) { expanded = true }
             return
         }
         log.info("[agent-tap] child \(childId.prefix(8)) running a tool — opening its live view")
@@ -813,7 +813,7 @@ extension FloatingToolBar {
                 .offset(x: 10)
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: idx)
+        .animation(MinisMotion.feedback, value: idx)
     }
 }
 
@@ -832,7 +832,7 @@ private struct CopyableURLCapsule: View {
             .padding(.vertical, 5)
             .background(showCopied ? Color.green : Color(white: 0.85))
             .clipShape(Capsule())
-            .animation(.easeInOut(duration: 0.2), value: showCopied)
+            .animation(MinisMotion.feedback, value: showCopied)
             .onTapGesture {
                 UIPasteboard.general.string = url
                 showCopied = true
@@ -2616,7 +2616,7 @@ struct ToolLiveSheet: View {
             // Navigation row: |< ... Live ... >|
             HStack {
                 Button {
-                    if currentIdx > 0 { withAnimation { currentIdx -= 1 } }
+                    if currentIdx > 0 { withAnimation(MinisMotion.transition) { currentIdx -= 1 } }
                 } label: {
                     Image(systemName: "backward.end.fill")
                         .font(.system(size: 18))
@@ -2644,7 +2644,7 @@ struct ToolLiveSheet: View {
                 Spacer()
 
                 Button {
-                    if currentIdx < toolBlocks.count - 1 { withAnimation { currentIdx += 1 } }
+                    if currentIdx < toolBlocks.count - 1 { withAnimation(MinisMotion.transition) { currentIdx += 1 } }
                 } label: {
                     Image(systemName: "forward.end.fill")
                         .font(.system(size: 18))
@@ -3210,7 +3210,7 @@ private struct ToolStatusBar: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .contentShape(Rectangle())
-                .onTapGesture { withAnimation { expanded = true } }
+                .onTapGesture { withAnimation(MinisMotion.layout) { expanded = true } }
 
             Spacer(minLength: 1)
 
@@ -3265,7 +3265,7 @@ private struct ToolStatusBar: View {
         guard !toolBlocks.isEmpty else { return }
         let target = min(max(idx, 0), toolBlocks.count - 1)
         guard target != displayedIdx else { return }
-        withAnimation {
+        withAnimation(MinisMotion.transition) {
             selectedIdx = target
             // [T-agent-manual-hold] Stamping this is what suppresses auto-follow
             // for the next minute — a jump is a manual pick like any other, so

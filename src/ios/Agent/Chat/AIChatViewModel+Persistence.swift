@@ -202,8 +202,10 @@ extension AIChatViewModel {
                     preview.append(msg)
                 }
             }
-            messages = preview
+            // The renderer must see the preview permission before $messages
+            // publishes; otherwise the loading guard drops the first screenful.
             isShowingHistoryPreview = !preview.isEmpty
+            messages = preview
             logger.info("[SessionLoad] tail preview: \(preview.count) bubbles in \(Int((CFAbsoluteTimeGetCurrent() - previewStart) * 1000))ms")
             // Give SwiftUI a frame before full reconstruction. This is not a
             // detached actor: published ChatMessage mutations stay on MainActor.

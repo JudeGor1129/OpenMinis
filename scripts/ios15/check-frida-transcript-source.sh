@@ -83,9 +83,15 @@ if printf '%s\n' "$transcript" | grep -qE '^[[:space:]]*\.contextMenu'; then
     exit 1
 fi
 echo "  legacy transcript raises the native edit menu (no SwiftUI contextMenu)"
-grep -q 'scroll.setContentOffset(CGPoint' "$view"
-grep -q 'lastSize != scroll.contentSize' "$view"
-printf 'PASS: cached re-entry and native scroll follow wiring.\n'
+# A LazyVStack's contentSize is an estimate. Restore through ScrollViewReader's
+# real tail ID; numeric-offset polling would crawl through history on entry.
+grep -Fq 'proxy.scrollTo(bottomAnchor, anchor: .bottom)' "$view"
+grep -Fq 'scroll.observe(\.contentSize' "$view"
+grep -Fq 'lastSize != scroll.contentSize' "$view"
+! grep -Fq 'Timer(timeInterval: 0.1' "$view"
+grep -Fq 'scrollView?.panGestureRecognizer.removeTarget' "$view"
+bash scripts/ios15/check-motion-source.sh
+printf 'PASS: cached re-entry and event-driven native scroll follow wiring.\n'
 
 # Native mount overlay must not be recopied per session VM.
 grep -q 'guard !defaultOverlayApplied else { return }' src/ios/iSH/RootfsManager.swift

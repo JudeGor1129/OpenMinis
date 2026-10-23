@@ -575,7 +575,7 @@ final class VoiceInputViewModel: ObservableObject {
                 self?.tipCycleTimer?.invalidate()
                 return
             }
-            withAnimation(.easeInOut(duration: 0.25)) {
+            withAnimation(MinisMotion.feedback) {
                 self.recordingTipIndex += 1
             }
         }
@@ -589,7 +589,7 @@ final class VoiceInputViewModel: ObservableObject {
                 self?.tipCycleTimer?.invalidate()
                 return
             }
-            withAnimation(.easeInOut(duration: 0.25)) {
+            withAnimation(MinisMotion.feedback) {
                 self.resultTipIndex += 1
             }
         }
@@ -601,8 +601,10 @@ final class VoiceInputViewModel: ObservableObject {
     }
 
     private func startRippleAnimation() {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
         for i in 0..<3 {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.3) { [weak self] in
+                guard !UIAccessibility.isReduceMotionEnabled else { return }
                 withAnimation(.easeOut(duration: 1.2).repeatForever(autoreverses: false)) {
                     self?.rippleScale[i] = 1.4
                 }

@@ -152,18 +152,20 @@ struct FileBrowserView: View {
         .navigationBarTitleDisplayMode(.inline)
         // [T-ios-copy-abs-path-copied-toast] Self-dismissing "Copied" capsule.
         .overlay(alignment: .bottom) {
-            if copiedToast {
-                Label(AppLocalized("Copied"), systemImage: "checkmark.circle.fill")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.black.opacity(0.8), in: Capsule())
-                    .padding(.bottom, 32)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            ZStack {
+                if copiedToast {
+                    Label(AppLocalized("Copied"), systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.black.opacity(0.8), in: Capsule())
+                        .padding(.bottom, 32)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .animation(MinisMotion.feedback, value: copiedToast)
         }
-        .animation(.spring(response: 0.3), value: copiedToast)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button("Close") {
@@ -279,12 +281,12 @@ struct FileBrowserView: View {
               let item = viewModel.items.first(where: { $0.name == target }) else { return }
         didLocateHighlight = true
         DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.3)) {
+            withAnimation(MinisMotion.transition) {
                 proxy.scrollTo(item.id, anchor: .center)
                 highlightActive = true
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                withAnimation(.easeOut(duration: 0.6)) { highlightActive = false }
+                withAnimation(MinisMotion.feedback) { highlightActive = false }
             }
         }
     }
