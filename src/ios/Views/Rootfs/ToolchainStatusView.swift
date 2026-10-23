@@ -284,3 +284,4 @@ private struct ToolRow: View {
 #Preview {
     ToolchainStatusView()
 }
+
