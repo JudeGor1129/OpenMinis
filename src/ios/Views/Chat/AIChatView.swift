@@ -7255,7 +7255,7 @@ private struct MinisLegacyTranscript: View {
                     }
                     Color.clear.frame(height: bottomInset).id("legacyTranscriptBottom")
                 }
-                .frame(maxWidth: viewport.size.width - 36, alignment: .leading)
+                .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
                 .padding(.horizontal, 18)
                 .padding(.top, 12)
                 .background(MinisLegacyScrollFollow(
