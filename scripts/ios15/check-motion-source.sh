@@ -35,5 +35,11 @@ require('UIAccessibility.isReduceMotionEnabled' in motion and 'dampingFraction: 
         'shared motion must support Reduce Motion and avoid layout bounce')
 require('.animation(MinisMotion.feedback, value: forcePullToast)' in chat,
         'chat feedback must use the local short motion token')
-print('PASS: motion tokens, replayable entry, visible tail preview, native gesture priority and observer teardown.')
+build = Path('scripts/ios15/build-diagnostics.sh').read_text()
+package = Path('scripts/ios15/package-trollstore.sh').read_text()
+require('-configuration Release' in build and 'SWIFT_OPTIMIZATION_LEVEL=-O' in build,
+        'test IPA must use optimized Release compilation')
+require('Release-iphoneos/Minis.app' in package and 'Debug-iphoneos' not in package,
+        'package must consume the optimized app, not a Debug product')
+print('PASS: motion tokens, replayable entry, visible tail preview, native gesture priority, teardown and optimized IPA.')
 PY

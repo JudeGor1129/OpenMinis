@@ -20,7 +20,7 @@ bash deps/build_ish.sh
 bash deps/prepare_alpine_rootfs.sh
 IOS_DEPLOYMENT_TARGET=15.0 bash deps/build_rclone_ios.sh
 
-# Diagnostic build only, not an IPA/release job. In this disposable CI checkout,
+# TrollStore test IPA, built with Release optimizations. In this disposable CI checkout,
 # lower existing 16.0 settings (project, app, Share and FileProvider) to 15.0.
 # Keep Live Activity's 16.2 and test targets' 26.2 settings unchanged. A global
 # command-line override would incorrectly lower the Live Activity extension.
@@ -51,11 +51,27 @@ plutil -lint "$PROJECT"
 rm -rf build/ios15/Minis.xcresult
 xcodebuild -project src/ios/Minis.xcodeproj \
   -scheme Minis \
-  -configuration Debug \
+  -configuration Release \
   -destination 'generic/platform=iOS' \
   -derivedDataPath build/ios15/DerivedData \
   -resultBundlePath build/ios15/Minis.xcresult \
   CODE_SIGNING_ALLOWED=NO \
+  SWIFT_OPTIMIZATION_LEVEL=-O \
+  ENABLE_TESTABILITY=NO \
+  ENABLE_DEBUG_DYLIB=NO \
   'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) MINIS_LEGACY_FILE_PROVIDER' \
   LIBRARY_SEARCH_PATHS='$(SRCROOT)/../../deps/libs' \
   build
+
+# A previous baseline reset accidentally restored Debug/-Onone packaging.
+# Check the artifact shape so another reset cannot silently ship a debug stub.
+APP=build/ios15/DerivedData/Build/Products/Release-iphoneos/Minis.app
+[[ -f "$APP/Minis" ]] || { echo 'error: optimized Release executable missing' >&2; exit 1; }
+[[ ! -e "$APP/Minis.debug.dylib" ]] || { echo 'error: unexpected debug dylib in Release app' >&2; exit 1; }
+nm "$APP/Minis" > ci-logs/release-symbols.txt
+[[ -s ci-logs/release-symbols.txt ]] || { echo 'error: cannot inspect Release symbols' >&2; exit 1; }
+if grep -q 'NavbarEvalStats' ci-logs/release-symbols.txt; then
+  echo 'error: DEBUG-only chat profiling code survived Release compilation' >&2
+  exit 1
+fi
+printf 'PASS: optimized Release executable, no debug dylib or DEBUG-only chat profiler.\n'
