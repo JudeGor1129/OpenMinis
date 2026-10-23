@@ -4430,7 +4430,8 @@ extension CollectionViewMessageListV3 {
         /// never animate through a long transcript. The clamp remains active
         /// briefly because image/text self-sizing can still correct heights.
         func reanchorLatestMessageWithoutAnimation(caller: String = "?") {
-            guard let cv = viewController?.collectionView else { return }
+            guard let cv = viewController?.collectionView,
+                  !cv.isTracking, !cv.isDragging, !cv.isDecelerating else { return }
             vm?.setStreamingUIUpdatesSuspended(false)
             scrollMode = .autoScrolling
             lastJumpedUserId = nil
@@ -5434,8 +5435,10 @@ extension CollectionViewMessageListV3 {
             stopDecelDisplayLink()
             #endif
             scrollMode = .userBrowsing
-            // Cancel session-load clamp immediately — user has started interacting.
+            // Cancel session-load clamp AND any queued entry request as soon
+            // as the user interacts; do not replay it after momentum ends.
             clampAfterSessionLoad = false
+            lastSessionAnchorRequest = vm?.latestSessionAnchorRequest ?? lastSessionAnchorRequest
             // A manual drag breaks the up-button's turn-walk chain: the next tap
             // should re-anchor to wherever the user landed, not continue the old
             // sequence.

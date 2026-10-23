@@ -7372,6 +7372,9 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
         private var userInteractionActive = false
         private var updateScheduled = false
         private var needsAnchor = false
+        // Only alive during a user's drag/deceleration. UIKit may finish
+        // deceleration without one final contentOffset KVO notification.
+        private var interactionEndCheck: DispatchWorkItem?
         private var lastSize = CGSize.zero
         private var lastBounds = CGSize.zero
 
@@ -7417,6 +7420,8 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
         func stop() {
             scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(panChanged(_:)))
             observations.removeAll()
+            interactionEndCheck?.cancel()
+            interactionEndCheck = nil
             scrollView = nil
             userInteractionActive = false
             needsAnchor = false
@@ -7441,15 +7446,27 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
                 self.sample()
             }
         }
+        private func checkInteractionEnd() {
+            guard interactionEndCheck == nil else { return }
+            let check = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.interactionEndCheck = nil
+                self.sample()
+            }
+            interactionEndCheck = check
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0, execute: check)
+        }
         private func sample() {
             guard window != nil, let scroll = scrollView, scroll.bounds.height > 0 else { return }
             let moving = scroll.isTracking || scroll.isDragging || scroll.isDecelerating
             if moving {
-                if userInteractionActive { onFollowingChanged?(false) }
                 // Never queue an anchor correction to replay after a drag.
                 needsAnchor = false
+                if userInteractionActive { checkInteractionEnd() }
                 return
             }
+            interactionEndCheck?.cancel()
+            interactionEndCheck = nil
             if userInteractionActive {
                 userInteractionActive = false
                 let inset = scroll.adjustedContentInset

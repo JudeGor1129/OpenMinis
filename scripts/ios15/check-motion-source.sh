@@ -23,6 +23,11 @@ require('scroll.isTracking || scroll.isDragging || scroll.isDecelerating' in leg
         'native gestures and momentum take priority')
 require('scrollView?.panGestureRecognizer.removeTarget' in legacy and 'observations.removeAll()' in legacy,
         'scroll observations must be dismantled')
+require('interactionEndCheck?.cancel()' in legacy and 'if userInteractionActive { checkInteractionEnd() }' in legacy,
+        'native momentum end must be detected without an idle timer')
+require('lastSessionAnchorRequest = vm?.latestSessionAnchorRequest' in modern and
+        '!cv.isTracking, !cv.isDragging, !cv.isDecelerating' in modern,
+        'dragging must discard stale session-restoration requests')
 require('@Published private(set) var latestSessionAnchorRequest' in model,
         'session restore intent must survive renderer subscription timing')
 require('vm.$latestSessionAnchorRequest' in modern and 'vm.requestLatestSessionAnchor()' in chat,
