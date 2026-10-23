@@ -1597,6 +1597,12 @@ struct PastableTextView: UIViewRepresentable {
     var onTab: (() -> Bool)?
     /// Receives the caret location (UTF-16 offset) whenever the user moves
     /// the caret or edits the text. Used for `@`-mention detection.
+    ///
+    /// [T-typing-lag-fix] This callback is now suppressed inside the
+    /// coordinator's `textViewDidChangeSelection` to avoid per-frame mention
+    /// re-checks while typing. Programmatic caret moves (pendingCaret,
+    /// selectMention) still flow through `inputCaret.didSet` on the ViewModel
+    /// directly, but they do NOT re-trigger mention-menu state.
     var onCaretChange: ((Int) -> Void)?
     /// [T-text-input-correction-source] Fires when the user replaces a
     /// SELECTED span of already-typed text with new text (before = the
@@ -2436,7 +2442,15 @@ struct PastableTextView: UIViewRepresentable {
 
         func textViewDidChangeSelection(_ textView: UITextView) {
             parent.hasSelection = textView.selectedRange.length > 0
-            parent.onCaretChange?(textView.selectedRange.location)
+            // [T-typing-lag-fix] Do NOT propagate caret moves to the ViewModel
+            // here. Mention-menu state lives on text changes (inputText.didSet),
+            // not cursor sweeps — calling back into Swift from every selection
+            // callback was spawning a DispatchQueue.main.async closure per frame
+            // while the user was just sliding a finger across the keyboard.
+            // Caret position is still tracked locally via inputCaret for program-
+            // matic requests (pendingCaret), but those do not need a mention
+            // re-check on each tick.
+            pasteLog.debug("[Coordinator] selection changed caret=\(textView.selectedRange.location) length=\(textView.selectedRange.length)")
         }
     }
 }

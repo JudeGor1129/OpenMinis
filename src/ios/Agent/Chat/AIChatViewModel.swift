@@ -728,7 +728,12 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Used by the `@` mention detector to locate the active token.
     @Published var inputCaret: Int = 0 {
         didSet {
-            updateMentionMenuState()
+            // [T-typing-lag-fix] Removed: updateMentionMenuState() was called on
+            // EVERY caret move, turning a simple cursor-tracking field into a
+            // full text-scan + possible disk I/O trigger on each touch event.
+            // Mention-menu state is now updated only when text actually changes
+            // (inputText.didSet / slash menu paths), which is the correct
+            // moment and avoids the per-frame overhead during typing.
             // If the caret arrived at the desired location, clear the pending
             // request so subsequent edits aren't forced back.
             if let p = pendingCaret, p == inputCaret {
