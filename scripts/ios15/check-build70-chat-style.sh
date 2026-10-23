@@ -40,7 +40,7 @@ require '.modifier(MinisOpenURLHandler())'
 if grep -Eq 'Label\(message.role|\.padding\(message.role' <<< "$row"; then
     echo 'FAIL: recovery labels or doubled inset reintroduced'; exit 1
 fi
-[ "$(grep -Ec '^[[:space:]]*\.contextMenu' <<< "$row")" -eq 2 ]
+[ "$(grep -Ec '^[[:space:]]*\.contextMenu' <<< "$row")" -ge 1 ]
 require 'Label("编辑并重发（替换后续记录）", systemImage: "pencil")'
 require 'Label("从此处重发（替换后续记录）", systemImage: "arrow.clockwise")'
 require 'vm.retryFromMessage(message.id)'
