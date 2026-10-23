@@ -7235,7 +7235,10 @@ private struct MinisLegacyTranscript: View {
             ScrollView {
                 // All restored messages participate in normal scrolling. No
                 // manual history gate or hidden suffix on the iOS15 path.
-                VStack(alignment: .leading, spacing: 20) {
+                // [T-ios15-perf-lazy-stack] Use LazyVStack for virtualized rendering:
+                // without it, 100+ messages all render simultaneously, causing
+                // severe lag when scrolling or typing.
+                LazyVStack(alignment: .leading, spacing: 20) {
                     ForEach(vm.messages) { message in
                         MinisLegacyTranscriptRow(message: message, vm: vm)
                             .equatable()
@@ -7252,7 +7255,7 @@ private struct MinisLegacyTranscript: View {
                     }
                     Color.clear.frame(height: bottomInset).id("legacyTranscriptBottom")
                 }
-                .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
+                .frame(maxWidth: viewport.size.width - 36, alignment: .leading)
                 .padding(.horizontal, 18)
                 .padding(.top, 12)
                 .background(MinisLegacyScrollFollow(
