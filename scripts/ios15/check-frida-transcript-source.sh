@@ -74,7 +74,8 @@ echo "  every message-content markdown view bridges openURL to the app handler"
 # copied. Guard the regression rather than relying on the comment.
 # NOTE: user-bubble edit/retry menus in MinisLegacyTranscriptRow are OK;
 # we only forbid contextMenu inside MinisLegacyTranscript (the container).
-transcript=$(sed -n '/^private struct MinisLegacyTranscript:/,/^private struct /p' "$view" | head -n -1)
+# Use awk instead of sed|head to avoid SIGPIPE from tee in CI.
+transcript=$(awk '/^private struct MinisLegacyTranscript:/{found=1} found{print} /^private struct / && found && NR>FNR{exit}' "$view" | head -n -1)
 if printf '%s\n' "$transcript" | grep -qE '^[[:space:]]*\.contextMenu'; then
     echo "FAIL: AIChatView.swift reintroduced a SwiftUI .contextMenu inside MinisLegacyTranscript — this suppresses the native edit menu on iOS 15"
     exit 1
