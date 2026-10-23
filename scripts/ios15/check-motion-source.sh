@@ -11,6 +11,8 @@ load = (root / 'Agent/Chat/AIChatViewModel+Persistence.swift').read_text()
 modern = (root / 'Agent/MessageList/CollectionViewMessageListV3.swift').read_text()
 helper = (root / 'Views/Chat/HelperSheet.swift').read_text()
 motion = (root / 'Shared/MinisNavigationContainer.swift').read_text()
+bka = (root / 'Agent/Background/BackgroundKeepAliveManager.swift').read_text()
+audio = (root / 'Providers/Voice/AudioSessionCoordinator.swift').read_text()
 def require(ok, message):
     if not ok: raise SystemExit('FAIL: ' + message)
 legacy = chat.split('struct MinisLegacyTranscript:', 1)[1].split('private struct MinisLegacyTranscriptRow:', 1)[0]
@@ -58,5 +60,12 @@ require('-configuration Release' in build and 'SWIFT_OPTIMIZATION_LEVEL=-O' in b
         'test IPA must use optimized Release compilation')
 require('Release-iphoneos/Minis.app' in package and 'Debug-iphoneos' not in package,
         'package must consume the optimized app')
-print('PASS: zero-travel session entry, native gestures, stable task sheets, child renderer and optimized IPA.')
+require('hasRunningBackgroundSupport' in bka and 'backgroundAudioStatus' in bka,
+        'background UI and task expiry must use actual running legs')
+require('beginWhenReady(.backgroundKeepAlive)' in bka and
+        'silentAudioRetry' in bka and 'startSilentAudioEngine' in bka,
+        'silent audio must wait for activation and retry bounded failures')
+require('completion: @escaping @MainActor @Sendable' in audio,
+        'audio session readiness must be delivered asynchronously')
+print('PASS: zero-travel session entry, native gestures, stable task sheets, child renderer, optimized IPA and actual background keep-alive state.')
 PY

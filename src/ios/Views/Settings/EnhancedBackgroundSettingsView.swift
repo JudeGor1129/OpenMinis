@@ -171,6 +171,18 @@ struct EnhancedBackgroundSettingsView: View {
                 }
 
                 HStack {
+                    Text("Audio Keep-Alive")
+                    Spacer()
+                    Text(keepAlive.backgroundAudioStatus)
+                        .foregroundColor(keepAlive.hasRunningBackgroundSupport ? .green : .secondary)
+                }
+                if let error = keepAlive.backgroundAudioError, !error.isEmpty {
+                    Text("Audio activation failed: \(error)")
+                        .font(.footnote)
+                        .foregroundColor(.orange)
+                }
+
+                HStack {
                     Text("Location Permission")
                     Spacer()
                     Text(locationStatusText)

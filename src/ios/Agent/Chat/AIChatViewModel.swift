@@ -621,7 +621,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     func markLongBackgroundBrowserTasks() {
         defer { bgHintBackgroundEntryDate = nil }
         guard let _ = bgHintBackgroundEntryDate else { return }
-        guard !BackgroundKeepAliveManager.shared.enhancedBackgroundEffective else { return }
+        guard !BackgroundKeepAliveManager.shared.hasRunningBackgroundSupport else { return }
         let now = Date()
         for msg in messages where msg.role == .assistant {
             for block in msg.blocks {

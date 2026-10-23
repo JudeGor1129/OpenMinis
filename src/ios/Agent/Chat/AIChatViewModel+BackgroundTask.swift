@@ -53,7 +53,7 @@ extension AIChatViewModel {
             // `delay:` tool waits (and any in-flight command) even though the
             // app was in no danger of termination. Instead, just re-arm a fresh
             // finite task to reset the clock and let the agent loop continue.
-            if BackgroundKeepAliveManager.shared.enhancedBackgroundEffective {
+            if BackgroundKeepAliveManager.shared.hasRunningBackgroundSupport {
                 logger.info("[Background] Finite task expiring but silent-audio keep-alive is active — re-arming, NOT cancelling")
                 // End only the expiring task id (no completion notification),
                 // then immediately request a new one. Order matters: capture the
@@ -73,7 +73,7 @@ extension AIChatViewModel {
             // resume when foregrounded.
             logger.warning("[Background] Task expiring (no keep-alive) — suspending agent loop")
             self.backgroundSuspended = true
-            if !BackgroundKeepAliveManager.shared.enhancedBackgroundEffective {
+            if !BackgroundKeepAliveManager.shared.hasRunningBackgroundSupport {
                 BackgroundInterruptionTracker.shared.recordInterruption()
                 // [T-session-paused-badge-active-false-positive] The PAUSED badge
                 // is now driven solely by `canResume` (see AIChatViewModel's
@@ -490,7 +490,7 @@ extension AIChatViewModel {
     /// so the next iteration can proceed.
     func waitIfBackgroundSuspended() async {
         // If enhanced background keep-alive is active, skip suspension entirely
-        if BackgroundKeepAliveManager.shared.enhancedBackgroundEffective { return }
+        if BackgroundKeepAliveManager.shared.hasRunningBackgroundSupport { return }
         guard backgroundSuspended else { return }
 
         // If the app is already in the foreground (user returned before we got here),

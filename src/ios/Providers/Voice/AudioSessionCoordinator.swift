@@ -91,6 +91,29 @@ final class AudioSessionCoordinator {
         return hit
     }
 
+    /// Wait for the queued session activation without parking the main thread.
+    /// A playback engine must not start against the previous/inactive profile.
+    /// The FIFO barrier observes the result of the apply queued by beginInternal.
+    func beginWhenReady(_ intent: Intent,
+                        completion: @escaping @MainActor @Sendable (Bool) -> Void) {
+        let pendingBefore = Self.pendingLock.withLock { Self.pendingApplies }
+        beginInternal(intent)
+        let pendingAfter = Self.pendingLock.withLock { Self.pendingApplies }
+        guard pendingAfter > pendingBefore else {
+            Task { @MainActor in
+                completion(self.active.contains(intent) && self.sessionActive)
+            }
+            return
+        }
+        Self.sessionQueue.async {
+            let succeeded = Self.lastApplyError == nil
+            Task { @MainActor in
+                let stillRequested = self.active.contains(intent)
+                completion(succeeded && stillRequested && self.sessionActive)
+            }
+        }
+    }
+
     private func beginInternal(_ intent: Intent) {
         // Media attachment preempts reply TTS (mutually exclusive voice content):
         // stop the cloud queue directly and notify the chat VM to stop System TTS,
