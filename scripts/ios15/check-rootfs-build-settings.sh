@@ -21,6 +21,8 @@ grep -q 'E5RF0001 /\* RootfsBuildSettingsView.swift in Sources \*/' "$pbx"
 grep -q 'E5RF0002 /\* RootfsBuildSettingsView.swift \*/' "$pbx"
 grep -q 'RootfsBuildSettingsView()' src/ios/Views/Rootfs/RootfsManagementView.swift
 status=src/ios/Views/Rootfs/ToolchainStatusView.swift
+grep -q 'id: "rea"' "$status"
+grep -q 'test -x /usr/local/bin/rea' "$status"
 grep -q 'frame(width: 148' "$status"
 grep -q 'truncationMode(.middle)' "$status"
 grep -q 'minimumScaleFactor(0.75)' "$status"

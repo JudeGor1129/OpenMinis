@@ -49,6 +49,9 @@ private let allToolEntries: [ToolStatusEntry] = [
     ToolStatusEntry(id: "clang", name: "Clang", command: "clang --version", description: "C/C++ 编译器", category: .reverse),
     ToolStatusEntry(id: "ldid", name: "ldid", command: "test -x /usr/local/bin/ldid && echo installed", description: "签名工具", category: .reverse),
     ToolStatusEntry(id: "radare2", name: "radare2", command: "r2 -v", description: "反汇编与逆向框架", category: .reverse),
+    // rea is an npx wrapper; do not execute it during status refresh because
+    // that could resolve/download a package. Presence is the safe health check.
+    ToolStatusEntry(id: "rea", name: "rea", command: "test -x /usr/local/bin/rea && echo installed", description: "逆向分析代理工具", category: .reverse),
     ToolStatusEntry(id: "otool", name: "otool", command: "which otool", description: "Mach-O 分析工具", category: .reverse),
     ToolStatusEntry(id: "strip", name: "strip", command: "which strip", description: "符号剥离工具", category: .reverse),
     ToolStatusEntry(id: "llvm-lipo", name: "llvm-lipo", command: "which llvm-lipo", description: "Fat binary 合并工具", category: .reverse),
