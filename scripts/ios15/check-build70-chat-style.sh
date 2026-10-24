@@ -41,11 +41,14 @@ require '.modifier(MinisOpenURLHandler())'
 if grep -Eq 'Label\(message.role|\.padding\(message.role' <<< "$row"; then
     echo 'FAIL: recovery labels or doubled inset reintroduced'; exit 1
 fi
-[ "$(grep -Ec '^[[:space:]]*\.contextMenu' <<< "$row")" -ge 1 ]
-require 'Label("编辑并重发（替换后续记录）", systemImage: "pencil")'
-require 'Label("从此处重发（替换后续记录）", systemImage: "arrow.clockwise")'
-require 'vm.retryFromMessage(message.id)'
-require 'vm.editMessage(message.id)'
+grep -Fq 'struct MinisLegacyUserMessageActions: ViewModifier' "$view"
+grep -Fq 'if #available(iOS 16.0, *)' "$view"
+grep -Fq 'LongPressGesture(minimumDuration: 0.45)' "$view"
+grep -Fq 'userActionTarget = MinisLegacyUserActionTarget' "$view"
+grep -Fq 'Label("编辑并重发", systemImage: "pencil")' "$view"
+grep -Fq 'Label("从此处重发", systemImage: "arrow.clockwise")' "$view"
+grep -Fq 'vm.retryFromMessage(messageID)' "$view"
+grep -Fq 'vm.editMessage(messageID)' "$view"
 # This is intentionally build70's iOS15 path, NOT the later collection renderer.
 area=$(sed -n '/private var messagesArea:/,/private struct MinisLegacyTranscript:/p' "$view")
 grep -Fq 'if #available(iOS 16.0, *)' <<< "$area"
