@@ -2402,19 +2402,6 @@ struct AIChatView: View {
                         let n = SoulStore.cachedMetadata.name
                         soulName = n.isEmpty ? "Minis" : n
                     }
-                if vm.isProcessing || vm.isCompacting {
-                    HStack(spacing: 4) {
-                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .blue))
-                            .scaleEffect(0.65).frame(width: 12, height: 12)
-                        Text("运行中").font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(Color(UIColor.secondarySystemBackground), in: Capsule())
-                    .fixedSize()
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("运行中")
-                }
                 }
             }
             .buttonStyle(.plain)
@@ -4043,6 +4030,13 @@ struct AIChatView: View {
             .overlay {
                 ComposerContextGlow(tier: vm.contextUsage?.tier ?? .normal)
             }
+            // Siri-style flowing light band — outer, independent of context glow
+            .overlay {
+                SiriFlowBorder(
+                    isProcessing: vm.isProcessing || vm.isCompacting,
+                    sessionVisible: isChatViewVisible
+                )
+            }
             .frame(maxWidth: maxContentWidth)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -5231,6 +5225,61 @@ private struct ComposerContextGlow: View {
             }
         } else {
             withAnimation(.easeInOut(duration: 0.3)) { breathing = false }
+        }
+    }
+}
+
+private struct SiriFlowBorder: View {
+    let isProcessing: Bool
+    let sessionVisible: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var offset: CGFloat = -1.2
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+    }
+
+    private var active: Bool { isProcessing && sessionVisible && !reduceMotion }
+
+    var body: some View {
+        if active {
+            shape
+                .stroke(
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            .clear,
+                            .clear,
+                            Color.white.opacity(0.5),
+                            Color.white.opacity(0.95),
+                            Color.white.opacity(0.5),
+                            .clear,
+                            .clear
+                        ]),
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    lineWidth: 2
+                )
+                .offset(x: offset)
+                .allowsHitTesting(false)
+                .onAppear { startAnimation() }
+                .onDisappear { stopAnimation() }
+                .onChange(of: active) { newValue in
+                    newValue ? startAnimation() : stopAnimation()
+                }
+        }
+    }
+
+    private func startAnimation() {
+        withAnimation(.linear(duration: 2.0).repeatForever(autoreverses: false)) {
+            offset = 1.2
+        }
+    }
+
+    private func stopAnimation() {
+        withAnimation(.easeOut(duration: 0.3)) {
+            offset = -1.2
         }
     }
 }
