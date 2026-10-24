@@ -304,24 +304,35 @@ private struct LegacyContentView: View {
 
     private func reload() {
         Task { @MainActor in
-            sessions = await ChatStore.shared.listSessions().filter { !$0.isChild }
-            await reloadGroupMembers()
+            // Load the folder list during the normal home refresh. Previously
+            // the first tap on "会话分组" started listFolders() here, so the
+            // disclosure opened empty and then filled in after the actor/DB
+            // round-trip — the visible delay on iOS 15.
+            async let loadedSessions = ChatStore.shared.listSessions()
+            async let loadedFolders = ChatStore.shared.listFolders()
+            let (allSessions, loadedFoldersValue) = await (loadedSessions, loadedFolders)
+            sessions = allSessions.filter { !$0.isChild }
+            folders = loadedFoldersValue
+            reloadGroupMembers()
         }
     }
 
     private func reloadFolders() {
         Task { @MainActor in
             folders = await ChatStore.shared.listFolders()
-            await reloadGroupMembers()
+            reloadGroupMembers()
         }
     }
 
     @MainActor
-    private func reloadGroupMembers() async {
+    private func reloadGroupMembers() {
+        // We already have folder_id on ChatSession. Derive the visible members
+        // locally instead of issuing one sessionIdsInFolder() query per folder
+        // every time the disclosure is tapped.
         var members: [String: [ChatSession]] = [:]
-        for folder in folders {
-            let ids = Set(await ChatStore.shared.sessionIdsInFolder(folder.id))
-            members[folder.id] = sessions.filter { ids.contains($0.id) && !$0.isChild }
+        for session in sessions where !session.isChild {
+            guard let folderID = session.folderId else { continue }
+            members[folderID, default: []].append(session)
         }
         groupSessions = members
     }
