@@ -89,8 +89,8 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
         didSet { UserDefaults.standard.set(backgroundSpeakEnabled, forKey: "backgroundSpeakEnabled") }
     }
 
-    /// True only when the configuration can actually keep the app alive in the
-    /// background. The master switch alone is not enough: silent-audio
+    /// User opt-in configuration only; actual runtime support is reported by
+    /// hasRunningBackgroundSupport. These switches cannot guarantee survival. The master switch alone is not enough: silent-audio
     /// keep-alive (the mechanism that prevents background-task expiry) only
     /// plays when Background Speak is also on (see `evaluateSilentAudio`).
     /// So "master on but Background Speak off" still gets interrupted — and
@@ -435,6 +435,9 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
                 // immediately on backgrounding — arm it after a delay so a brief
                 // bg blip never spins up location. evaluateLocationUpdates() runs
                 // inside scheduleBackgroundLocationArming() once disarmed → armed.
+                self.silentAudioActivationRetries = 0
+                self.reevaluate(sessions: SessionActivityTracker.shared.activeSessions,
+                                enabled: self.enhancedBackgroundEnabled)
                 self.scheduleBackgroundLocationArming()
                 self.evaluateSilentAudio(caller: "didEnterBackground")
             }
@@ -481,7 +484,18 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
         // we snapshot them too for the crash-time timeline.
         NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.logLifecycleSnapshot("Inactive") }
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.logLifecycleSnapshot("Inactive")
+                Task { @MainActor [weak self] in
+                    // Leave the synchronous SwiftUI lifecycle transaction first.
+                    await Task.yield()
+                    guard let self, UIApplication.shared.applicationState != .active else { return }
+                    self.reevaluate(sessions: SessionActivityTracker.shared.activeSessions,
+                                    enabled: self.enhancedBackgroundEnabled)
+                    self.evaluateSilentAudio(caller: "willResignActive")
+                }
+            }
             .store(in: &cancellables)
 
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
@@ -489,6 +503,7 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
             .sink { [weak self] _ in
                 self?.logLifecycleSnapshot("Active")
                 self?.retractOrphanedLocationSession(caller: "didBecomeActive")
+                self?.evaluateSilentAudio(caller: "didBecomeActive")
             }
             .store(in: &cancellables)
 
@@ -1028,22 +1043,20 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
             && liveUpdatesTask == nil
 
         if shouldUpdate && !locationUpdating {
-            logger.info("[BackgroundKeepAlive] Starting location updates (5s interval)")
+            logger.info("[BackgroundKeepAlive] Starting low-accuracy continuous location updates")
             locationManager.allowsBackgroundLocationUpdates = true
-            locationManager.showsBackgroundLocationIndicator = false
+            locationManager.showsBackgroundLocationIndicator = true
             locationUpdating = true
-            // Request location immediately, then every 5 seconds
-            locationManager.requestLocation()
-            locationTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.locationManager.requestLocation()
-                }
-            }
-            RunLoop.current.add(locationTimer!, forMode: .common)
+            // A repeating one-shot request is not a continuous background
+            // location session on iOS15. Retain the user's permission/toggle
+            // gates and low accuracy, and let CoreLocation deliver updates.
+            locationManager.startUpdatingLocation()
         } else if !shouldUpdate && locationUpdating {
             logger.info("[BackgroundKeepAlive] Stopping location updates")
             locationTimer?.invalidate()
             locationTimer = nil
+            locationManager.stopUpdatingLocation()
+            locationManager.allowsBackgroundLocationUpdates = false
             locationUpdating = false
         }
     }
@@ -1062,7 +1075,7 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
         // system location indicator) only starts 15s AFTER backgrounding, never
         // in the foreground. This gives a grace window so brief background blips
         // don't flash the indicator, and keeps the foreground free of location.
-        let shouldRun = isActive && enhancedBackgroundEnabled && hasPermission
+        let shouldRun = isActive && enhancedBackgroundEnabled && locationTrackingEnabled && hasPermission
             && appIsInBackground && backgroundLocationArmed
 
         // Singleton by construction: this manager is a `.shared` instance and
@@ -1172,6 +1185,10 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
         }
 
         let shouldPlay = wantsSilentAudio
+        // iOS can stop an engine without clearing our bookkeeping flag.
+        if shouldPlay && silentAudioActive && !silentAudioIsPlaying {
+            stopSilentAudio(reason: "engine-not-running")
+        }
         let sessions = SessionActivityTracker.shared.activeSessions.count
         let reason: String = {
             if !isActive { return "isActive=false" }
@@ -1223,11 +1240,10 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
                 cancelIdleGrace(reason: "explicit stop (\(reason))")
                 requestStopSilentAudio(transientForeground: !appIsInBackground)
             }
-        } else if shouldPlay {
-            // Work is back (or never left) — a queued idle grace is now moot.
-            // Covers both shouldPlay branches above; cancelIdleGrace is a no-op
-            // when nothing is pending.
-            cancelIdleGrace(reason: "shouldPlay=true")
+        } else if !shouldPlay && (silentAudioStarting || silentAudioRetry != nil) {
+            // Closing the app transition or changing the user's setting also
+            // cancels an activation that has not created its engine yet.
+            stopSilentAudio(reason: "activation-cancelled")
         }
     }
 
@@ -1331,6 +1347,7 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
             // Re-check the world at fire time: if we went back to background (or
             // any other reason now keeps it playing), do NOT stop.
             let stillForeground = !self.appIsInBackground
+                && UIApplication.shared.applicationState == .active
             let stillActive = self.isActive && self.backgroundSpeakEnabled
                 && self.silentAudioSuspendCount == 0
             if stillForeground || !stillActive {
@@ -1498,6 +1515,7 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
         }
         logger.info("[ShortcutDiag] eagerKeepAlive caller=\(caller) decision=STARTED session=\(sessionId.prefix(8))")
         SessionActivityTracker.shared.setActive(sessionId, source: "\(caller).eager")
+        reevaluate(sessions: SessionActivityTracker.shared.activeSessions, enabled: enhancedBackgroundEnabled)
         evaluateSilentAudio(caller: "\(caller).eager")
         return (true, nil)
     }
@@ -1627,6 +1645,7 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
         logger.info("[BackgroundKeepAlive] Starting update timer (interval=\(interval)s)")
         updateTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
+                self?.evaluateSilentAudio(caller: "healthTimer")
                 self?.updateLiveActivityIfNeeded(source: "fgTimer")
             }
         }
@@ -1653,6 +1672,7 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
         timer.schedule(deadline: .now() + interval, repeating: interval)
         timer.setEventHandler { [weak self] in
             Task { @MainActor [weak self] in
+                self?.evaluateSilentAudio(caller: "audioHealthTimer")
                 self?.updateLiveActivityIfNeeded(source: "bgAudioTimer")
             }
         }

@@ -2735,6 +2735,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     }
     var compactOrigin: CompactOrigin?
     var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    /// Agent-run lifetime outlives an expiring OS grant. Keep completion
+    /// notification ownership separate so releasing a grant cannot drop it.
+    var backgroundProcessingActive = false
 
     /// [T-ios-bgkeepalive-diag] Process-wide count of LIVE
     /// `beginBackgroundTask` grants, so crash diagnostics can report whether a

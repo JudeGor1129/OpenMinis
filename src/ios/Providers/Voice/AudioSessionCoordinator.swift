@@ -96,21 +96,41 @@ final class AudioSessionCoordinator {
     /// The FIFO barrier observes the result of the apply queued by beginInternal.
     func beginWhenReady(_ intent: Intent,
                         completion: @escaping @MainActor @Sendable (Bool) -> Void) {
-        let pendingBefore = Self.pendingLock.withLock { Self.pendingApplies }
+        let alreadyRequested = active.contains(intent) && sessionActive
         beginInternal(intent)
-        let pendingAfter = Self.pendingLock.withLock { Self.pendingApplies }
-        guard pendingAfter > pendingBefore else {
+        let request = ActivationCompletion(completion)
+        if alreadyRequested {
             Task { @MainActor in
-                completion(self.active.contains(intent) && self.sessionActive)
+                request.finish(self.active.contains(intent) && self.sessionActive)
             }
             return
         }
-        Self.sessionQueue.async {
+        // Always wait behind ALL pending applies. Do not infer readiness from
+        // a mutable pending-count snapshot; another queue completion can race it.
+        Self.sessionQueue.async { [weak self] in
             let succeeded = Self.lastApplyError == nil
             Task { @MainActor in
-                let stillRequested = self.active.contains(intent)
-                completion(succeeded && stillRequested && self.sessionActive)
+                guard let self else { request.finish(false); return }
+                request.finish(succeeded && self.active.contains(intent) && self.sessionActive)
             }
+        }
+        // A wedged audio daemon must not leave the UI stuck at "starting".
+        // The queue stays serial; a late completion after timeout is ignored.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            request.finish(false)
+        }
+    }
+
+    @MainActor
+    private final class ActivationCompletion {
+        private var completion: (@MainActor @Sendable (Bool) -> Void)?
+        init(_ completion: @escaping @MainActor @Sendable (Bool) -> Void) {
+            self.completion = completion
+        }
+        func finish(_ ready: Bool) {
+            let callback = completion
+            completion = nil
+            callback?(ready)
         }
     }
 

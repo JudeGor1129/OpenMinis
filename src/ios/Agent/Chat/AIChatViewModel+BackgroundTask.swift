@@ -35,6 +35,7 @@ extension AIChatViewModel {
 
     func beginBackgroundProcessing() {
         guard backgroundTaskID == .invalid else { return }
+        backgroundProcessingActive = true
         let remaining = UIApplication.shared.backgroundTimeRemaining
         let remainingStr = remaining > 99999 ? "unlimited" : String(format: "%.1fs", remaining)
         let sessions = SessionActivityTracker.shared.activeSessions.count
@@ -45,26 +46,18 @@ extension AIChatViewModel {
             let expRemaining = UIApplication.shared.backgroundTimeRemaining
             let expRemainingStr = expRemaining > 99999 ? "unlimited" : String(format: "%.1fs", expRemaining)
             logger.warning("[BKA][BGTask] Expiry handler fired — id=\(self.backgroundTaskID.rawValue) remaining=\(expRemainingStr) sessions=\(SessionActivityTracker.shared.activeSessions.count) silentAudio=\(BackgroundKeepAliveManager.shared.silentAudioIsPlaying) keepAliveEffective=\(BackgroundKeepAliveManager.shared.enhancedBackgroundEffective)")
-            // The FINITE UIApplication background task is expiring. This is a
-            // separate mechanism from the silent-audio (`audio` background mode)
-            // keep-alive: when keep-alive is active the process stays alive
-            // regardless of this task's clock, so expiring it must NOT kill the
-            // running shell / delay countdown — doing so was severing long
-            // `delay:` tool waits (and any in-flight command) even though the
-            // app was in no danger of termination. Instead, just re-arm a fresh
-            // finite task to reset the clock and let the agent loop continue.
+            // UIBackgroundTask grants are finite; beginning another one in
+            // the expiry handler does NOT reset the system's execution budget.
+            // Release this grant promptly. Continue the agent only when a real
+            // audio/location background leg is already running.
+            let expiringId = self.backgroundTaskID
+            self.backgroundTaskID = .invalid
+            if expiringId != .invalid {
+                UIApplication.shared.endBackgroundTask(expiringId)
+                AIChatViewModel.noteBackgroundTaskEnded()
+            }
             if BackgroundKeepAliveManager.shared.hasRunningBackgroundSupport {
-                logger.info("[Background] Finite task expiring but silent-audio keep-alive is active — re-arming, NOT cancelling")
-                // End only the expiring task id (no completion notification),
-                // then immediately request a new one. Order matters: capture the
-                // old id, invalidate, re-begin.
-                let expiringId = self.backgroundTaskID
-                self.backgroundTaskID = .invalid
-                if expiringId != .invalid {
-                    UIApplication.shared.endBackgroundTask(expiringId)
-                    AIChatViewModel.noteBackgroundTaskEnded()
-                }
-                self.beginBackgroundProcessing()
+                logger.info("[Background] Finite grant released; running audio/location leg continues — no renewal request")
                 return
             }
             // No keep-alive backing us — the system really will terminate the
@@ -100,8 +93,9 @@ extension AIChatViewModel {
                 }
             }
             self.stopCurrentCommand()
-            // Must end the background task to avoid termination.
-            self.endBackgroundProcessing()
+            // This is suspension, not successful completion. The real loop
+            // epilogue owns the eventual completion notification.
+            self.stopBackgroundStatusTimer()
         }
         // [T-ios-bgkeepalive-diag] Only count a grant the OS actually gave
         // us: beginBackgroundTask returns .invalid when the request is refused,
@@ -158,7 +152,8 @@ extension AIChatViewModel {
             }
         }
 
-        guard backgroundTaskID != .invalid else { return }
+        guard backgroundProcessingActive else { return }
+        backgroundProcessingActive = false
         stopBackgroundStatusTimer()
         let remaining = UIApplication.shared.backgroundTimeRemaining
         let remainingStr = remaining > 99999 ? "unlimited" : String(format: "%.1fs", remaining)
