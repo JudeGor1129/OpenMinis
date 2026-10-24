@@ -107,11 +107,11 @@ final class AudioSessionCoordinator {
         }
         // Always wait behind ALL pending applies. Do not infer readiness from
         // a mutable pending-count snapshot; another queue completion can race it.
-        Self.sessionQueue.async { [weak self] in
+        Self.sessionQueue.async {
             let succeeded = Self.lastApplyError == nil
             Task { @MainActor in
-                guard let self else { request.finish(false); return }
-                request.finish(succeeded && self.active.contains(intent) && self.sessionActive)
+                let coordinator = AudioSessionCoordinator.shared
+                request.finish(succeeded && coordinator.active.contains(intent) && coordinator.sessionActive)
             }
         }
         // A wedged audio daemon must not leave the UI stuck at "starting".
@@ -122,7 +122,7 @@ final class AudioSessionCoordinator {
     }
 
     @MainActor
-    private final class ActivationCompletion {
+    private final class ActivationCompletion: @unchecked Sendable {
         private var completion: (@MainActor @Sendable (Bool) -> Void)?
         init(_ completion: @escaping @MainActor @Sendable (Bool) -> Void) {
             self.completion = completion

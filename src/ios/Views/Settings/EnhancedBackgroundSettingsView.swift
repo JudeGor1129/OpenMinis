@@ -174,7 +174,7 @@ struct EnhancedBackgroundSettingsView: View {
                     Text("Audio Keep-Alive")
                     Spacer()
                     Text(keepAlive.backgroundAudioStatus)
-                        .foregroundColor(keepAlive.hasRunningBackgroundSupport ? .green : .secondary)
+                        .foregroundColor(keepAlive.silentAudioIsPlaying ? .green : .secondary)
                 }
                 if let error = keepAlive.backgroundAudioError, !error.isEmpty {
                     Text("Audio activation failed: \(error)")
