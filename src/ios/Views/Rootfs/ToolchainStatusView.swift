@@ -228,62 +228,70 @@ private struct ToolCategoryRow: View {
                     ToolRow(entry: entry, status: toolStatuses[entry.id])
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
         }
     }
 }
 
-/// Single tool status row
+/// Single tool status row. The trailing probe output is untrusted text (some
+/// tools print warnings or long paths); keep it inside the list row instead of
+/// allowing it to widen the entire Settings page.
 private struct ToolRow: View {
     let entry: ToolStatusEntry
     let status: ToolchainStatusView.ToolStatus?
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)
                     .font(.body)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 Text(entry.description)
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
             statusView
+                .frame(width: 148, alignment: .trailing)
+                .clipped()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     @ViewBuilder
     private var statusView: some View {
         switch status {
         case .some(.installed(let info)):
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-                Text(info)
-                    .font(.caption.monospaced())
-                    .foregroundColor(.secondary)
-            }
+            statusLabel(info, icon: "checkmark.circle.fill", color: .green, monospaced: true)
         case .some(.missing):
-            HStack(spacing: 6) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundColor(.gray)
-                Text("未安装")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+            statusLabel("未安装", icon: "xmark.circle.fill", color: .gray, monospaced: false)
         case .some(.error(let msg)):
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.orange)
-                Text(msg)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
+            statusLabel(msg, icon: "exclamationmark.triangle.fill", color: .orange, monospaced: false)
         case .none:
-            ProgressView()
-                .controlSize(.small)
+            HStack { Spacer(); ProgressView().controlSize(.small) }
         }
+    }
+
+    private func statusLabel(_ text: String, icon: String, color: Color, monospaced: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .frame(width: 18)
+            Text(text)
+                .font(monospaced ? .caption.monospaced() : .caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .accessibilityLabel(Text(text))
     }
 }
