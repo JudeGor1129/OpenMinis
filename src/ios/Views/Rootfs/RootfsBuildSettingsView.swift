@@ -187,8 +187,6 @@ struct IOSDKSelectionView: View {
     }
 }
 
-@MainActor
-@MainActor
 final class RootfsBuildSettingsViewModel: ObservableObject {
     enum ToolchainState { case checking, ready, partial, unavailable }
 
