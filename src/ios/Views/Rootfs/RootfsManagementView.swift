@@ -153,7 +153,29 @@ struct RootfsManagementView: View {
                 }
             }
 
-            // [T-ios-toolchain-status] Show iSH toolchain status for all installed tools
+            Section {
+                NavigationLink {
+                    RootfsBuildSettingsView()
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("编译工具与 SDK")
+                            Text("工具链状态、iPhoneOS SDK 和 Release 构建")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "hammer.fill")
+                            .foregroundStyle(.blue)
+                    }
+                }
+            } header: {
+                Text("设备与开发环境")
+            } footer: {
+                Text("选择 SDK 后，构建命令会在内置 Alpine 终端中执行；不会修改 iOS 系统或自动安装软件。")
+            }
+
+            // [T-ios-toolchain-status] Detailed command-by-command probe.
             ToolchainStatusView()
 
             Section("Info") {
