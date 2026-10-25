@@ -1919,14 +1919,16 @@ struct PastableTextView: UIViewRepresentable {
         if wantsFocus != hasFocus {
             pasteLog.debug("[updateUIView] focus sync: wantsFocus=\(wantsFocus) hasFocus=\(hasFocus)")
             let coordinator = context.coordinator
+            coordinator.focusSyncGeneration &+= 1
+            let generation = coordinator.focusSyncGeneration
             coordinator.isSyncingFocus = true
-            if wantsFocus {
-                DispatchQueue.main.async {
-                    // Only become first responder when no sheet /
-                    // fullScreenCover is presented above this view.
-                    // SwiftUI sheets share the same window on iOS, so
-                    // isKeyWindow is always true — instead walk the VC
-                    // hierarchy and check presentedViewController.
+            DispatchQueue.main.async {
+                // A newer focus request owns the responder transition. Do not
+                // clear its syncing flag from this stale queued callback.
+                guard generation == coordinator.focusSyncGeneration else { return }
+                if wantsFocus {
+                    // Only become first responder when no sheet/fullScreenCover
+                    // is presented above this view.
                     let blocked: Bool = {
                         guard let vc = tv.nearestViewController else { return true }
                         var walk: UIViewController? = vc
@@ -1937,33 +1939,25 @@ struct PastableTextView: UIViewRepresentable {
                         return false
                     }()
                     guard !blocked else {
-                        pasteLog.debug("[updateUIView] skipping becomeFirstResponder — a modal is presented")
                         coordinator.isSyncingFocus = false
                         return
                     }
-                    pasteLog.debug("[updateUIView] calling becomeFirstResponder")
-                    // [T-voice-text-switch-autofocus-race] SwiftUI is
-                    // deliberately requesting focus — open the gate so
-                    // canBecomeFirstResponder permits it (it defaults closed to
-                    // block unsolicited chain hand-offs on mount).
                     tv.allowsFirstResponder = true
+                    guard !tv.isFirstResponder else {
+                        coordinator.isSyncingFocus = false
+                        return
+                    }
                     tv.becomeFirstResponder()
-                    coordinator.isSyncingFocus = false
-                }
-            } else {
-                DispatchQueue.main.async {
-                    pasteLog.debug("[updateUIView] calling resignFirstResponder")
-                    // [T-voice-text-switch-autofocus-race] Re-close the gate on
-                    // resign so a later unsolicited chain hand-off (if UIKit
-                    // reuses this instance) is refused again until the next real
-                    // tap or focus-sync request.
+                } else {
                     tv.allowsFirstResponder = false
+                    guard tv.isFirstResponder else {
+                        coordinator.isSyncingFocus = false
+                        return
+                    }
                     tv.resignFirstResponder()
-                    // Re-measure after keyboard dismiss so the text view
-                    // doesn't retain its keyboard-present height (iOS 16).
                     tv.invalidateIntrinsicContentSize()
-                    coordinator.isSyncingFocus = false
                 }
+                coordinator.isSyncingFocus = false
             }
         }
 
@@ -2003,6 +1997,9 @@ struct PastableTextView: UIViewRepresentable {
         var parent: PastableTextView
         /// Guard flag to prevent focus feedback loop between UIKit delegate → SwiftUI → updateUIView
         var isSyncingFocus = false
+        /// Generation for coalescing SwiftUI focus updates while the keyboard
+        /// is animating. A stale queued focus request must not run afterward.
+        var focusSyncGeneration = 0
         /// [T-ios-composer-residual-text-33549] When `updateUIView` clears
 
         init(_ parent: PastableTextView) {

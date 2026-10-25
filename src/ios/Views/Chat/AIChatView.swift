@@ -7443,6 +7443,107 @@ private struct MinisLegacyToolDetailTarget: Identifiable {
     let index: Int
 }
 
+private struct MinisContextMenuAction {
+    let title: String
+    let image: String?
+    let isEnabled: Bool
+    let action: () -> Void
+}
+
+/// iOS 15 bridge for the inverted transcript. SwiftUI's contextMenu preview is
+/// composed inside the double-rotated tree; UIContextMenuInteraction presents
+/// its platter in UIKit's detached menu window, so the lift and release stay
+/// upright and are not coupled to the transcript transform.
+private struct MinisInvertedContextMenuBridge: UIViewRepresentable {
+    let actions: [MinisContextMenuAction]
+    let previewText: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    func makeUIView(context: Context) -> ContextMenuHostView {
+        let view = ContextMenuHostView()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = true
+        view.attach(to: context.coordinator)
+        return view
+    }
+
+    func updateUIView(_ view: ContextMenuHostView, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    final class ContextMenuHostView: UIView {
+        private weak var coordinator: Coordinator?
+        private var interaction: UIContextMenuInteraction?
+
+        func attach(to coordinator: Coordinator) {
+            guard self.coordinator !== coordinator else { return }
+            if let interaction { removeInteraction(interaction) }
+            self.coordinator = coordinator
+            let interaction = UIContextMenuInteraction(delegate: coordinator)
+            self.interaction = interaction
+            addInteraction(interaction)
+        }
+    }
+
+    final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
+        var parent: MinisInvertedContextMenuBridge
+
+        init(parent: MinisInvertedContextMenuBridge) {
+            self.parent = parent
+        }
+
+        func contextMenuInteraction(
+            _ interaction: UIContextMenuInteraction,
+            configurationForMenuAtLocation location: CGPoint
+        ) -> UIContextMenuConfiguration? {
+            let actions = parent.actions.map { item in
+                let perform = item.action
+                return UIAction(
+                    title: item.title,
+                    image: item.image.flatMap { UIImage(systemName: $0) },
+                    attributes: item.isEnabled ? [] : [.disabled]
+                ) { _ in
+                    perform()
+                }
+            }
+            let menu = UIMenu(title: "", options: .displayInline, children: actions)
+            let previewText = parent.previewText
+            return UIContextMenuConfiguration(
+                identifier: nil,
+                previewProvider: {
+                    let controller = UIHostingController(
+                        rootView: MinisInvertedContextMenuPreviewCard(text: previewText)
+                    )
+                    controller.view.backgroundColor = .clear
+                    return controller
+                },
+                actionProvider: { _ in menu }
+            )
+        }
+    }
+}
+
+private struct MinisInvertedContextMenuPreviewCard: View {
+    let text: String
+
+    var body: some View {
+        Text(text.isEmpty ? " " : String(text.prefix(600)))
+            .font(.system(size: 15.5))
+            .foregroundStyle(ChatColors.primaryText)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: 320, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(UIColor.tertiarySystemFill))
+            )
+            .shadow(color: .black.opacity(0.14), radius: 14, x: 0, y: 8)
+            .environment(\.layoutDirection, .leftToRight)
+    }
+}
+
 private struct MinisLegacyUserMessageActions: ViewModifier {
     let messageID: UUID
     let text: String
@@ -7452,11 +7553,39 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .contentShape(Rectangle())
-            .contextMenu {
-                messageButtons
-            }
+        if #available(iOS 16.0, *) {
+            content
+                .contentShape(Rectangle())
+                .contextMenu {
+                    messageButtons
+                }
+        } else {
+            content
+                .contentShape(Rectangle())
+                .overlay {
+                    MinisInvertedContextMenuBridge(
+                        actions: [
+                            MinisContextMenuAction(
+                                title: "编辑并重发（替换后续记录）",
+                                image: "pencil",
+                                isEnabled: !readOnly && !vm.isProcessing && !vm.isRestoringFullHistory && !isQueued
+                            ) { vm.editMessage(messageID) },
+                            MinisContextMenuAction(
+                                title: "从此处重发（替换后续记录）",
+                                image: "arrow.clockwise",
+                                isEnabled: !readOnly && !vm.isProcessing && !vm.isRestoringFullHistory && !isQueued
+                            ) { vm.retryFromMessage(messageID) },
+                            MinisContextMenuAction(
+                                title: "拷贝",
+                                image: "doc.on.doc",
+                                isEnabled: !text.isEmpty
+                            ) { UIPasteboard.general.string = text }
+                        ],
+                        previewText: text
+                    )
+                    .allowsHitTesting(true)
+                }
+        }
     }
 
     @ViewBuilder

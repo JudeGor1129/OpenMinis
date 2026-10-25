@@ -34,6 +34,8 @@ require('scroll.isTracking || scroll.isDragging || scroll.isDecelerating' in pro
         'native gestures and momentum take priority')
 require('scrollView?.panGestureRecognizer.removeTarget' in probe and 'observe(\\.contentOffset' not in probe,
         'scroll follow must avoid per-frame contentOffset observation')
+require('MinisInvertedContextMenuBridge' in chat and 'UIContextMenuInteraction' in chat,
+        'iOS15 inverted messages must use detached UIKit context menu')
 require('interactionEndCheck?.cancel()' in probe and 'if userInteractionActive { checkInteractionEnd() }' in probe,
         'native momentum end must be detected without an idle timer')
 require('.sheet(item: $toolDetail)' in container and '.sheet(' not in row,
