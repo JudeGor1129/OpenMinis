@@ -7549,7 +7549,10 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
     let text: String
     let isQueued: Bool
     let readOnly: Bool
-    @ObservedObject var vm: AIChatViewModel
+    // The parent transcript observes the VM. Keeping a plain reference here
+    // prevents every composer/streaming publication from invalidating every
+    // visible message row and its UIKit Markdown renderer.
+    let vm: AIChatViewModel
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -7718,7 +7721,8 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
 
 private struct MinisLegacyTranscriptRow: View, Equatable {
     @ObservedObject var message: ChatMessage
-    @ObservedObject var vm: AIChatViewModel
+    // Parent transcript owns the VM observation; rows stay value-gated.
+    let vm: AIChatViewModel
     var readOnly = false
     @ObservedObject private var fontSettings = FontSettings.shared
     @State private var highlightedBlockId: UUID?
