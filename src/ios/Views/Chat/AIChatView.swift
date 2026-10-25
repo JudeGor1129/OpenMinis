@@ -7361,6 +7361,7 @@ struct MinisLegacyTranscript: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .accessibilityElement(children: .combine)
                             .rotationEffect(.degrees(180))
                         }
@@ -7918,28 +7919,14 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                 // ("Copy Full Reply" → markdown / rich / plain, plus the
                 // read-aloud entries), so nothing is lost by dropping it.
             }
-            if message.role == .assistant {
-                if isActiveMessage && message.shouldShowTypingIndicator {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text("正在等待模型响应…").font(.caption).foregroundColor(.secondary)
-                    }
+            if message.role == .assistant && isActiveMessage && message.shouldShowTypingIndicator {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("正在等待模型响应…")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                if let error = message.error {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("请求未完成", systemImage: "exclamationmark.triangle")
-                            .foregroundColor(.orange)
-                        Text(error).font(.caption).textSelection(.enabled)
-                        Text("请根据错误检查模型配置或网络，再重新发送。")
-                            .font(.caption).foregroundColor(.secondary)
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                } else if !isActiveMessage && message.content.isEmpty && message.blocks.isEmpty {
-                    Text("此条回复没有可显示的内容，请检查模型配置后重试。")
-                        .font(.caption).foregroundColor(.secondary)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             ForEach(message.blocks) { block in
                 AssistantBlockView(
@@ -7954,6 +7941,24 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                     detailBlock: detailBlock
                 )
                 .environmentObject(vm)
+            }
+            if message.role == .assistant, let error = message.error {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("请求未完成", systemImage: "exclamationmark.triangle")
+                        .foregroundColor(.orange)
+                    Text(error).font(.caption).textSelection(.enabled)
+                    Text("请根据错误检查模型配置或网络，再重新发送。")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+            } else if message.role == .assistant && !isActiveMessage
+                        && message.content.isEmpty && message.blocks.isEmpty {
+                Text("此条回复没有可显示的内容，请检查模型配置后重试。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         // Match the official user row's 60pt leading gutter. The transcript
