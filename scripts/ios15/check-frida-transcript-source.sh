@@ -72,20 +72,20 @@ echo "  every message-content markdown view bridges openURL to the app handler"
 # markdown view in a SwiftUI .contextMenu: on iOS 15 it swallowed the long
 # press and presented an empty menu, so replies could not be selected or
 # copied. Guard the regression rather than relying on the comment.
-# NOTE: user-bubble edit/retry menus in MinisLegacyTranscriptRow are OK;
-# we only forbid contextMenu inside MinisLegacyTranscript (the container).
-# Use awk to extract content from MinisLegacyTranscript (excluding the
-# struct declaration line) until the next struct definition. Avoid
-# head -n -1 which fails on macOS BSD head (negative args not allowed).
+# NOTE: the iOS15 user-bubble menu is a UIKit UIContextMenuInteraction bridge;
+# only iOS16+ uses SwiftUI .contextMenu. The assistant markdown view still must
+# retain the native UITextView edit menu, so no SwiftUI contextMenu is allowed
+# inside the legacy transcript container itself.
 transcript=$(awk '/^struct MinisLegacyTranscript:/{found=1; next} found && /^private struct [A-Z]/{exit} found' "$view")
 if printf '%s\n' "$transcript" | grep -qE '^[[:space:]]*\.contextMenu'; then
     echo "FAIL: AIChatView.swift reintroduced a SwiftUI .contextMenu inside MinisLegacyTranscript — this suppresses the native edit menu on iOS 15"
     exit 1
 fi
-echo "  legacy transcript raises the native edit menu (no SwiftUI contextMenu)"
+grep -Fq 'UIContextMenuInteraction' "$view"
+echo "  legacy transcript keeps assistant edit menu native and user menu detached"
 # Latest messages occupy native offset zero; only explicit jumps can scroll.
 grep -Fq 'proxy.scrollTo(bottomAnchor, anchor: .top)' "$view"
-grep -Fq 'scroll.observe(\.contentOffset' "$view"
+! grep -Fq 'scroll.observe(\.contentOffset' "$view"
 ! grep -Fq 'Timer(timeInterval: 0.1' "$view"
 grep -Fq 'scrollView?.panGestureRecognizer.removeTarget' "$view"
 bash scripts/ios15/check-motion-source.sh
