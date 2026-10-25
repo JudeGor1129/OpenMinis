@@ -423,9 +423,7 @@ enum MinisMotion {
         UIAccessibility.isReduceMotionEnabled ? nil : base
     }
     static var layout: Animation? {
-        UIAccessibility.isReduceMotionEnabled
-            ? nil
-            : .spring(response: 0.33, dampingFraction: 0.86)
+        UIAccessibility.isReduceMotionEnabled ? nil : base
     }
 }
 
@@ -462,7 +460,7 @@ struct MinisPressFeedbackStyle: ButtonStyle {
 /// A layout transform with constant animatable data. Unlike rotationEffect,
 /// it cannot interpolate during a parent transaction, which is required by the
 /// iOS 15 reverse-order transcript while allowing container animations around it.
-private struct MinisStaticRotationEffect: GeometryEffect {
+struct MinisStaticRotationEffect: GeometryEffect {
     let angle: Double
 
     var animatableData: Double {

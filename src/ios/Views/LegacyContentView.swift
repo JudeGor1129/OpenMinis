@@ -216,7 +216,12 @@ private struct LegacyContentView: View {
                 if let sid = pendingOpenSessionId {
                     pendingOpenSessionId = nil
                     DispatchQueue.main.async {
-                        withAnimation(MinisMotion.transition) {
+                        // Sheet dismissal owns the visible transition. Commit
+                        // the home-stack push atomically after it finishes so
+                        // the two UIKit transitions never overlap.
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
                             openedSessionID = sid
                             showingSession = true
                         }
@@ -355,7 +360,11 @@ private struct LegacyContentView: View {
     }
 
     private func startDraft(in folderId: String? = nil) {
-        withAnimation(MinisMotion.transition) {
+        // NavigationView owns the push transition for user-initiated links;
+        // changing the activation flag itself must stay atomic.
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
             draftGroupId = folderId
             draftID = "__new__\(UUID().uuidString)"
             showingDraft = true
