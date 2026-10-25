@@ -5316,17 +5316,18 @@ private struct SiriFlowBorder: View {
                 // A soft bloom only: no crisp stroke and no visible frame.
                 // Keep the source line narrow and let the blur carry the color;
                 // a wide stroke reads as a second border on the composer.
+                let lightMode = colorScheme == .light
                 ZStack {
-                    // Saturated Siri-like bloom: the inner layer carries the
-                    // color, while the wider layer creates the soft aura.
+                    // Light surfaces absorb more color, so use a stronger,
+                    // tighter core there and keep the wider aura clearly tinted.
                     shape
-                        .stroke(gradient, lineWidth: 4)
-                        .blur(radius: 7)
-                        .opacity(0.42 + 0.38 * pulse)
+                        .stroke(gradient, lineWidth: lightMode ? 5 : 4)
+                        .blur(radius: lightMode ? 5 : 7)
+                        .opacity((lightMode ? 0.62 : 0.42) + (lightMode ? 0.30 : 0.38) * pulse)
                     shape
-                        .stroke(gradient, lineWidth: 2)
-                        .blur(radius: 18)
-                        .opacity(0.22 + 0.24 * pulse)
+                        .stroke(gradient, lineWidth: lightMode ? 3 : 2)
+                        .blur(radius: lightMode ? 15 : 18)
+                        .opacity((lightMode ? 0.34 : 0.22) + (lightMode ? 0.25 : 0.24) * pulse)
                 }
                 .blendMode(colorScheme == .dark ? .plusLighter : .normal)
                 .allowsHitTesting(false)
