@@ -567,8 +567,15 @@ private struct LegacySessionRow: View {
     @State private var failure: String?
     @State private var busy = false
     @State private var folders: [ChatFolder] = []
+    @ObservedObject private var activityTracker = SessionActivityTracker.shared
+    @ObservedObject private var concurrencyManager = SessionConcurrencyManager.shared
 
     private var title: String { session.title ?? "New Conversation" }
+    private var isActive: Bool { activityTracker.isActive(session.id) }
+    private var isSuspended: Bool { concurrencyManager.isSuspended(session.id) }
+    private var categoryIcon: (systemName: String, color: Color) {
+        sessionCategoryIcon(for: session.category)
+    }
 
     var body: some View {
         Group {
@@ -614,14 +621,34 @@ private struct LegacySessionRow: View {
     }
 
     private var rowLabel: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                if session.isPinned { Image(systemName: "pin.fill") }
-                Text(title).font(.headline).lineLimit(1)
-                if busy { ProgressView() }
-            }
-            if let preview = session.lastMessage, !preview.isEmpty {
-                Text(preview).font(.caption).foregroundColor(.secondary).lineLimit(2)
+        HStack(spacing: 10) {
+            let icon = categoryIcon
+            Image(systemName: icon.systemName)
+                .font(.system(size: 17))
+                .foregroundColor(icon.color)
+                .frame(width: 36, height: 36)
+                .background(icon.color.opacity(0.12))
+                .clipShape(Circle())
+                .overlay {
+                    if isSuspended {
+                        LegacySuspendedRing(color: .yellow)
+                            .frame(width: 36, height: 36)
+                    } else if isActive {
+                        LegacySpinningRing(color: icon.color)
+                            .frame(width: 36, height: 36)
+                    }
+                }
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Text(title).font(.headline).lineLimit(1)
+                    if session.isPinned { Image(systemName: "pin.fill").font(.caption2) }
+                    if busy { ProgressView().scaleEffect(0.75) }
+                }
+                if let preview = session.lastMessage, !preview.isEmpty {
+                    Text(preview).font(.caption).foregroundColor(.secondary).lineLimit(2)
+                }
             }
         }
         .padding(.vertical, 4)
@@ -729,6 +756,29 @@ private struct LegacySessionRow: View {
             await ChatStore.shared.deleteSession(session.id)
             selectedSessions.remove(session.id)
             onChange()
+        }
+    }
+}
+
+private struct LegacySuspendedRing: View {
+    let color: Color
+
+    var body: some View {
+        Circle().stroke(color, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+    }
+}
+
+private struct LegacySpinningRing: View {
+    let color: Color
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            let angle = timeline.date.timeIntervalSinceReferenceDate
+                .truncatingRemainder(dividingBy: 1.0) * 360
+            Circle()
+                .trim(from: 0, to: 0.3)
+                .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .rotationEffect(.degrees(angle))
         }
     }
 }
