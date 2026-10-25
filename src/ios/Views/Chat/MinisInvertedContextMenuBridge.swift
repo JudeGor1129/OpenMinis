@@ -84,8 +84,8 @@ struct MinisInvertedContextMenuBridge: UIViewRepresentable {
 
             let menu = UIMenu(
                 title: "",
-                children: actions,
-                options: .displayInline
+                options: .displayInline,
+                children: actions
             )
 
             return UIContextMenuConfiguration(
