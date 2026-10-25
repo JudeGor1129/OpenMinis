@@ -414,14 +414,18 @@ extension View {
 // progress and restored history have no animation. Native navigation/sheets
 // keep their system transitions and interactive cancellation.
 enum MinisMotion {
+    private static let base = Animation.spring(response: 0.30, dampingFraction: 0.86)
+
     static var feedback: Animation? {
-        UIAccessibility.isReduceMotionEnabled ? nil : .easeOut(duration: 0.14)
+        UIAccessibility.isReduceMotionEnabled ? nil : base.speed(2.1)
     }
     static var transition: Animation? {
-        UIAccessibility.isReduceMotionEnabled ? nil : .easeInOut(duration: 0.22)
+        UIAccessibility.isReduceMotionEnabled ? nil : base
     }
     static var layout: Animation? {
-        UIAccessibility.isReduceMotionEnabled ? nil : .spring(response: 0.28, dampingFraction: 1)
+        UIAccessibility.isReduceMotionEnabled
+            ? nil
+            : .spring(response: 0.33, dampingFraction: 0.86)
     }
 }
 
@@ -441,5 +445,40 @@ private struct MinisMotionAccessibility: ViewModifier {
 extension View {
     func minisMotionAccessibility() -> some View {
         modifier(MinisMotionAccessibility())
+    }
+}
+
+/// Lightweight feedback for custom plain buttons; native buttons keep their
+/// platform press treatment. Geometry only changes while the finger is down.
+struct MinisPressFeedbackStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.82 : 1)
+            .animation(MinisMotion.feedback, value: configuration.isPressed)
+    }
+}
+
+/// A layout transform with constant animatable data. Unlike rotationEffect,
+/// it cannot interpolate during a parent transaction, which is required by the
+/// iOS 15 reverse-order transcript while allowing container animations around it.
+private struct MinisStaticRotationEffect: GeometryEffect {
+    let angle: Double
+
+    var animatableData: Double {
+        get { 0 }
+        set { }
+    }
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        ProjectionTransform(CGAffineTransform(translationX: size.width / 2, y: size.height / 2)
+            .rotated(by: angle * .pi / 180)
+            .translatedBy(x: -size.width / 2, y: -size.height / 2))
+    }
+}
+
+extension View {
+    func minisStaticRotation(_ degrees: Double) -> some View {
+        modifier(MinisStaticRotationEffect(angle: degrees))
     }
 }

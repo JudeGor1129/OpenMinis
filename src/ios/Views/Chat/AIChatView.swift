@@ -2565,23 +2565,23 @@ struct AIChatView: View {
             .onChange(of: vm.fallbackTrigger) { _ in
                 // 3× pulse: fade in then out, repeated 3 times
                 fallbackPulseOpacity = 0
-                withAnimation(.easeInOut(duration: 0.35)) {
+                withAnimation(MinisMotion.feedback) {
                     fallbackPulseOpacity = 1
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    withAnimation(.easeInOut(duration: 0.35)) { fallbackPulseOpacity = 0 }
+                    withAnimation(MinisMotion.feedback) { fallbackPulseOpacity = 0 }
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                    withAnimation(.easeInOut(duration: 0.35)) { fallbackPulseOpacity = 1 }
+                    withAnimation(MinisMotion.feedback) { fallbackPulseOpacity = 1 }
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.05) {
-                    withAnimation(.easeInOut(duration: 0.35)) { fallbackPulseOpacity = 0 }
+                    withAnimation(MinisMotion.feedback) { fallbackPulseOpacity = 0 }
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
-                    withAnimation(.easeInOut(duration: 0.35)) { fallbackPulseOpacity = 1 }
+                    withAnimation(MinisMotion.feedback) { fallbackPulseOpacity = 1 }
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.75) {
-                    withAnimation(.easeInOut(duration: 0.35)) { fallbackPulseOpacity = 0 }
+                    withAnimation(MinisMotion.feedback) { fallbackPulseOpacity = 0 }
                 }
             }
         }
@@ -4185,8 +4185,8 @@ struct AIChatView: View {
                 inputBarHeightDebounce = Task { @MainActor in
                     // [T-voice-inputbar-anim-tail] 380ms, not 300ms. The panel's
                     // expand/collapse and transcript-band animations are
-                    // .easeInOut(duration: 0.28) — the old 300ms window left only
-                    // 20ms of margin (its comment claimed the animation was
+                    // the 0.28s layout transition — the old 300ms window left
+                    // only 20ms of margin (its comment claimed the animation was
                     // 200ms, which is stale), so the timer routinely expired
                     // while the panel was still moving and SwiftUI's final
                     // geometry callback had not landed yet.
@@ -5269,7 +5269,7 @@ private struct ComposerContextGlow: View {
             }
         }
         .allowsHitTesting(false)
-        .animation(.easeInOut(duration: 0.35), value: tier)
+        .animation(MinisMotion.feedback, value: tier)
         .onAppear { updateBreathing() }
         .onChange(of: tier) { _ in updateBreathing() }
         .onChange(of: reduceMotion) { _ in updateBreathing() }
@@ -5277,11 +5277,11 @@ private struct ComposerContextGlow: View {
 
     private func updateBreathing() {
         if tier == .critical && !reduceMotion {
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+            withAnimation(.spring(response: 0.30, dampingFraction: 0.86).repeatForever(autoreverses: true)) {
                 breathing = true
             }
         } else {
-            withAnimation(.easeInOut(duration: 0.3)) { breathing = false }
+            withAnimation(MinisMotion.feedback) { breathing = false }
         }
     }
 }
@@ -7045,7 +7045,7 @@ struct LoadingDotsView: View {
                     .scaleEffect(reduceMotion ? 1.0 : (animating ? 1.0 : 0.55))
                     .opacity(reduceMotion ? 0.75 : (animating ? 0.95 : 0.3))
                     .animation(
-                        reduceMotion ? nil : .easeInOut(duration: 0.5)
+                        reduceMotion ? nil : .spring(response: 0.30, dampingFraction: 0.86)
                             .repeatForever(autoreverses: true)
                             .delay(Double(i) * 0.16),
                         value: animating
@@ -7369,7 +7369,7 @@ struct MinisLegacyTranscript: View {
                                     .foregroundStyle(.secondary)
                             }
                             .accessibilityElement(children: .combine)
-                            .rotationEffect(.degrees(180))
+                            .minisStaticRotation(180)
                         }
                         ForEach(vm.messages.reversed()) { message in
                             MinisLegacyTranscriptRow(
@@ -7378,20 +7378,19 @@ struct MinisLegacyTranscript: View {
                             )
                                 .equatable()
                                 .id(message.id)
-                                .rotationEffect(.degrees(180))
-                                // Context-menu dismissal must not animate the
-                                // transcript's compensating 180° transform.
-                                // The system menu owns its lift/release motion;
-                                // the inverted message must snap back in place.
-                                .transaction { transaction in
-                                    transaction.animation = nil
-                                    transaction.disablesAnimations = true
-                                }
+                                .minisStaticRotation(180)
                         }
                         Color.clear.frame(height: 12)
                     }
                     .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
                     .padding(.horizontal, 18)
+                    // Animate the message stack as one unit when a new turn
+                    // arrives. The child rows remain unanimated, preserving
+                    // the inverse 180° layout and avoiding per-row springs.
+                    .animation(
+                        vm.hasCompletedInitialLoad ? MinisMotion.layout : nil,
+                        value: vm.messages.count
+                    )
                     .background(MinisLegacyScrollFollow(
                         enabled: followingBottom,
                         onFollowingChanged: { follows in
@@ -7404,11 +7403,7 @@ struct MinisLegacyTranscript: View {
                 // The inverted viewport is a layout transform, not a user
                 // transition. Keep context-menu dismissal and navigation
                 // re-entry from animating the entire transcript back upright.
-                .rotationEffect(.degrees(180))
-                .transaction { transaction in
-                    transaction.animation = nil
-                    transaction.disablesAnimations = true
-                }
+                .minisStaticRotation(180)
                 .frame(width: viewport.size.width, height: viewport.size.height)
                 .clipped()
                 // Re-entry recreates only this native scroll viewport at offset

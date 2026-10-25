@@ -34,13 +34,10 @@ struct HelperSheetTarget: Identifiable, Equatable {
 ///
 /// This page was a draggable half-sheet once before and was turned full-screen
 /// because it was "easy to dismiss by accident and hard to scroll" (see the
-/// header above). Both are addressed explicitly here rather than hoping the
-/// defaults behave:
+/// header above). On iOS 16+, detents keep the transcript readable and disable
+/// accidental dismissal; on iOS 15, UIKit's native sheet owns the interactive
+/// drag so the gesture remains smooth and velocity-aware.
 ///
-/// - Accidental dismiss: `interactiveDismissDisabled()`. Dragging down only
-///   shrinks the sheet to its smallest detent; closing takes the back button.
-///   A transcript is something you read while it streams, so a stray downward
-///   swipe throwing it away was the worst failure.
 /// - Scroll vs resize: `presentationContentInteraction(.scrolls)` (iOS 16.4+)
 ///   makes a swipe inside the message list scroll the list, instead of the
 ///   default where a swipe at the list's top edge resizes the sheet. Resizing
@@ -74,7 +71,9 @@ extension View {
         if #available(iOS 16.0, *) {
             modifier(HelperTranscriptSheetStyle())
         } else {
-            self.interactiveDismissDisabled()
+            // iOS 15 UIKit sheets already provide the interactive, velocity-aware
+            // drag transition. Do not disable it on the compatibility path.
+            self
         }
     }
 }

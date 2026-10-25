@@ -2600,32 +2600,37 @@ struct ModernContentView: View {
 
     @ViewBuilder
     private var detailView: some View {
-        if let id = selectedSessionId {
-            // Draft sessions always pass nil — the VM creates a real session internally
-            // on first send. The .id() ensures each draft gets its own View lifecycle.
-            let isDraft = Self.isNewSessionId(id)
-            let effectiveId: String? = isDraft ? nil : id
-            AIChatView(sessionId: effectiveId, draftId: isDraft ? id : nil, initialGroupId: Self.extractGroupId(from: id))
-                .id(id)
-                .onAppear {
-                    draftLog.info("🔑DRAFT detailView APPEAR id=\(id) effectiveId=\(effectiveId ?? "nil") isDraft=\(isDraft)")
+        ZStack {
+            if let id = selectedSessionId {
+                // Draft sessions always pass nil — the VM creates a real session internally
+                // on first send. The .id() ensures each draft gets its own View lifecycle.
+                let isDraft = Self.isNewSessionId(id)
+                let effectiveId: String? = isDraft ? nil : id
+                AIChatView(sessionId: effectiveId, draftId: isDraft ? id : nil, initialGroupId: Self.extractGroupId(from: id))
+                    .id(id)
+                    .transition(.opacity)
+                    .onAppear {
+                        draftLog.info("🔑DRAFT detailView APPEAR id=\(id) effectiveId=\(effectiveId ?? "nil") isDraft=\(isDraft)")
+                    }
+                    .onDisappear {
+                        draftLog.info("🔑DRAFT detailView DISAPPEAR id=\(id)")
+                    }
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.secondary)
+                    Text("No Conversation Selected")
+                        .font(.title3.bold())
+                    Text("Select a conversation or start a new one")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                .onDisappear {
-                    draftLog.info("🔑DRAFT detailView DISAPPEAR id=\(id)")
-                }
-        } else {
-            VStack(spacing: 12) {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.secondary)
-                Text("No Conversation Selected")
-                    .font(.title3.bold())
-                Text("Select a conversation or start a new one")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .animation(MinisMotion.transition, value: selectedSessionId)
     }
 
     // MARK: - Display Sessions
@@ -3327,6 +3332,9 @@ struct ModernContentView: View {
                 NavigationLink(value: session.id) { EmptyView() }
                     .opacity(0)
             )
+            // The row remains a system NavigationLink target; this feedback
+            // layer only responds to the finger and never changes navigation.
+            .contentShape(Rectangle())
             .listRowInsets(EdgeInsets())
             .listRowSeparator(.hidden)
             .listRowBackground(Group {
@@ -4242,6 +4250,9 @@ struct ModernContentView: View {
             return
         }
         pendingBackgroundNavigation = nil
+        // Programmatic replacement is deliberately atomic: user-driven
+        // NavigationLink pushes retain UIKit's interactive transition, while
+        // move/share/quick-action replacement must not race a pop animation.
         var tx = Transaction()
         tx.disablesAnimations = true
         withTransaction(tx) {
@@ -8820,7 +8831,7 @@ private struct PulseRotateIcon: View {
     private func pulseLoop() async {
         while !Task.isCancelled {
             let (anim, hold) = currentPeriod()
-            withAnimation(.easeInOut(duration: anim)) {
+            withAnimation(.spring(response: 0.30, dampingFraction: 0.86)) {
                 rotation += 180
             }
             let total = UInt64((anim + hold) * 1_000_000_000)

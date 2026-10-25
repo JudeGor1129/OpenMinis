@@ -216,8 +216,10 @@ private struct LegacyContentView: View {
                 if let sid = pendingOpenSessionId {
                     pendingOpenSessionId = nil
                     DispatchQueue.main.async {
-                        openedSessionID = sid
-                        showingSession = true
+                        withAnimation(MinisMotion.transition) {
+                            openedSessionID = sid
+                            showingSession = true
+                        }
                     }
                 }
             }) { folder in
@@ -353,9 +355,11 @@ private struct LegacyContentView: View {
     }
 
     private func startDraft(in folderId: String? = nil) {
-        draftGroupId = folderId
-        draftID = "__new__\(UUID().uuidString)"
-        showingDraft = true
+        withAnimation(MinisMotion.transition) {
+            draftGroupId = folderId
+            draftID = "__new__\(UUID().uuidString)"
+            showingDraft = true
+        }
     }
 
     private func displayTitle(for session: ChatSession) -> String {
@@ -391,13 +395,13 @@ private struct DisclosuredGroupHeader: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(MinisPressFeedbackStyle())
             // Sibling of the toggle, not inside its label: a Button nested in
             // another Button's label swallows the inner tap.
             Button(action: onManage) {
                 Image(systemName: "ellipsis.circle")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(MinisPressFeedbackStyle())
         }
     }
 }
@@ -569,10 +573,11 @@ private struct LegacySessionRow: View {
                         rowLabel
                     }
                 }
+                .buttonStyle(MinisPressFeedbackStyle())
             } else if let onOpen {
                 // Sheet-hosted row: hand the push back to the home stack.
                 Button { onOpen(session.id) } label: { rowLabel }
-                    .buttonStyle(.plain)
+                    .buttonStyle(MinisPressFeedbackStyle())
             } else {
                 NavigationLink {
                     LegacySessionDestination(sessionID: session.id)

@@ -60,7 +60,7 @@ grep -Fq 'isProcessing: vm.isProcessing && siriFlowArmed' "$view"
 grep -Fq 'latestInputBarAtBottom' "$view"
 grep -Fq 'disarmSiriFlowUntilComposerSettles()' "$view"
 ! grep -Fq 'strokeBorder(gradient' "$view"
-grep -Fq 'transaction.disablesAnimations = true' "$view"
+grep -Fq 'minisStaticRotation(180)' "$view"
 ! test -e src/ios/Views/Chat/MinisInvertedContextMenuBridge.swift
 ! grep -Fq 'MinisInvertedContextMenuBridge' "$project"
 # This is intentionally build70's iOS15 path, NOT the later collection renderer.

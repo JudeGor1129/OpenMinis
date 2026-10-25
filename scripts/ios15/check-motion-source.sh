@@ -19,8 +19,8 @@ legacy = chat.split('struct MinisLegacyTranscript:', 1)[1].split('private struct
 container = legacy.split('private struct MinisLegacyToolDetailTarget:', 1)[0]
 probe = legacy.split('private struct MinisLegacyScrollFollow:', 1)[1]
 row = chat.split('private struct MinisLegacyTranscriptRow:', 1)[1]
-require('ForEach(vm.messages.reversed())' in container and '.rotationEffect(.degrees(180))' in container,
-        'latest messages must be laid out at native offset zero')
+require('ForEach(vm.messages.reversed())' in container and '.minisStaticRotation(180)' in container,
+        'latest messages must be laid out at native offset zero with a fixed transform')
 require('Timer(' not in legacy and 'setContentOffset(' not in legacy and 'scrollTo(' not in probe,
         'legacy viewport must never chase lazy numeric offsets or content growth')
 # Only the two explicit user jump handlers can command scrolling.
@@ -52,8 +52,8 @@ require('!vm.isLoadingSession || vm.isShowingHistoryPreview' in modern and
 require('lastSessionAnchorRequest = vm?.latestSessionAnchorRequest' in modern and
         '!cv.isTracking, !cv.isDragging, !cv.isDecelerating' in modern,
         'dragging must discard stale restoration requests')
-require('UIAccessibility.isReduceMotionEnabled' in motion and 'dampingFraction: 1' in motion,
-        'shared motion must support Reduce Motion and avoid layout bounce')
+require('UIAccessibility.isReduceMotionEnabled' in motion and 'dampingFraction: 0.86' in motion,
+        'shared motion must support Reduce Motion and use the unified spring')
 build = Path('scripts/ios15/build-diagnostics.sh').read_text()
 package = Path('scripts/ios15/package-trollstore.sh').read_text()
 require('-configuration Release' in build and 'SWIFT_OPTIMIZATION_LEVEL=-O' in build,
