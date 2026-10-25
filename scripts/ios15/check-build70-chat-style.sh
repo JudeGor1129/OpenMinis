@@ -43,12 +43,19 @@ if grep -Eq 'Label\(message.role|\.padding\(message.role' <<< "$row"; then
 fi
 grep -Fq 'struct MinisLegacyUserMessageActions: ViewModifier' "$view"
 grep -Fq 'if #available(iOS 16.0, *)' "$view"
-grep -Fq 'LongPressGesture(minimumDuration: 0.45)' "$view"
-grep -Fq 'userActionTarget = MinisLegacyUserActionTarget' "$view"
-grep -Fq 'Label("编辑并重发", systemImage: "pencil")' "$view"
-grep -Fq 'Label("从此处重发", systemImage: "arrow.clockwise")' "$view"
+grep -Fq 'MinisInvertedContextMenuBridge' "$view"
+grep -Fq 'MinisContextMenuAction' "$view"
+grep -Fq 'Label("编辑并重发（替换后续记录）", systemImage: "pencil")' "$view"
+grep -Fq 'Label("从此处重发（替换后续记录）", systemImage: "arrow.clockwise")' "$view"
 grep -Fq 'vm.retryFromMessage(messageID)' "$view"
 grep -Fq 'vm.editMessage(messageID)' "$view"
+grep -Fq 'MinisInvertedContextMenuBridge' "src/ios/Views/Chat/MinisInvertedContextMenuBridge.swift"
+grep -Fq 'struct MinisContextMenuAction' "src/ios/Views/Chat/MinisInvertedContextMenuBridge.swift"
+project=src/ios/Minis.xcodeproj/project.pbxproj
+grep -Fq 'E5F2000FC /* MinisInvertedContextMenuBridge.swift in Sources */' "$project"
+grep -Fq 'E5F2000FD /* MinisInvertedContextMenuBridge.swift */' "$project"
+! grep -Fq 'userActionTarget' "$view"
+! grep -Fq 'MinisLegacyUserActionTarget' "$view"
 # This is intentionally build70's iOS15 path, NOT the later collection renderer.
 area=$(sed -n '/private var messagesArea:/,/private struct MinisLegacyTranscript:/p' "$view")
 grep -Fq 'if #available(iOS 16.0, *)' <<< "$area"

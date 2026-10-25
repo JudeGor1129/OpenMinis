@@ -7293,12 +7293,7 @@ struct MinisLegacyTranscript: View {
     var readOnly = false
     @State private var followingBottom = true
     @State private var toolDetail: MinisLegacyToolDetailTarget?
-    @State private var userActionTarget: MinisLegacyUserActionTarget?
     private let bottomAnchor = "legacyTranscriptBottom"
-
-    private var userActionDialogBinding: Binding<Bool> {
-        Binding(get: { userActionTarget != nil }, set: { if !$0 { userActionTarget = nil } })
-    }
 
     var body: some View {
         GeometryReader { viewport in
@@ -7322,8 +7317,7 @@ struct MinisLegacyTranscript: View {
                         ForEach(vm.messages.reversed()) { message in
                             MinisLegacyTranscriptRow(
                                 message: message, vm: vm, readOnly: readOnly,
-                                detailTarget: $toolDetail,
-                                userActionTarget: $userActionTarget
+                                detailTarget: $toolDetail
                             )
                                 .equatable()
                                 .id(message.id)
@@ -7373,23 +7367,6 @@ struct MinisLegacyTranscript: View {
                 }
             }
         }
-        .confirmationDialog(
-            "消息操作",
-            isPresented: userActionDialogBinding,
-            titleVisibility: .visible
-        ) {
-            if let target = userActionTarget, !readOnly {
-                Button("编辑并重发") { vm.editMessage(target.messageID); userActionTarget = nil }
-                    .disabled(vm.isProcessing || vm.isRestoringFullHistory || target.isQueued)
-                Button("从此处重发") { vm.retryFromMessage(target.messageID); userActionTarget = nil }
-                    .disabled(vm.isProcessing || vm.isRestoringFullHistory || target.isQueued)
-            }
-            Button("拷贝") {
-                if let target = userActionTarget { UIPasteboard.general.string = target.text }
-                userActionTarget = nil
-            }
-            Button("取消", role: .cancel) { userActionTarget = nil }
-        }
         // Lazy rows are recycled while streaming/resizing. A sheet owned by
         // a row could lose its presenter as the child task publishes. Own the
         // selection and a nonempty snapshot at the stable transcript instead.
@@ -7409,33 +7386,59 @@ private struct MinisLegacyToolDetailTarget: Identifiable {
     let index: Int
 }
 
-private struct MinisLegacyUserActionTarget {
-    let messageID: UUID
-    let text: String
-    let isQueued: Bool
-}
-
 private struct MinisLegacyUserMessageActions: ViewModifier {
     let messageID: UUID
     let text: String
     let isQueued: Bool
     let readOnly: Bool
-    @Binding var userActionTarget: MinisLegacyUserActionTarget?
     @ObservedObject var vm: AIChatViewModel
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(iOS 16.0, *) {
-            content.contextMenu {
-                messageButtons
-            }
-        } else {
             content
                 .contentShape(Rectangle())
-                .highPriorityGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in
-                    userActionTarget = MinisLegacyUserActionTarget(
-                        messageID: messageID, text: text, isQueued: isQueued)
-                })
+                .contextMenu {
+                    messageButtons
+                } preview: {
+                    MinisUserBubblePreviewCard(text: text)
+                        .environment(\.layoutDirection, .leftToRight)
+                        .rotationEffect(.degrees(0))
+                }
+        } else {
+            // [T-ios15-inverted-ctxmenu] Use UIKit context menu bridge so the
+            // platter and menu appear upright (not rotated with the inverted
+            // transcript).
+            content
+                .overlay(
+                    MinisInvertedContextMenuBridge(
+                        items: [
+                            MinisContextMenuAction(
+                                title: "编辑并重发（替换后续记录）",
+                                image: "pencil",
+                                isEnabled: !readOnly && !vm.isProcessing && !vm.isRestoringFullHistory && !isQueued
+                            ) {
+                                vm.editMessage(messageID)
+                            },
+                            MinisContextMenuAction(
+                                title: "从此处重发（替换后续记录）",
+                                image: "arrow.clockwise",
+                                isEnabled: !readOnly && !vm.isProcessing && !vm.isRestoringFullHistory && !isQueued
+                            ) {
+                                vm.retryFromMessage(messageID)
+                            },
+                            MinisContextMenuAction(
+                                title: "拷贝",
+                                image: "doc.on.doc",
+                                isEnabled: !text.isEmpty
+                            ) {
+                                UIPasteboard.general.string = text
+                            }
+                        ],
+                        previewText: text
+                    )
+                    .allowsHitTesting(true)
+                )
         }
     }
 
@@ -7444,13 +7447,13 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
         Button {
             vm.editMessage(messageID)
         } label: {
-            Label("编辑并重发", systemImage: "pencil")
+            Label("编辑并重发（替换后续记录）", systemImage: "pencil")
         }
         .disabled(readOnly || vm.isProcessing || vm.isRestoringFullHistory || isQueued)
         Button {
             vm.retryFromMessage(messageID)
         } label: {
-            Label("从此处重发", systemImage: "arrow.clockwise")
+            Label("从此处重发（替换后续记录）", systemImage: "arrow.clockwise")
         }
         .disabled(readOnly || vm.isProcessing || vm.isRestoringFullHistory || isQueued)
         Button {
@@ -7459,6 +7462,30 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
             Label("拷贝", systemImage: "doc.on.doc")
         }
         .disabled(text.isEmpty)
+    }
+}
+
+/// Explicit preview card for iOS 16+ native context menus. Capped width/height
+/// keeps the lift animation responsive on long messages.
+private struct MinisUserBubblePreviewCard: View {
+    let text: String
+
+    var body: some View {
+        let shown = text.isEmpty ? " " : String(text.prefix(800))
+        Text(shown)
+            .font(.system(size: 15))
+            .foregroundStyle(.primary)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(maxWidth: 320, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(uiColor: .systemBackground))
+            )
+            .shadow(color: .black.opacity(0.14), radius: 12, x: 0, y: 6)
+            .rotationEffect(.degrees(0))
+            .environment(\.layoutDirection, .leftToRight)
     }
 }
 
@@ -7577,7 +7604,6 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
     @ObservedObject private var fontSettings = FontSettings.shared
     @State private var highlightedBlockId: UUID?
     @Binding var detailTarget: MinisLegacyToolDetailTarget?
-    @Binding var userActionTarget: MinisLegacyUserActionTarget?
     @State private var groupIcon: String?
 
     private var detailBlock: Binding<AssistantBlock?> {
@@ -7724,17 +7750,13 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
             }
             if message.role == .user {
                 userBubble
-                    // iOS 15 SwiftUI snapshots the transformed preview after
-                    // the inverted transcript rotation, which is why the
-                    // menu card in the recording turns vertical. Use the
-                    // stable parent confirmation dialog on iOS 15; keep the
-                    // native Context Menu on iOS 16+.
+                    // iOS 15 needs UIKit's menu presentation outside the
+                    // transformed transcript layer to keep the platter upright.
                     .modifier(MinisLegacyUserMessageActions(
                         messageID: message.id,
                         text: userDisplayText,
                         isQueued: message.isQueued,
                         readOnly: readOnly,
-                        userActionTarget: $userActionTarget,
                         vm: vm
                     ))
             } else if !message.content.isEmpty && !message.blocks.contains(where: { $0.kind == .text && !$0.content.isEmpty }) {
