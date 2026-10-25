@@ -5290,6 +5290,7 @@ private struct SiriFlowBorder: View {
     let isProcessing: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     private let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
     private var colors: [Color] {
@@ -5323,15 +5324,18 @@ private struct SiriFlowBorder: View {
                 // Keep the source line narrow and let the blur carry the color;
                 // a wide stroke reads as a second border on the composer.
                 ZStack {
+                    // Saturated Siri-like bloom: the inner layer carries the
+                    // color, while the wider layer creates the soft aura.
                     shape
-                        .stroke(gradient, lineWidth: 2.5)
-                        .blur(radius: 9)
-                        .opacity(0.20 + 0.30 * pulse)
+                        .stroke(gradient, lineWidth: 4)
+                        .blur(radius: 7)
+                        .opacity(0.42 + 0.38 * pulse)
                     shape
-                        .stroke(gradient, lineWidth: 1)
+                        .stroke(gradient, lineWidth: 2)
                         .blur(radius: 18)
-                        .opacity(0.10 + 0.14 * pulse)
+                        .opacity(0.22 + 0.24 * pulse)
                 }
+                .blendMode(colorScheme == .dark ? .plusLighter : .normal)
                 .allowsHitTesting(false)
             }
         }
