@@ -249,6 +249,12 @@ struct AIChatView: View {
     @State private var inputAtScrollBottom: Bool = true
     @State private var inputBarHeight: CGFloat = 0
     @State private var inputBarHeightDebounce: Task<Void, Never>?
+    /// The Siri glow is disarmed by send and re-armed only after the
+    /// composer reports a settled bottom position for a short quiet window.
+    @State private var siriFlowArmed = true
+    @State private var siriFlowPending = false
+    @State private var siriFlowArmTask: Task<Void, Never>?
+    @State private var latestInputBarAtBottom = false
     /// [T-voice-inputbar-anim-tail] The most recent ON-SCREEN composer height
     /// reported by onGeometryChange. The debounced commit reads THIS instead of
     /// the height captured when its 300ms timer was armed: the panel's
@@ -1491,6 +1497,10 @@ struct AIChatView: View {
         }
         .onDisappear {
             isChatViewVisible = false
+            siriFlowArmTask?.cancel()
+            siriFlowArmTask = nil
+            siriFlowPending = false
+            siriFlowArmed = false
             // [T-voice-inputbar-collapse-selfheal] The health probe must not
             // outlive the view — its report would describe a composer that no
             // longer exists.
@@ -4032,7 +4042,7 @@ struct AIChatView: View {
             // Siri-style flowing light band — outer, independent of context glow
             .overlay {
                 SiriFlowBorder(
-                    isProcessing: vm.isProcessing
+                    isProcessing: vm.isProcessing && siriFlowArmed
                 )
             }
             .frame(maxWidth: maxContentWidth)
@@ -4086,6 +4096,9 @@ struct AIChatView: View {
                 let tolerance = paneW * 0.25
                 let onscreen = frame.minX >= hostWindow.minX - tolerance
                     && frame.maxX <= hostWindow.maxX + tolerance
+                let bottomTolerance = max(24, hostWindow.height * 0.04)
+                latestInputBarAtBottom = onscreen
+                    && abs(frame.maxY - hostWindow.maxY) <= bottomTolerance
 
                 // [T-voice-inputbar-stale-height] Leading-edge first write,
                 // trailing-edge thereafter. The FIRST non-zero height (session
@@ -4106,6 +4119,28 @@ struct AIChatView: View {
                 // is laying out, which is exactly what the health probe asks.
                 inputBarGeometryTick &+= 1
                 inputBarLastGeometryAt = CFAbsoluteTimeGetCurrent()
+
+                // Sending dismisses the keyboard and clears the composer. Do
+                // not show the Siri glow during that return animation: wait
+                // until the composer is actually back at the window bottom,
+                // then require one quiet geometry interval before arming it.
+                if siriFlowPending && latestInputBarAtBottom {
+                    // The helper owns the trailing settle delay. A bottom
+                    // sample here is enough to let the next callback refresh
+                    // the quiet-window task without arming too early.
+                    siriFlowArmTask?.cancel()
+                    let candidateTick = inputBarGeometryTick
+                    siriFlowArmTask = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        guard !Task.isCancelled,
+                              siriFlowPending,
+                              latestInputBarAtBottom,
+                              inputBarGeometryTick == candidateTick else { return }
+                        siriFlowArmed = true
+                        siriFlowPending = false
+                        siriFlowArmTask = nil
+                    }
+                }
 
                 if !didSeedInputBarHeight, onscreen {
                     didSeedInputBarHeight = true
@@ -4966,6 +5001,27 @@ struct AIChatView: View {
             || !vm.attachments.isEmpty
     }
 
+    /// Hide the glow immediately when sending starts. Re-arm it only after a
+    /// full keyboard/composer settle window and a bottom-aligned geometry sample.
+    private func disarmSiriFlowUntilComposerSettles() {
+        siriFlowArmTask?.cancel()
+        siriFlowPending = true
+        siriFlowArmed = false
+        // Invalidate any pre-send bottom sample. A fresh geometry callback
+        // after dismissal must prove that the composer has returned.
+        latestInputBarAtBottom = false
+        siriFlowArmTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled, siriFlowPending else { return }
+            guard latestInputBarAtBottom else {
+                siriFlowArmTask = nil
+                return
+            }
+            siriFlowArmed = true
+            siriFlowPending = false
+            siriFlowArmTask = nil
+        }
+    }
 
     private func performEnqueue() {
         // Dismiss the software keyboard on enqueue. With a hardware keyboard,
@@ -4976,6 +5032,7 @@ struct AIChatView: View {
                 #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
         vm.forceScrollToBottom.send()
+        disarmSiriFlowUntilComposerSettles()
         if speechManager.state == .recording {
             speechManager.stopRecording()
         }
@@ -5007,8 +5064,10 @@ struct AIChatView: View {
             UIApplication.shared.sendAction(
                 #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
-        // User actively sending — force scroll-to-bottom so the response scrolls into view
+        // User actively sending — force scroll-to-bottom so the response scrolls into view.
+        // The glow stays off until geometry confirms the composer has returned to bottom.
         vm.forceScrollToBottom.send()
+        disarmSiriFlowUntilComposerSettles()
         // Stop recording and clear recognized text so it doesn't linger after send
         if speechManager.state == .recording {
             speechManager.stopRecording()
@@ -5260,14 +5319,18 @@ private struct SiriFlowBorder: View {
                     endAngle: .degrees(phase + 360)
                 )
 
+                // A soft bloom only: no crisp stroke and no visible frame.
+                // Keep the source line narrow and let the blur carry the color;
+                // a wide stroke reads as a second border on the composer.
                 ZStack {
                     shape
-                        .strokeBorder(gradient, lineWidth: 6)
-                        .blur(radius: 6)
-                        .opacity(0.42 * pulse)
+                        .stroke(gradient, lineWidth: 2.5)
+                        .blur(radius: 9)
+                        .opacity(0.20 + 0.30 * pulse)
                     shape
-                        .strokeBorder(gradient, lineWidth: 2.2)
-                        .opacity(0.82 + 0.18 * pulse)
+                        .stroke(gradient, lineWidth: 1)
+                        .blur(radius: 18)
+                        .opacity(0.10 + 0.14 * pulse)
                 }
                 .allowsHitTesting(false)
             }
@@ -7312,6 +7375,14 @@ struct MinisLegacyTranscript: View {
                                 .equatable()
                                 .id(message.id)
                                 .rotationEffect(.degrees(180))
+                                // Context-menu dismissal must not animate the
+                                // transcript's compensating 180° transform.
+                                // The system menu owns its lift/release motion;
+                                // the inverted message must snap back in place.
+                                .transaction { transaction in
+                                    transaction.animation = nil
+                                    transaction.disablesAnimations = true
+                                }
                         }
                         Color.clear.frame(height: 12)
                     }
@@ -7326,7 +7397,14 @@ struct MinisLegacyTranscript: View {
                         }
                     ))
                 }
+                // The inverted viewport is a layout transform, not a user
+                // transition. Keep context-menu dismissal and navigation
+                // re-entry from animating the entire transcript back upright.
                 .rotationEffect(.degrees(180))
+                .transaction { transaction in
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
                 .frame(width: viewport.size.width, height: viewport.size.height)
                 .clipped()
                 // Re-entry recreates only this native scroll viewport at offset
@@ -7676,8 +7754,9 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
             }
             if message.role == .user {
                 userBubble
-                    // iOS 15 needs UIKit's menu presentation outside the
-                    // transformed transcript layer to keep the platter upright.
+                    // Keep the system context-menu lift attached to the user
+                    // bubble; the surrounding transcript inversion is handled
+                    // by the fixed, non-animated rotation layer.
                     .modifier(MinisLegacyUserMessageActions(
                         messageID: message.id,
                         text: userDisplayText,

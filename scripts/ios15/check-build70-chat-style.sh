@@ -56,6 +56,11 @@ grep -Fq 'vm.editMessage(messageID)' <<< "$menu_area"
 grep -Fq 'SiriFlowBorder(' "$view"
 grep -Fq 'isProcessing: vm.isProcessing' "$view"
 grep -Fq 'TimelineView(.periodic(from: .now, by: 1.0 / 30.0))' "$view"
+grep -Fq 'isProcessing: vm.isProcessing && siriFlowArmed' "$view"
+grep -Fq 'latestInputBarAtBottom' "$view"
+grep -Fq 'disarmSiriFlowUntilComposerSettles()' "$view"
+! grep -Fq 'strokeBorder(gradient' "$view"
+grep -Fq 'transaction.disablesAnimations = true' "$view"
 ! test -e src/ios/Views/Chat/MinisInvertedContextMenuBridge.swift
 ! grep -Fq 'MinisInvertedContextMenuBridge' "$project"
 # This is intentionally build70's iOS15 path, NOT the later collection renderer.
