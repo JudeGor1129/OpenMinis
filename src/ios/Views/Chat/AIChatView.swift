@@ -2280,8 +2280,7 @@ struct AIChatView: View {
             thinkingLevelName: vm.currentThinkingLevel.displayName,
             fallbackTrigger: vm.fallbackTrigger,
             fallbackPulse: fallbackPulseOpacity,
-            titleLocked: titleIsVisuallyLocked,
-            isRunning: vm.isProcessing || vm.isCompacting
+            titleLocked: titleIsVisuallyLocked
         )
     }
 
@@ -4033,8 +4032,7 @@ struct AIChatView: View {
             // Siri-style flowing light band — outer, independent of context glow
             .overlay {
                 SiriFlowBorder(
-                    isProcessing: vm.isProcessing || vm.isCompacting,
-                    sessionVisible: isChatViewVisible
+                    isProcessing: vm.isProcessing
                 )
             }
             .frame(maxWidth: maxContentWidth)
@@ -5231,55 +5229,48 @@ private struct ComposerContextGlow: View {
 
 private struct SiriFlowBorder: View {
     let isProcessing: Bool
-    let sessionVisible: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var offset: CGFloat = -1.2
 
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
+    private let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+    private var colors: [Color] {
+        [
+            Color(red: 0.15, green: 0.82, blue: 1.0),
+            Color(red: 0.34, green: 0.43, blue: 1.0),
+            Color(red: 0.76, green: 0.31, blue: 1.0),
+            Color(red: 1.0, green: 0.31, blue: 0.68),
+            Color(red: 1.0, green: 0.63, blue: 0.27),
+            Color(red: 0.15, green: 0.82, blue: 1.0)
+        ]
     }
-
-    private var active: Bool { isProcessing && sessionVisible && !reduceMotion }
 
     var body: some View {
-        if active {
-            shape
-                .stroke(
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            .clear,
-                            .clear,
-                            Color.white.opacity(0.5),
-                            Color.white.opacity(0.95),
-                            Color.white.opacity(0.5),
-                            .clear,
-                            .clear
-                        ]),
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    lineWidth: 2
+        // The timeline is intentionally mounted only while the model is
+        // processing. Idle composers have no animation work and no visible
+        // border; this also avoids a stale final frame after completion.
+        if isProcessing {
+            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
+                let seconds = context.date.timeIntervalSinceReferenceDate
+                let phase = (seconds.truncatingRemainder(dividingBy: 4.0) / 4.0) * 360.0
+                let pulse = reduceMotion ? 0.7 : (0.2 + 0.8 * (0.5 + 0.5 * sin(seconds * .pi / 1.15)))
+                let gradient = AngularGradient(
+                    gradient: Gradient(colors: colors),
+                    center: .center,
+                    startAngle: .degrees(phase),
+                    endAngle: .degrees(phase + 360)
                 )
-                .offset(x: offset)
-                .allowsHitTesting(false)
-                .onAppear { startAnimation() }
-                .onDisappear { stopAnimation() }
-                .onChange(of: active) { newValue in
-                    newValue ? startAnimation() : stopAnimation()
+
+                ZStack {
+                    shape
+                        .strokeBorder(gradient, lineWidth: 6)
+                        .blur(radius: 6)
+                        .opacity(0.42 * pulse)
+                    shape
+                        .strokeBorder(gradient, lineWidth: 2.2)
+                        .opacity(0.82 + 0.18 * pulse)
                 }
-        }
-    }
-
-    private func startAnimation() {
-        withAnimation(.linear(duration: 2.0).repeatForever(autoreverses: false)) {
-            offset = 1.2
-        }
-    }
-
-    private func stopAnimation() {
-        withAnimation(.easeOut(duration: 0.3)) {
-            offset = -1.2
+                .allowsHitTesting(false)
+            }
         }
     }
 }
@@ -5616,7 +5607,6 @@ private struct NavTitleKey: Equatable {
     /// gate too. Without this field the chat body unblurred on unlock while
     /// the navbar title stayed frozen at blur 8 (user report 2026-07-24).
     let titleLocked: Bool
-    let isRunning: Bool
 }
 
 /// [T-ios-navbar-toolbar-host] Combined display key for the WHOLE toolbar:
@@ -7395,51 +7385,11 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 16.0, *) {
-            content
-                .contentShape(Rectangle())
-                .contextMenu {
-                    messageButtons
-                } preview: {
-                    MinisUserBubblePreviewCard(text: text)
-                        .environment(\.layoutDirection, .leftToRight)
-                        .rotationEffect(.degrees(0))
-                }
-        } else {
-            // [T-ios15-inverted-ctxmenu] Use UIKit context menu bridge so the
-            // platter and menu appear upright (not rotated with the inverted
-            // transcript).
-            content
-                .overlay(
-                    MinisInvertedContextMenuBridge(
-                        items: [
-                            MinisContextMenuAction(
-                                title: "编辑并重发（替换后续记录）",
-                                image: "pencil",
-                                isEnabled: !readOnly && !vm.isProcessing && !vm.isRestoringFullHistory && !isQueued
-                            ) {
-                                vm.editMessage(messageID)
-                            },
-                            MinisContextMenuAction(
-                                title: "从此处重发（替换后续记录）",
-                                image: "arrow.clockwise",
-                                isEnabled: !readOnly && !vm.isProcessing && !vm.isRestoringFullHistory && !isQueued
-                            ) {
-                                vm.retryFromMessage(messageID)
-                            },
-                            MinisContextMenuAction(
-                                title: "拷贝",
-                                image: "doc.on.doc",
-                                isEnabled: !text.isEmpty
-                            ) {
-                                UIPasteboard.general.string = text
-                            }
-                        ],
-                        previewText: text
-                    )
-                    .allowsHitTesting(true)
-                )
-        }
+        content
+            .contentShape(Rectangle())
+            .contextMenu {
+                messageButtons
+            }
     }
 
     @ViewBuilder
@@ -7462,30 +7412,6 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
             Label("拷贝", systemImage: "doc.on.doc")
         }
         .disabled(text.isEmpty)
-    }
-}
-
-/// Explicit preview card for iOS 16+ native context menus. Capped width/height
-/// keeps the lift animation responsive on long messages.
-private struct MinisUserBubblePreviewCard: View {
-    let text: String
-
-    var body: some View {
-        let shown = text.isEmpty ? " " : String(text.prefix(800))
-        Text(shown)
-            .font(.system(size: 15))
-            .foregroundStyle(.primary)
-            .multilineTextAlignment(.leading)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(maxWidth: 320, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color(uiColor: .systemBackground))
-            )
-            .shadow(color: .black.opacity(0.14), radius: 12, x: 0, y: 6)
-            .rotationEffect(.degrees(0))
-            .environment(\.layoutDirection, .leftToRight)
     }
 }
 

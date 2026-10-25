@@ -5,6 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 view=src/ios/Views/Chat/AIChatView.swift
+project=src/ios/Minis.xcodeproj/project.pbxproj
 row=$(sed -n '/^private struct MinisLegacyTranscriptRow:/,/^private struct MinisLegacyTranscriptBlock:/p' "$view")
 require() {
     grep -Fq "$1" <<< "$row" || {
@@ -42,20 +43,21 @@ if grep -Eq 'Label\(message.role|\.padding\(message.role' <<< "$row"; then
     echo 'FAIL: recovery labels or doubled inset reintroduced'; exit 1
 fi
 grep -Fq 'struct MinisLegacyUserMessageActions: ViewModifier' "$view"
-grep -Fq 'if #available(iOS 16.0, *)' "$view"
-grep -Fq 'MinisInvertedContextMenuBridge' "$view"
-grep -Fq 'MinisContextMenuAction' "$view"
-grep -Fq 'Label("编辑并重发（替换后续记录）", systemImage: "pencil")' "$view"
-grep -Fq 'Label("从此处重发（替换后续记录）", systemImage: "arrow.clockwise")' "$view"
-grep -Fq 'vm.retryFromMessage(messageID)' "$view"
-grep -Fq 'vm.editMessage(messageID)' "$view"
-grep -Fq 'MinisInvertedContextMenuBridge' "src/ios/Views/Chat/MinisInvertedContextMenuBridge.swift"
-grep -Fq 'struct MinisContextMenuAction' "src/ios/Views/Chat/MinisInvertedContextMenuBridge.swift"
-project=src/ios/Minis.xcodeproj/project.pbxproj
-grep -Fq 'E5F2000FC /* MinisInvertedContextMenuBridge.swift in Sources */' "$project"
-grep -Fq 'E5F2000FD /* MinisInvertedContextMenuBridge.swift */' "$project"
-! grep -Fq 'userActionTarget' "$view"
-! grep -Fq 'MinisLegacyUserActionTarget' "$view"
+menu_area=$(sed -n '/private struct MinisLegacyUserMessageActions:/,/private struct MinisLegacyScrollFollow:/p' "$view")
+grep -Fq '.contextMenu {' <<< "$menu_area"
+grep -Fq 'Label("编辑并重发（替换后续记录）", systemImage: "pencil")' <<< "$menu_area"
+grep -Fq 'Label("从此处重发（替换后续记录）", systemImage: "arrow.clockwise")' <<< "$menu_area"
+grep -Fq 'vm.retryFromMessage(messageID)' <<< "$menu_area"
+grep -Fq 'vm.editMessage(messageID)' <<< "$menu_area"
+! grep -Fq 'MinisInvertedContextMenuBridge' "$view"
+! grep -Fq 'confirmationDialog(' <<< "$menu_area"
+! grep -Fq 'sessionVisible' "$view"
+! grep -Fq 'isRunning: vm.isProcessing' "$view"
+grep -Fq 'SiriFlowBorder(' "$view"
+grep -Fq 'isProcessing: vm.isProcessing' "$view"
+grep -Fq 'TimelineView(.periodic(from: .now, by: 1.0 / 30.0))' "$view"
+! test -e src/ios/Views/Chat/MinisInvertedContextMenuBridge.swift
+! grep -Fq 'MinisInvertedContextMenuBridge' "$project"
 # This is intentionally build70's iOS15 path, NOT the later collection renderer.
 area=$(sed -n '/private var messagesArea:/,/private struct MinisLegacyTranscript:/p' "$view")
 grep -Fq 'if #available(iOS 16.0, *)' <<< "$area"
