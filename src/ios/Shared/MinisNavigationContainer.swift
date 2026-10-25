@@ -456,27 +456,3 @@ struct MinisPressFeedbackStyle: ButtonStyle {
             .animation(MinisMotion.feedback, value: configuration.isPressed)
     }
 }
-
-/// A layout transform with constant animatable data. Unlike rotationEffect,
-/// it cannot interpolate during a parent transaction, which is required by the
-/// iOS 15 reverse-order transcript while allowing container animations around it.
-struct MinisStaticRotationEffect: GeometryEffect {
-    let angle: Double
-
-    var animatableData: Double {
-        get { 0 }
-        set { }
-    }
-
-    func effectValue(size: CGSize) -> ProjectionTransform {
-        ProjectionTransform(CGAffineTransform(translationX: size.width / 2, y: size.height / 2)
-            .rotated(by: angle * .pi / 180)
-            .translatedBy(x: -size.width / 2, y: -size.height / 2))
-    }
-}
-
-extension View {
-    func minisStaticRotation(_ degrees: Double) -> some View {
-        modifier(MinisStaticRotationEffect(angle: degrees))
-    }
-}

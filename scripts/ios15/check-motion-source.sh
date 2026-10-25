@@ -19,8 +19,8 @@ legacy = chat.split('struct MinisLegacyTranscript:', 1)[1].split('private struct
 container = legacy.split('private struct MinisLegacyToolDetailTarget:', 1)[0]
 probe = legacy.split('private struct MinisLegacyScrollFollow:', 1)[1]
 row = chat.split('private struct MinisLegacyTranscriptRow:', 1)[1]
-require('ForEach(vm.messages.reversed())' in container and '.minisStaticRotation(180)' in container,
-        'latest messages must be laid out at native offset zero with a fixed transform')
+require('ForEach(vm.messages.reversed())' in container and '.rotationEffect(.degrees(180))' in container,
+        'latest messages must be laid out at native offset zero')
 require('Timer(' not in legacy and 'setContentOffset(' not in legacy and 'scrollTo(' not in probe,
         'legacy viewport must never chase lazy numeric offsets or content growth')
 # Only the two explicit user jump handlers can command scrolling.

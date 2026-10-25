@@ -7369,7 +7369,7 @@ struct MinisLegacyTranscript: View {
                                     .foregroundStyle(.secondary)
                             }
                             .accessibilityElement(children: .combine)
-                            .minisStaticRotation(180)
+                            .rotationEffect(.degrees(180))
                         }
                         ForEach(vm.messages.reversed()) { message in
                             MinisLegacyTranscriptRow(
@@ -7378,19 +7378,18 @@ struct MinisLegacyTranscript: View {
                             )
                                 .equatable()
                                 .id(message.id)
-                                .minisStaticRotation(180)
+                                .rotationEffect(.degrees(180))
+                                // Keep the compensating transform fixed while
+                                // the system menu/scroll view updates.
+                                .transaction { transaction in
+                                    transaction.animation = nil
+                                    transaction.disablesAnimations = true
+                                }
                         }
                         Color.clear.frame(height: 12)
                     }
                     .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
                     .padding(.horizontal, 18)
-                    // Animate the message stack as one unit when a new turn
-                    // arrives. The child rows remain unanimated, preserving
-                    // the inverse 180° layout and avoiding per-row springs.
-                    .animation(
-                        vm.hasCompletedInitialLoad ? MinisMotion.layout : nil,
-                        value: vm.messages.count
-                    )
                     .background(MinisLegacyScrollFollow(
                         enabled: followingBottom,
                         onFollowingChanged: { follows in
@@ -7403,7 +7402,11 @@ struct MinisLegacyTranscript: View {
                 // The inverted viewport is a layout transform, not a user
                 // transition. Keep context-menu dismissal and navigation
                 // re-entry from animating the entire transcript back upright.
-                .minisStaticRotation(180)
+                .rotationEffect(.degrees(180))
+                .transaction { transaction in
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
                 .frame(width: viewport.size.width, height: viewport.size.height)
                 .clipped()
                 // Re-entry recreates only this native scroll viewport at offset
