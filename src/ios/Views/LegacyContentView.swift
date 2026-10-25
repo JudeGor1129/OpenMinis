@@ -21,6 +21,8 @@ struct ContentView: View {
 private struct LegacyContentView: View {
     @State private var sessions: [ChatSession] = []
     @State private var folders: [ChatFolder] = []
+    @ObservedObject private var activityTracker = SessionActivityTracker.shared
+    @ObservedObject private var concurrencyManager = SessionConcurrencyManager.shared
     @State private var groupSessions: [String: [ChatSession]] = [:]
     @State private var expandedGroups: Set<String> = []
     @State private var groupsExpanded = false
@@ -94,7 +96,9 @@ private struct LegacyContentView: View {
                                         session: session,
                                         selectionMode: .constant(false),
                                         selectedSessions: .constant([]),
-                                        onChange: reload
+                                        onChange: reload,
+                                        isActiveOverride: sessionIsActive(session.id),
+                                        isSuspendedOverride: sessionIsSuspended(session.id)
                                     )
                                 }
                             }
@@ -125,7 +129,14 @@ private struct LegacyContentView: View {
                     .padding(.vertical, 36)
                 } else {
                     ForEach(ungroupedSessions) { session in
-                        LegacySessionRow(session: session, selectionMode: $selectionMode, selectedSessions: $selectedSessions, onChange: reload)
+                        LegacySessionRow(
+                            session: session,
+                            selectionMode: $selectionMode,
+                            selectedSessions: $selectedSessions,
+                            onChange: reload,
+                            isActiveOverride: sessionIsActive(session.id),
+                            isSuspendedOverride: sessionIsSuspended(session.id)
+                        )
                     }
                 }
             }
@@ -300,6 +311,14 @@ private struct LegacyContentView: View {
 
     private var ungroupedSessions: [ChatSession] {
         sessions.filter { $0.folderId == nil }
+    }
+
+    private func sessionIsActive(_ id: String) -> Bool {
+        activityTracker.isActive(id)
+    }
+
+    private func sessionIsSuspended(_ id: String) -> Bool {
+        concurrencyManager.isSuspended(id)
     }
 
     private func toggleGroup(_ id: String) {
@@ -560,6 +579,8 @@ private struct LegacySessionRow: View {
     /// gestures then interfere with long-press text selection. The sheet
     /// dismisses and the home NavigationView performs the push instead.
     var onOpen: ((String) -> Void)? = nil
+    var isActiveOverride: Bool? = nil
+    var isSuspendedOverride: Bool? = nil
     @State private var editing = false
     @State private var choosingFolder = false
     @State private var confirmingDelete = false
@@ -567,12 +588,10 @@ private struct LegacySessionRow: View {
     @State private var failure: String?
     @State private var busy = false
     @State private var folders: [ChatFolder] = []
-    @ObservedObject private var activityTracker = SessionActivityTracker.shared
-    @ObservedObject private var concurrencyManager = SessionConcurrencyManager.shared
 
     private var title: String { session.title ?? "New Conversation" }
-    private var isActive: Bool { activityTracker.isActive(session.id) }
-    private var isSuspended: Bool { concurrencyManager.isSuspended(session.id) }
+    private var isActive: Bool { isActiveOverride ?? false }
+    private var isSuspended: Bool { isSuspendedOverride ?? false }
     private var categoryIcon: (systemName: String, color: Color) {
         sessionCategoryIcon(for: session.category)
     }
@@ -772,14 +791,14 @@ private struct LegacySpinningRing: View {
     let color: Color
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            let angle = timeline.date.timeIntervalSinceReferenceDate
-                .truncatingRemainder(dividingBy: 1.0) * 360
-            Circle()
-                .trim(from: 0, to: 0.3)
-                .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                .rotationEffect(.degrees(angle))
-        }
+        Circle()
+            .stroke(color.opacity(0.85), lineWidth: 2)
+            .overlay {
+                Circle()
+                    .fill(color.opacity(0.18))
+                    .padding(3)
+            }
+            .accessibilityLabel(Text("Running"))
     }
 }
 
