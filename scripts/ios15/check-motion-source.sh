@@ -32,8 +32,8 @@ for event in ['.onAppear {', '.onChange(of: vm.latestSessionAnchorRequest) {']:
     require('scrollTo(' not in body, 'session restoration must not scroll')
 require('scroll.isTracking || scroll.isDragging || scroll.isDecelerating' in probe,
         'native gestures and momentum take priority')
-require('scrollView?.panGestureRecognizer.removeTarget' in probe and 'observations.removeAll()' in probe,
-        'scroll observations must be dismantled')
+require('scrollView?.panGestureRecognizer.removeTarget' in probe and 'observe(\\.contentOffset' not in probe,
+        'scroll follow must avoid per-frame contentOffset observation')
 require('interactionEndCheck?.cancel()' in probe and 'if userInteractionActive { checkInteractionEnd() }' in probe,
         'native momentum end must be detected without an idle timer')
 require('.sheet(item: $toolDetail)' in container and '.sheet(' not in row,

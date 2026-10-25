@@ -65,6 +65,19 @@ private final class CachedViewModel: ObservableObject {
     }
 }
 
+/// Mutable geometry cache for the composer. Its fields intentionally are not
+/// @Published: keyboard layout callbacks can arrive every display frame, and
+/// publishing each sample would re-evaluate the entire chat hierarchy.
+@MainActor
+private final class InputBarGeometryState: ObservableObject {
+    var heightDebounce: Task<Void, Never>?
+    var latestInputBarFrameH: CGFloat = 0
+    var inputBarGeometryTick: Int = 0
+    var inputBarLastGeometryAt: CFAbsoluteTime?
+    var latestInputBarAtBottom = false
+    var healthProbe: Task<Void, Never>?
+}
+
 // MARK: - Color Palette (clean light theme)
 
 enum ChatColors {
@@ -248,33 +261,13 @@ struct AIChatView: View {
     /// composer has nothing to scroll.
     @State private var inputAtScrollBottom: Bool = true
     @State private var inputBarHeight: CGFloat = 0
-    @State private var inputBarHeightDebounce: Task<Void, Never>?
+    @StateObject private var inputBarGeometry = InputBarGeometryState()
     /// The Siri glow is disarmed by send and re-armed only after the
     /// composer reports a settled bottom position for a short quiet window.
     @State private var siriFlowArmed = true
     @State private var siriFlowPending = false
     @State private var siriFlowArmTask: Task<Void, Never>?
-    @State private var latestInputBarAtBottom = false
-    /// [T-voice-inputbar-anim-tail] The most recent ON-SCREEN composer height
-    /// reported by onGeometryChange. The debounced commit reads THIS instead of
-    /// the height captured when its 300ms timer was armed: the panel's
-    /// expand/collapse + transcript-band animations are 280ms, so the value that
-    /// arms the timer is routinely a mid-animation sample, and committing it
-    /// froze the bottom inset at a transitional height (log 07-14 15:34:
-    /// settled=312.67 / 363 while the panel was really 232 → 210). Writing every
-    /// callback here and committing the freshest one makes the debounce a
-    /// genuine trailing edge.
-    @State private var latestInputBarFrameH: CGFloat = 0
-    /// [T-voice-inputbar-collapse-selfheal] Liveness signal for the composer's
-    /// geometry reporting: bumped on EVERY onGeometryChange callback (including
-    /// off-screen ones, which still prove the host is laying out), plus the wall
-    /// clock of the last one. The foreground health probe compares the tick
-    /// across a 900ms window to tell "the composer woke up" apart from "the host
-    /// is silent and the bottom of the screen is blank" — the 2026-08-18 01:29
-    /// failure, where the last callback preceded the blank bar by minutes.
-    @State private var inputBarGeometryTick: Int = 0
-    @State private var inputBarLastGeometryAt: CFAbsoluteTime?
-    @State private var inputBarHealthProbe: Task<Void, Never>?
+    /// [T-ios-composer-swipe-send-at-bottom] True when the composer's text is
     /// [T-voice-inputbar-stale-height] False until the FIRST non-zero
     /// inputBarHeight lands. The first write (session open / initial composer
     /// layout) is applied IMMEDIATELY (leading edge) so the message list computes
@@ -1364,8 +1357,8 @@ struct AIChatView: View {
             // survives indefinitely across re-renders. Clearing the flag makes
             // the next (guaranteed) geometry callback re-seed authoritatively.
             didSeedInputBarHeight = false
-            inputBarHeightDebounce?.cancel()
-            inputBarHeightDebounce = nil
+            inputBarGeometry.heightDebounce?.cancel()
+            inputBarGeometry.heightDebounce = nil
             AppLogger(category: "InputBarLayout").info("inputBarHeight re-arm seed on appear (was \(inputBarHeight))")
             vm.sessionId = sessionId
             vm.draftId = draftId
@@ -1504,8 +1497,8 @@ struct AIChatView: View {
             // [T-voice-inputbar-collapse-selfheal] The health probe must not
             // outlive the view — its report would describe a composer that no
             // longer exists.
-            inputBarHealthProbe?.cancel()
-            inputBarHealthProbe = nil
+            inputBarGeometry.healthProbe?.cancel()
+            inputBarGeometry.healthProbe = nil
             if speechManager.state == .recording {
                 speechManager.stopRecording()
             }
@@ -1570,8 +1563,8 @@ struct AIChatView: View {
                 // animation frame if the panel is expanding/collapsing when the
                 // app returns to foreground — the debounce path is the correct
                 // one for an already-visible view.
-                inputBarHeightDebounce?.cancel()
-                inputBarHeightDebounce = nil
+                inputBarGeometry.heightDebounce?.cancel()
+                inputBarGeometry.heightDebounce = nil
                 // [T-voice-inputbar-collapse-selfheal] …EXCEPT when the composer
                 // has stopped reporting geometry altogether, which is the one
                 // state the note above cannot cover.
@@ -1607,8 +1600,8 @@ struct AIChatView: View {
                 // only happen where the alternative is a permanently wrong (or
                 // missing) bar.
                 let committedH = inputBarHeight
-                let latestH = latestInputBarFrameH
-                let sinceReport = inputBarLastGeometryAt.map { CFAbsoluteTimeGetCurrent() - $0 } ?? -1
+                let latestH = inputBarGeometry.latestInputBarFrameH
+                let sinceReport = inputBarGeometry.inputBarLastGeometryAt.map { CFAbsoluteTimeGetCurrent() - $0 } ?? -1
                 if didSeedInputBarHeight,
                    latestH <= 0 || abs(latestH - committedH) > 0.5 {
                     didSeedInputBarHeight = false
@@ -1623,17 +1616,17 @@ struct AIChatView: View {
                 // did not — this is the line that tells the next investigation
                 // "the self-heal ran and was not enough" instead of leaving them
                 // to re-derive it from a silent log.
-                inputBarHealthProbe?.cancel()
-                let probeBaseline = inputBarGeometryTick
-                inputBarHealthProbe = Task { @MainActor in
+                inputBarGeometry.healthProbe?.cancel()
+                let probeBaseline = inputBarGeometry.inputBarGeometryTick
+                inputBarGeometry.healthProbe = Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 900_000_000)
                     guard !Task.isCancelled else { return }
-                    let ticked = inputBarGeometryTick != probeBaseline
-                    let age = inputBarLastGeometryAt.map { CFAbsoluteTimeGetCurrent() - $0 } ?? -1
+                    let ticked = inputBarGeometry.inputBarGeometryTick != probeBaseline
+                    let age = inputBarGeometry.inputBarLastGeometryAt.map { CFAbsoluteTimeGetCurrent() - $0 } ?? -1
                     if ticked {
-                        AppLogger(category: "InputBarLayout").info("[InputBarHealth] OK after foreground — composer re-reported geometry (h=\(latestInputBarFrameH) committed=\(inputBarHeight))")
+                        AppLogger(category: "InputBarLayout").info("[InputBarHealth] OK after foreground — composer re-reported geometry (h=\(inputBarGeometry.latestInputBarFrameH) committed=\(inputBarHeight))")
                     } else {
-                        AppLogger(category: "InputBarLayout").error("[InputBarHealth] STALLED — no geometry callback 900ms after foreground. committed=\(inputBarHeight) latest=\(latestInputBarFrameH) lastReport=\(String(format: "%.1f", age))s ago voice=\(voiceInputActive) editing=\(voiceVM.isEditingTranscript) seeded=\(didSeedInputBarHeight). The composer host is not laying out; expect a blank bottom area. Leaving and re-entering the session rebuilds it.")
+                        AppLogger(category: "InputBarLayout").error("[InputBarHealth] STALLED — no geometry callback 900ms after foreground. committed=\(inputBarHeight) latest=\(inputBarGeometry.latestInputBarFrameH) lastReport=\(String(format: "%.1f", age))s ago voice=\(voiceInputActive) editing=\(voiceVM.isEditingTranscript) seeded=\(didSeedInputBarHeight). The composer host is not laying out; expect a blank bottom area. Leaving and re-entering the session rebuilds it.")
                     }
                 }
                 // [T-voice-bg-fg-gap] Foreground reseal: if we return to a
@@ -4097,7 +4090,7 @@ struct AIChatView: View {
                 let onscreen = frame.minX >= hostWindow.minX - tolerance
                     && frame.maxX <= hostWindow.maxX + tolerance
                 let bottomTolerance = max(24, hostWindow.height * 0.04)
-                latestInputBarAtBottom = onscreen
+                inputBarGeometry.latestInputBarAtBottom = onscreen
                     && abs(frame.maxY - hostWindow.maxY) <= bottomTolerance
 
                 // [T-voice-inputbar-stale-height] Leading-edge first write,
@@ -4113,29 +4106,29 @@ struct AIChatView: View {
                 // debounce's settle-confirm read this, so it must already reflect
                 // the current callback (writing it after the seed's `return`
                 // would leave the confirm reading a stale/zero value).
-                if onscreen { latestInputBarFrameH = newH }
+                if onscreen { inputBarGeometry.latestInputBarFrameH = newH }
                 // [T-voice-inputbar-collapse-selfheal] Liveness, recorded for
                 // EVERY callback — an off-screen sample is still proof the host
                 // is laying out, which is exactly what the health probe asks.
-                inputBarGeometryTick &+= 1
-                inputBarLastGeometryAt = CFAbsoluteTimeGetCurrent()
+                inputBarGeometry.inputBarGeometryTick &+= 1
+                inputBarGeometry.inputBarLastGeometryAt = CFAbsoluteTimeGetCurrent()
 
                 // Sending dismisses the keyboard and clears the composer. Do
                 // not show the Siri glow during that return animation: wait
                 // until the composer is actually back at the window bottom,
                 // then require one quiet geometry interval before arming it.
-                if siriFlowPending && latestInputBarAtBottom {
+                if siriFlowPending && inputBarGeometry.latestInputBarAtBottom {
                     // The helper owns the trailing settle delay. A bottom
                     // sample here is enough to let the next callback refresh
                     // the quiet-window task without arming too early.
                     siriFlowArmTask?.cancel()
-                    let candidateTick = inputBarGeometryTick
+                    let candidateTick = inputBarGeometry.inputBarGeometryTick
                     siriFlowArmTask = Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 300_000_000)
                         guard !Task.isCancelled,
                               siriFlowPending,
-                              latestInputBarAtBottom,
-                              inputBarGeometryTick == candidateTick else { return }
+                              inputBarGeometry.latestInputBarAtBottom,
+                              inputBarGeometry.inputBarGeometryTick == candidateTick else { return }
                         siriFlowArmed = true
                         siriFlowPending = false
                         siriFlowArmTask = nil
@@ -4144,7 +4137,7 @@ struct AIChatView: View {
 
                 if !didSeedInputBarHeight, onscreen {
                     didSeedInputBarHeight = true
-                    inputBarHeightDebounce?.cancel()
+                    inputBarGeometry.heightDebounce?.cancel()
                     inputBarHeight = newH
                     AppLogger(category: "InputBarLayout").info("inputBarHeight seeded=\(newH) x=\(Int(frame.minX))")
                     // [T-inputbar-stale-across-reentry] The seed is applied
@@ -4158,10 +4151,10 @@ struct AIChatView: View {
                     // 280ms animation has provably finished. No new measurement
                     // is taken; we only re-read what onGeometryChange reported.
                     let voiceAtSeed = voiceInputActive
-                    inputBarHeightDebounce = Task { @MainActor in
+                    inputBarGeometry.heightDebounce = Task { @MainActor in
                         try? await Task.sleep(nanoseconds: 380_000_000)
                         guard !Task.isCancelled, voiceAtSeed == voiceInputActive else { return }
-                        let settled = latestInputBarFrameH
+                        let settled = inputBarGeometry.latestInputBarFrameH
                         if settled > 0, abs(settled - newH) > 0.5 {
                             inputBarHeight = settled
                             AppLogger(category: "InputBarLayout").info("inputBarHeight SEED-CORRECTED \(newH)→\(settled) — seed had caught an animation frame")
@@ -4180,9 +4173,9 @@ struct AIChatView: View {
                     AppLogger(category: "InputBarLayout").info("inputBarHeight discarded=\(newH) offscreen x=\(Int(frame.minX))…\(Int(frame.maxX)) win=\(Int(hostWindow.minX))…\(Int(hostWindow.maxX))")
                     return
                 }
-                inputBarHeightDebounce?.cancel()
+                inputBarGeometry.heightDebounce?.cancel()
                 let voiceAtCapture = voiceInputActive
-                inputBarHeightDebounce = Task { @MainActor in
+                inputBarGeometry.heightDebounce = Task { @MainActor in
                     // [T-voice-inputbar-anim-tail] 380ms, not 300ms. The panel's
                     // expand/collapse and transcript-band animations are
                     // the 0.28s layout transition — the old 300ms window left
@@ -4203,7 +4196,7 @@ struct AIChatView: View {
                         return
                     }
                     // Commit the LATEST height, not the one that armed the timer.
-                    let committed = latestInputBarFrameH > 0 ? latestInputBarFrameH : newH
+                    let committed = inputBarGeometry.latestInputBarFrameH > 0 ? inputBarGeometry.latestInputBarFrameH : newH
                     inputBarHeight = committed
                     let armed = newH
                     AppLogger(category: "InputBarLayout").info("inputBarHeight settled=\(committed) x=\(Int(frame.minX))\(abs(committed - armed) > 0.5 ? " (armedWith=\(armed), used latest)" : "")")
@@ -4220,7 +4213,7 @@ struct AIChatView: View {
                     try? await Task.sleep(nanoseconds: 320_000_000)
                     guard !Task.isCancelled else { return }
                     guard voiceAtCapture == voiceInputActive else { return }
-                    let settled = latestInputBarFrameH
+                    let settled = inputBarGeometry.latestInputBarFrameH
                     if settled > 0, abs(settled - committed) > 0.5 {
                         inputBarHeight = settled
                         AppLogger(category: "InputBarLayout").info("inputBarHeight CORRECTED \(committed)→\(settled) — commit had caught an animation-tail frame")
@@ -5009,11 +5002,11 @@ struct AIChatView: View {
         siriFlowArmed = false
         // Invalidate any pre-send bottom sample. A fresh geometry callback
         // after dismissal must prove that the composer has returned.
-        latestInputBarAtBottom = false
+        inputBarGeometry.latestInputBarAtBottom = false
         siriFlowArmTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled, siriFlowPending else { return }
-            guard latestInputBarAtBottom else {
+            guard inputBarGeometry.latestInputBarAtBottom else {
                 siriFlowArmTask = nil
                 return
             }
@@ -7379,12 +7372,6 @@ struct MinisLegacyTranscript: View {
                                 .equatable()
                                 .id(message.id)
                                 .rotationEffect(.degrees(180))
-                                // Keep the compensating transform fixed while
-                                // the system menu/scroll view updates.
-                                .transaction { transaction in
-                                    transaction.animation = nil
-                                    transaction.disablesAnimations = true
-                                }
                         }
                         Color.clear.frame(height: 12)
                     }
@@ -7517,7 +7504,6 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
         var following = true
         var onFollowingChanged: ((Bool) -> Void)?
         private weak var scrollView: UIScrollView?
-        private var observations: [NSKeyValueObservation] = []
         private var userInteractionActive = false
         private var updateScheduled = false
         // Only checks for the terminal UIKit drag/deceleration event; idle
@@ -7543,16 +7529,14 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             guard let scroll = ancestor as? UIScrollView else { return }
             scrollView = scroll
             scroll.keyboardDismissMode = .interactive
+            // Do not observe contentOffset: KVO fires every display frame and
+            // queues a main-actor sample while the user is dragging. The pan
+            // recognizer plus the existing short deceleration-end probe are
+            // sufficient to determine the final following state.
             scroll.panGestureRecognizer.addTarget(self, action: #selector(panChanged(_:)))
-            observations = [
-                scroll.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
-                    self?.scheduleUpdate()
-                }
-            ]
         }
         func stop() {
             scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(panChanged(_:)))
-            observations.removeAll()
             interactionEndCheck?.cancel()
             interactionEndCheck = nil
             scrollView = nil
