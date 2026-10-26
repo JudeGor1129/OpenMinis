@@ -15,6 +15,17 @@ struct ToolStatusEntry: Identifiable {
     let command: String
     let description: String
     let category: ToolCategory
+    /// Tools implemented in the Minis host process, not Alpine/iSH.
+    let isBuiltin: Bool
+
+    init(id: String, name: String, command: String, description: String, category: ToolCategory, isBuiltin: Bool = false) {
+        self.id = id
+        self.name = name
+        self.command = command
+        self.description = description
+        self.category = category
+        self.isBuiltin = isBuiltin
+    }
 }
 
 /// Categories for grouping tools
@@ -52,7 +63,9 @@ private let allToolEntries: [ToolStatusEntry] = [
     // rea is an npx wrapper; do not execute it during status refresh because
     // that could resolve/download a package. Presence is the safe health check.
     ToolStatusEntry(id: "rea", name: "rea", command: "test -x /usr/local/bin/rea && echo installed", description: "逆向分析代理工具", category: .reverse),
-    ToolStatusEntry(id: "otool", name: "otool", command: "which otool", description: "Mach-O 分析工具", category: .reverse),
+    // Mach-O analysis is implemented by Minis' native host_macho_info tool.
+    // It intentionally does not depend on a Darwin `otool` binary inside Alpine.
+    ToolStatusEntry(id: "otool", name: "Mach-O 分析（Minis 内置）", command: "", description: "原生 Mach-O 分析器", category: .reverse, isBuiltin: true),
     ToolStatusEntry(id: "strip", name: "strip", command: "which strip", description: "符号剥离工具", category: .reverse),
     ToolStatusEntry(id: "llvm-lipo", name: "llvm-lipo", command: "which llvm-lipo", description: "Fat binary 合并工具", category: .reverse),
 
@@ -137,17 +150,30 @@ struct ToolchainStatusView: View {
 
     private func checkAllTools() {
         guard !isChecking else { return }
+
+        isChecking = true
+        toolStatuses = Dictionary(uniqueKeysWithValues: allToolEntries
+            .filter(\.isBuiltin)
+            .map { ($0.id, .installed("Minis 内置")) })
+
+        let shellEntries = allToolEntries.filter { !$0.isBuiltin }
         guard ISHKernel.shared.isBooted else {
-            notice = "Alpine 未启动"
+            isChecking = false
+            lastCheckTime = Date()
+            notice = "Alpine 未启动；Minis 内置工具可直接使用"
+            return
+        }
+        guard !shellEntries.isEmpty else {
+            isChecking = false
+            lastCheckTime = Date()
+            notice = "已检测 \(allToolEntries.count)/\(allToolEntries.count) 个工具"
             return
         }
 
-        isChecking = true
-        toolStatuses.removeAll()
-
         DispatchQueue.global(qos: .utility).async {
-            // One shell round-trip for all probes, each wrapped in markers.
-            let script = allToolEntries.map { entry in
+            // One shell round-trip for Alpine/iSH probes; host-native tools
+            // are already represented above and never shell out to Alpine.
+            let script = shellEntries.map { entry in
                 "echo '@@\(entry.id)=START'; { \(entry.command); } 2>&1; echo '@@\(entry.id)=END'"
             }.joined(separator: "; ")
 
@@ -182,14 +208,17 @@ struct ToolchainStatusView: View {
                     }
                 }
 
-                toolStatuses = parsed
+                let builtinStatuses = Dictionary(uniqueKeysWithValues: allToolEntries
+                    .filter(\.isBuiltin)
+                    .map { ($0.id, .installed("Minis 内置")) })
+                toolStatuses = builtinStatuses.merging(parsed) { _, alpine in alpine }
 
                 if exitCode == -1 {
-                    notice = "检测超时"
+                    notice = "检测超时；Minis 内置 Mach-O 分析器仍可用"
                 } else if parsed.isEmpty {
-                    notice = "未获取到结果"
+                    notice = "未获取到 Alpine 结果；Minis 内置工具可用"
                 } else {
-                    let installed = parsed.values.filter { $0 != .missing }.count
+                    let installed = toolStatuses.values.filter { $0 != .missing }.count
                     notice = "已检测 \(installed)/\(allToolEntries.count) 个工具"
                 }
             }
