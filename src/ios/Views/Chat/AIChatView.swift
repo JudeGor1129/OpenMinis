@@ -3393,7 +3393,7 @@ struct AIChatView: View {
 
         if #available(iOS 17, *) {
             Menu {
-                Button { showHomeworkCoach = true } label: { Label("作业陪练", systemImage: "camera.viewfinder") }
+                Button { showHomeworkCoach = true } label: { Label("语音老师", systemImage: "camera.viewfinder") }
                 Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
                 Button { showPhotoPicker = true } label: { Label("Choose Photos & Videos", systemImage: "photo.on.rectangle") }
                 Button { showDocumentPicker = true } label: { Label("Add File", systemImage: "doc") }
@@ -3405,7 +3405,7 @@ struct AIChatView: View {
                 icon
             }
             .confirmationDialog("Add Attachment", isPresented: $showAttachmentMenu) {
-                Button { showHomeworkCoach = true } label: { Label("作业陪练", systemImage: "camera.viewfinder") }
+                Button { showHomeworkCoach = true } label: { Label("语音老师", systemImage: "camera.viewfinder") }
                 Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
                 Button { showPhotoPicker = true } label: { Label("Choose Photos & Videos", systemImage: "photo.on.rectangle") }
                 Button { showDocumentPicker = true } label: { Label("Add File", systemImage: "doc") }

@@ -6,10 +6,11 @@ policy=src/ios/Views/Chat/Media/HomeworkCoachPolicy.swift
 capture=src/ios/Views/Chat/Media/HomeworkCameraCapture.swift
 controller=src/ios/Views/Chat/Media/HomeworkCoachController.swift
 view=src/ios/Views/Chat/Media/HomeworkCoachView.swift
+recognition=src/ios/Views/Chat/Media/HomeworkQuestionRecognizer.swift
 project=src/ios/Minis.xcodeproj/project.pbxproj
 plist=src/ios/Info.plist
 
-for f in "$policy" "$capture" "$controller" "$view"; do
+for f in "$policy" "$capture" "$controller" "$view" "$recognition"; do
   [[ -s "$f" ]] || { echo "FAIL: missing homework coach source: $f"; exit 1; }
 done
 grep -q 'homework.coach.enabled' "$policy"
@@ -21,10 +22,14 @@ grep -q 'homeworkCoach' src/ios/Providers/Voice/AudioSessionCoordinator.swift
 grep -q 'homeworkHint' src/ios/Providers/Voice/AudioSessionCoordinator.swift
 grep -q 'HomeworkCameraCapture' "$controller"
 grep -q 'streamAgentMessage' "$controller"
-grep -q 'validatedHint' "$controller"
+grep -q 'validatedLesson' "$controller"
+grep -q '孩子刚才的语音提问' "$controller"
+grep -q 'requiresOnDeviceRecognition' "$recognition"
+grep -q 'supportsOnDeviceRecognition || allowNetwork' "$recognition"
+grep -q 'appendAudioSampleBuffer' "$recognition"
 grep -q 'AVSpeechSynthesizer' "$controller"
 grep -q 'NavigationView' "$view"
-grep -q 'Toggle("允许作业陪练"' src/ios/Views/Settings/ToolsSettingsView.swift
+grep -q 'Toggle("允许语音老师"' src/ios/Views/Settings/ToolsSettingsView.swift
 grep -q 'HomeworkCoachView(vm: vm)' src/ios/Views/Chat/AIChatView.swift
 grep -q 'HomeworkCameraCapture.swift' "$project"
 grep -q 'HomeworkCoachController.swift' "$project"
@@ -49,7 +54,7 @@ SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 xcrun --sdk iphoneos swiftc -typecheck -swift-version 6 \
   -target arm64-apple-ios15.0 -sdk "$SDK" \
   scripts/ios15/HomeworkCoachTypecheckSupport.swift \
-  "$policy" "$capture" "$controller" "$view"
+  "$policy" "$capture" "$recognition" "$controller" "$view"
 # Full-app integration is validated by the [ios15-full-build] workflow job.
 # Retry marker: fbec3da capture errorDescription fix.
 echo 'PASS: production policy tests and iOS15 Swift6 coach type-check (integration stubs).'

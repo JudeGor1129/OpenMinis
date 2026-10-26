@@ -145,9 +145,9 @@ struct ToolsSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
-                Toggle("允许作业陪练", isOn: $homeworkCoachEnabled)
-                    .accessibilityHint("允许前台相机和麦克风活动检测；默认关闭")
-                Text("固定摄像头对准本子，画面稳定变化或声音停顿后抓取作业区域静帧，向多模态模型请求下一步语音提示。不会保存连续视频。")
+                Toggle("允许语音老师", isOn: $homeworkCoachEnabled)
+                    .accessibilityHint("允许前台相机和孩子语音提问；默认关闭")
+                Text("固定摄像头对准本子，孩子遇到不会的直接语音提问，模型结合题目裁图讲解知识点和解题思路。语音识别优先设备端，联网识别需要另行允许。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

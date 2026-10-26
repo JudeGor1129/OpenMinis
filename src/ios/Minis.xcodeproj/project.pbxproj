@@ -533,6 +533,7 @@
 		A7C00001F700000000000001 /* HomeworkCameraCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C00001F700000000000011 /* HomeworkCameraCapture.swift */; };
 		A7C00001F700000000000002 /* HomeworkCoachController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C00001F700000000000012 /* HomeworkCoachController.swift */; };
 		A7C00001F700000000000003 /* HomeworkCoachPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C00001F700000000000013 /* HomeworkCoachPolicy.swift */; };
+		A7C00001F700000000000005 /* HomeworkQuestionRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C00001F700000000000015 /* HomeworkQuestionRecognizer.swift */; };
 		A7C00001F700000000000004 /* HomeworkCoachView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C00001F700000000000014 /* HomeworkCoachView.swift */; };
 		F1MCPDCRB /* MCPOAuthDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1MCPDCR /* MCPOAuthDiscovery.swift */; };
 		F1MCPOAUTHB /* MCPOAuthController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1MCPOAUTH /* MCPOAuthController.swift */; };
@@ -1259,6 +1260,7 @@
 		A7C00001F700000000000011 /* HomeworkCameraCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeworkCameraCapture.swift; sourceTree = "<group>"; };
 		A7C00001F700000000000012 /* HomeworkCoachController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeworkCoachController.swift; sourceTree = "<group>"; };
 		A7C00001F700000000000013 /* HomeworkCoachPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeworkCoachPolicy.swift; sourceTree = "<group>"; };
+		A7C00001F700000000000015 /* HomeworkQuestionRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeworkQuestionRecognizer.swift; sourceTree = "<group>"; };
 		A7C00001F700000000000014 /* HomeworkCoachView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeworkCoachView.swift; sourceTree = "<group>"; };
 		F1MCPDCR /* MCPOAuthDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPOAuthDiscovery.swift; sourceTree = "<group>"; };
 		F1MCPOAUTH /* MCPOAuthController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPOAuthController.swift; sourceTree = "<group>"; };
@@ -2295,6 +2297,7 @@
 				A7C00001F700000000000011 /* HomeworkCameraCapture.swift */,
 				A7C00001F700000000000012 /* HomeworkCoachController.swift */,
 				A7C00001F700000000000013 /* HomeworkCoachPolicy.swift */,
+				A7C00001F700000000000015 /* HomeworkQuestionRecognizer.swift */,
 				A7C00001F700000000000014 /* HomeworkCoachView.swift */,
 				F1M00013 /* VideoPlayer.swift */,
 			);
@@ -2948,6 +2951,7 @@
 				A7C00001F700000000000001 /* HomeworkCameraCapture.swift in Sources */,
 				A7C00001F700000000000002 /* HomeworkCoachController.swift in Sources */,
 				A7C00001F700000000000003 /* HomeworkCoachPolicy.swift in Sources */,
+				A7C00001F700000000000005 /* HomeworkQuestionRecognizer.swift in Sources */,
 				A7C00001F700000000000004 /* HomeworkCoachView.swift in Sources */,
 				F1M00016 /* ImagePreview.swift in Sources */,
 				F1M00018 /* AudioPreview.swift in Sources */,

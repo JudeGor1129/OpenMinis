@@ -37,15 +37,18 @@ final class HomeworkCameraCapture: NSObject, @unchecked Sendable {
     private var voiceActive = false
     private let onFrame: @Sendable (HomeworkCameraFrame) -> Void
     private let onVoiceActivity: @Sendable (Bool) -> Void
+    private let onAudio: @Sendable (CMSampleBuffer) -> Void
     private let onFailure: @Sendable (String) -> Void
 
     init(region: CGRect,
          onFrame: @escaping @Sendable (HomeworkCameraFrame) -> Void,
          onVoiceActivity: @escaping @Sendable (Bool) -> Void,
+         onAudio: @escaping @Sendable (CMSampleBuffer) -> Void = { _ in },
          onFailure: @escaping @Sendable (String) -> Void) {
         self.region = HomeworkHintPolicy.normalizedRegion(region)
         self.onFrame = onFrame
         self.onVoiceActivity = onVoiceActivity
+        self.onAudio = onAudio
         self.onFailure = onFailure
         super.init()
         let nc = NotificationCenter.default
@@ -285,13 +288,14 @@ extension HomeworkCameraCapture: AVCaptureVideoDataOutputSampleBufferDelegate,
                        from connection: AVCaptureConnection) {
         guard let region = snapshot() else { return }
         if output is AVCaptureAudioDataOutput {
+            onAudio(sampleBuffer)
             guard let energy = audioEnergy(from: sampleBuffer) else { return }
             let threshold = 0.035
             if voiceActive {
                 if energy.rms < threshold {
                     quietDuration += energy.duration
                     loudDuration = 0
-                    if quietDuration >= 0.7 {
+                    if quietDuration >= 1.0 {
                         voiceActive = false
                         quietDuration = 0
                         onVoiceActivity(false)

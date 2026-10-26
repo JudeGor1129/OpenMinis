@@ -22,6 +22,7 @@ struct HomeworkCoachView: View {
                     settingCard
                     cameraCard
                     topicCard
+                    questionCard
                     statusCard
                     privacyCard
                 }
@@ -29,7 +30,7 @@ struct HomeworkCoachView: View {
                 .padding(.vertical, 12)
             }
             .background(Color(UIColor.systemGroupedBackground).ignoresSafeArea())
-            .navigationTitle("作业陪练")
+            .navigationTitle("语音老师")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -37,7 +38,7 @@ struct HomeworkCoachView: View {
                         controller.stop()
                         dismiss()
                     }
-                    .accessibilityLabel("关闭作业陪练")
+                    .accessibilityLabel("关闭语音老师")
                 }
             }
         }
@@ -52,10 +53,10 @@ struct HomeworkCoachView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("固定摄像头辅导", systemImage: "camera.viewfinder")
                 .font(.headline)
-            Text("把手机固定对准本子。画面稳定变化或声音停顿后，应用只抓取作业区域的一张静帧，并向当前多模态模型请求一个下一步提示。")
+            Text("孩子遇到不会的直接语音提问。系统识别这句话，带上当前作业裁图和前面的问答交给多模态模型，像老师一样讲解知识点、解题思路和下一步。")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Text("不会保存连续视频；声音仅本地检测活动，不保存、不上传音频，也不转写或识别说话者。")
+            Text("优先中文设备端语音转写，不保存录音或连续视频。联网识别默认关闭，设备不支持离线时需要家长显式允许。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -66,17 +67,25 @@ struct HomeworkCoachView: View {
 
     private var settingCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("允许作业陪练", isOn: $allowed)
+            Toggle("允许语音老师", isOn: $allowed)
                 .accessibilityHint("允许前台相机和麦克风活动检测；默认关闭")
             Divider()
-            Toggle("自动抓拍并提示", isOn: Binding(
+            Toggle("开启语音提问与讲解", isOn: Binding(
                 get: { controller.isCoaching },
                 set: { controller.setCoachingEnabled($0) }))
                 .disabled(!controller.isCoaching && (!allowed || !controller.regionConfirmed || controller.phase != .preview))
                 .accessibilityHint("需要先打开相机并确认作业区域")
-            Text("默认关闭。自动提示只在前台运行，关闭或离开页面会立即停止。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Toggle("画面变化时主动指导", isOn: $controller.autoObserveChanges)
+                .disabled(controller.isCoaching)
+            Text("默认只在孩子提问后回答，不打断写作业；需要时可以开启主动观察。")
+                .font(.caption).foregroundStyle(.secondary)
+            Toggle("允许联网语音识别", isOn: $controller.allowNetworkRecognition)
+                .disabled(controller.isCoaching)
+                .onChange(of: controller.allowNetworkRecognition) { value in
+                    UserDefaults.standard.set(value, forKey: HomeworkHintPolicy.networkRecognitionKey)
+                }
+            Text("默认关闭。优先设备端识别；开启后，在离线识别不可用时，提问音频可能发送给 Apple 语音服务。")
+                .font(.caption).foregroundStyle(.secondary)
         }
         .padding(14)
         .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
@@ -159,6 +168,21 @@ struct HomeworkCoachView: View {
         .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
     }
 
+    private var questionCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("老师听到的提问", systemImage: "waveform")
+                .font(.headline)
+            let text = controller.partialQuestion.isEmpty ? controller.recognizedQuestion : controller.partialQuestion
+            Text(text.isEmpty ? "可以直接说：这道题我不会，先从哪里想？" : text)
+                .font(.body)
+            Text("识别文本和当前题目裁图一起送给模型。听错时请停止后重说；讲解结束后可继续追问“为什么”或“没听懂”。")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+    }
+
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -201,7 +225,7 @@ struct HomeworkCoachView: View {
     }
 
     private var privacyCard: some View {
-        Text("隐私与限制：仅前台工作，每次最长二十分钟。仅裁剪图、题目、最近六条会话文本和此前提示会发给当前所选模型，可能产生 API 费用；图像不写入相册或会话附件，但模型服务可能保留请求。声音仅触发抓拍，不理解孩子说的话，环境声也可能触发。提示播报时暂停采集，不支持语音打断。过滤不保证永不泄露答案，请家长监督。")
+        Text("仅前台工作，每次最长二十分钟。孩子提问文本、作业裁图、题目、最近六条会话文本和此前师生问答会发送给当前模型，可能收费；联网识别允许后提问音频可能发给 Apple。应用不保存录音、视频或相册图片，服务方可能保留请求。语音讲解时暂停采集，暂不支持孩子打断老师。识别和讲解都可能出错，不能保证永不报答案，请家长监督。")
             .font(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 4)
