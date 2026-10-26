@@ -19,8 +19,8 @@
 // The embedded Frida Core path is disabled at runtime after device reboot
 // reports on iOS15 jailbreak devices. Keep the link probe and source wiring in
 // place for compatibility work, but do not initialize Frida, enumerate local
-// processes, or contact a socket until a device-specific compatibility review
-// explicitly removes this gate.
+// processes, or speak the Frida protocol. The separate diagnostic path may only
+// perform a bounded loopback port check and filesystem metadata inspection.
 #define OPENMINIS_FRIDA_RUNTIME_DISABLED 1
 
 /// Non-blocking connect probe with a 1 s budget. Used only to tell the user
