@@ -154,7 +154,7 @@ struct ToolchainStatusView: View {
         isChecking = true
         toolStatuses = Dictionary(uniqueKeysWithValues: allToolEntries
             .filter(\.isBuiltin)
-            .map { ($0.id, .installed("Minis 内置")) })
+            .map { ($0.id, ToolchainStatusView.ToolStatus.installed("Minis 内置")) })
 
         let shellEntries = allToolEntries.filter { !$0.isBuiltin }
         guard ISHKernel.shared.isBooted else {
@@ -210,7 +210,7 @@ struct ToolchainStatusView: View {
 
                 let builtinStatuses = Dictionary(uniqueKeysWithValues: allToolEntries
                     .filter(\.isBuiltin)
-                    .map { ($0.id, .installed("Minis 内置")) })
+                    .map { ($0.id, ToolchainStatusView.ToolStatus.installed("Minis 内置")) })
                 toolStatuses = builtinStatuses.merging(parsed) { _, alpine in alpine }
 
                 if exitCode == -1 {

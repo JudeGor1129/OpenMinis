@@ -24,18 +24,14 @@ private final class LegacySessionActivitySnapshot: ObservableObject {
     private let concurrency = SessionConcurrencyManager.shared
 
     init() {
-        Publishers.CombineLatest(
-            activity.$activeSessions,
-            concurrency.$suspendedSessions
-        )
-        .map { value in (value.0, Set(value.1)) }
-        .removeDuplicates { lhs, rhs in lhs.0 == rhs.0 && lhs.1 == rhs.1 }
-        .receive(on: DispatchQueue.main)
-        .sink { [weak self] value in
-            self?.active = value.0
-            self?.suspended = value.1
-        }
-        .store(in: &cancellables)
+        activity.$activeSessions
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] ids in self?.active = ids }
+            .store(in: &cancellables)
+        concurrency.$suspendedSessions
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] ids in self?.suspended = Set(ids) }
+            .store(in: &cancellables)
     }
 
     func isActive(_ id: String) -> Bool { active.contains(id) }
