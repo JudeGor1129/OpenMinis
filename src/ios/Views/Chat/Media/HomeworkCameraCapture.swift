@@ -177,7 +177,11 @@ final class HomeworkCameraCapture: NSObject, @unchecked Sendable {
 
     private enum CaptureError: LocalizedError {
         case message(String)
-        var errorDescription: String? { if case .message(let text) = self { return text } }
+        var errorDescription: String? {
+            switch self {
+            case .message(let text): return text
+            }
+        }
     }
 
     @objc private func sessionFailed(_ note: Notification) {
