@@ -7677,12 +7677,20 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             userInteractionActive = false
         }
         @objc private func panChanged(_ pan: UIPanGestureRecognizer) {
-            if (pan.state == .began || pan.state == .changed) && !userInteractionActive {
+            switch pan.state {
+            case .began, .changed:
+                guard !userInteractionActive else { return }
                 userInteractionActive = true
                 following = false
                 onFollowingChanged?(false)
+            case .ended, .cancelled, .failed:
+                // Do not enqueue a main-actor sample for every changed event.
+                // The UIScrollView will continue decelerating; sample() polls
+                // only after the gesture ends until UIKit reports it settled.
+                scheduleUpdate()
+            default:
+                break
             }
-            scheduleUpdate()
         }
         private func scheduleUpdate() {
             guard !updateScheduled else { return }
