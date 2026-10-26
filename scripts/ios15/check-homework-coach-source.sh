@@ -50,5 +50,7 @@ xcrun --sdk iphoneos swiftc -typecheck -swift-version 6 \
   -target arm64-apple-ios15.0 -sdk "$SDK" \
   scripts/ios15/HomeworkCoachTypecheckSupport.swift \
   "$policy" "$capture" "$controller" "$view"
+# Full-app integration is validated by the [ios15-full-build] workflow job.
+# Retry marker: fbec3da capture errorDescription fix.
 echo 'PASS: production policy tests and iOS15 Swift6 coach type-check (integration stubs).'
 echo 'NOTE: full-app integration and camera/audio runtime still need the full build and device test.'
