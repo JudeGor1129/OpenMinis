@@ -418,6 +418,28 @@ extension AIChatViewModel {
         return FileToolResult(output: output, success: true)
     }
 
+    /// Append one bounded UTF-8 chunk. The model uses this instead of sending
+    /// a large file_write payload, so each request stays small enough to survive
+    /// provider/proxy request timeouts.
+    func executeFileAppend(from json: String) async throws -> FileToolResult {
+        guard let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let content = dict["content"] as? String else {
+            return FileToolResult(output: "Error: Missing required path/content parameters", success: false)
+        }
+        let maxChunkBytes = 8 * 1024
+        guard content.utf8.count <= maxChunkBytes else {
+            return FileToolResult(output: "Error: file_append chunk exceeds 8KB. Split it into smaller append calls.", success: false)
+        }
+        var writeArgs = dict
+        writeArgs["append"] = true
+        guard let writeData = try? JSONSerialization.data(withJSONObject: writeArgs),
+              let writeJSON = String(data: writeData, encoding: .utf8) else {
+            return FileToolResult(output: "Error: Could not encode append arguments", success: false)
+        }
+        return try await executeFileWrite(from: writeJSON)
+    }
+
     /// Execute a file_write tool call via direct FileManager + meta.db update.
     func executeFileWrite(from json: String) async throws -> FileToolResult {
         guard let data = json.data(using: .utf8),
@@ -425,6 +447,14 @@ extension AIChatViewModel {
               let path = dict["path"] as? String,
               let content = dict["content"] as? String else {
             return FileToolResult(output: "Error: Missing required 'path' and/or 'content' parameters", success: false)
+        }
+
+        let maxChunkBytes = 8 * 1024
+        guard content.utf8.count <= maxChunkBytes else {
+            return FileToolResult(
+                output: "Error: file_write content exceeds 8KB. Nothing was written. Use file_append with multiple chunks of at most 8KB, or generate a script and run it with shell_execute.",
+                success: false
+            )
         }
 
         #if DEBUG

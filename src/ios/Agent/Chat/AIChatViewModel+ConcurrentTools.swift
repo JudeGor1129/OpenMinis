@@ -225,7 +225,7 @@ extension AIChatViewModel {
         // is at worst a wasted round-trip, and refusing them would regress
         // recoveries that work today.
         if let tag = truncationRepairTag,
-           tu.name == "file_write" || tu.name == "file_edit" {
+           tu.name == "file_write" || tu.name == "file_append" || tu.name == "file_edit" {
             let path = (toolArgs["path"] as? String) ?? (toolArgs["file_path"] as? String) ?? ""
             AppLogger(category: "ToolPreflight").warning(
                 "[ToolRepair] REFUSED truncated write tool=\(tu.name) id=\(tu.id) strategy=\(tag) path=\(path)"
@@ -281,12 +281,12 @@ extension AIChatViewModel {
         // data. Refuse, and tell the model what actually happened so it re-reads
         // the offloaded file instead of repeating the call verbatim. Reads and
         // shell calls are untouched — a stub as a *path* is just a miss.
-        if tu.name == "file_write" || tu.name == "file_edit" {
+        if tu.name == "file_write" || tu.name == "file_append" || tu.name == "file_edit" {
             // Only the fields whose value BECOMES file bytes: file_write's
             // `content` and file_edit's replacement text. A stub in
             // file_edit's `old_string` is merely a search that will not match,
             // which the edit tool already reports clearly.
-            let payloadKeys = tu.name == "file_write" ? ["content"] : ["new_string"]
+            let payloadKeys = tu.name == "file_write" || tu.name == "file_append" ? ["content"] : ["new_string"]
             // Both stub formats, current and legacy — see isOffloadedStub.
             if let offendingKey = payloadKeys.first(where: {
                 guard let v = toolArgs[$0] as? String else { return false }
@@ -735,6 +735,19 @@ extension AIChatViewModel {
                 await MainActor.run { SkillStore.shared.recordSkillUse(skillId) }
             }
 
+        case "file_append":
+            let fileResult: FileToolResult
+            do {
+                fileResult = try await executeFileAppend(from: argsJson)
+            } catch {
+                fileResult = FileToolResult(output: "Error: \(error.localizedDescription)", success: false)
+            }
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = fileResult.output
+            }
+            toolOutput = fileResult.output
+            toolSuccess = fileResult.success
+
         case "file_write":
             let fileResult: FileToolResult
             do {
@@ -1158,7 +1171,7 @@ extension AIChatViewModel {
             } else {
                 snapshot = ToolSnapshot(type: .text, text: toolOutput, mediaRef: nil, duration: toolDuration)
             }
-        case "file_write", "file_edit":
+        case "file_write", "file_append", "file_edit":
             if let path = toolArgs["path"] as? String,
                let hostURL = await resolvePathForDirectRead(path),
                let fileContent = try? String(contentsOf: hostURL, encoding: .utf8) {
