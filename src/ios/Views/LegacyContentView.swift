@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Stable root Module. Its Interface remains `ContentView()` while navigation
 /// behavior lives behind OS-specific Implementations.
@@ -13,6 +14,34 @@ struct ContentView: View {
     }
 }
 
+@MainActor
+private final class LegacySessionActivitySnapshot: ObservableObject {
+    @Published private(set) var active: Set<String> = []
+    @Published private(set) var suspended: Set<String> = []
+
+    private var cancellables: Set<AnyCancellable> = []
+    private let activity = SessionActivityTracker.shared
+    private let concurrency = SessionConcurrencyManager.shared
+
+    init() {
+        Publishers.CombineLatest(
+            activity.$activeSessions,
+            concurrency.$suspendedSessions
+        )
+        .map { value in (value.0, Set(value.1)) }
+        .removeDuplicates { lhs, rhs in lhs.0 == rhs.0 && lhs.1 == rhs.1 }
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] value in
+            self?.active = value.0
+            self?.suspended = value.1
+        }
+        .store(in: &cancellables)
+    }
+
+    func isActive(_ id: String) -> Bool { active.contains(id) }
+    func isSuspended(_ id: String) -> Bool { suspended.contains(id) }
+}
+
 /// iOS 15 Implementation of the essential conversation flow.
 ///
 /// It deliberately uses destination-based `NavigationLink` rather than trying
@@ -21,8 +50,7 @@ struct ContentView: View {
 private struct LegacyContentView: View {
     @State private var sessions: [ChatSession] = []
     @State private var folders: [ChatFolder] = []
-    @ObservedObject private var activityTracker = SessionActivityTracker.shared
-    @ObservedObject private var concurrencyManager = SessionConcurrencyManager.shared
+    @StateObject private var activitySnapshot = LegacySessionActivitySnapshot()
     @State private var groupSessions: [String: [ChatSession]] = [:]
     @State private var expandedGroups: Set<String> = []
     @State private var groupsExpanded = false
@@ -314,11 +342,11 @@ private struct LegacyContentView: View {
     }
 
     private func sessionIsActive(_ id: String) -> Bool {
-        activityTracker.isActive(id)
+        activitySnapshot.isActive(id)
     }
 
     private func sessionIsSuspended(_ id: String) -> Bool {
-        concurrencyManager.isSuspended(id)
+        activitySnapshot.isSuspended(id)
     }
 
     private func toggleGroup(_ id: String) {
