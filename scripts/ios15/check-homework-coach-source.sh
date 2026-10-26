@@ -56,6 +56,6 @@ xcrun --sdk iphoneos swiftc -typecheck -swift-version 6 \
   scripts/ios15/HomeworkCoachTypecheckSupport.swift \
   "$policy" "$capture" "$recognition" "$controller" "$view"
 # Full-app integration is validated by the [ios15-full-build] workflow job.
-# Retry marker: fbec3da capture errorDescription fix.
+# Retry marker: voice-teacher 7ed03d8 after run152 hosted-runner capacity cancellation.
 echo 'PASS: production policy tests and iOS15 Swift6 coach type-check (integration stubs).'
 echo 'NOTE: full-app integration and camera/audio runtime still need the full build and device test.'
