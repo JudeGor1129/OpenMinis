@@ -58,6 +58,9 @@ enum AgentToolSwitch: String, CaseIterable {
         case .interaction: return true
         case .browser: return true
         case .agents: return true
+        // Embedded Frida Core can touch local/socket Frida backends. Keep it
+        // opt-in until the target device/server combination is verified; a
+        // malformed or incompatible frida-server must never be probed by default.
         case .frida: return false
         }
     }
@@ -70,7 +73,11 @@ enum AgentToolSwitch: String, CaseIterable {
     /// prompt builder, the dispatcher and the CLI bridges — so the switch and
     /// its default are the whole story.
     nonisolated var isEnabled: Bool {
-        (UserDefaults.standard.object(forKey: key) as? Bool) ?? defaultValue
+        // Emergency safety gate: users reported device reboots when Minis
+        // probes Frida on-device. Never touch the Frida Core path until its
+        // compatibility is proven on the affected jailbreak/OS combination.
+        if self == .frida { return false }
+        return (UserDefaults.standard.object(forKey: key) as? Bool) ?? defaultValue
     }
 
     /// The switch governing a tool name; nil = always available.
@@ -136,8 +143,8 @@ struct ToolsSettingsView: View {
             }
             Section {
                 toolRow("Frida Core（诊断）", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
-                    .disabled(!OpenMinisFridaCoreAvailable())
-                Text(OpenMinisFridaCoreAvailable() ? "已内置 Frida Core。启用后可检查初始化、设备枚举，按本地／Socket 后端查询进程 PID 和名称；Socket 查询可能连接已有的本机 Frida 服务。只读、不附加、不执行脚本；空列表不能确定原因或附加权限。" : "当前构建没有内置 Frida Core。")
+                    .disabled(true)
+                Text(OpenMinisFridaCoreAvailable() ? "已内置 Frida Core，但当前版本为安全起见暂不启用设备探测；此前有设备重启风险。" : "当前构建没有内置 Frida Core。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
