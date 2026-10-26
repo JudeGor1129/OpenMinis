@@ -73,10 +73,6 @@ enum AgentToolSwitch: String, CaseIterable {
     /// prompt builder, the dispatcher and the CLI bridges — so the switch and
     /// its default are the whole story.
     nonisolated var isEnabled: Bool {
-        // Emergency safety gate: users reported device reboots when Minis
-        // probes Frida on-device. Never touch the Frida Core path until its
-        // compatibility is proven on the affected jailbreak/OS combination.
-        if self == .frida { return false }
         return (UserDefaults.standard.object(forKey: key) as? Bool) ?? defaultValue
     }
 
@@ -142,9 +138,8 @@ struct ToolsSettingsView: View {
                 Text(AppLocalized("Browse the web in the in-app browser: open pages, read them, click and type. Stable and on by default. When off, the tool is removed from every conversation — the model does not see it at all."))
             }
             Section {
-                toolRow("Frida Core（诊断）", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
-                    .disabled(true)
-                Text(OpenMinisFridaCoreAvailable() ? "已内置 Frida Core，但当前版本为安全起见暂不启用设备探测；此前有设备重启风险。" : "当前构建没有内置 Frida Core。")
+                toolRow("Frida 服务器诊断", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
+                Text(OpenMinisFridaDiagnosticsAvailable() ? "仅检查服务器文件和本机 27042 端口；不会初始化 Frida Core、枚举进程、连接协议或执行脚本。" : "当前构建不支持 Frida 诊断。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

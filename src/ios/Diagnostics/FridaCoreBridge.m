@@ -95,6 +95,10 @@ NSArray<NSString *> *OpenMinisFridaServerDiagnostics(void) {
     return lines;
 }
 
+BOOL OpenMinisFridaDiagnosticsAvailable(void) {
+    return YES;
+}
+
 BOOL OpenMinisFridaCoreAvailable(void) {
 #if OPENMINIS_FRIDA_RUNTIME_DISABLED
     return NO;
@@ -112,7 +116,10 @@ static void OpenMinisFridaInitialize(void) {
 
 NSString *OpenMinisFridaCoreStatus(void) {
 #if OPENMINIS_FRIDA_RUNTIME_DISABLED
-    return @"ERROR: Frida runtime probing is disabled for device safety after reboot reports.";
+    NSMutableArray<NSString *> *lines = [NSMutableArray arrayWithObject:
+        @"Frida Core probing remains disabled for device safety; no Frida Core initialization or process enumeration was performed."];
+    [lines addObjectsFromArray:OpenMinisFridaServerDiagnostics()];
+    return [lines componentsJoinedByString:@"\n"];
 #elif OPENMINIS_HAS_FRIDA_CORE
     // Frida is process-wide: never tear it down between tool calls.
     OpenMinisFridaInitialize();
@@ -166,7 +173,7 @@ void OpenMinisFridaProcessesAsync(void (^completion)(NSString *)) {
         @autoreleasepool {
             NSMutableArray<NSString *> *lines = [NSMutableArray array];
 #if OPENMINIS_FRIDA_RUNTIME_DISABLED
-            [lines addObject:@"ERROR: Frida runtime probing is disabled for device safety after reboot reports."];
+            [lines addObject:@"ERROR: Frida process probing remains disabled for device safety; use frida_status for non-invasive server diagnostics."];
 #elif OPENMINIS_HAS_FRIDA_CORE
             // Initialize once without performing another device enumeration.
             OpenMinisFridaInitialize();

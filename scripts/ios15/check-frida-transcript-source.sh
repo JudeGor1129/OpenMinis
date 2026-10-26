@@ -6,13 +6,17 @@ bridge=src/ios/Diagnostics/FridaCoreBridge.m
 view=src/ios/Views/Chat/AIChatView.swift
 persist=src/ios/Agent/Chat/AIChatViewModel+Persistence.swift
 grep -q 'OpenMinisFridaProcessesAsync' src/ios/Diagnostics/FridaCoreBridge.h
+grep -q 'OpenMinisFridaDiagnosticsAvailable' src/ios/Diagnostics/FridaCoreBridge.h
 grep -q 'frida_device_enumerate_processes_sync' "$bridge"
 grep -q 'dispatch_async(OpenMinisFridaQueue()' "$bridge"
 grep -q 'g_object_unref(processes)' "$bridge"
-grep -q 'name: "frida_processes"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
+grep -q 'name: "frida_status"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
+! grep -q 'name: "frida_processes"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
 grep -q 'case "frida_status", "frida_processes":' src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift
 grep -q 'case "frida_status", "frida_processes": return .frida' src/ios/Views/Settings/ToolsSettingsView.swift
 ! grep -Eq 'frida_(device_attach|session_create_script|device_spawn)' "$bridge"
+grep -q 'Frida Core probing remains disabled' "$bridge"
+grep -q 'OpenMinisFridaServerDiagnostics' "$bridge"
 grep -q 'VStack(alignment: message.role == .user ? .trailing : .leading' "$view"
 # Legacy transcript must render markdown through SelectableMarkdownView, not
 # Text(verbatim:), which showed raw ** / ` / - and blocked text selection.

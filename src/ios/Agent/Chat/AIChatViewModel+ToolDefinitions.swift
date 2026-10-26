@@ -257,22 +257,17 @@ extension AIChatViewModel {
                 propertyOrdering: ["question"]
             ))
         }
-        if AgentToolSwitch.frida.isEnabled && OpenMinisFridaCoreAvailable() {
+        if AgentToolSwitch.frida.isEnabled && OpenMinisFridaDiagnosticsAvailable() {
             tools.append(AgentToolDefinition(
                 name: "frida_status",
-                description: "Initialize the embedded Frida Core and enumerate device-manager entries. Diagnostic only: does not connect to a server, attach to a process or execute scripts. Device entries do not prove attach permission.",
-                parameters: [:],
-                required: [],
-                propertyOrdering: []
-            ))
-            tools.append(AgentToolDefinition(
-                name: "frida_processes",
-                description: "Read-only process PID/name queries using embedded Frida Core, limited to built-in local and socket backends already present in the device manager. Does not add remote endpoints. A socket query may contact an existing local Frida service. Reports each backend separately with cooperative 5-second cancellation per query and up to 300 combined entries. Only for authorized device diagnostics; never attaches, spawns or executes scripts. An empty result does not establish its cause, server availability or attach permission.",
+                description: "Run non-invasive Frida server diagnostics only: check known server file paths, executable permission, and whether the loopback default port is open. Embedded Frida Core initialization, device/process enumeration, protocol requests, attach, spawn and scripts are disabled.",
                 parameters: [:],
                 required: [],
                 propertyOrdering: []
             ))
         }
+        // Keep process enumeration absent from the schema until the disabled
+        // Frida Core path has passed device-specific reboot-safety validation.
         // [T-host-file-tools] iOS-side read-only filesystem tools. Ungated like
         // the existing file_read/file_write family, but they address the real
         // device filesystem instead of the iSH fakefs — `root` picks which.

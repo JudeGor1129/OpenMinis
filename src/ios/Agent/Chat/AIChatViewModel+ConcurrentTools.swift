@@ -376,12 +376,15 @@ extension AIChatViewModel {
                 toolSuccess = false
                 break
             }
-            guard OpenMinisFridaCoreAvailable(), !Task.isCancelled else {
-                toolOutput = "Frida unavailable or task cancelled."
+            let listProcesses = tu.name == "frida_processes"
+            guard !Task.isCancelled,
+                  listProcesses ? OpenMinisFridaCoreAvailable() : OpenMinisFridaDiagnosticsAvailable() else {
+                toolOutput = listProcesses
+                    ? "Frida process probing is disabled for device safety. Use frida_status for non-invasive server diagnostics."
+                    : "Frida diagnostics unavailable or task cancelled."
                 toolSuccess = false
                 break
             }
-            let listProcesses = tu.name == "frida_processes"
             toolOutput = await withCheckedContinuation { continuation in
                 let completion: (String) -> Void = { result in continuation.resume(returning: result) }
                 if listProcesses { OpenMinisFridaProcessesAsync(completion) }
