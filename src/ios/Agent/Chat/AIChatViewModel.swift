@@ -2386,8 +2386,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             + "NEVER end a turn with a promise of future action: 'I'll keep monitoring', 'will sync the result later', and ending right after a single still-running status check with 'let's keep waiting' are all the same violation — once your turn ends, NOTHING runs until the user's next message. "
             + "If polling to completion is genuinely not worth blocking the turn, close honestly instead: either register a `minis-scheduled` follow-up (say so, with its id) or state that you will only learn the outcome when the user next messages; for anything that must fire even if the app is killed, point them to an Apple Shortcuts automation per 'Scheduled tasks' later in this prompt.\n"
             + "- file_read: Read file contents (faster than cat).\n"
-            + "- file_write: Create new files or overwrite existing files (faster than echo/tee). For content above 8KB, use file_append in multiple small calls instead of one large tool argument.\n"
-            + "- file_append: Append one UTF-8 chunk (maximum 8KB) to a file. Use repeated file_append calls to build large files; never send a complete large file as one file_write.\n"
+            + "- file_write: Create new files or overwrite existing files (faster than echo/tee).\n"
             + "- file_edit: Edit existing files with exact string replacement (old_string → new_string). Preferred over file_write for modifications — always file_read first.\n"
             // [T-tools-master-switch] Settings › Tools off ⇒ neither bullet:
             // the tool is not in the schema, so the prompt must not claim it.
