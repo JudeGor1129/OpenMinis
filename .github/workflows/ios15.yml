@@ -42,6 +42,7 @@ jobs:
           mkdir -p ci-logs
           xcodebuild -version | tee ci-logs/xcode.txt
           plutil -lint src/ios/Minis.xcodeproj/project.pbxproj
+          bash scripts/ios15/check-homework-coach-source.sh 2>&1 | tee ci-logs/homework-coach.txt
           bash scripts/ios15/check-settings-source.sh 2>&1 | tee ci-logs/settings-source.txt
           bash scripts/ios15/check-group-skills.sh 2>&1 | tee ci-logs/group-skills.txt
           bash scripts/ios15/check-group-memory-source.sh 2>&1 | tee ci-logs/group-memory-source.txt

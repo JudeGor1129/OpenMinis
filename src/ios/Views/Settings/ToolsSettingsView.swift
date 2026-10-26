@@ -128,6 +128,7 @@ struct ToolsSettingsView: View {
     @AppStorage(AgentToolSwitch.interaction.key) private var interactionEnabled = AgentToolSwitch.interaction.defaultValue
     @AppStorage(AgentToolSwitch.browser.key) private var browserEnabled: Bool = AgentToolSwitch.browser.defaultValue
     @AppStorage(AgentToolSwitch.frida.key) private var fridaEnabled = AgentToolSwitch.frida.defaultValue
+    @AppStorage(HomeworkHintPolicy.enabledKey) private var homeworkCoachEnabled = false
 
     var body: some View {
         Form {
@@ -140,6 +141,13 @@ struct ToolsSettingsView: View {
             Section {
                 toolRow("Frida 服务器诊断", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
                 Text(OpenMinisFridaDiagnosticsAvailable() ? "仅检查服务器文件和本机 27042 端口；不会初始化 Frida Core、枚举进程、连接协议或执行脚本。" : "当前构建不支持 Frida 诊断。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("允许作业陪练", isOn: $homeworkCoachEnabled)
+                    .accessibilityHint("允许前台相机和麦克风活动检测；默认关闭")
+                Text("固定摄像头对准本子，画面稳定变化或声音停顿后抓取作业区域静帧，向多模态模型请求下一步语音提示。不会保存连续视频。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

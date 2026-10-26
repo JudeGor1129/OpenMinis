@@ -33,13 +33,17 @@ final class AudioSessionCoordinator {
         case replyTTS = 1
         case mediaAttachment = 2
         case capture = 3
+        // Separate ownership avoids a late normal-TTS/capture callback releasing
+        // the homework session's audio claim. Hints are half-duplex with camera.
+        case homeworkCoach = 4
+        case homeworkHint = 5
     }
 
     private let logger = AppLogger(category: "AudioSession")
     private var active: Set<Intent> = []
 
     /// True while the mic is capturing — reply TTS is suppressed in this state.
-    var isCapturing: Bool { active.contains(.capture) }
+    var isCapturing: Bool { active.contains(.capture) || active.contains(.homeworkCoach) }
 
     // MARK: - Public API
 
@@ -195,6 +199,10 @@ final class AudioSessionCoordinator {
         switch intent {
         case .capture:
             return (.record, .measurement, [])
+        case .homeworkCoach:
+            return (.playAndRecord, .measurement, [.defaultToSpeaker])
+        case .homeworkHint:
+            return (.playback, .spokenAudio, [.duckOthers])
         case .mediaAttachment:
             return (.playback, .default, [.duckOthers])
         case .replyTTS:
