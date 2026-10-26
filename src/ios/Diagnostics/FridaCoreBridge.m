@@ -16,6 +16,13 @@
 #define OPENMINIS_HAS_FRIDA_CORE 0
 #endif
 
+// The embedded Frida Core path is disabled at runtime after device reboot
+// reports on iOS15 jailbreak devices. Keep the link probe and source wiring in
+// place for compatibility work, but do not initialize Frida, enumerate local
+// processes, or contact a socket until a device-specific compatibility review
+// explicitly removes this gate.
+#define OPENMINIS_FRIDA_RUNTIME_DISABLED 1
+
 /// Non-blocking connect probe with a 1 s budget. Used only to tell the user
 /// whether *their* frida-server is listening; it never speaks the Frida
 /// protocol, so a failure here is not proof that attach would fail and a
@@ -89,7 +96,11 @@ NSArray<NSString *> *OpenMinisFridaServerDiagnostics(void) {
 }
 
 BOOL OpenMinisFridaCoreAvailable(void) {
+#if OPENMINIS_FRIDA_RUNTIME_DISABLED
+    return NO;
+#else
     return OPENMINIS_HAS_FRIDA_CORE;
+#endif
 }
 
 static void OpenMinisFridaInitialize(void) {
@@ -100,7 +111,9 @@ static void OpenMinisFridaInitialize(void) {
 }
 
 NSString *OpenMinisFridaCoreStatus(void) {
-#if OPENMINIS_HAS_FRIDA_CORE
+#if OPENMINIS_FRIDA_RUNTIME_DISABLED
+    return @"ERROR: Frida runtime probing is disabled for device safety after reboot reports.";
+#elif OPENMINIS_HAS_FRIDA_CORE
     // Frida is process-wide: never tear it down between tool calls.
     OpenMinisFridaInitialize();
     FridaDeviceManager *manager = frida_device_manager_new();
@@ -152,7 +165,9 @@ void OpenMinisFridaProcessesAsync(void (^completion)(NSString *)) {
     dispatch_async(OpenMinisFridaQueue(), ^{
         @autoreleasepool {
             NSMutableArray<NSString *> *lines = [NSMutableArray array];
-#if OPENMINIS_HAS_FRIDA_CORE
+#if OPENMINIS_FRIDA_RUNTIME_DISABLED
+            [lines addObject:@"ERROR: Frida runtime probing is disabled for device safety after reboot reports."];
+#elif OPENMINIS_HAS_FRIDA_CORE
             // Initialize once without performing another device enumeration.
             OpenMinisFridaInitialize();
             FridaDeviceManager *manager = frida_device_manager_new();
