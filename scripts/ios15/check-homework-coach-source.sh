@@ -17,6 +17,8 @@ grep -q 'AVCaptureVideoDataOutput' "$capture"
 grep -q 'AVCaptureAudioDataOutput' "$capture"
 grep -q 'automaticallyConfiguresApplicationAudioSession = false' "$capture"
 grep -q 'setSampleBufferDelegate(nil' "$capture"
+grep -q 'homeworkCoach' src/ios/Providers/Voice/AudioSessionCoordinator.swift
+grep -q 'homeworkHint' src/ios/Providers/Voice/AudioSessionCoordinator.swift
 grep -q 'HomeworkCameraCapture' "$controller"
 grep -q 'streamAgentMessage' "$controller"
 grep -q 'validatedHint' "$controller"
