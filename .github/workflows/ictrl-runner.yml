@@ -1,0 +1,58 @@
+name: iCTRL XCTest runner IPA
+
+on:
+  push:
+    paths:
+      - 'tools/ictrl-runner/**'
+      - '.github/workflows/ictrl-runner.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ictrl-runner-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-runner:
+    runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: tools/ictrl-runner
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode and install XcodeGen
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Build and package unsigned iCTRL IPAs
+        shell: bash
+        env:
+          IDEVICE_VERSION: v0.1.68
+        run: |
+          set -euo pipefail
+          make ipa UNSIGNED=1
+          test -s release/iCTRLUITests-Runner.ipa
+          test -s release/iCTRL.ipa
+          shasum -a 256 release/iCTRLUITests-Runner.ipa release/iCTRL.ipa | tee release/SHA256SUMS.txt
+          unzip -t release/iCTRLUITests-Runner.ipa | tail -1
+
+      - name: Upload runner and optional companion app
+        uses: actions/upload-artifact@v4
+        with:
+          name: iCTRL-iOS15-unsigned-${{ github.run_number }}
+          path: |
+            tools/ictrl-runner/release/iCTRLUITests-Runner.ipa
+            tools/ictrl-runner/release/iCTRL.ipa
+            tools/ictrl-runner/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
