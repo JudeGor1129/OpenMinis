@@ -1,3 +1,8 @@
+// Persona lookup and SO_NOSIGPIPE need Darwin extensions even when the
+// portable runner tests request the strict POSIX.1-2008 feature set.
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE 1
+#endif
 #include "HelperProcessRunner.h"
 #include <errno.h>
 #include <fcntl.h>

@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <string.h>
 #include <frida-core.h>
+#include "HelperLease.h"
 
 // This helper is signed only inside the explicit TrollStore build. It accepts
 // exactly two read-only verbs; no shell, filenames, PID targets or scripts.
@@ -128,19 +129,12 @@ static void Processes(void) {
     Emit(result, ok ? 0 : 69);
 }
 static int AwaitLaunchPermit(void) {
-    char byte;
-    ssize_t n;
-    do { n = read(STDIN_FILENO, &byte, 1); } while (n < 0 && errno == EINTR);
-    return n == 1 && byte == 'G';
+    return MinisHelperAwaitLaunchPermit(STDIN_FILENO);
 }
 static void *ParentLease(void *unused) {
     (void)unused;
-    char byte;
-    for (;;) {
-        ssize_t n;
-        do { n = read(STDIN_FILENO, &byte, 1); } while (n < 0 && errno == EINTR);
-        _exit(125); // EOF, error, or unexpected data revokes the lease.
-    }
+    MinisHelperWaitForRevocation(STDIN_FILENO);
+    return NULL;
 }
 int main(int argc, const char *argv[]) {
     @autoreleasepool {

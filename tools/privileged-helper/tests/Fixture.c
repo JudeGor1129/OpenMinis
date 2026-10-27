@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "../HelperLease.h"
 
 static void write_all(int fd, const void *data, size_t size) {
     const char *p = data;
@@ -25,6 +26,12 @@ static void pid_line(void) {
 }
 int main(int argc, char **argv) {
     if (argc != 2) return 64;
+    if (!MinisHelperAwaitLaunchPermit(STDIN_FILENO)) return 125;
+    if (!strcmp(argv[1], "lease")) {
+        write_all(STDOUT_FILENO, "READY\n", 6);
+        MinisHelperWaitForRevocation(STDIN_FILENO);
+        return 91;
+    }
     if (!strcmp(argv[1], "identity")) {
         printf("uid=%lu euid=%lu gid=%lu egid=%lu\n", (unsigned long)getuid(),
                (unsigned long)geteuid(), (unsigned long)getgid(), (unsigned long)getegid());
