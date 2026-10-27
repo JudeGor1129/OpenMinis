@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-    <!-- Merged only into the dedicated TrollStore artifact. These powers are
-         signing capabilities, not withdrawn by an in-app runtime toggle. -->
+    <!-- Dedicated TrollStore GUI only. no-sandbox changes implicit path
+         mapping; the two storage grants are required to access its OWN app
+         container. ContainerLocator resolves it explicitly by bundle ID. -->
     <key>platform-application</key><true/>
     <key>com.apple.private.persona-mgmt</key><true/>
     <key>com.apple.private.security.no-sandbox</key><true/>
+    <key>com.apple.private.security.storage.AppDataContainers</key><true/>
+    <key>com.apple.private.security.storage.AppBundles</key><true/>
 </dict></plist>

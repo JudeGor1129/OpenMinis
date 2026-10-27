@@ -565,7 +565,11 @@ actor ChatStore {
     ///      can query before it), but data backfills are deferred to
     ///      `runDeferredMigrations()`, called off the init path.
     init() {
-        let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        // [T-container-path-drift] Resolve the container explicitly rather than
+        // asking FileManager: once no-sandbox is present, `.libraryDirectory`
+        // stopped pointing at this app's container on device, which is exactly
+        // how the session store appeared to vanish while every file was intact.
+        let libraryURL = ContainerLocator.libraryDirectory
         let baseURL = libraryURL.appendingPathComponent("MinisChat", isDirectory: true)
         self.dbURL = baseURL.appendingPathComponent("minis.db")
         self.minisBaseURL = baseURL.appendingPathComponent("minis", isDirectory: true)
@@ -4475,7 +4479,7 @@ actor ChatStore {
     /// directory and writes a v2 dirty row for each file (composite key
     /// = "sessionId:relativePath"). Returns the count.
     private func scanAndMarkSessionFilesForResurrect(sessionId: String) -> Int {
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let sessionDir = library.appendingPathComponent("MinisChat/minis/\(sessionId)")
         guard let enumerator = FileManager.default.enumerator(
             at: sessionDir, includingPropertiesForKeys: [.isRegularFileKey],
@@ -5381,7 +5385,7 @@ actor ChatStore {
     @discardableResult
     private func scanAndMarkSessionFiles(sessionId: String, priority: Int = 0) -> Int {
         let fm = FileManager.default
-        let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let sessionDir = library.appendingPathComponent("MinisChat/minis/\(sessionId)")
         guard fm.fileExists(atPath: sessionDir.path) else { return 0 }
         // Standardize to resolve /private/var vs /var symlink differences
@@ -8282,7 +8286,7 @@ extension ChatStore {
 
     /// Estimated size of all session files (attachments, offloads, workspace, browser).
     func estimateFilesSize() -> Int64 {
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let minisBase = library.appendingPathComponent("MinisChat/minis")
         return directorySize(minisBase)
     }
@@ -8299,14 +8303,14 @@ extension ChatStore {
 
     /// Estimated size of provider config JSON.
     func estimateProvidersSize() -> Int64 {
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let configURL = library.appendingPathComponent("MinisChat/provider-config.json")
         return (try? configURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0) } ?? 0
     }
 
     /// Estimated size of env vars JSON.
     func estimateEnvVarsSize() -> Int64 {
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let envURL = library.appendingPathComponent("MinisChat/env-vars.json")
         return (try? envURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0) } ?? 0
     }

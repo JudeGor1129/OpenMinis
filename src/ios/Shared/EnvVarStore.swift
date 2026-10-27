@@ -43,7 +43,7 @@ final class EnvVarStore: ObservableObject {
     nonisolated private static let keychainService = "com.openminis.app.envvar"
 
     init() {
-        let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let libraryURL = ContainerLocator.libraryDirectory
         let baseURL = libraryURL.appendingPathComponent("MinisChat", isDirectory: true)
         try? FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
         self.fileURL = baseURL.appendingPathComponent("env-vars.json")
@@ -488,7 +488,7 @@ final class EnvVarStore: ObservableObject {
     nonisolated func allAsDict() -> [String: String] {
         var dict: [String: String] = [:]
         // Read entries from the JSON file directly (avoid MainActor requirement)
-        let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let libraryURL = ContainerLocator.libraryDirectory
         let fileURL = libraryURL.appendingPathComponent("MinisChat/env-vars.json")
         guard let data = try? Data(contentsOf: fileURL),
               let entries = try? JSONDecoder().decode([EnvVarEntry].self, from: data) else {

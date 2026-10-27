@@ -78,10 +78,11 @@ The package uses ad-hoc signatures; successful CI signing is not an install test
 The iOS 16.2 Live Activity extension is excluded. Apple Weather needs iOS 16+.
 Apple-hosted capabilities (push/iCloud/WeatherKit) are not guaranteed by TrollStore.
 WARNING: dedicated experimental privileged package. The GUI has platform-application,
-no-sandbox and persona-management entitlements. It stays at its launch UID but can
-request an isolated uid0 helper. In-app switches limit supported operations, not
-binary signing powers. Ordinary Minis.entitlements and extensions are unchanged.
-Root status must be verified on the actual device. Xina/TrollStore may deny it.
+no-sandbox, persona-management, AppDataContainers and AppBundles entitlements. The
+explicit ContainerLocator targets the existing bundle-ID container; ordinary base
+app entitlements and extensions remain unchanged. The GUI stays at its launch UID
+but can request an isolated uid0 helper. In-app switches limit operations, not
+binary signing powers. Root status must be verified on device; Xina/TrollStore may deny it.
 Frida process listing is default OFF and requires separate risk acceptance.
 Frida Core is not initialized in the GUI. The helper allows identity and a fixed
 loopback socket-only process list, not arbitrary shell/attach/spawn/scripts.

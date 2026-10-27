@@ -5,6 +5,16 @@ python3 scripts/ios15/verify-privileged-entitlements.py
 bridge=src/ios/Diagnostics/FridaCoreBridge.m
 helper=tools/privileged-helper/MinisPrivilegedHelper.m
 runner=src/ios/Diagnostics/HelperProcessRunner.c
+locator=src/ios/Shared/ContainerLocator.swift
+grep -q 'MCMMetadataIdentifier' "$locator"
+grep -q 'Library/MinisChat/minis.db' "$locator"
+grep -q 'ContainerLocator.libraryDirectory' src/ios/Agent/Chat/ChatStore.swift
+grep -q 'ContainerLocator.documentsDirectory' src/ios/iSH/RootfsManager.swift
+grep -q 'ContainerLocator.libraryDirectory' src/ios/Agent/Session/SkillStore.swift
+grep -q 'ContainerLocator.libraryDirectory' src/ios/Shared/EnvVarStore.swift
+if grep -Eq 'com.apple.private.security.no-sandbox' src/ios/Minis.entitlements; then
+  echo 'FAIL: common app entitlements must not disable sandbox'; exit 1
+fi
 if grep -Eq 'frida_init\(|frida_device_manager_new\(' "$bridge"; then
   echo 'FAIL: Frida Core entered GUI process'; exit 1
 fi

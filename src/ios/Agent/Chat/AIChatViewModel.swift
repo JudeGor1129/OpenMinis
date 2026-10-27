@@ -2274,7 +2274,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // Global directories resolve without session ID
         let globalDirs = ["skills", "shared"]
         if globalDirs.contains(host) {
-            let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            let library = ContainerLocator.libraryDirectory
             for subPath in subPaths {
                 let globalURL = library.appendingPathComponent("MinisChat/\(host)", isDirectory: true)
                     .appendingPathComponent(subPath)
