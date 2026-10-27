@@ -34,19 +34,55 @@ jobs:
           brew install xcodegen
           xcodegen --version
 
-      - name: Build and package unsigned iCTRL IPAs
+      - name: Fetch pinned iDevice framework
         shell: bash
         env:
           IDEVICE_VERSION: v0.1.68
         run: |
-          set -euo pipefail
-          make ipa UNSIGNED=1
+          set -euxo pipefail
+          bash Scripts/fetch-idevice.sh 2>&1 | tee /tmp/ictrl-fetch.log
+          test -f Frameworks/IDevice.xcframework/ios-arm64/libidevice_ffi.a
+
+      - name: Generate Xcode project
+        shell: bash
+        run: |
+          set -euxo pipefail
+          xcodegen generate --quiet 2>&1 | tee /tmp/ictrl-xcodegen.log
+          test -f iCTRL.xcodeproj/project.pbxproj
+
+      - name: Build iCTRL targets
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make build UNSIGNED=1 2>&1 | tee /tmp/ictrl-build.log
+
+      - name: Package unsigned iCTRL IPAs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make ipa UNSIGNED=1 2>&1 | tee /tmp/ictrl-ipa.log
           test -s release/iCTRLUITests-Runner.ipa
           test -s release/iCTRL.ipa
           shasum -a 256 release/iCTRLUITests-Runner.ipa release/iCTRL.ipa | tee release/SHA256SUMS.txt
           unzip -t release/iCTRLUITests-Runner.ipa | tail -1
 
+      - name: Upload runner build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iCTRL-runner-diagnostics-${{ github.run_number }}
+          path: |
+            /tmp/ictrl-fetch.log
+            /tmp/ictrl-xcodegen.log
+            /tmp/ictrl-build.log
+            /tmp/ictrl-ipa.log
+            tools/ictrl-runner/build/
+            tools/ictrl-runner/iCTRL.xcodeproj/project.pbxproj
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload runner and optional companion app
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: iCTRL-iOS15-unsigned-${{ github.run_number }}
