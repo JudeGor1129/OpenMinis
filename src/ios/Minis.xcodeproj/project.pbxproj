@@ -565,6 +565,9 @@
 		RCL000119 /* BackupHistoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000219 /* BackupHistoryDetailView.swift */; };
 		RCL000120 /* BackupCategoryIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000220 /* BackupCategoryIcon.swift */; };
 		RCL000121 /* BackupHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000221 /* BackupHUD.swift */; };
+		A7F000000000000000000001 /* HelperProcessRunner.c in Sources */ = {isa = PBXBuildFile; fileRef = A7F000000000000000000011 /* HelperProcessRunner.c */; };
+		A7F000000000000000000002 /* PrivilegedHelperBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A7F000000000000000000012 /* PrivilegedHelperBridge.m */; };
+		A7F000000000000000000003 /* PrivilegedToolsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F000000000000000000013 /* PrivilegedToolsSection.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1292,6 +1295,9 @@
 		RCL000219 /* BackupHistoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryDetailView.swift; sourceTree = "<group>"; };
 		RCL000220 /* BackupCategoryIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupCategoryIcon.swift; sourceTree = "<group>"; };
 		RCL000221 /* BackupHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHUD.swift; sourceTree = "<group>"; };
+		A7F000000000000000000011 /* HelperProcessRunner.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = HelperProcessRunner.c; sourceTree = "<group>"; };
+		A7F000000000000000000012 /* PrivilegedHelperBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PrivilegedHelperBridge.m; sourceTree = "<group>"; };
+		A7F000000000000000000013 /* PrivilegedToolsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedToolsSection.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -1827,6 +1833,8 @@
 			isa = PBXGroup;
 			children = (
 				E5FR00011 /* FridaCoreBridge.m */,
+				A7F000000000000000000012 /* PrivilegedHelperBridge.m */,
+				A7F000000000000000000011 /* HelperProcessRunner.c */,
 				E5BRM0011 /* BrowserResourceMonitor.swift */,
 				E5RSD0011 /* ResourceDiagnostics.swift */,
 				E5PPB0011 /* PerfProbe.swift */,
@@ -2380,6 +2388,7 @@
 				E5SOUL102 /* SoulSettingsView.swift */,
 				E5SCH0014 /* HelperSettingsView.swift */,
 				E5TLS0011 /* ToolsSettingsView.swift */,
+				A7F000000000000000000013 /* PrivilegedToolsSection.swift */,
 				E5LOCK102 /* FaceIDProtectionSettingsView.swift */,
 				E5LOCK103 /* AppLockOverlay.swift */,
 			);
@@ -3001,6 +3010,9 @@
 				E5PPB0001 /* PerfProbe.swift in Sources */,
 				E5CR00002 /* CrashReporter.swift in Sources */,
 				E5FR00001 /* FridaCoreBridge.m in Sources */,
+				A7F000000000000000000003 /* PrivilegedToolsSection.swift in Sources */,
+				A7F000000000000000000002 /* PrivilegedHelperBridge.m in Sources */,
+				A7F000000000000000000001 /* HelperProcessRunner.c in Sources */,
 				E5CR00003 /* CrashSignalHandler.m in Sources */,
 				E5KVC0003 /* SafeKVCSetTrue.m in Sources */,
 				E5F100001 /* NetworkMonitor.swift in Sources */,

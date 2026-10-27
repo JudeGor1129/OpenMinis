@@ -370,26 +370,22 @@ extension AIChatViewModel {
 
         do {
         switch tu.name {
-        case "frida_status", "frida_processes":
+        case "frida_status":
             guard AgentToolSwitch.frida.isEnabled else {
-                toolOutput = Self.toolsDisabledMessage
-                toolSuccess = false
-                break
+                toolOutput = Self.toolsDisabledMessage; toolSuccess = false; break
             }
-            let listProcesses = tu.name == "frida_processes"
-            guard !Task.isCancelled,
-                  listProcesses ? OpenMinisFridaCoreAvailable() : OpenMinisFridaDiagnosticsAvailable() else {
-                toolOutput = listProcesses
-                    ? "Frida process probing is disabled for device safety. Use frida_status for non-invasive server diagnostics."
-                    : "Frida diagnostics unavailable or task cancelled."
-                toolSuccess = false
-                break
+            guard !Task.isCancelled, OpenMinisFridaDiagnosticsAvailable() else {
+                toolOutput = "ERROR: diagnostics unavailable or task cancelled."; toolSuccess = false; break
             }
             toolOutput = await withCheckedContinuation { continuation in
-                let completion: (String) -> Void = { result in continuation.resume(returning: result) }
-                if listProcesses { OpenMinisFridaProcessesAsync(completion) }
-                else { OpenMinisFridaCoreStatusAsync(completion) }
+                OpenMinisFridaCoreStatusAsync { continuation.resume(returning: $0) }
             }
+            toolSuccess = !toolOutput.contains("ERROR:") && !Task.isCancelled
+        case "root_status", "frida_processes":
+            guard AgentToolSwitch.isToolEnabled(tu.name), OpenMinisPrivilegedHelperPackaged(), !Task.isCancelled else {
+                toolOutput = "ERROR: isolated privileged helper is unavailable, disabled, or cancelled. Enable its separate settings and review the risks."; toolSuccess = false; break
+            }
+            toolOutput = await PrivilegedHelperClient.run(tu.name == "root_status" ? "identity" : "frida-processes")
             toolSuccess = !toolOutput.contains("ERROR:") && !Task.isCancelled
         case "host_list_files":
             let result = await executeHostListFiles(from: argsJson)

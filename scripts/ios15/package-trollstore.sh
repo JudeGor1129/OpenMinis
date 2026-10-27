@@ -10,6 +10,17 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/Payload" "$OUT" ci-logs
 ditto "$SOURCE" "$STAGE/Payload/Minis.app"
 APP="$STAGE/Payload/Minis.app"
+HELPER=build/ios15/privileged-helper/minis-privileged-helper
+[[ -f "$HELPER" ]] || { echo 'error: signed-helper build product missing' >&2; exit 1; }
+cp "$HELPER" "$APP/minis-privileged-helper"
+chmod 0755 "$APP/minis-privileged-helper"
+APP_ENT=ci-logs/trollstore-app-privileged.entitlements
+python3 - "$APP_ENT" <<'PY'
+import plistlib, sys
+with open('src/ios/Minis.entitlements', 'rb') as f: base=plistlib.load(f)
+with open('tools/privileged-helper/TrollStoreApp.extra.entitlements', 'rb') as f: base.update(plistlib.load(f))
+with open(sys.argv[1], 'wb') as f: plistlib.dump(base, f)
+PY
 PLIST=/usr/libexec/PlistBuddy
 minimum="$("$PLIST" -c 'Print :MinimumOSVersion' "$APP/Info.plist")"
 [[ "$minimum" == 15.0 ]] || { echo "error: unexpected app minimum OS: $minimum" >&2; exit 1; }
@@ -45,10 +56,17 @@ if [[ -d "$APP/PlugIns" ]]; then
     codesign --verify --strict "$ext"
   done < <(find "$APP/PlugIns" -maxdepth 1 -type d -name '*.appex' -print0)
 fi
-codesign --force --sign - --timestamp=none --entitlements src/ios/Minis.entitlements "$APP"
+# Re-sign helper AFTER the generic Mach-O pass, otherwise its private claims
+# would be silently stripped. GUI gets only the dedicated TrollStore overlay.
+codesign --force --sign - --timestamp=none --identifier com.openminis.app.privileged-helper \
+  --entitlements tools/privileged-helper/Helper.entitlements "$APP/minis-privileged-helper"
+codesign --verify --strict "$APP/minis-privileged-helper"
+codesign -d --entitlements :- "$APP/minis-privileged-helper" > ci-logs/helper-entitlements.plist 2> ci-logs/helper-signature.txt
+codesign --force --sign - --timestamp=none --entitlements "$APP_ENT" "$APP"
 codesign --verify --deep --strict "$APP"
 codesign -d --entitlements :- "$APP" > ci-logs/trollstore-entitlements.plist 2> ci-logs/trollstore-signature.txt
-IPA="$OUT/Minis-iOS15-TrollStore-test.ipa"
+python3 scripts/ios15/verify-privileged-entitlements.py ci-logs/trollstore-entitlements.plist ci-logs/helper-entitlements.plist
+IPA="$OUT/Minis-iOS15-TrollStore-privileged-test.ipa"
 rm -f "$IPA"
 (cd "$STAGE" && /usr/bin/zip -qry -y "$OLDPWD/$IPA" Payload)
 unzip -t "$IPA" | tail -1
@@ -59,7 +77,15 @@ Install the .ipa through TrollStore, not ordinary certificate sideloading.
 The package uses ad-hoc signatures; successful CI signing is not an install test.
 The iOS 16.2 Live Activity extension is excluded. Apple Weather needs iOS 16+.
 Apple-hosted capabilities (push/iCloud/WeatherKit) are not guaranteed by TrollStore.
-No extra platform, unsandboxed, or private entitlements have been added.
+WARNING: dedicated experimental privileged package. The GUI has platform-application,
+no-sandbox and persona-management entitlements. It stays at its launch UID but can
+request an isolated uid0 helper. In-app switches limit supported operations, not
+binary signing powers. Ordinary Minis.entitlements and extensions are unchanged.
+Root status must be verified on the actual device. Xina/TrollStore may deny it.
+Frida process listing is default OFF and requires separate risk acceptance.
+Frida Core is not initialized in the GUI. The helper allows identity and a fixed
+loopback socket-only process list, not arbitrary shell/attach/spawn/scripts.
+Prior probing caused device reboot reports; isolation does NOT remove kernel risk.
 Test launch, chat sizing/streaming/scrolling, sharing and File Provider on device.
 NOTES
 echo "IPA ready: $IPA"
