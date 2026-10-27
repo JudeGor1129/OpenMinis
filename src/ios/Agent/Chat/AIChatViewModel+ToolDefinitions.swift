@@ -443,6 +443,22 @@ extension AIChatViewModel {
             required: ["tool_title", "path"],
             propertyOrdering: ["tool_title", "path", "root"]
         ))
+        if AgentToolSwitch.ictrl.isEnabled {
+        tools.append(AgentToolDefinition(
+            name: "ictrl_call",
+            description: "Control a paired iPhone through the local iCTRL runner. The runner must already be running on the target device, normally at 127.0.0.1:8200. Use action=pair once when pairing is needed (the user must approve the runner prompt), then action=call with a documented JSON-RPC method such as device_info, page_source, find_element, tap, type, swipe, screenshot, launch_app, or logs. This tool only calls iCTRL; it does not start XCTest, mount DDI, bypass pairing, or expose an arbitrary shell.",
+            parameters: [
+                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of the iCTRL operation."),
+                "action": AgentToolParam(type: .string, description: "Pair once or call one JSON-RPC method.", enumValues: ["pair", "call"]),
+                "host": AgentToolParam(type: .string, description: "Runner host:port. Default is 127.0.0.1:8200. Use a LAN address only for a device the user owns and has explicitly enabled for remote access."),
+                "method": AgentToolParam(type: .string, description: "JSON-RPC method for action=call, for example device_info, page_source, find_element, tap, type, swipe, screenshot, launch_app, or logs."),
+                "params_json": AgentToolParam(type: .string, description: "A JSON object string containing the method parameters. Use {} when the method has no parameters."),
+                "timeout": AgentToolParam(type: .integer, description: "Maximum seconds for the local CLI call. Default 30."),
+            ],
+            required: ["tool_title", "action"],
+            propertyOrdering: ["tool_title", "action", "host", "method", "params_json", "timeout"]
+        ))
+        }
         return tools
     }
 

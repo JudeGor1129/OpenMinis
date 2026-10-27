@@ -369,6 +369,10 @@ extension AIChatViewModel {
         }()
 
         do {
+        if tu.name == "ictrl_call", !AgentToolSwitch.ictrl.isEnabled {
+            toolOutput = Self.toolsDisabledMessage
+            toolSuccess = false
+        } else {
         switch tu.name {
         case "frida_status", "frida_processes":
             guard AgentToolSwitch.frida.isEnabled else {
@@ -491,6 +495,73 @@ extension AIChatViewModel {
             }
             toolOutput = await MinisUserQuestionPresenter.shared.ask(question)
             toolSuccess = !Task.isCancelled
+        case "ictrl_call":
+            guard let data = argsJson.data(using: .utf8),
+                  let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                toolOutput = "Error: invalid iCTRL arguments."
+                toolSuccess = false
+                break
+            }
+            let action = (args["action"] as? String) ?? "call"
+            let host = (args["host"] as? String) ?? "127.0.0.1:8200"
+            let method = (args["method"] as? String) ?? "device_info"
+            let paramsJSON = (args["params_json"] as? String) ?? "{}"
+            let timeout = max(5, min(120, (args["timeout"] as? Int) ?? (action == "pair" ? 90 : 30)))
+            let hostWithoutPort: String = {
+                if host.hasPrefix("[") { return host.split(separator: "]").first.map { String($0.dropFirst()) } ?? host }
+                return host.split(separator: ":").first.map(String.init) ?? host
+            }()
+            let portIsValid: Bool = {
+                guard let colon = host.lastIndex(of: ":"), let port = Int(host[host.index(after: colon)...]) else { return false }
+                return (1...65535).contains(port) && !host.contains("/") && !host.contains("@")
+            }()
+            let ipv4Octets = hostWithoutPort.split(separator: ".").compactMap { Int($0) }
+            let ipv4Valid = hostWithoutPort.split(separator: ".").count == 4
+                && ipv4Octets.count == 4 && ipv4Octets.allSatisfy { (0...255).contains($0) }
+            let hostIsLoopback = hostWithoutPort == "127.0.0.1" || hostWithoutPort == "localhost" || hostWithoutPort == "::1"
+            let hostIsPrivate = ipv4Valid && (
+                ipv4Octets[0] == 10
+                || (ipv4Octets[0] == 192 && ipv4Octets[1] == 168)
+                || (ipv4Octets[0] == 172 && (16...31).contains(ipv4Octets[1]))
+            )
+            guard portIsValid && (hostIsLoopback || hostIsPrivate) else {
+                toolOutput = "Error: iCTRL host must be loopback or a private LAN address owned by the user."
+                toolSuccess = false
+                break
+            }
+            let shellQuote: (String) -> String = { value in
+                "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+            }
+            let base = "C=\"$HOME/.ictrl/bin\"; mkdir -p \"$C\"; "
+                + "[ -s \"$C/ictrl\" ] || wget -qO \"$C/ictrl\" http://\(host)/skill/clients/cli; "
+                + "[ -s \"$C/ictrl.sh\" ] || wget -qO \"$C/ictrl.sh\" http://\(host)/skill/clients/cli.sh; "
+            let command: String
+            if action == "pair" {
+                command = base + "sh \"$C/ictrl.sh\" --host " + shellQuote(host) + " pair --name Minis"
+            } else if action == "call" {
+                guard !method.isEmpty,
+                      let paramsData = paramsJSON.data(using: .utf8),
+                      (try? JSONSerialization.jsonObject(with: paramsData)) is [String: Any] else {
+                    toolOutput = "Error: params_json must be a JSON object and method must be non-empty."
+                    toolSuccess = false
+                    break
+                }
+                command = base + "sh \"$C/ictrl.sh\" --host " + shellQuote(host)
+                    + " call " + shellQuote(method) + " " + shellQuote(paramsJSON)
+            } else {
+                toolOutput = "Error: iCTRL action must be pair or call."
+                toolSuccess = false
+                break
+            }
+            do {
+                let result = try await executeCommand(command, timeout: TimeInterval(timeout), lineCallback: { _ in })
+                toolOutput = result.output
+                toolSuccess = result.exitCode == 0
+            } catch {
+                toolOutput = "Error: \(error.localizedDescription)"
+                toolSuccess = false
+            }
+
         case "shell_execute":
             let (command, timeout, delay) = parseToolInput(from: argsJson)
 
@@ -1091,6 +1162,7 @@ extension AIChatViewModel {
         default:
             toolOutput = "Error: Unknown tool '\(tu.name)'"
             toolSuccess = false
+        }
         }
         } catch is CancellationError {
             let cancelContent = "<system-reminder>The user cancelled this operation. The returned result may be incomplete.</system-reminder>"

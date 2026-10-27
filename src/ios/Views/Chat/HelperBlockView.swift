@@ -372,6 +372,7 @@ enum HelperAccent {
         case "file_read", "read_file": return "doc.text"
         case "file_write", "write_file": return "doc.text.fill"
         case "file_edit", "edit_file": return "square.and.pencil"
+        case "ictrl_call": return "iphone"
         case "browser_use": return "globe"
         case "read_image": return "photo"
         case "memory": return "brain.head.profile"
@@ -564,7 +565,8 @@ struct HelperBlockView: View {
         ZStack {
             Circle().fill(HelperAccent.color.opacity(0.15)).frame(width: 34, height: 34)
             if info.isRunning {
-                ReattachingSpinner(size: 15, lineWidth: 2, color: HelperAccent.color)
+                ThinkingOrb(.connecting, diameter: 22, speed: 1.1)
+                    .colorMultiply(HelperAccent.color)
             } else if case .finished(let status, _, _, _, _, _, _, _) = info.phase {
                 // Queued is not a failure — it is waiting its turn, and an
                 // exclamation mark read as something having gone wrong. Pause
@@ -940,7 +942,8 @@ struct HelperDetailCard: View {
             case .starting:
                 Text(AppLocalized("starting")).font(.system(size: 11, weight: .semibold)).foregroundStyle(HelperAccent.color)
             case .running(_, _, let clock):
-                ReattachingSpinner(size: 11, lineWidth: 1.6, color: HelperAccent.color)
+                ThinkingOrb(.connecting, size: .small, speed: 1.1)
+                    .colorMultiply(HelperAccent.color)
                 Text(AppLocalized("running")).font(.system(size: 11, weight: .semibold)).foregroundStyle(HelperAccent.color)
                 if !clock.isEmpty {
                     Text(clock).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color(UIColor.tertiaryLabel))

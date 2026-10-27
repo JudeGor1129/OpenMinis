@@ -1985,6 +1985,10 @@ actor ChatStore {
             if let p = str("path") { return cap("Editing " + p) }
         case "read_image":
             if let p = str("path") { return cap("Reading image " + p) }
+        case "ictrl_call":
+            let action = str("action") ?? "call"
+            if let method = str("method") { return cap("iCTRL \(action) \(method)") }
+            return cap("iCTRL \(action)")
         case "browser_use":
             let action = str("action") ?? "browse"
             if let url = str("url") { return cap("\(action) \(url)") }
@@ -5809,6 +5813,11 @@ extension RawMessage {
                     let path = extractStringParam("path", from: tu.input)
                     kind = .fileEditTool(path: path)
                     content = "Editing \(path)..."
+                case "ictrl_call":
+                    kind = .shellTool(command: "iCTRL")
+                    let action = extractStringParam("action", from: tu.input)
+                    let method = extractStringParam("method", from: tu.input)
+                    content = "iCTRL: \(action)\(method.isEmpty ? "" : " \(method)")"
                 case "browser_use":
                     let action = extractStringParam("action", from: tu.input)
                     kind = .browserTool(action: action)

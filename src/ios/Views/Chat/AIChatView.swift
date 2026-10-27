@@ -7033,29 +7033,12 @@ private struct EmptyChatDirectoryTimeline: View {
 struct LoadingDotsView: View {
     var dotSize: CGFloat = 10
     var color: Color = .accentColor
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var animating = false
 
     var body: some View {
-        HStack(spacing: dotSize * 0.7) {
-            ForEach(0..<3, id: \.self) { i in
-                Circle()
-                    .fill(color)
-                    .frame(width: dotSize, height: dotSize)
-                    .scaleEffect(reduceMotion ? 1.0 : (animating ? 1.0 : 0.55))
-                    .opacity(reduceMotion ? 0.75 : (animating ? 0.95 : 0.3))
-                    .animation(
-                        reduceMotion ? nil : .spring(response: 0.30, dampingFraction: 0.86)
-                            .repeatForever(autoreverses: true)
-                            .delay(Double(i) * 0.16),
-                        value: animating
-                    )
-            }
-        }
-        .onAppear { animating = !reduceMotion }
-        .onChange(of: reduceMotion) { reduced in
-            animating = !reduced
-        }
+        ThinkingOrb(.breathing, diameter: max(20, dotSize * 3.2), speed: 0.9)
+            .colorMultiply(color)
+            .frame(width: max(24, dotSize * 3.2), height: max(24, dotSize * 3.2))
+            .accessibilityLabel(AppLocalized("Loading"))
     }
 }
 

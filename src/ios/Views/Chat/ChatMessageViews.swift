@@ -256,7 +256,7 @@ struct ChatMessageRow: View {
             case .text:
                 if !block.content.isEmpty { parts.append(block.content) }
             case .shellTool(let command):
-                let cmd = command.isEmpty ? block.toolDescription : command
+                let cmd = command == "iCTRL" ? "iCTRL" : (command.isEmpty ? block.toolDescription : command)
                 var s = "$ \(cmd)"
                 if !block.content.isEmpty {
                     // content is "$ cmd\noutput…", strip the command line
@@ -316,9 +316,8 @@ struct ChatMessageRow: View {
             VStack { Divider() }
             HStack(spacing: 5) {
                 if message.isCompactLoading {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .frame(width: 12, height: 12)
+                    ThinkingOrb(.breathing, size: .small, speed: 0.9)
+                        .frame(width: 14, height: 14)
                 } else {
                     Image(systemName: "arrow.down.right.and.arrow.up.left")
                         .font(.system(size: 10))
@@ -360,9 +359,8 @@ struct ChatMessageRow: View {
             VStack { Divider() }
             HStack(spacing: 5) {
                 if loading {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .frame(width: 12, height: 12)
+                    ThinkingOrb(.breathing, size: .small, speed: 0.9)
+                        .frame(width: 14, height: 14)
                 } else if let icon {
                     Image(systemName: icon)
                         .font(.system(size: 10))

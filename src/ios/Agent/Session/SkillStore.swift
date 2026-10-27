@@ -383,10 +383,24 @@ Do not create extraneous files: README.md, INSTALLATION_GUIDE.md, CHANGELOG.md, 
     private func installBundledSkills() {
         let bundledId = "skill-creator"
         if let existing = skills.first(where: { $0.id == bundledId }) {
-            // Upgrade if the bundled version is newer
-            guard existing.version < Self.skillCreatorVersion else { return }
+            // Upgrade if the bundled version is newer.
+            if existing.version < Self.skillCreatorVersion {
+                _ = try? importSkill(content: Self.skillCreatorContent, source: .bundled)
+            }
+        } else {
+            _ = try? importSkill(content: Self.skillCreatorContent, source: .bundled)
         }
-        _ = try? importSkill(content: Self.skillCreatorContent, source: .bundled)
+
+        let ictrlId = "ictrl-phone-control"
+        if let existing = skills.first(where: { $0.id == ictrlId }) {
+            // Never overwrite a user-imported skill with the bundled copy.
+            if existing.importSource == .bundled,
+               existing.version < BundledSkillCatalog.ictrlVersion {
+                _ = try? importSkill(content: BundledSkillCatalog.ictrlContent, source: .bundled)
+            }
+        } else {
+            _ = try? importSkill(content: BundledSkillCatalog.ictrlContent, source: .bundled)
+        }
     }
 
     // MARK: - One-time Migration: re-sync skills with bundled files

@@ -461,6 +461,7 @@ extension AIChatViewModel {
                     case "file_write": .fileWriteTool(path: "")
                     case "file_edit": .fileEditTool(path: "")
                     case "browser_use": .browserTool(action: "")
+                    case "ictrl_call": .shellTool(command: "iCTRL")
                     case "read_image": .readImageTool(path: "")
                     case "memory_write", "memory_get": .memoryTool(action: name)
                     case SubAgentDefinition.toolName: .delegateTool(title: "")
@@ -705,6 +706,10 @@ extension AIChatViewModel {
                         if let action = extractPartialStringValue("action", from: accumulated) {
                             return .browserTool(action: action)
                         }
+                    case "ictrl_call":
+                        if let action = extractPartialStringValue("action", from: accumulated) {
+                            return .shellTool(command: "iCTRL · \(action)")
+                        }
                     case "read_image":
                         if let path = extractPartialStringValue("path", from: accumulated) {
                             return .readImageTool(path: path)
@@ -816,6 +821,8 @@ extension AIChatViewModel {
                         if let cmd = args["command"] as? String {
                             messages[msgIdx].blocks[blockIdx].kind = .shellTool(command: cmd)
                         }
+                    case "ictrl_call":
+                        messages[msgIdx].blocks[blockIdx].kind = .shellTool(command: "iCTRL")
                     case "browser_use":
                         if let action = args["action"] as? String {
                             messages[msgIdx].blocks[blockIdx].kind = .browserTool(action: action)
@@ -1093,6 +1100,9 @@ extension AIChatViewModel {
         case "shell_execute":
             let d = detail ?? clip(args["command"] as? String, 40) ?? ""
             return zh ? "正在执行脚本:\(d)" : "Executing script: \(d)"
+        case "ictrl_call":
+            let d = detail ?? clip(args["method"] as? String, 40) ?? "device_info"
+            return zh ? "正在控制 iPhone:\(d)" : "Controlling iPhone: \(d)"
         case "file_read":
             let d = detail ?? fileName(args["path"] as? String)
             return zh ? "正在读取文件:\(d)" : "Reading file: \(d)"
@@ -1118,6 +1128,8 @@ extension AIChatViewModel {
         switch name {
         case "shell_execute":
             return "Executing..."
+        case "ictrl_call":
+            return "iCTRL: \((args["action"] as? String) ?? "call")..."
         case "file_read":
             return "Reading \((args["path"] as? String) ?? "?")..."
         case "file_write":
@@ -1181,6 +1193,11 @@ extension AIChatViewModel {
             // No path yet — leave preview unchanged (don't return "Editing...",
             // which would also overwrite a previously-good preview when the
             // streaming is briefly between fields).
+        case "ictrl_call":
+            if let action = extractPartialStringValue("action", from: json) {
+                let method = extractPartialStringValue("method", from: json)
+                return ("iCTRL: \(action)\(method.map { " \($0)" } ?? "")...", desc)
+            }
         case "browser_use":
             if let action = extractPartialStringValue("action", from: json) {
                 let detail: String

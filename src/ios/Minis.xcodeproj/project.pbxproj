@@ -231,6 +231,13 @@
 		E5E000009 /* MinisShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E5E000010 /* MinisShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E5E00000A /* MainInterface.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = E5E00001A /* MainInterface.storyboard */; };
 		E5E0000A1 /* ExternalFileImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5E0000A2 /* ExternalFileImporter.swift */; };
+		D1C700000000000000000001 /* OrbDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000011 /* OrbDesign.swift */; };
+		D1C700000000000000000002 /* OrbFrame.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000012 /* OrbFrame.swift */; };
+		D1C700000000000000000003 /* OrbEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000013 /* OrbEngine.swift */; };
+		D1C700000000000000000004 /* OrbPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000014 /* OrbPresets.swift */; };
+		D1C700000000000000000005 /* ThinkingOrb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000015 /* ThinkingOrb.swift */; };
+		D1C700000000000000000006 /* BundledSkillCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000016 /* BundledSkillCatalog.swift */; };
+		D1C700000000000000000007 /* ThinkingOrbs-THIRD-PARTY-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000017 /* ThinkingOrbs-THIRD-PARTY-LICENSE.txt */; };
 		E5F000001 /* ISHExecutionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F000011 /* ISHExecutionCoordinator.swift */; };
 		E5F000002 /* MinisFsRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F000012 /* MinisFsRouter.swift */; };
 		E5F00001 /* LLMProviderFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F00002 /* LLMProviderFactory.swift */; };
@@ -930,6 +937,13 @@
 		E5E000019 /* ShareCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCoordinator.swift; sourceTree = "<group>"; };
 		E5E00001A /* MainInterface.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = MainInterface.storyboard; sourceTree = "<group>"; };
 		E5E0000A2 /* ExternalFileImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalFileImporter.swift; sourceTree = "<group>"; };
+		D1C700000000000000000011 /* OrbDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbDesign.swift; sourceTree = "<group>"; };
+		D1C700000000000000000012 /* OrbFrame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbFrame.swift; sourceTree = "<group>"; };
+		D1C700000000000000000013 /* OrbEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbEngine.swift; sourceTree = "<group>"; };
+		D1C700000000000000000014 /* OrbPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbPresets.swift; sourceTree = "<group>"; };
+		D1C700000000000000000015 /* ThinkingOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingOrb.swift; sourceTree = "<group>"; };
+		D1C700000000000000000016 /* BundledSkillCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkillCatalog.swift; sourceTree = "<group>"; };
+		D1C700000000000000000017 /* ThinkingOrbs-THIRD-PARTY-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "ThinkingOrbs-THIRD-PARTY-LICENSE.txt"; sourceTree = "<group>"; };
 		E5F000011 /* ISHExecutionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ISHExecutionCoordinator.swift; sourceTree = "<group>"; };
 		E5F000012 /* MinisFsRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinisFsRouter.swift; sourceTree = "<group>"; };
 		E5F00002 /* LLMProviderFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMProviderFactory.swift; sourceTree = "<group>"; };
@@ -1929,6 +1943,13 @@
 				E5E000019 /* ShareCoordinator.swift */,
 				E5E0000A2 /* ExternalFileImporter.swift */,
 				E5E000017 /* SharedContainerStore.swift */,
+				D1C700000000000000000011 /* OrbDesign.swift */,
+				D1C700000000000000000012 /* OrbFrame.swift */,
+				D1C700000000000000000013 /* OrbEngine.swift */,
+				D1C700000000000000000014 /* OrbPresets.swift */,
+				D1C700000000000000000015 /* ThinkingOrb.swift */,
+				D1C700000000000000000016 /* BundledSkillCatalog.swift */,
+				D1C700000000000000000017 /* ThinkingOrbs-THIRD-PARTY-LICENSE.txt */,
 				AADDA9E02F6ECCF400B66649 /* ThumbnailCache.swift */,
 			);
 			path = Shared;
@@ -2707,6 +2728,7 @@
 				E5JB00003 /* jieba.dict.utf8 in Resources */,
 				E5VC0000C /* zh_background_wordfreq.txt in Resources */,
 				E5JB00004 /* hmm_model.utf8 in Resources */,
+				D1C700000000000000000007 /* ThinkingOrbs-THIRD-PARTY-LICENSE.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2832,6 +2854,12 @@
 				AA0838A02F3B941A00049557 /* AboutView.swift in Sources */,
 				BB1000100F700000000000AA /* ContextPolicy.swift in Sources */,
 				AADDA9E12F6ECCF400B66649 /* ThumbnailCache.swift in Sources */,
+				D1C700000000000000000001 /* OrbDesign.swift in Sources */,
+				D1C700000000000000000002 /* OrbFrame.swift in Sources */,
+				D1C700000000000000000003 /* OrbEngine.swift in Sources */,
+				D1C700000000000000000004 /* OrbPresets.swift in Sources */,
+				D1C700000000000000000005 /* ThinkingOrb.swift in Sources */,
+				D1C700000000000000000006 /* BundledSkillCatalog.swift in Sources */,
 				E51000002 /* ContentView.swift in Sources */,
 				A15000000000000000000003 /* LegacyContentView.swift in Sources */,
 				E5SRS0001 /* SessionRefreshScheduler.swift in Sources */,

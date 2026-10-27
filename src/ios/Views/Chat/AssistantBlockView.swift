@@ -820,9 +820,9 @@ struct ThinkingBlockView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.blue)
                 if isStreaming {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(.blue)
+                    ThinkingOrb(.solving, size: .small, speed: 1.1)
+                        .colorMultiply(.blue)
+                        .accessibilityLabel(AppLocalized("Thinking"))
                 }
                 Spacer()
                 // [T-thinking-count-beside-chevron] The character count sits at

@@ -32,6 +32,7 @@ enum AgentToolSwitch: String, CaseIterable {
     case interaction = "agent.tools.interaction.enabled"
     case browser = "agent.tools.browser.enabled"
     case frida = "agent.tools.frida.enabled"
+    case ictrl = "agent.tools.ictrl.enabled"
     case agents = "agent.tools.agents.enabled"
 
     var key: String { rawValue }
@@ -62,6 +63,7 @@ enum AgentToolSwitch: String, CaseIterable {
         // opt-in until the target device/server combination is verified; a
         // malformed or incompatible frida-server must never be probed by default.
         case .frida: return false
+        case .ictrl: return false
         }
     }
 
@@ -81,6 +83,7 @@ enum AgentToolSwitch: String, CaseIterable {
         switch toolName {
         case "ask_user": return .interaction
         case "frida_status", "frida_processes": return .frida
+        case "ictrl_call": return .ictrl
         case "browser_use": return .browser
         case SubAgentDefinition.toolName: return .agents
         default: return nil
@@ -128,6 +131,7 @@ struct ToolsSettingsView: View {
     @AppStorage(AgentToolSwitch.interaction.key) private var interactionEnabled = AgentToolSwitch.interaction.defaultValue
     @AppStorage(AgentToolSwitch.browser.key) private var browserEnabled: Bool = AgentToolSwitch.browser.defaultValue
     @AppStorage(AgentToolSwitch.frida.key) private var fridaEnabled = AgentToolSwitch.frida.defaultValue
+    @AppStorage(AgentToolSwitch.ictrl.key) private var ictrlEnabled = AgentToolSwitch.ictrl.defaultValue
     @AppStorage(HomeworkHintPolicy.enabledKey) private var homeworkCoachEnabled = false
 
     var body: some View {
@@ -137,6 +141,12 @@ struct ToolsSettingsView: View {
                 toolRow(AppLocalized("Browser Use"), tool: "browser_use", icon: "globe", isOn: $browserEnabled)
             } footer: {
                 Text(AppLocalized("Browse the web in the in-app browser: open pages, read them, click and type. Stable and on by default. When off, the tool is removed from every conversation — the model does not see it at all."))
+            }
+            Section {
+                toolRow("iCTRL 手机控制", tool: "ictrl_call", icon: "iphone", isOn: $ictrlEnabled)
+                Text("通过已运行的 iCTRL XCTest runner 控制本机或已授权的私有局域网设备。默认关闭；启用前请确认目标设备归你所有并由你配对。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Section {
                 toolRow("Frida 服务器诊断", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)

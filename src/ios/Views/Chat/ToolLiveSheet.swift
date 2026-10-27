@@ -2664,9 +2664,8 @@ struct ToolLiveSheet: View {
     private var statusIcon: some View {
         switch block.toolStatus {
         case .streaming, .running:
-            ProgressView()
-                .scaleEffect(0.7)
-                .frame(width: 20, height: 20)
+            ThinkingOrb(.connecting, diameter: 22)
+                .accessibilityLabel(AppLocalized("Running"))
         case .success:
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 18))
