@@ -7,6 +7,7 @@ on:
     paths:
       - 'src/ios/**'
       - 'scripts/ios15/**'
+      - 'tools/privileged-helper/**'
       - 'deps/build_rclone_ios.sh'
       - '.github/workflows/ios15.yml'
   workflow_dispatch:
