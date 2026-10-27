@@ -371,7 +371,6 @@
 		E5Q000001 /* BPETokenizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5Q000011 /* BPETokenizer.swift */; };
 		E5Q000002 /* cl100k_base.tiktoken in Resources */ = {isa = PBXBuildFile; fileRef = E5Q000012 /* cl100k_base.tiktoken */; };
 		E5Q000003 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5Q000013 /* AppLogger.swift */; };
-		CL0C0A01 /* ContainerLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CL0C0A02 /* ContainerLocator.swift */; };
 		E5Q000004 /* FontSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5Q000014 /* FontSettings.swift */; };
 		A15000000000000000000001 /* MinisNavigationContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15000000000000000000002 /* MinisNavigationContainer.swift */; };
 		E5QA0001 /* QuickActionRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5QA0101 /* QuickActionRouter.swift */; };
@@ -448,7 +447,6 @@
 		E5VC1000A /* SentenceSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00013 /* SentenceSplitter.swift */; };
 		E5VC1000B /* PhoneticNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00012 /* PhoneticNormalizer.swift */; };
 		E5VC1000C /* VoiceCorrectionDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00011 /* VoiceCorrectionDB.swift */; };
-		CL0C0A03 /* ContainerLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CL0C0A02 /* ContainerLocator.swift */; };
 		E5VC1000D /* CorrectionSignalSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00015 /* CorrectionSignalSource.swift */; };
 		E5VC1001A /* ConversationContextTruncator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC00018 /* ConversationContextTruncator.swift */; };
 		E5VC1001D /* VoiceCorrectionDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VC0001D /* VoiceCorrectionDiff.swift */; };
@@ -567,9 +565,6 @@
 		RCL000119 /* BackupHistoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000219 /* BackupHistoryDetailView.swift */; };
 		RCL000120 /* BackupCategoryIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000220 /* BackupCategoryIcon.swift */; };
 		RCL000121 /* BackupHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000221 /* BackupHUD.swift */; };
-		A7F000000000000000000001 /* HelperProcessRunner.c in Sources */ = {isa = PBXBuildFile; fileRef = A7F000000000000000000011 /* HelperProcessRunner.c */; };
-		A7F000000000000000000002 /* PrivilegedHelperBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A7F000000000000000000012 /* PrivilegedHelperBridge.m */; };
-		A7F000000000000000000003 /* PrivilegedToolsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F000000000000000000013 /* PrivilegedToolsSection.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1112,7 +1107,6 @@
 		E5Q000011 /* BPETokenizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BPETokenizer.swift; sourceTree = "<group>"; };
 		E5Q000012 /* cl100k_base.tiktoken */ = {isa = PBXFileReference; lastKnownFileType = text; path = cl100k_base.tiktoken; sourceTree = "<group>"; };
 		E5Q000013 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
-		CL0C0A02 /* ContainerLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerLocator.swift; sourceTree = "<group>"; };
 		E5Q000014 /* FontSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FontSettings.swift; sourceTree = "<group>"; };
 		A15000000000000000000002 /* MinisNavigationContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinisNavigationContainer.swift; sourceTree = "<group>"; };
 		E5QA0101 /* QuickActionRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionRouter.swift; sourceTree = "<group>"; };
@@ -1298,9 +1292,6 @@
 		RCL000219 /* BackupHistoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryDetailView.swift; sourceTree = "<group>"; };
 		RCL000220 /* BackupCategoryIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupCategoryIcon.swift; sourceTree = "<group>"; };
 		RCL000221 /* BackupHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHUD.swift; sourceTree = "<group>"; };
-		A7F000000000000000000011 /* HelperProcessRunner.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = HelperProcessRunner.c; sourceTree = "<group>"; };
-		A7F000000000000000000012 /* PrivilegedHelperBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PrivilegedHelperBridge.m; sourceTree = "<group>"; };
-		A7F000000000000000000013 /* PrivilegedToolsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivilegedToolsSection.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -1836,8 +1827,6 @@
 			isa = PBXGroup;
 			children = (
 				E5FR00011 /* FridaCoreBridge.m */,
-				A7F000000000000000000012 /* PrivilegedHelperBridge.m */,
-				A7F000000000000000000011 /* HelperProcessRunner.c */,
 				E5BRM0011 /* BrowserResourceMonitor.swift */,
 				E5RSD0011 /* ResourceDiagnostics.swift */,
 				E5PPB0011 /* PerfProbe.swift */,
@@ -1885,7 +1874,6 @@
 				E5G000014 /* AgentActivityAttributes.swift */,
 				E5AT00011 /* AudioTogglePlaybackIntent.swift */,
 				E5Q000013 /* AppLogger.swift */,
-				CL0C0A02 /* ContainerLocator.swift */,
 				LOC00002 /* AppLocalization.swift */,
 				E5Q000011 /* BPETokenizer.swift */,
 				E5MDS0013 /* MarkdownStripper.swift */,
@@ -2392,7 +2380,6 @@
 				E5SOUL102 /* SoulSettingsView.swift */,
 				E5SCH0014 /* HelperSettingsView.swift */,
 				E5TLS0011 /* ToolsSettingsView.swift */,
-				A7F000000000000000000013 /* PrivilegedToolsSection.swift */,
 				E5LOCK102 /* FaceIDProtectionSettingsView.swift */,
 				E5LOCK103 /* AppLockOverlay.swift */,
 			);
@@ -2819,7 +2806,6 @@
 				E5VTS1001 /* VoiceTextSanitizer.swift in Sources */,
 				E5VC1000B /* PhoneticNormalizer.swift in Sources */,
 				E5VC1000C /* VoiceCorrectionDB.swift in Sources */,
-				CL0C0A03 /* ContainerLocator.swift in Sources */,
 				E5VC1001D /* VoiceCorrectionDiff.swift in Sources */,
 				E5CADM02 /* CorrectionAdmission.swift in Sources */,
 				E5VC1001E /* VocabularyFilter.swift in Sources */,
@@ -3015,9 +3001,6 @@
 				E5PPB0001 /* PerfProbe.swift in Sources */,
 				E5CR00002 /* CrashReporter.swift in Sources */,
 				E5FR00001 /* FridaCoreBridge.m in Sources */,
-				A7F000000000000000000003 /* PrivilegedToolsSection.swift in Sources */,
-				A7F000000000000000000002 /* PrivilegedHelperBridge.m in Sources */,
-				A7F000000000000000000001 /* HelperProcessRunner.c in Sources */,
 				E5CR00003 /* CrashSignalHandler.m in Sources */,
 				E5KVC0003 /* SafeKVCSetTrue.m in Sources */,
 				E5F100001 /* NetworkMonitor.swift in Sources */,
@@ -3224,7 +3207,6 @@
 				E5Q000001 /* BPETokenizer.swift in Sources */,
 				E5MDS0003 /* MarkdownStripper.swift in Sources */,
 				E5Q000003 /* AppLogger.swift in Sources */,
-				CL0C0A01 /* ContainerLocator.swift in Sources */,
 				LOC00001 /* AppLocalization.swift in Sources */,
 				F1S00012 /* ChatSessionIdEnvironment.swift in Sources */,
 				E5Q000004 /* FontSettings.swift in Sources */,

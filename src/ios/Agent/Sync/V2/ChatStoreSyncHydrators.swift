@@ -389,7 +389,7 @@ enum ChatStoreSyncHydrators {
         guard parts.count == 2 else { return nil }
         let sessionId = String(parts[0])
         let relativePath = String(parts[1])
-        let library = ContainerLocator.libraryDirectory
+        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         let fileURL = library.appendingPathComponent("MinisChat/minis/\(sessionId)/\(relativePath)")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
@@ -433,7 +433,7 @@ enum ChatStoreSyncHydrators {
             logger.warning("[SyncCore] mergeSessionFile: missing asset for id=\(record.id.id.prefix(16))")
             return
         }
-        let library = ContainerLocator.libraryDirectory
+        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         let destURL = library.appendingPathComponent("MinisChat/minis/\(sessionId)/\(relativePath)")
         let fm = FileManager.default
         let remoteFileUpdatedAt = dateField(record, "updatedAt") ?? record.updatedAt
@@ -569,7 +569,7 @@ enum ChatStoreSyncHydrators {
     // MARK: - ProviderConfig
 
     private static func buildProviderConfig() async -> PortableRecord? {
-        let library = ContainerLocator.libraryDirectory
+        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         let configURL = library.appendingPathComponent("MinisChat/provider-config.json")
         guard let data = try? Data(contentsOf: configURL),
               let json = String(data: data, encoding: .utf8) else { return nil }
@@ -723,7 +723,7 @@ enum ChatStoreSyncHydrators {
     // MARK: - EnvVars
 
     private static func buildEnvVars() async -> PortableRecord? {
-        let library = ContainerLocator.libraryDirectory
+        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         let envURL = library.appendingPathComponent("MinisChat/env-vars.json")
         guard let data = try? Data(contentsOf: envURL),
               let json = String(data: data, encoding: .utf8) else { return nil }

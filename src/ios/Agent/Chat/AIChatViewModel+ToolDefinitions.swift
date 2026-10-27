@@ -266,20 +266,8 @@ extension AIChatViewModel {
                 propertyOrdering: []
             ))
         }
-        if AgentToolSwitch.rootHelper.isEnabled && OpenMinisPrivilegedHelperPackaged() {
-            tools.append(AgentToolDefinition(
-                name: "root_status",
-                description: "Verify the actual uid/euid of an isolated allowlisted iOS root helper in a dedicated TrollStore build. No Frida initialization, shell, file writes or process attachment. Persona/signature failures are reported, never treated as success. This does not make the GUI or iSH guest root. Foreground only; bounded and cancellable. Do not keep retrying failures.",
-                parameters: [:], required: [], propertyOrdering: []
-            ))
-        }
-        if AgentToolSwitch.fridaProcesses.isEnabled && OpenMinisPrivilegedHelperPackaged() {
-            tools.append(AgentToolDefinition(
-                name: "frida_processes",
-                description: "Experimental read-only PID/name query through a separate uid0 Frida Core helper using ONLY an explicit socket-only backend at 127.0.0.1:27042. Requires user-enabled root helper, separate risk acceptance, and installed Frida package metadata exactly 17.9.10 (not listener version attestation). No automatic local discovery, server startup, attach, spawn or scripts. Foreground only, up to 300 entries, hard bounded lifetime. Prior probing caused device reboots; isolation does NOT eliminate server/kernel risk. Run only when requested for authorized diagnostics; do not retry crashes or failures automatically.",
-                parameters: [:], required: [], propertyOrdering: []
-            ))
-        }
+        // Keep process enumeration absent from the schema until the disabled
+        // Frida Core path has passed device-specific reboot-safety validation.
         // [T-host-file-tools] iOS-side read-only filesystem tools. Ungated like
         // the existing file_read/file_write family, but they address the real
         // device filesystem instead of the iSH fakefs — `root` picks which.

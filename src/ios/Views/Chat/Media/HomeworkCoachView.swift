@@ -237,11 +237,14 @@ private struct HomeworkCameraRegionPreview: View {
     let region: CGRect
     let editable: Bool
     let onRegionChanged: (CGRect) -> Void
-    @State private var dragStart: CGRect?
+    @State private var moveStart: CGRect?
+    @State private var resizeStart: CGRect?
+    @State private var draftRegion: CGRect?
 
     var body: some View {
         GeometryReader { proxy in
             let imageRect = fittedRect(imageSize: image?.size ?? CGSize(width: 3, height: 4), in: proxy.size)
+            let visibleRegion = draftRegion ?? region
             ZStack {
                 Color.black
                 if let image {
@@ -258,10 +261,10 @@ private struct HomeworkCameraRegionPreview: View {
                     }
                     .foregroundStyle(.white.opacity(0.8))
                 }
-                let rect = CGRect(x: imageRect.minX + imageRect.width * region.minX,
-                                  y: imageRect.minY + imageRect.height * region.minY,
-                                  width: imageRect.width * region.width,
-                                  height: imageRect.height * region.height)
+                let rect = CGRect(x: imageRect.minX + imageRect.width * visibleRegion.minX,
+                                  y: imageRect.minY + imageRect.height * visibleRegion.minY,
+                                  width: imageRect.width * visibleRegion.width,
+                                  height: imageRect.height * visibleRegion.height)
                 RoundedRectangle(cornerRadius: 4)
                     .stroke(editable ? Color.yellow : Color.green, lineWidth: 3)
                     .background(Color.white.opacity(0.001))
@@ -270,14 +273,14 @@ private struct HomeworkCameraRegionPreview: View {
                     .gesture(DragGesture(minimumDistance: 2)
                         .onChanged { value in
                             guard editable, image != nil else { return }
-                            let start = dragStart ?? region
-                            dragStart = start
-                            onRegionChanged(HomeworkHintPolicy.normalizedRegion(CGRect(
+                            let start = moveStart ?? region
+                            moveStart = start
+                            draftRegion = HomeworkHintPolicy.normalizedRegion(CGRect(
                                 x: start.minX + value.translation.width / max(imageRect.width, 1),
                                 y: start.minY + value.translation.height / max(imageRect.height, 1),
-                                width: start.width, height: start.height)))
+                                width: start.width, height: start.height))
                         }
-                        .onEnded { _ in dragStart = nil })
+                        .onEnded { _ in finishDrag() })
                     .position(x: rect.midX, y: rect.midY)
                 Text(editable ? "拖动框 / 右下角缩放" : "已确认作业区域")
                     .font(.caption2.weight(.semibold))
@@ -294,16 +297,27 @@ private struct HomeworkCameraRegionPreview: View {
                         .background(Color.yellow, in: Circle())
                         .gesture(DragGesture(minimumDistance: 2)
                             .onChanged { value in
-                                let start = dragStart ?? region
-                                dragStart = start
-                                onRegionChanged(HomeworkHintPolicy.normalizedRegion(CGRect(
+                                let start = resizeStart ?? region
+                                resizeStart = start
+                                draftRegion = HomeworkHintPolicy.normalizedRegion(CGRect(
                                     x: start.minX, y: start.minY,
                                     width: min(1 - start.minX, max(0.15, start.width + value.translation.width / max(imageRect.width, 1))),
-                                    height: min(1 - start.minY, max(0.15, start.height + value.translation.height / max(imageRect.height, 1))))))
-                            }.onEnded { _ in dragStart = nil })
+                                    height: min(1 - start.minY, max(0.15, start.height + value.translation.height / max(imageRect.height, 1)))))
+                            }
+                            .onEnded { _ in finishDrag() })
                         .position(x: rect.maxX, y: rect.maxY)
                 }
             }
+        }
+    }
+
+    private func finishDrag() {
+        let finalRegion = draftRegion
+        moveStart = nil
+        resizeStart = nil
+        draftRegion = nil
+        if let finalRegion {
+            onRegionChanged(finalRegion)
         }
     }
 

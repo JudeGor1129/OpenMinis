@@ -375,7 +375,8 @@ private final class AlarmLabelStore {
     private var db: OpaquePointer?
 
     private static func defaultURL() -> URL {
-        let library = ContainerLocator.libraryDirectory
+        let library = FileManager.default
+            .urls(for: .libraryDirectory, in: .userDomainMask)[0]
         let base = library.appendingPathComponent("MinisChat", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("alarm-labels.db")

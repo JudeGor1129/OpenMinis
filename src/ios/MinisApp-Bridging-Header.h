@@ -65,7 +65,6 @@
 // verified Frida devkit is supplied by the build; otherwise it reports the
 // capability as unavailable without changing normal app behavior.
 #import "Diagnostics/FridaCoreBridge.h"
-#import "Diagnostics/PrivilegedHelperBridge.h"
 
 #endif /* MinisApp_Bridging_Header_h */
 

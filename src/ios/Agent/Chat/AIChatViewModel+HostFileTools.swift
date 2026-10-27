@@ -94,7 +94,9 @@ extension AIChatViewModel {
             if trimmed.hasPrefix("/") {
                 candidate = URL(fileURLWithPath: trimmed)
             } else {
-                let docs = ContainerLocator.documentsDirectory
+                guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+                    return HostPathResolution(url: nil, error: "App Documents directory is unavailable.")
+                }
                 candidate = docs.appendingPathComponent(trimmed)
             }
 

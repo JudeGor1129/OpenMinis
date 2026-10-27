@@ -123,7 +123,7 @@ final class MCPStore: ObservableObject {
     /// (invisible to the guest unless registered in fakefs meta.db — the bug
     /// that motivated the move). Kept only for one-time migration.
     nonisolated private static var legacyServersFileURL: URL {
-        ContainerLocator.documentsDirectory
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("alpine-rootfs/data/var/minis/mcp-servers", isDirectory: true)
             .appendingPathComponent("servers.json")
     }
@@ -183,7 +183,7 @@ final class MCPStore: ObservableObject {
 
     /// Reuse the skills.db file for the mcp_session_overrides table.
     private var dbPath: String {
-        let library = ContainerLocator.libraryDirectory
+        let library = fm.urls(for: .libraryDirectory, in: .userDomainMask)[0]
         return library.appendingPathComponent("MinisChat/skills.db").path
     }
 

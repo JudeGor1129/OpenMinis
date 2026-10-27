@@ -28,8 +28,25 @@ PROJECT=src/ios/Minis.xcodeproj/project.pbxproj
 cp "$PROJECT" ci-logs/project-before-ios15.pbxproj
 sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 16\.0;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' "$PROJECT"
 grep -n 'IPHONEOS_DEPLOYMENT_TARGET' "$PROJECT" | tee ci-logs/deployment-targets.txt
-# Frida Core is linked ONLY into a short-lived helper, never the GUI or extensions.
-bash scripts/ios15/build-privileged-helper.sh
+# Add Frida only to the app's existing iSH linker lists, not every extension.
+# Global OTHER_LDFLAGS overrides would also link iSH/Frida into share/widget targets.
+[[ -f deps/include/frida-core.h && -f deps/libs/libfrida-core.a ]] || {
+  echo 'error: verified Frida SDK missing' >&2; exit 1;
+}
+sed -i '' '/"-lfakefs",/a\
+                    "-lfrida-core",\
+                    "-lbsm",\
+                    "-ldl",\
+                    "-lm",\
+                    "-lresolv",\
+                    "-lpthread",\
+                    "-framework",\
+                    "Security",\
+                    "-framework",\
+                    "CoreFoundation",\
+                    "-framework",\
+                    "Foundation",\
+' "$PROJECT"
 plutil -lint "$PROJECT"
 rm -rf build/ios15/Minis.xcresult
 xcodebuild -project src/ios/Minis.xcodeproj \

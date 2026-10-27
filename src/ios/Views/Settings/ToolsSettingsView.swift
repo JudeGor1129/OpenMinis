@@ -32,8 +32,6 @@ enum AgentToolSwitch: String, CaseIterable {
     case interaction = "agent.tools.interaction.enabled"
     case browser = "agent.tools.browser.enabled"
     case frida = "agent.tools.frida.enabled"
-    case rootHelper = "agent.tools.rootHelper.enabled"
-    case fridaProcesses = "agent.tools.fridaProcesses.enabled"
     case agents = "agent.tools.agents.enabled"
 
     var key: String { rawValue }
@@ -63,7 +61,7 @@ enum AgentToolSwitch: String, CaseIterable {
         // Embedded Frida Core can touch local/socket Frida backends. Keep it
         // opt-in until the target device/server combination is verified; a
         // malformed or incompatible frida-server must never be probed by default.
-        case .frida, .rootHelper, .fridaProcesses: return false
+        case .frida: return false
         }
     }
 
@@ -75,11 +73,6 @@ enum AgentToolSwitch: String, CaseIterable {
     /// prompt builder, the dispatcher and the CLI bridges — so the switch and
     /// its default are the whole story.
     nonisolated var isEnabled: Bool {
-        if self == .fridaProcesses {
-            return UserDefaults.standard.bool(forKey: AgentToolSwitch.rootHelper.key)
-                && UserDefaults.standard.bool(forKey: "agent.tools.fridaProcesses.risk.v1")
-                && UserDefaults.standard.bool(forKey: key)
-        }
         return (UserDefaults.standard.object(forKey: key) as? Bool) ?? defaultValue
     }
 
@@ -87,9 +80,7 @@ enum AgentToolSwitch: String, CaseIterable {
     nonisolated static func governing(_ toolName: String) -> AgentToolSwitch? {
         switch toolName {
         case "ask_user": return .interaction
-        case "frida_status": return .frida
-        case "frida_processes": return .fridaProcesses
-        case "root_status": return .rootHelper
+        case "frida_status", "frida_processes": return .frida
         case "browser_use": return .browser
         case SubAgentDefinition.toolName: return .agents
         default: return nil
@@ -153,7 +144,6 @@ struct ToolsSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            PrivilegedToolsSection()
             Section {
                 Toggle("允许语音老师", isOn: $homeworkCoachEnabled)
                     .accessibilityHint("允许前台相机和孩子语音提问；默认关闭")

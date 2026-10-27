@@ -5,19 +5,16 @@ cd "$(dirname "$0")/../.."
 bridge=src/ios/Diagnostics/FridaCoreBridge.m
 view=src/ios/Views/Chat/AIChatView.swift
 persist=src/ios/Agent/Chat/AIChatViewModel+Persistence.swift
-helper=tools/privileged-helper/MinisPrivilegedHelper.m
 grep -q 'OpenMinisFridaProcessesAsync' src/ios/Diagnostics/FridaCoreBridge.h
 grep -q 'OpenMinisFridaDiagnosticsAvailable' src/ios/Diagnostics/FridaCoreBridge.h
-grep -q 'frida_device_enumerate_processes_sync' "$helper"
+grep -q 'frida_device_enumerate_processes_sync' "$bridge"
 grep -q 'dispatch_async(OpenMinisFridaQueue()' "$bridge"
-grep -q 'frida_unref(list)' "$helper"
+grep -q 'g_object_unref(processes)' "$bridge"
 grep -q 'name: "frida_status"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
-grep -q 'name: "frida_processes"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
-grep -q 'name: "root_status"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
-grep -q 'case "root_status", "frida_processes":' src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift
-grep -q 'case "frida_processes": return .fridaProcesses' src/ios/Views/Settings/ToolsSettingsView.swift
-! grep -Eq 'frida_(device_attach|session_create_script|device_spawn)' "$bridge" "$helper"
-! grep -Eq 'frida_init\(|frida_device_manager_new\(' "$bridge"
+! grep -q 'name: "frida_processes"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
+grep -q 'case "frida_status", "frida_processes":' src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift
+grep -q 'case "frida_status", "frida_processes": return .frida' src/ios/Views/Settings/ToolsSettingsView.swift
+! grep -Eq 'frida_(device_attach|session_create_script|device_spawn)' "$bridge"
 grep -q 'Frida Core probing remains disabled' "$bridge"
 grep -q 'OpenMinisFridaServerDiagnostics' "$bridge"
 grep -q 'VStack(alignment: message.role == .user ? .trailing : .leading' "$view"
@@ -38,15 +35,14 @@ grep -q 'let isLast = aIdx == lastAssistantIndex' "$persist"
 printf 'PASS: Frida read-only tool wiring, transcript alignment and cooperative history reconstruction.\n'
 printf 'NOTE: not proof of Swift/ObjC compilation, device process visibility or scroll performance.\n'
 
-# Only the isolated helper may speak Frida; never instantiate a local backend.
-grep -q 'frida_device_manager_new_with_socket_backend_only' "$helper"
-grep -q '127.0.0.1:27042' "$helper"
-grep -q 'g_cancellable_cancel(cancel)' "$helper"
-grep -q 'root_verified' "$helper"
-grep -q 'getuid() == 0 && geteuid() == 0' "$helper"
-! grep -q 'frida_device_manager_get_device_by_type_sync' "$helper"
-! grep -q 'frida_device_manager_enumerate_devices_sync' "$helper"
-printf 'PASS: isolated socket-only backend, real helper UID verification and bounded queries.\n'
+# Diagnose backend visibility without attributing every empty list to sandboxing.
+grep -q 'g_strcmp0(deviceID, "local")' "$bridge"
+grep -q 'g_strcmp0(deviceID, "socket")' "$bridge"
+grep -q 'g_cancellable_cancel(cancel)' "$bridge"
+grep -q 'Empty result from this backend; cause undetermined' "$bridge"
+grep -q 'No built-in backend completed process enumeration' "$bridge"
+! grep -q 'frida_device_manager_get_device_by_type_sync' "$bridge"
+printf 'PASS: built-in backend allowlist, cooperative cancellation and empty-result diagnostics.\n'
 
 # Re-entry should not rebuild full history; streaming tracks content size, not offset.
 ! grep -q 'if cached.isNew || (vm.messages.isEmpty' "$view"

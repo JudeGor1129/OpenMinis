@@ -13,7 +13,7 @@ enum WebAppIconCache {
 
     /// Absolute URL of the cache directory. Idempotently created.
     static func directoryURL() -> URL {
-        let lib = ContainerLocator.libraryDirectory
+        let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         let dir = lib.appendingPathComponent(directoryName, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
@@ -30,7 +30,7 @@ enum WebAppIconCache {
 
     /// Convert a stored relative path to an absolute URL.
     static func resolveURL(relativePath: String) -> URL {
-        let lib = ContainerLocator.libraryDirectory
+        let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
         return lib.appendingPathComponent(relativePath)
     }
 

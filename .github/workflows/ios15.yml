@@ -7,7 +7,6 @@ on:
     paths:
       - 'src/ios/**'
       - 'scripts/ios15/**'
-      - 'tools/privileged-helper/**'
       - 'deps/build_rclone_ios.sh'
       - '.github/workflows/ios15.yml'
   workflow_dispatch:
@@ -43,7 +42,6 @@ jobs:
           mkdir -p ci-logs
           xcodebuild -version | tee ci-logs/xcode.txt
           plutil -lint src/ios/Minis.xcodeproj/project.pbxproj
-          bash scripts/ios15/check-privileged-helper.sh 2>&1 | tee ci-logs/privileged-helper.txt
           bash scripts/ios15/check-homework-coach-source.sh 2>&1 | tee ci-logs/homework-coach.txt
           bash scripts/ios15/check-settings-source.sh 2>&1 | tee ci-logs/settings-source.txt
           bash scripts/ios15/check-group-skills.sh 2>&1 | tee ci-logs/group-skills.txt
