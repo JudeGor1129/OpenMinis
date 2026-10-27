@@ -73,8 +73,13 @@ struct HomeworkCoachView: View {
             Toggle("开启语音提问与讲解", isOn: Binding(
                 get: { controller.isCoaching },
                 set: { controller.setCoachingEnabled($0) }))
-                .disabled(!controller.isCoaching && (!allowed || !controller.regionConfirmed || controller.phase != .preview))
-                .accessibilityHint("需要先打开相机并确认作业区域")
+                .disabled(!allowed || controller.phase == .stopped || controller.phase == .preparing || controller.phase == .stopping)
+                .accessibilityHint(controller.regionConfirmed ? "开启后识别孩子语音提问并结合当前裁剪区域讲解" : "请先打开相机并确认作业区域")
+            if !controller.isCoaching && controller.phase != .stopped && !controller.regionConfirmed {
+                Text("请先点击“确认区域”，再开启语音提问与讲解。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Toggle("画面变化时主动指导", isOn: $controller.autoObserveChanges)
                 .disabled(controller.isCoaching)
             Text("默认只在孩子提问后回答，不打断写作业；需要时可以开启主动观察。")
@@ -104,6 +109,7 @@ struct HomeworkCoachView: View {
             HomeworkCameraRegionPreview(image: controller.preview,
                                         region: controller.region,
                                         editable: !controller.isCoaching,
+                                        onRegionEditingChanged: { controller.setRegionEditing($0) },
                                         onRegionChanged: { controller.setRegion($0) })
                 .frame(height: 310)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -236,19 +242,22 @@ private struct HomeworkCameraRegionPreview: View {
     let image: UIImage?
     let region: CGRect
     let editable: Bool
+    let onRegionEditingChanged: (Bool) -> Void
     let onRegionChanged: (CGRect) -> Void
     @State private var moveStart: CGRect?
     @State private var resizeStart: CGRect?
     @State private var draftRegion: CGRect?
+    @State private var frozenImage: UIImage?
 
     var body: some View {
         GeometryReader { proxy in
-            let imageRect = fittedRect(imageSize: image?.size ?? CGSize(width: 3, height: 4), in: proxy.size)
+            let displayedImage = frozenImage ?? image
+            let imageRect = fittedRect(imageSize: displayedImage?.size ?? CGSize(width: 3, height: 4), in: proxy.size)
             let visibleRegion = draftRegion ?? region
             ZStack {
                 Color.black
-                if let image {
-                    Image(uiImage: image)
+                if let displayedImage {
+                    Image(uiImage: displayedImage)
                         .resizable()
                         .scaledToFit()
                         .frame(width: proxy.size.width, height: proxy.size.height)
@@ -274,6 +283,10 @@ private struct HomeworkCameraRegionPreview: View {
                         .onChanged { value in
                             guard editable, image != nil else { return }
                             let start = moveStart ?? region
+                            if moveStart == nil {
+                                frozenImage = image
+                                onRegionEditingChanged(true)
+                            }
                             moveStart = start
                             draftRegion = HomeworkHintPolicy.normalizedRegion(CGRect(
                                 x: start.minX + value.translation.width / max(imageRect.width, 1),
@@ -298,6 +311,10 @@ private struct HomeworkCameraRegionPreview: View {
                         .gesture(DragGesture(minimumDistance: 2)
                             .onChanged { value in
                                 let start = resizeStart ?? region
+                                if resizeStart == nil {
+                                    frozenImage = image
+                                    onRegionEditingChanged(true)
+                                }
                                 resizeStart = start
                                 draftRegion = HomeworkHintPolicy.normalizedRegion(CGRect(
                                     x: start.minX, y: start.minY,
@@ -316,9 +333,11 @@ private struct HomeworkCameraRegionPreview: View {
         moveStart = nil
         resizeStart = nil
         draftRegion = nil
+        frozenImage = nil
         if let finalRegion {
             onRegionChanged(finalRegion)
         }
+        onRegionEditingChanged(false)
     }
 
     private func fittedRect(imageSize: CGSize, in size: CGSize) -> CGRect {

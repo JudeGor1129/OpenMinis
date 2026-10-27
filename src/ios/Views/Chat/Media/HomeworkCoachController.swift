@@ -304,6 +304,7 @@ final class HomeworkCoachController: NSObject, ObservableObject {
         capture?.setRegion(region)
         regionConfirmed = false
         frameGate.reset()
+        status = "区域已调整；请点击“确认区域”后再开启语音提问与讲解。"
     }
     func setCoachingEnabled(_ enabled: Bool) {
         if !enabled { stop(); return }
