@@ -182,8 +182,13 @@ int main(int argc, char **argv) {
     signal(SIGALRM, watchdog); alarm(120);
     test_identity(); test_dual(); test_limit(); test_timeout(); test_cancel();
     test_status(); test_spawn_and_preflag(); test_persona(); test_fd_rounds();
+#ifndef __APPLE__
+    // Linux CI owns the test process's complete child set. macOS hosted
+    // runners may have unrelated supervision children; every child spawned by
+    // this runner is already checked by reaped() using its exact PID.
     int status; errno = 0;
     CHECK(waitpid(-1, &status, WNOHANG) == -1 && errno == ECHILD);
+#endif
     alarm(0);
     printf("RESULT %s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
     return failures ? 1 : 0;
