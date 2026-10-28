@@ -47,6 +47,9 @@ menu_area=$(sed -n '/private struct MinisLegacyUserMessageActions:/,/private str
 grep -Fq '.contextMenu {' <<< "$menu_area"
 grep -Fq 'Label("编辑并重发（替换后续记录）", systemImage: "pencil")' <<< "$menu_area"
 grep -Fq 'Label("从此处重发（替换后续记录）", systemImage: "arrow.clockwise")' <<< "$menu_area"
+grep -Fq 'Label("删除消息", systemImage: "trash")' <<< "$menu_area"
+grep -Fq 'showDeleteConfirm = true' <<< "$menu_area"
+grep -Fq 'vm.deleteFromMessage(messageID)' <<< "$menu_area"
 grep -Fq 'vm.retryFromMessage(messageID)' <<< "$menu_area"
 grep -Fq 'vm.editMessage(messageID)' <<< "$menu_area"
 grep -Fq 'MinisInvertedContextMenuBridge' "$view"
@@ -75,5 +78,11 @@ grep -Fq 'private struct UserAttachmentTileLayout<Content: View>: View' "$attach
 [ "$(grep -Fc '        UserAttachmentTileLayout(count: attachments.count) {' "$attachments")" -eq 2 ]
 grep -Fq 'LazyVGrid(columns: Array(repeating: GridItem(.fixed(UserAttachmentTileMetrics.tile),' "$attachments"
 require '!message.blocks.contains(where: { $0.kind == .text && !$0.content.isEmpty })'
+grep -Fq 'private var retryAnchorUserID: UUID?' "$view"
+grep -Fq 'Label("重试", systemImage: "arrow.clockwise")' "$view"
+grep -Fq 'message.error != nil' src/ios/Agent/MessageList/CollectionViewMessageListV3.swift
+grep -Fq 'bridge.onRetry = { retryMsg?(anchor) }' src/ios/Agent/MessageList/CollectionViewMessageListV3.swift
+grep -Fq 'Label("删除消息", systemImage: "trash")' src/ios/Views/Chat/ChatMessageViews.swift
+! grep -Fq 'Label("删除消息", systemImage: "trash")' src/ios/Agent/MessageList/CollectionViewMessageListV3.swift
 echo 'PASS: build70 chat bubble metrics, assistant identity, system dividers, metadata range, attachment grid and legacy-renderer source guards.'
 echo 'NOTE: Swift compilation, selection, long-text wrapping and session entry must still be tested on iOS15.'

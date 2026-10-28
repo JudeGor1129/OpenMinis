@@ -478,7 +478,7 @@ struct ChatMessageRow: View {
                     Button(role: .destructive) {
                         showDeleteFromConfirm = true
                     } label: {
-                        Label("Delete From Here", systemImage: "trash")
+                        Label("删除消息", systemImage: "trash")
                     }
                 }
                 if let onCompact {
@@ -505,7 +505,7 @@ struct ChatMessageRow: View {
                 onDeleteFrom?()
             }
         } message: {
-            Text("This message and all messages after it will be deleted. This cannot be undone.")
+            Text("此消息及其后的消息将被删除，且无法撤销。")
         }
     }
 
@@ -807,7 +807,7 @@ struct ChatMessageRow: View {
             Spacer()
 
             if autoRetryAttempt > 0 {
-                Text("Retry in \(autoRetryCountdown)s (\(autoRetryAttempt)/\(AIChatViewModel.retryDelays.count))")
+                Text("\(autoRetryCountdown) 秒后重试（\(autoRetryAttempt)/\(AIChatViewModel.retryDelays.count)）")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
@@ -819,7 +819,7 @@ struct ChatMessageRow: View {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.clockwise")
                             .font(.caption.weight(.semibold))
-                        Text("Retry")
+                        Text("重试")
                             .font(.caption.weight(.semibold))
                     }
                     .foregroundStyle(ChatColors.primaryText)

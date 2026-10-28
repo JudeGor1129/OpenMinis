@@ -7549,6 +7549,7 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
     // prevents every composer/streaming publication from invalidating every
     // visible message row and its UIKit Markdown renderer.
     let vm: AIChatViewModel
+    @State private var showDeleteConfirm = false
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -7557,6 +7558,12 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
                 .contentShape(Rectangle())
                 .contextMenu {
                     messageButtons
+                }
+                .alert("删除消息？", isPresented: $showDeleteConfirm) {
+                    Button("取消", role: .cancel) {}
+                    Button("删除", role: .destructive) { vm.deleteFromMessage(messageID) }
+                } message: {
+                    Text("此消息及其后的消息将被删除，且无法撤销。")
                 }
         } else {
             content
@@ -7575,6 +7582,11 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
                                 isEnabled: !readOnly && !vm.isProcessing && !vm.isRestoringFullHistory && !isQueued
                             ) { vm.retryFromMessage(messageID) },
                             MinisContextMenuAction(
+                                title: "删除消息",
+                                image: "trash",
+                                isEnabled: !readOnly && !vm.isProcessing && !vm.isRestoringFullHistory && !isQueued
+                            ) { showDeleteConfirm = true },
+                            MinisContextMenuAction(
                                 title: "拷贝",
                                 image: "doc.on.doc",
                                 isEnabled: !text.isEmpty
@@ -7583,6 +7595,12 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
                         previewText: text
                     )
                     .allowsHitTesting(true)
+                }
+                .alert("删除消息？", isPresented: $showDeleteConfirm) {
+                    Button("取消", role: .cancel) {}
+                    Button("删除", role: .destructive) { vm.deleteFromMessage(messageID) }
+                } message: {
+                    Text("此消息及其后的消息将被删除，且无法撤销。")
                 }
         }
     }
@@ -7599,6 +7617,12 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
             vm.retryFromMessage(messageID)
         } label: {
             Label("从此处重发（替换后续记录）", systemImage: "arrow.clockwise")
+        }
+        .disabled(readOnly || vm.isProcessing || vm.isRestoringFullHistory || isQueued)
+        Button(role: .destructive) {
+            showDeleteConfirm = true
+        } label: {
+            Label("删除消息", systemImage: "trash")
         }
         .disabled(readOnly || vm.isProcessing || vm.isRestoringFullHistory || isQueued)
         Button {
@@ -7781,6 +7805,13 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
         vm.isProcessing && vm.messages.last?.id == message.id
     }
 
+    /// The user turn that produced this assistant message. Error retry uses
+    /// this stable anchor instead of assuming the error row is the final UI row.
+    private var retryAnchorUserID: UUID? {
+        guard let index = vm.messages.firstIndex(where: { $0.id == message.id }), index > 0 else { return nil }
+        return vm.messages[..<index].last(where: { $0.role == .user && !$0.isQueued })?.id
+    }
+
     // Match the official user row: attachment metadata is not visible text.
     private var userDisplayText: String {
         var text = message.content
@@ -7952,6 +7983,21 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                     Text(error).font(.caption).textSelection(.enabled)
                     Text("请根据错误检查模型配置或网络，再重新发送。")
                         .font(.caption).foregroundColor(.secondary)
+                    if let anchor = retryAnchorUserID, !readOnly {
+                        Button {
+                            vm.retryFromMessage(anchor)
+                            vm.forceScrollToBottom.send()
+                        } label: {
+                            Label("重试", systemImage: "arrow.clockwise")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(Color.orange.opacity(0.16), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(vm.isProcessing || vm.isRestoringFullHistory)
+                        .accessibilityHint("从产生此错误的用户消息重新请求模型")
+                    }
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)

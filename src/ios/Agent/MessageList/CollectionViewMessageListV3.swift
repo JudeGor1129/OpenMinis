@@ -605,7 +605,7 @@ private struct BridgedAssistantFooterV3: View {
             }
             Spacer()
             if bridge.autoRetryAttempt > 0 {
-                Text("Retry in \(bridge.autoRetryCountdown)s (\(bridge.autoRetryAttempt)/\(AIChatViewModel.retryDelays.count))")
+                Text("\(bridge.autoRetryCountdown) 秒后重试（\(bridge.autoRetryAttempt)/\(AIChatViewModel.retryDelays.count)）")
                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(Color.secondary.opacity(0.12)).clipShape(Capsule())
@@ -1744,6 +1744,13 @@ extension CollectionViewMessageListV3 {
             } else if !vm.isProcessing && !vm.isCompacting {
                 if message.role == .user {
                     bridge.onRetry = { retryMsg?(message.id) }
+                } else if message.error != nil,
+                          let messageIndex = vm.messages.firstIndex(where: { $0.id == message.id }),
+                          let anchor = vm.messages[..<messageIndex].last(where: { $0.role == .user && !$0.isQueued })?.id {
+                    // An error row can cease to be `isLast` after a system-info
+                    // row is appended. Retry from its actual user turn so the
+                    // button remains available whenever the model error is visible.
+                    bridge.onRetry = { retryMsg?(anchor) }
                 } else if isLast {
                     bridge.onRetry = { retryLast?() }
                 } else {
