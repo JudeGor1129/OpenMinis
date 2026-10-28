@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B10000000000000000000001 /* BuildModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* BuildModels.swift */; };
+		B10000000000000000000002 /* BuildProjectDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* BuildProjectDetector.swift */; };
+		B10000000000000000000003 /* BuildProviders.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000003 /* BuildProviders.swift */; };
+		B10000000000000000000004 /* BuildVerification.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004 /* BuildVerification.swift */; };
+		B10000000000000000000005 /* BuildRunStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* BuildRunStore.swift */; };
+		B10000000000000000000006 /* ProgrammingBuildTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* ProgrammingBuildTools.swift */; };
+		B10000000000000000000007 /* AIChatViewModel+BuildTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* AIChatViewModel+BuildTools.swift */; };
 		21FED4B7BB6F6D9476C9992E /* VoiceProvider+System.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88993FC8E3F0199C6638F664 /* VoiceProvider+System.swift */; };
 		241D530017827D7F0EB604DE /* VoiceProviderFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2941B643B8A2F048A2B154E /* VoiceProviderFactory.swift */; };
 		2A4FD49F872431D703328384 /* VoiceOutputPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 424510790AF3FB2452D3CCE3 /* VoiceOutputPlayer.swift */; };
@@ -652,6 +659,13 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B20000000000000000000001 /* BuildModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuildModels.swift"; sourceTree = "<group>"; };
+		B20000000000000000000002 /* BuildProjectDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuildProjectDetector.swift"; sourceTree = "<group>"; };
+		B20000000000000000000003 /* BuildProviders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuildProviders.swift"; sourceTree = "<group>"; };
+		B20000000000000000000004 /* BuildVerification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuildVerification.swift"; sourceTree = "<group>"; };
+		B20000000000000000000005 /* BuildRunStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuildRunStore.swift"; sourceTree = "<group>"; };
+		B20000000000000000000006 /* ProgrammingBuildTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProgrammingBuildTools.swift"; sourceTree = "<group>"; };
+		B20000000000000000000007 /* AIChatViewModel+BuildTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+BuildTools.swift"; sourceTree = "<group>"; };
 		0ED149397BEA7E0408C92688 /* GroupVoiceModelsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GroupVoiceModelsView.swift; sourceTree = "<group>"; };
 		0F5379380323FA8C6477708C /* GroupSlotPicker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GroupSlotPicker.swift; sourceTree = "<group>"; };
 		16FF3462D09402F14B610CD6 /* VoiceWaveformView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceWaveformView.swift; sourceTree = "<group>"; };
@@ -1667,6 +1681,7 @@
 			isa = PBXGroup;
 			children = (
 				F1A00014 /* Background */,
+				B30000000000000000000001 /* Build */,
 				BKP000010 /* Backup */,
 				E57000030 /* BrowserUse */,
 				F1A00010 /* Chat */,
@@ -2143,6 +2158,19 @@
 			path = OAuth;
 			sourceTree = "<group>";
 		};
+		B30000000000000000000001 /* Build */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000001 /* BuildModels.swift */,
+				B20000000000000000000002 /* BuildProjectDetector.swift */,
+				B20000000000000000000003 /* BuildProviders.swift */,
+				B20000000000000000000004 /* BuildVerification.swift */,
+				B20000000000000000000005 /* BuildRunStore.swift */,
+				B20000000000000000000006 /* ProgrammingBuildTools.swift */,
+			);
+			path = Build;
+			sourceTree = "<group>";
+		};
 		F1A00010 /* Chat */ = {
 			isa = PBXGroup;
 			children = (
@@ -2154,6 +2182,7 @@
 				E5VMA0015 /* AIChatViewModel+MemoryTools.swift */,
 				E5VMA0016 /* AIChatViewModel+ProviderFactory.swift */,
 				E5VMA0017 /* AIChatViewModel+ToolDefinitions.swift */,
+				B20000000000000000000007 /* AIChatViewModel+BuildTools.swift */,
 				E5VMA0018 /* AIChatViewModel+ToolPreflight.swift */,
 				E5VMB0011 /* AIChatViewModel+Compaction.swift */,
 				E5PPR0011 /* AIChatViewModel+ProgrammaticPrompt.swift */,
@@ -2915,6 +2944,14 @@
 				E5VMA0005 /* AIChatViewModel+MemoryTools.swift in Sources */,
 				E5VMA0006 /* AIChatViewModel+ProviderFactory.swift in Sources */,
 				E5VMA0007 /* AIChatViewModel+ToolDefinitions.swift in Sources */,
+				B10000000000000000000001 /* BuildModels.swift in Sources */,
+				B10000000000000000000002 /* BuildProjectDetector.swift in Sources */,
+				B10000000000000000000003 /* BuildProviders.swift in Sources */,
+				B10000000000000000000004 /* BuildVerification.swift in Sources */,
+				B10000000000000000000005 /* BuildRunStore.swift in Sources */,
+				B10000000000000000000006 /* ProgrammingBuildTools.swift in Sources */,
+				B10000000000000000000007 /* AIChatViewModel+BuildTools.swift in Sources */,
+
 				E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */,
 				E5VMB0001 /* AIChatViewModel+Compaction.swift in Sources */,
 				E5PPR0001 /* AIChatViewModel+ProgrammaticPrompt.swift in Sources */,

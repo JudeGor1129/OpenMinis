@@ -527,6 +527,9 @@ extension AIChatViewModel {
             required: ["tool_title", "path"],
             propertyOrdering: ["tool_title", "path", "root"]
         ))
+        // High-level programming loop tools share the BuildProvider seam; they
+        // intentionally remain separate from model ProviderConfig routing.
+        tools.append(contentsOf: programmingBuildToolDefinitions())
         if AgentToolSwitch.ictrl.isEnabled {
         tools.append(AgentToolDefinition(
             name: "ictrl_call",

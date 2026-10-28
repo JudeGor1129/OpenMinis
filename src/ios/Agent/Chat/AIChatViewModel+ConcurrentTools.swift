@@ -479,6 +479,13 @@ extension AIChatViewModel {
             }
             toolOutput = result.output
             toolSuccess = result.success
+        case "build_project", "run_tests", "analyze_build_log", "verify_artifact":
+            let result = await executeProgrammingBuildTool(name: tu.name, argsJSON: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
         case "ask_user":
             guard AgentToolSwitch.interaction.isEnabled else {
                 toolOutput = Self.toolsDisabledMessage
