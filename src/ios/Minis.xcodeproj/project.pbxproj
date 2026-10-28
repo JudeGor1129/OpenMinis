@@ -494,6 +494,10 @@
 		E5VMC0006 /* AIChatViewModel+BackgroundTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */; };
 		E5VMC0007 /* AIChatViewModel+ConcurrentTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */; };
 		E5VMP0001 /* AIChatViewModel+ProgrammingTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMP0011 /* AIChatViewModel+ProgrammingTools.swift */; };
+		E5SYS0001 /* AIChatViewModel+SystemFileTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SYS0011 /* AIChatViewModel+SystemFileTools.swift */; };
+		E5SYS0002 /* SystemAccessSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SYS0012 /* SystemAccessSettingsView.swift */; };
+		A7F000000000000000000001 /* HelperProcessRunner.c in Sources */ = {isa = PBXBuildFile; fileRef = A7F000000000000000000011 /* HelperProcessRunner.c */; };
+		A7F000000000000000000002 /* PrivilegedHelperBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A7F000000000000000000012 /* PrivilegedHelperBridge.m */; };
 		E5SM0001 /* StructuredMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SM0011 /* StructuredMemory.swift */; };
 		E5SM0002 /* ChatStore+StructuredMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SM0012 /* ChatStore+StructuredMemory.swift */; };
 		E5SM0003 /* AIChatViewModel+StructuredMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SM0013 /* AIChatViewModel+StructuredMemory.swift */; };
@@ -1234,6 +1238,10 @@
 		E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+BackgroundTask.swift"; sourceTree = "<group>"; };
 		E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ConcurrentTools.swift"; sourceTree = "<group>"; };
 		E5VMP0011 /* AIChatViewModel+ProgrammingTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ProgrammingTools.swift"; sourceTree = "<group>"; };
+		E5SYS0011 /* AIChatViewModel+SystemFileTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+SystemFileTools.swift"; sourceTree = "<group>"; };
+		E5SYS0012 /* SystemAccessSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAccessSettingsView.swift; sourceTree = "<group>"; };
+		A7F000000000000000000011 /* HelperProcessRunner.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = HelperProcessRunner.c; sourceTree = "<group>"; };
+		A7F000000000000000000012 /* PrivilegedHelperBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PrivilegedHelperBridge.m; sourceTree = "<group>"; };
 		E5SM0011 /* StructuredMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredMemory.swift; sourceTree = "<group>"; };
 		E5SM0012 /* ChatStore+StructuredMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+StructuredMemory.swift"; sourceTree = "<group>"; };
 		E5SM0013 /* AIChatViewModel+StructuredMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+StructuredMemory.swift"; sourceTree = "<group>"; };
@@ -1853,6 +1861,8 @@
 			isa = PBXGroup;
 			children = (
 				E5FR00011 /* FridaCoreBridge.m */,
+				A7F000000000000000000012 /* PrivilegedHelperBridge.m */,
+				A7F000000000000000000011 /* HelperProcessRunner.c */,
 				E5BRM0011 /* BrowserResourceMonitor.swift */,
 				E5RSD0011 /* ResourceDiagnostics.swift */,
 				E5PPB0011 /* PerfProbe.swift */,
@@ -2210,6 +2220,7 @@
 				E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */,
 				E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */,
 				E5VMP0011 /* AIChatViewModel+ProgrammingTools.swift */,
+				E5SYS0011 /* AIChatViewModel+SystemFileTools.swift */,
 				E5SM0011 /* StructuredMemory.swift */,
 				E5SM0012 /* ChatStore+StructuredMemory.swift */,
 				E5SM0013 /* AIChatViewModel+StructuredMemory.swift */,
@@ -2426,6 +2437,7 @@
 				E5SOUL102 /* SoulSettingsView.swift */,
 				E5SCH0014 /* HelperSettingsView.swift */,
 				E5TLS0011 /* ToolsSettingsView.swift */,
+				E5SYS0012 /* SystemAccessSettingsView.swift */,
 				E5LOCK102 /* FaceIDProtectionSettingsView.swift */,
 				E5LOCK103 /* AppLockOverlay.swift */,
 			);
@@ -2997,6 +3009,10 @@
 				E5VMC0006 /* AIChatViewModel+BackgroundTask.swift in Sources */,
 				E5VMC0007 /* AIChatViewModel+ConcurrentTools.swift in Sources */,
 				E5VMP0001 /* AIChatViewModel+ProgrammingTools.swift in Sources */,
+				E5SYS0001 /* AIChatViewModel+SystemFileTools.swift in Sources */,
+				E5SYS0002 /* SystemAccessSettingsView.swift in Sources */,
+				A7F000000000000000000001 /* HelperProcessRunner.c in Sources */,
+				A7F000000000000000000002 /* PrivilegedHelperBridge.m in Sources */,
 				E5SM0001 /* StructuredMemory.swift in Sources */,
 				E5SM0002 /* ChatStore+StructuredMemory.swift in Sources */,
 				E5SM0003 /* AIChatViewModel+StructuredMemory.swift in Sources */,

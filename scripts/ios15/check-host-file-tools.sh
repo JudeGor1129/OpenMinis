@@ -99,12 +99,13 @@ echo "  all six write entry points present"
 echo "== write safety gates =="
 grep -q 'hostWriteForbiddenPathPrefixes' "$wimpl"
 grep -q 'hostWriteSystemPathPrefixes' "$wimpl"
-grep -q 'allow_system=true' "$wimpl"
+grep -q 'Direct host_write_\* calls never bypass confirmation' "$wimpl"
+grep -q 'Use system_file_write' "$wimpl"
 grep -q 'can never be written by a tool, even with allow_system' "$wimpl"
-# Credential stores must stay refused even when allow_system is set: the
-# forbid list is consulted BEFORE the allowSystem early-return.
-grep -A 12 'hostWriteDenial(for path: String' "$wimpl" | grep -q 'guard !allowSystem else'
-echo "  credential stores unconditionally refused; system area needs allow_system=true"
+# Credential stores and system paths are both consulted before any I/O; the
+# deprecated allow_system field is never an escape hatch.
+! grep -A 16 'hostWriteDenial(for path: String' "$wimpl" | grep -q 'guard !allowSystem else'
+echo "  credentials permanently refused; system paths require confirmed system_file_write"
 
 echo "== destructive defaults =="
 grep -q 'recursive=true to delete it' "$wimpl"

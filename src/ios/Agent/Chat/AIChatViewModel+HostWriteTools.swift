@@ -80,13 +80,11 @@ extension AIChatViewModel {
         where path == forbidden || path.hasPrefix(forbidden + "/") {
             return "Refused: \(path) is protected and can never be written by a tool, even with allow_system."
         }
-        guard !allowSystem else { return nil }
         for system in AIChatViewModel.hostWriteSystemPathPrefixes
         where path == system || path.hasPrefix(system + "/") {
             return "Refused: \(path) is inside the system/jailbreak area (\(system)). "
-                + "This tool only writes here when the call passes allow_system=true, "
-                + "because a bad write to the bootstrap can leave the device unbootable. "
-                + "Re-issue with allow_system=true if that is genuinely what you intend."
+                + "Direct host_write_* calls never bypass confirmation, even when allow_system=\(allowSystem). "
+                + "Use system_file_write with System Access enabled; it enforces path tiers, foreground confirmation, backup, audit and rollback."
         }
         return nil
     }

@@ -153,6 +153,16 @@ struct ToolsSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Section {
+                NavigationLink {
+                    SystemAccessSettingsView()
+                } label: {
+                    Label("系统目录访问", systemImage: "externaldrive.badge.exclamationmark")
+                }
+                Text("独立 root helper、路径分级、前台确认、自动备份、审计与回滚。默认关闭。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             // [T-sub-agents-v1] No Agents section here, and deliberately not
             // even a read-only pointer row: the switch belongs to the Sub Agents
             // page, next to the definitions it governs.

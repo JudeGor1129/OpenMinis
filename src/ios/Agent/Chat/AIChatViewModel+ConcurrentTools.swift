@@ -496,6 +496,13 @@ extension AIChatViewModel {
                     toolOutput += "\n\n" + recovery
                 }
             }
+        case "system_access_status", "system_file_read", "system_file_write", "system_file_rollback", "system_access_audit":
+            let result = await executeSystemAccessTool(name: tu.name, args: toolArgs)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
         case "ask_user":
             guard AgentToolSwitch.interaction.isEnabled else {
                 toolOutput = Self.toolsDisabledMessage

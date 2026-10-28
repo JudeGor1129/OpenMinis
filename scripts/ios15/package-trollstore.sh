@@ -10,6 +10,17 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/Payload" "$OUT" ci-logs
 ditto "$SOURCE" "$STAGE/Payload/Minis.app"
 APP="$STAGE/Payload/Minis.app"
+HELPER=build/ios15/privileged-helper/minis-privileged-helper
+[[ -f "$HELPER" ]] || { echo 'error: system helper build product missing' >&2; exit 1; }
+cp "$HELPER" "$APP/minis-privileged-helper"
+chmod 0755 "$APP/minis-privileged-helper"
+APP_ENT=ci-logs/trollstore-system-access.entitlements
+python3 - "$APP_ENT" <<'PY'
+import plistlib, sys
+with open('src/ios/Minis.entitlements', 'rb') as f: base=plistlib.load(f)
+with open('tools/privileged-helper/TrollStoreApp.extra.entitlements', 'rb') as f: base.update(plistlib.load(f))
+with open(sys.argv[1], 'wb') as f: plistlib.dump(base, f)
+PY
 PLIST=/usr/libexec/PlistBuddy
 minimum="$("$PLIST" -c 'Print :MinimumOSVersion' "$APP/Info.plist")"
 [[ "$minimum" == 15.0 ]] || { echo "error: unexpected app minimum OS: $minimum" >&2; exit 1; }
@@ -45,9 +56,16 @@ if [[ -d "$APP/PlugIns" ]]; then
     codesign --verify --strict "$ext"
   done < <(find "$APP/PlugIns" -maxdepth 1 -type d -name '*.appex' -print0)
 fi
-codesign --force --sign - --timestamp=none --entitlements src/ios/Minis.entitlements "$APP"
+# Generic Mach-O signing above strips private helper claims; restore the
+# dedicated helper signature before sealing the outer app bundle.
+codesign --force --sign - --timestamp=none --identifier com.openminis.app.system-helper \
+  --entitlements tools/privileged-helper/Helper.entitlements "$APP/minis-privileged-helper"
+codesign --verify --strict "$APP/minis-privileged-helper"
+codesign -d --entitlements :- "$APP/minis-privileged-helper" > ci-logs/system-helper-entitlements.plist 2> ci-logs/system-helper-signature.txt
+codesign --force --sign - --timestamp=none --entitlements "$APP_ENT" "$APP"
 codesign --verify --deep --strict "$APP"
 codesign -d --entitlements :- "$APP" > ci-logs/trollstore-entitlements.plist 2> ci-logs/trollstore-signature.txt
+python3 scripts/ios15/verify-privileged-entitlements.py ci-logs/trollstore-entitlements.plist ci-logs/system-helper-entitlements.plist
 IPA="$OUT/Minis-iOS15-TrollStore-test.ipa"
 rm -f "$IPA"
 (cd "$STAGE" && /usr/bin/zip -qry -y "$OLDPWD/$IPA" Payload)
@@ -59,7 +77,13 @@ Install the .ipa through TrollStore, not ordinary certificate sideloading.
 The package uses ad-hoc signatures; successful CI signing is not an install test.
 The iOS 16.2 Live Activity extension is excluded. Apple Weather needs iOS 16+.
 Apple-hosted capabilities (push/iCloud/WeatherKit) are not guaranteed by TrollStore.
-No extra platform, unsandboxed, or private entitlements have been added.
-Test launch, chat sizing/streaming/scrolling, sharing and File Provider on device.
+The GUI receives only platform-application + persona-mgmt in this dedicated
+TrollStore package; it remains container-mapped and never becomes root. A
+separately signed short-lived helper requests a root persona and has no shell,
+delete, chmod/chown, launchctl, Frida, attach or script verbs. System access is
+default OFF, foreground-only, path-tiered, confirmed before write, audited,
+backed up and rollback-capable. Root persona availability is not proven by CI;
+verify identity/read/write/rollback on the target Xina/TrollStore device.
+Test launch, existing chat data, sharing and File Provider before system access.
 NOTES
 echo "IPA ready: $IPA"
