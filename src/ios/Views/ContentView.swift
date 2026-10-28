@@ -1955,26 +1955,6 @@ struct ModernContentView: View {
             }
             .presentationDetents([.medium])
         }
-        .alert(
-            "删除分组时如何处理工作区？",
-            isPresented: Binding(
-                get: { folderWorkspaceDeletePrompt != nil },
-                set: { if !$0 { folderWorkspaceDeletePrompt = nil } }
-            ),
-            presenting: folderWorkspaceDeletePrompt
-        ) { folder in
-            Button("取消", role: .cancel) { folderWorkspaceDeletePrompt = nil }
-            Button("保留工作区") {
-                folderWorkspaceDeletePrompt = nil
-                beginDeleteFolderWithSessions(folder, keepWorkspace: true)
-            }
-            Button("删除工作区", role: .destructive) {
-                folderWorkspaceDeletePrompt = nil
-                beginDeleteFolderWithSessions(folder, keepWorkspace: false)
-            }
-        } message: { folder in
-            Text("“\(folder.name)”的所有会话仍会按下一步确认删除。保留时，工作区会移动到 /var/minis/shared/保留的分组工作区；不保留则同时删除整个分组工作区。")
-        }
         .sheet(isPresented: $showDeleteConfirm, onDismiss: {
             if deleteInfo == nil {
                 // Deletion was performed — reset selection mode after sheet is fully dismissed
@@ -2032,6 +2012,10 @@ struct ModernContentView: View {
         .sheet(item: $folderToConfigure) { folder in
             MinisGroupConfigurationView(folder: folder)
         }
+        .modifier(FolderWorkspaceDeletePrompt(
+            folder: $folderWorkspaceDeletePrompt,
+            onChoice: beginDeleteFolderWithSessions
+        ))
         .modifier(FolderAlertsModifier(
             folderToRename: $folderToRename,
             renameFolderText: $renameFolderText,
@@ -8923,6 +8907,37 @@ private struct ForceSyncToastBanner: View {
         .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
         .padding(.horizontal, 16)
         .frame(maxWidth: 480)
+    }
+}
+
+
+/// Separate presentation modifier keeps the large sidebar root body below the
+/// Swift type-checker's expression-complexity threshold.
+private struct FolderWorkspaceDeletePrompt: ViewModifier {
+    @Binding var folder: ChatFolder?
+    let onChoice: (ChatFolder, Bool) -> Void
+
+    func body(content: Content) -> some View {
+        content.alert(
+            "删除分组时如何处理工作区？",
+            isPresented: Binding(
+                get: { folder != nil },
+                set: { if !$0 { folder = nil } }
+            ),
+            presenting: folder
+        ) { selected in
+            Button("取消", role: .cancel) { folder = nil }
+            Button("保留工作区") {
+                folder = nil
+                onChoice(selected, true)
+            }
+            Button("删除工作区", role: .destructive) {
+                folder = nil
+                onChoice(selected, false)
+            }
+        } message: { selected in
+            Text("“\(selected.name)”的所有会话仍会按下一步确认删除。保留时，工作区会移动到 /var/minis/shared/保留的分组工作区；不保留则同时删除整个分组工作区。")
+        }
     }
 }
 
