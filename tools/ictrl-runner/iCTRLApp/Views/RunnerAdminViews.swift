@@ -355,8 +355,8 @@ struct RunnerLogsView: View {
         .navigationTitle(L10n.t(.runnerLogs))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if admin.isPaired {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if admin.isPaired {
                     Button {
                         live.toggle()
                     } label: {

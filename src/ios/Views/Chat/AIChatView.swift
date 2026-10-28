@@ -5308,7 +5308,7 @@ private struct SiriFlowBorder: View {
     var body: some View {
         Group {
             if isProcessing {
-                TimelineView(.periodic(from: .now, by: 1.0 / 24.0)) { context in
+                TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
                     let elapsed = max(0, context.date.timeIntervalSince(cycleStart))
                     let phase = elapsed.truncatingRemainder(dividingBy: cycleDuration) / cycleDuration
                     // Starts at zero, breathes in to full colour, then fades

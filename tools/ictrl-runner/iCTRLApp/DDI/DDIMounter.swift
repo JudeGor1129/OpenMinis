@@ -365,8 +365,10 @@ final class DDIMounter: ObservableObject {
         try check("Reading Lockdown pairing file") {
             idevice_pairing_file_read(pairingPath, &pairing)
         }
+        // Keep the optional `var` as the single owner seen by `defer`; the
+        // unwrapped copy uses a distinct name so it does not shadow it.
         defer { if let pairing { idevice_pairing_file_free(pairing) } }
-        guard let pairing else { throw DDIError.ffi("Reading Lockdown pairing file", "no handle") }
+        guard let pairingHandle = pairing else { throw DDIError.ffi("Reading Lockdown pairing file", "no handle") }
 
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
@@ -379,11 +381,14 @@ final class DDIMounter: ObservableObject {
         try withUnsafePointer(to: &addr) { ptr in
             try ptr.withMemoryRebound(to: idevice_sockaddr.self, capacity: 1) { sa in
                 try check("Creating classic Lockdown connection") {
-                    idevice_tcp_provider_new(sa, pairing, "iCTRL", &provider)
+                    idevice_tcp_provider_new(sa, pairingHandle, "iCTRL", &provider)
                 }
             }
         }
-        // idevice_tcp_provider_new consumes the pairing handle on success.
+        // idevice_tcp_provider_new consumes the pairing handle on success
+        // (idevice v0.1.68 ffi/src/provider.rs). Clear the outer optional so
+        // the deferred free above does not double-free it; on failure `check`
+        // throws first and the deferred free still releases the handle.
         pairing = nil
         defer { if let provider { idevice_provider_free(provider) } }
         guard let provider else { throw DDIError.tunnelUnavailable("TCP provider returned no handle") }
