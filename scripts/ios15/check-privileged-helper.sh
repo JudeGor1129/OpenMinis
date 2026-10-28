@@ -18,6 +18,8 @@ grep -q 'waitpid' "$runner"
 grep -q 'requestPath' "$runner"
 grep -q 'NSFilePosixPermissions:@0700' "$bridge"
 grep -q 'chmod(temp.fileSystemRepresentation, 0600)' "$bridge"
+grep -q 'S_IXUSR' "$bridge"
+! grep -q 'access(path.fileSystemRepresentation, X_OK)' "$bridge"
 grep -q 'UIApplicationDidEnterBackgroundNotification' "$bridge"
 grep -q 'OpenMinisCancelPrivilegedRequests' "$bridge"
 for action in identity read write rollback; do grep -q "@\"$action\"" "$helper"; done

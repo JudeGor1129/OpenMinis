@@ -23,7 +23,7 @@ BOOL OpenMinisPrivilegedHelperPackaged(void) {
     struct stat st;
     return lstat(path.fileSystemRepresentation, &st) == 0 && S_ISREG(st.st_mode)
         && !S_ISLNK(st.st_mode) && !(st.st_mode & (S_IWGRP | S_IWOTH))
-        && access(path.fileSystemRepresentation, X_OK) == 0;
+        && (st.st_mode & S_IXUSR) != 0;
 }
 NSString *OpenMinisNativeIdentity(void) {
     return [NSString stringWithFormat:@"GUI uid=%u euid=%u gid=%u egid=%u; helper=%@",
