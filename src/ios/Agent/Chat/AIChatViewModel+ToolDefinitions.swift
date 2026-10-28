@@ -25,6 +25,89 @@ extension AIChatViewModel {
         return model.capabilities.supportedModalities.contains(.imageInput)
     }
 
+    // MARK: - Structured programming tools
+
+    private func programmingToolDefinitions() -> [AgentToolDefinition] {
+        let role = AgentToolParam(type: .string, description: "Optional workflow role policy. RepositoryExplorer, Planner, Reviewer, and ReleaseVerifier are read-only for source changes; only Implementer and Debugger may apply_patch.", enumValues: ProgrammingWorkflowRole.allCases.map(\.rawValue))
+        let project = AgentToolParam(type: .string, description: "Absolute project path. A file path is accepted and canonicalized to its Git/project root.")
+        return [
+            AgentToolDefinition(
+                name: "inspect_project",
+                description: "Identify and incrementally index a project from Package.swift, .xcodeproj/project.pbxproj, project.yml, Podfile, Makefile, Cargo.toml, and Theos markers. Returns canonical path, language stack, modules, dependencies, Git remote/branch/commit, candidate build/test/lint commands, and symbol-index status. The optional semantic seam reports unavailable honestly and falls back to lexical indexing.",
+                parameters: [
+                    "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word user-visible summary."),
+                    "path": project,
+                    "max_depth": AgentToolParam(type: .integer, description: "Manifest discovery depth, 1...8 (default 4)."),
+                    "refresh_index": AgentToolParam(type: .boolean, description: "Rebuild every indexed file instead of reusing entries whose SHA-256 is unchanged."),
+                    "role": role,
+                ], required: ["tool_title", "path"], propertyOrdering: ["tool_title", "path", "max_depth", "refresh_index", "role"]),
+            AgentToolDefinition(
+                name: "search_code",
+                description: "Search a lightweight incremental symbol index and bounded source context. Returns path, line range, commit, SHA-256 file hash, symbol/kind, score, and a small snippet. mode=semantic uses an embedding provider only when one is actually available; otherwise the result explicitly says it fell back to symbol + BM25-like lexical + keyword search.",
+                parameters: [
+                    "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word user-visible summary."),
+                    "path": project,
+                    "query": AgentToolParam(type: .string, description: "Symbol, function, type, or text query (max 500 characters)."),
+                    "mode": AgentToolParam(type: .string, description: "auto, symbol, keyword, or semantic.", enumValues: ["auto", "symbol", "keyword", "semantic"]),
+                    "limit": AgentToolParam(type: .integer, description: "Maximum hits, 1...50 (default 20)."),
+                    "context_lines": AgentToolParam(type: .integer, description: "Context lines around each hit, 0...4 (default 2)."),
+                    "role": role,
+                ], required: ["tool_title", "path", "query"], propertyOrdering: ["tool_title", "path", "query", "mode", "limit", "context_lines", "role"]),
+            AgentToolDefinition(
+                name: "project_read_file",
+                description: "Read a bounded UTF-8 source-file range inside a project. Returns canonical/relative path, lines, commit, and SHA-256 required by apply_patch. Rejects project-root escapes and binary files.",
+                parameters: [
+                    "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word user-visible summary."),
+                    "path": project,
+                    "file": AgentToolParam(type: .string, description: "Project-relative or absolute file path; must remain inside the project."),
+                    "start_line": AgentToolParam(type: .integer, description: "1-based first line (default 1)."),
+                    "max_lines": AgentToolParam(type: .integer, description: "Maximum lines, 1...1000 (default 200)."),
+                    "max_bytes": AgentToolParam(type: .integer, description: "Maximum returned bytes, 256...64000 (default 16000)."),
+                    "role": role,
+                ], required: ["tool_title", "path", "file"], propertyOrdering: ["tool_title", "path", "file", "start_line", "max_lines", "max_bytes", "role"]),
+            AgentToolDefinition(
+                name: "apply_patch",
+                description: "Atomically replace exact text in one project file. Requires the SHA-256 returned by project_read_file, rejects a hash race and pre-existing uncommitted changes unless allow_dirty is explicitly true, serializes writes per canonical project, verifies temporary and landed bytes, fails without overwriting, and returns the real git diff.",
+                parameters: [
+                    "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word user-visible summary."),
+                    "path": project,
+                    "file": AgentToolParam(type: .string, description: "Project-relative or absolute target file."),
+                    "expected_hash": AgentToolParam(type: .string, description: "Exact SHA-256 from the latest project_read_file/search_code result."),
+                    "old_text": AgentToolParam(type: .string, description: "Exact non-empty text to replace."),
+                    "new_text": AgentToolParam(type: .string, description: "Replacement text; may be empty."),
+                    "replace_all": AgentToolParam(type: .boolean, description: "Replace all matches; default false requires exactly one."),
+                    "allow_dirty": AgentToolParam(type: .boolean, description: "Explicitly permit editing an already modified/untracked target after preserving the user's changes (default false)."),
+                    "role": role,
+                ], required: ["tool_title", "path", "file", "expected_hash", "old_text", "new_text"], propertyOrdering: ["tool_title", "path", "file", "expected_hash", "old_text", "new_text", "replace_all", "allow_dirty", "role"]),
+            gitToolDefinition(name: "git_status", description: "Return structured branch, commit, clean flag, porcelain status, and exit code.", project: project, role: role),
+            AgentToolDefinition(
+                name: "git_diff", description: "Return a structured real Git diff and exit code, optionally staged/stat-only or scoped to one project file.",
+                parameters: [
+                    "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word user-visible summary."), "path": project,
+                    "file": AgentToolParam(type: .string, description: "Optional project-relative file."),
+                    "staged": AgentToolParam(type: .boolean, description: "Diff the index (--cached)."),
+                    "stat_only": AgentToolParam(type: .boolean, description: "Return --stat only."), "role": role,
+                ], required: ["tool_title", "path"], propertyOrdering: ["tool_title", "path", "file", "staged", "stat_only", "role"]),
+            commandToolDefinition(name: "run_lint", description: "Run a supplied or detected lint command from the canonical project root. Returns command, exit code, duration, bounded tail, and externalized full-log path.", project: project, role: role),
+            commandToolDefinition(name: "run_tests", description: "Run a supplied or detected test command from the canonical project root. Returns command, exit code, duration, bounded tail, and externalized full-log path.", project: project, role: role),
+        ]
+    }
+
+    private func gitToolDefinition(name: String, description: String, project: AgentToolParam, role: AgentToolParam) -> AgentToolDefinition {
+        AgentToolDefinition(name: name, description: description,
+                            parameters: ["tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word user-visible summary."), "path": project, "role": role],
+                            required: ["tool_title", "path"], propertyOrdering: ["tool_title", "path", "role"])
+    }
+
+    private func commandToolDefinition(name: String, description: String, project: AgentToolParam, role: AgentToolParam) -> AgentToolDefinition {
+        AgentToolDefinition(name: name, description: description,
+                            parameters: [
+                                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word user-visible summary."), "path": project,
+                                "command": AgentToolParam(type: .string, description: "Optional command override (max 1000 characters). Existing shell safety/timeout constraints still apply."),
+                                "timeout": AgentToolParam(type: .integer, description: "Timeout seconds, 1...7200."), "role": role,
+                            ], required: ["tool_title", "path"], propertyOrdering: ["tool_title", "path", "command", "timeout", "role"])
+    }
+
     // MARK: - Tool Definitions (Canonical)
 
     func makeAgentTools() -> [AgentToolDefinition] {
@@ -131,6 +214,7 @@ extension AIChatViewModel {
                 propertyOrdering: ["tool_title", "action", "tab_id", "url", "selector", "text", "coordinate_x", "coordinate_y", "direction", "amount", "scroll_count", "item_selector", "script", "user_agent", "max_depth", "keywords", "fuzzy", "cookies", "timeout", "viewport_width", "viewport_height", "reset", "full_page"]
             ),
         ]
+        tools.append(contentsOf: programmingToolDefinitions())
 
         if includeMemoryTools {
             tools.append(AgentToolDefinition(

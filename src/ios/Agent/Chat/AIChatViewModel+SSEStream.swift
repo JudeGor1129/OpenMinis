@@ -458,6 +458,8 @@ extension AIChatViewModel {
                     let blockKind: AssistantBlockKind = switch name {
                     case "shell_execute": .shellTool(command: "")
                     case "file_read": .fileReadTool(path: "")
+                    case "project_read_file": .fileReadTool(path: "")
+                    case "apply_patch": .fileEditTool(path: "")
                     case "file_write": .fileWriteTool(path: "")
                     case "file_edit": .fileEditTool(path: "")
                     case "browser_use": .browserTool(action: "")
@@ -467,7 +469,7 @@ extension AIChatViewModel {
                     case SubAgentDefinition.toolName: .delegateTool(title: "")
                     default: .shellTool(command: name)
                     }
-                    if name == "file_write" || name == "file_edit" {
+                    if name == "file_write" || name == "file_edit" || name == "apply_patch" {
                         lastFileWriteStreamUpdate = .distantPast
                     }
                     lastToolInputStreamUpdate = .distantPast
@@ -655,12 +657,12 @@ extension AIChatViewModel {
                 // throttled branch must be a true no-op (no MainActor hop, no
                 // string scan, no objectWillChange).
                 let now = Date()
-                let throttleInterval: TimeInterval = (name == "file_write" || name == "file_edit") ? 1.0 : 0.20
-                let lastUpdate = (name == "file_write" || name == "file_edit") ? lastFileWriteStreamUpdate : lastToolInputStreamUpdate
+                let throttleInterval: TimeInterval = (name == "file_write" || name == "file_edit" || name == "apply_patch") ? 1.0 : 0.20
+                let lastUpdate = (name == "file_write" || name == "file_edit" || name == "apply_patch") ? lastFileWriteStreamUpdate : lastToolInputStreamUpdate
                 if now.timeIntervalSince(lastUpdate) < throttleInterval {
                     continue
                 }
-                if name == "file_write" || name == "file_edit" {
+                if name == "file_write" || name == "file_edit" || name == "apply_patch" {
                     lastFileWriteStreamUpdate = now
                 } else {
                     lastToolInputStreamUpdate = now
@@ -694,8 +696,16 @@ extension AIChatViewModel {
                         if let path = extractPartialStringValue("path", from: accumulated) {
                             return .fileEditTool(path: path)
                         }
+                    case "apply_patch":
+                        if let path = extractPartialStringValue("file", from: accumulated) {
+                            return .fileEditTool(path: path)
+                        }
                     case "file_read":
                         if let path = extractPartialStringValue("path", from: accumulated) {
+                            return .fileReadTool(path: path)
+                        }
+                    case "project_read_file":
+                        if let path = extractPartialStringValue("file", from: accumulated) {
                             return .fileReadTool(path: path)
                         }
                     case "shell_execute":
@@ -724,7 +734,7 @@ extension AIChatViewModel {
                 let partialURL: String? = (name == "browser_use")
                     ? extractPartialStringValue("url", from: accumulated)
                     : nil
-                let streamingContent: String? = (name == "file_write" || name == "file_edit") ? extractPartialStringValue("old_string", from: accumulated) ?? extractPartialStringValue("content", from: accumulated) : nil
+                let streamingContent: String? = (name == "file_write" || name == "file_edit" || name == "apply_patch") ? extractPartialStringValue("old_string", from: accumulated) ?? extractPartialStringValue("content", from: accumulated) : nil
                 let shouldScroll = now.timeIntervalSince(lastToolInputScroll) >= 0.10
                 if shouldScroll { lastToolInputScroll = now }
                 await MainActor.run {
@@ -813,8 +823,16 @@ extension AIChatViewModel {
                         if let path = args["path"] as? String {
                             messages[msgIdx].blocks[blockIdx].kind = .fileEditTool(path: path)
                         }
+                    case "apply_patch":
+                        if let path = args["file"] as? String {
+                            messages[msgIdx].blocks[blockIdx].kind = .fileEditTool(path: path)
+                        }
                     case "file_read":
                         if let path = args["path"] as? String {
+                            messages[msgIdx].blocks[blockIdx].kind = .fileReadTool(path: path)
+                        }
+                    case "project_read_file":
+                        if let path = args["file"] as? String {
                             messages[msgIdx].blocks[blockIdx].kind = .fileReadTool(path: path)
                         }
                     case "shell_execute":
@@ -1106,6 +1124,12 @@ extension AIChatViewModel {
         case "file_read":
             let d = detail ?? fileName(args["path"] as? String)
             return zh ? "正在读取文件:\(d)" : "Reading file: \(d)"
+        case "project_read_file":
+            let d = detail ?? fileName(args["file"] as? String)
+            return zh ? "正在读取项目文件:\(d)" : "Reading project file: \(d)"
+        case "apply_patch":
+            let d = detail ?? fileName(args["file"] as? String)
+            return zh ? "正在应用安全补丁:\(d)" : "Applying safe patch: \(d)"
         case "file_write":
             let d = detail ?? fileName(args["path"] as? String)
             return zh ? "正在写入文件:\(d)" : "Writing file: \(d)"
@@ -1132,6 +1156,10 @@ extension AIChatViewModel {
             return "iCTRL: \((args["action"] as? String) ?? "call")..."
         case "file_read":
             return "Reading \((args["path"] as? String) ?? "?")..."
+        case "project_read_file":
+            return "Reading project file \((args["file"] as? String) ?? "?")..."
+        case "apply_patch":
+            return "Applying patch to \((args["file"] as? String) ?? "?")..."
         case "file_write":
             return "Writing \((args["path"] as? String) ?? "?")..."
         case "file_edit":
@@ -1166,6 +1194,14 @@ extension AIChatViewModel {
         case "file_read":
             if let val = extractPartialStringValue("path", from: json) {
                 return ("Reading \(val)...", desc)
+            }
+        case "project_read_file":
+            if let val = extractPartialStringValue("file", from: json) {
+                return ("Reading project file \(val)...", desc)
+            }
+        case "apply_patch":
+            if let val = extractPartialStringValue("file", from: json) {
+                return ("Applying patch to \(val)...", desc)
             }
         case "file_write":
             let path = extractPartialStringValue("path", from: json)

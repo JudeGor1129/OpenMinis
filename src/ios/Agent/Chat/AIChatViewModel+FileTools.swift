@@ -18,7 +18,7 @@ extension AIChatViewModel {
     // then ensure metadata exists in meta.db for new files. This avoids all
     // shell escaping issues and is significantly faster than shell commands.
 
-    struct FileToolResult {
+    struct FileToolResult: Sendable {
         let output: String
         let success: Bool
     }

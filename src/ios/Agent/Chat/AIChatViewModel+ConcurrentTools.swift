@@ -225,7 +225,7 @@ extension AIChatViewModel {
         // is at worst a wasted round-trip, and refusing them would regress
         // recoveries that work today.
         if let tag = truncationRepairTag,
-           tu.name == "file_write" || tu.name == "file_edit" {
+           tu.name == "file_write" || tu.name == "file_edit" || tu.name == "apply_patch" {
             let path = (toolArgs["path"] as? String) ?? (toolArgs["file_path"] as? String) ?? ""
             AppLogger(category: "ToolPreflight").warning(
                 "[ToolRepair] REFUSED truncated write tool=\(tu.name) id=\(tu.id) strategy=\(tag) path=\(path)"
@@ -788,6 +788,15 @@ extension AIChatViewModel {
                 ctLogger.info("[EnvVarRedact] shell_execute: masked \(redactHits) env-var value(s) in tool result")
             }
             toolOutput = redactedOut
+
+        case "inspect_project", "search_code", "project_read_file", "apply_patch",
+             "git_status", "git_diff", "run_lint", "run_tests":
+            let result = await executeProgrammingTool(name: tu.name, args: toolArgs)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = result.output
+            }
+            toolOutput = result.output
+            toolSuccess = result.success
 
         case "file_read":
             let fileResult: FileToolResult
