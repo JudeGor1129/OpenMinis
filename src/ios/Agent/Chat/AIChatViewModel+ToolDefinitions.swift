@@ -89,7 +89,6 @@ extension AIChatViewModel {
                     "stat_only": AgentToolParam(type: .boolean, description: "Return --stat only."), "role": role,
                 ], required: ["tool_title", "path"], propertyOrdering: ["tool_title", "path", "file", "staged", "stat_only", "role"]),
             commandToolDefinition(name: "run_lint", description: "Run a supplied or detected lint command from the canonical project root. Returns command, exit code, duration, bounded tail, and externalized full-log path.", project: project, role: role),
-            commandToolDefinition(name: "run_tests", description: "Run a supplied or detected test command from the canonical project root. Returns command, exit code, duration, bounded tail, and externalized full-log path.", project: project, role: role),
         ]
     }
 

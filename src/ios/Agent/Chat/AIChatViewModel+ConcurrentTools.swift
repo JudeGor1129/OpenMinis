@@ -797,7 +797,7 @@ extension AIChatViewModel {
             toolOutput = redactedOut
 
         case "inspect_project", "search_code", "project_read_file", "apply_patch",
-             "git_status", "git_diff", "run_lint", "run_tests":
+             "git_status", "git_diff", "run_lint":
             let result = await executeProgrammingTool(name: tu.name, args: toolArgs)
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].content = result.output

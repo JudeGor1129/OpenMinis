@@ -43,7 +43,7 @@ enum ProgrammingRolePolicy {
         switch tool {
         case "apply_patch":
             return role == .implementer || role == .debugger
-        case "run_lint", "run_tests":
+        case "run_lint":
             return [.implementer, .builder, .debugger, .reviewer, .releaseVerifier].contains(role)
         default:
             return false
@@ -276,7 +276,6 @@ extension AIChatViewModel {
             case "git_status": return try await runGitStatus(args)
             case "git_diff": return try await runGitDiff(args)
             case "run_lint": return try await runProjectCommand(args, kind: "lint")
-            case "run_tests": return try await runProjectCommand(args, kind: "tests")
             default:
                 return programmingJSON(["ok": false, "error": "unknown_programming_tool"], success: false)
             }

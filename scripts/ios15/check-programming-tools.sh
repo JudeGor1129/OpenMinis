@@ -12,10 +12,11 @@ for f in "$impl" "$defs" "$dispatch" "$stream" "$tests"; do
   [[ -s "$f" ]] || { echo "FAIL: missing programming-tools file: $f"; exit 1; }
 done
 for tool in inspect_project search_code project_read_file apply_patch git_status git_diff run_lint run_tests; do
-  grep -q "name: \"$tool\"" "$defs" || { echo "FAIL: missing tool definition $tool"; exit 1; }
+  grep -Rq "name: \"$tool\"" src/ios/Agent/Chat/AIChatViewModel+*.swift || { echo "FAIL: missing tool definition $tool"; exit 1; }
   grep -q "\"$tool\"" "$dispatch" || { echo "FAIL: missing tool dispatch $tool"; exit 1; }
 done
 [[ "$(grep -c 'name: "file_read"' "$defs")" -eq 1 ]] || { echo 'FAIL: canonical file_read must be registered exactly once'; exit 1; }
+[[ "$(grep -Rh 'name: "run_tests"' src/ios/Agent/Chat/AIChatViewModel+*.swift | wc -l | tr -d ' ')" -eq 1 ]] || { echo 'FAIL: run_tests must have one canonical definition'; exit 1; }
 grep -q 'caseInsensitiveCompare(expectedHash)' "$impl"
 grep -q 'status --porcelain=v1' "$impl"
 grep -q 'replaceItemAt' "$impl"
