@@ -1290,6 +1290,12 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         taskGroupID.map { MinisGroupConfigurationStore.memoryDirectory($0) }
             ?? Self.minisMemoryPersistentDir
     }
+    var sessionWorkspaceDirectory: URL {
+        if let groupID = taskGroupID ?? initialGroupId {
+            return GroupWorkspaceStore.ensure(folderID: groupID)
+        }
+        return Self.minisWorkspacePersistentDir(for: sessionId ?? draftId ?? "unknown")
+    }
 
     func refreshGroupContext() async {
         let owner = helperConfig?.parentSessionId ?? sessionId
@@ -1308,7 +1314,13 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             catch { logger.error("Group memory initialization failed: \(error.localizedDescription)") }
         }
         if let sid = sessionId {
+            if folderID != nil { GroupWorkspaceStore.adoptSessionWorkspace(sessionID: sid, into: sessionWorkspaceDirectory) }
             MinisFsRouter.shared.setMemoryDirectory(sessionMemoryDirectory, for: sid)
+            MinisFsRouter.shared.setWorkspaceDirectory(sessionWorkspaceDirectory, for: sid)
+        }
+        if let owner, owner != sessionId {
+            MinisFsRouter.shared.setMemoryDirectory(sessionMemoryDirectory, for: owner)
+            MinisFsRouter.shared.setWorkspaceDirectory(sessionWorkspaceDirectory, for: owner)
         }
     }
 
@@ -2283,7 +2295,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // Global directories resolve without session ID
         let globalDirs = ["skills", "shared"]
         if globalDirs.contains(host) {
-            let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            let library = ContainerLocator.libraryDirectory
             for subPath in subPaths {
                 let globalURL = library.appendingPathComponent("MinisChat/\(host)", isDirectory: true)
                     .appendingPathComponent(subPath)
@@ -2417,7 +2429,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             + "Device languages: \((UserDefaults.standard.object(forKey: "AppleLanguages") as? [String] ?? Locale.preferredLanguages).joined(separator: ", ")).\n\n"
             + "Shared directory /var/minis/ (bidirectional read/write between shell and app):\n"
             + "  /var/minis/attachments/ — Media files (images, audio, video). Display inline with ![desc](minis://attachments/filename).\n"
-            + "  /var/minis/workspace/   — Working files (scripts, data, configs). Link with [name](minis://workspace/filename).\n"
+            + "  /var/minis/workspace/   — Working files (shared by every chat in the same group; ungrouped chats stay isolated). Link with [name](minis://workspace/filename).\n"
             + "  /var/minis/offloads/    — Auto-saved large outputs. Read with file_read.\n"
             + "  /var/minis/browser/     — Browser screenshots and extracts.\n"
             + "  /var/minis/shared/      — Cross-session shared storage for artifacts and documents. Organize by project or topic (e.g. shared/myproject/, shared/datasets/). Do NOT store temporary files here.\n"
@@ -4696,7 +4708,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 let fileURL = uploadsDir.appendingPathComponent(fileName)
                 guard FileManager.default.fileExists(atPath: fileURL.path) else { continue }
                 // Copy to Caches so the normal send() flow works
-                let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                let cacheDir = ContainerLocator.cachesDirectory
                     .appendingPathComponent("InputAttachments")
                 try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
                 let cacheURL = cacheDir.appendingPathComponent(fileName)

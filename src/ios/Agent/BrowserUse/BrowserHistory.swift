@@ -37,7 +37,7 @@ final class BrowserHistoryStore: ObservableObject {
     private static let retentionDays = 7
 
     private static var storeURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = ContainerLocator.applicationSupportDirectory
             .appendingPathComponent("MinisChat", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("browser_history.json")

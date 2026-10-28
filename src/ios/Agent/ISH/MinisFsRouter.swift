@@ -21,7 +21,6 @@ final class MinisFsRouter: @unchecked Sendable {
     private let perSessionBuckets: [(linuxPrefix: String, hostSubdir: String)] = [
         (AIChatViewModel.minisOffloadsLinuxDir,    "offloads"),
         (AIChatViewModel.minisAttachmentsLinuxDir, "attachments"),
-        (AIChatViewModel.minisWorkspaceLinuxDir,   "workspace"),
         (AIChatViewModel.minisBrowserLinuxDir,     "browser"),
     ]
 
@@ -30,6 +29,17 @@ final class MinisFsRouter: @unchecked Sendable {
     private var contextToSid: [UInt64: String] = [:]
     private var sidToContext: [String: UInt64] = [:]
     private var memoryDirectories: [String: URL] = [:]
+    private var workspaceDirectories: [String: URL] = [:]
+
+    func setWorkspaceDirectory(_ directory: URL, for sid: String) {
+        lock.lock(); defer { lock.unlock() }
+        workspaceDirectories[sid] = directory
+    }
+
+    func workspaceDirectory(for sid: String) -> URL? {
+        lock.lock(); defer { lock.unlock() }
+        return workspaceDirectories[sid]
+    }
 
     func setMemoryDirectory(_ directory: URL, for sid: String) {
         lock.lock(); defer { lock.unlock() }
@@ -110,6 +120,11 @@ final class MinisFsRouter: @unchecked Sendable {
            let directory = memoryDirectory(for: sid) {
             return directory.path + String(guestPath.dropFirst(prefix.count))
         }
+        let workspacePrefix = AIChatViewModel.minisWorkspaceLinuxDir
+        if (guestPath == workspacePrefix || guestPath.hasPrefix(workspacePrefix + "/")),
+           let directory = workspaceDirectory(for: sid) {
+            return directory.path + String(guestPath.dropFirst(workspacePrefix.count))
+        }
         for bucket in perSessionBuckets {
             let prefix = bucket.linuxPrefix
             guard guestPath.hasPrefix(prefix) else { continue }
@@ -134,11 +149,18 @@ final class MinisFsRouter: @unchecked Sendable {
         let normalized = hostPath.hasPrefix("/private/var/") ? String(hostPath.dropFirst(8)) : hostPath
         lock.lock()
         let memoryPaths = Array(memoryDirectories.values)
+        let workspacePaths = Array(workspaceDirectories.values)
         lock.unlock()
         for directory in memoryPaths {
             let base = directory.path.hasPrefix("/private/var/") ? String(directory.path.dropFirst(8)) : directory.path
             if normalized == base || normalized.hasPrefix(base + "/") {
                 return AIChatViewModel.minisMemoryLinuxDir + String(normalized.dropFirst(base.count))
+            }
+        }
+        for directory in workspacePaths {
+            let base = directory.path.hasPrefix("/private/var/") ? String(directory.path.dropFirst(8)) : directory.path
+            if normalized == base || normalized.hasPrefix(base + "/") {
+                return AIChatViewModel.minisWorkspaceLinuxDir + String(normalized.dropFirst(base.count))
             }
         }
         let basePath = minisBaseURL.path

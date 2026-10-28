@@ -131,7 +131,7 @@ enum EnvVarRedactor {
     }
 
     private static func loadAllValuesUncached() -> [String] {
-        let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let libraryURL = ContainerLocator.libraryDirectory
         let fileURL = libraryURL.appendingPathComponent("MinisChat/env-vars.json")
         guard let data = try? Data(contentsOf: fileURL),
               let entries = try? JSONDecoder().decode([EnvVarEntry].self, from: data) else {

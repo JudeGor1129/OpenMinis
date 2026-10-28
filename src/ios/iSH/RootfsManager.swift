@@ -33,7 +33,7 @@ class RootfsManager {
     private init() {}
 
     var rootfsPath: URL {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let documents = ContainerLocator.documentsDirectory
         return documents.appendingPathComponent("alpine-rootfs")
     }
 

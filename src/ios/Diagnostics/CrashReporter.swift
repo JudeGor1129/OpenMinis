@@ -14,22 +14,22 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
     private var crashReportsDir: URL {
         // Keep crash reports alongside running logs (LoggingManager.logDirectory)
         // so the unified Logs UI can list both from one directory.
-        let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let lib = ContainerLocator.libraryDirectory
         return lib.appendingPathComponent("Logs", isDirectory: true)
     }
 
     private var launchMarkerURL: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let support = ContainerLocator.applicationSupportDirectory
         return support.appendingPathComponent("launch_marker")
     }
 
     static var hangSnapshotURL: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let support = ContainerLocator.applicationSupportDirectory
         return support.appendingPathComponent("last_hang_snapshot.txt")
     }
 
     static var crashStackURL: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let support = ContainerLocator.applicationSupportDirectory
         return support.appendingPathComponent("last_crash_stack.txt")
     }
 
@@ -80,7 +80,7 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
     /// cannot pull a line that is still sitting in the pipe. So this line
     /// bypasses that pipeline and goes straight to its own fd.
     static var toolBreadcrumbURL: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let support = ContainerLocator.applicationSupportDirectory
         return support.appendingPathComponent("last_tool_exec.txt")
     }
 

@@ -37,8 +37,7 @@ final class CookieAuditLogger: NSObject {
     private var pendingDiff: Task<Void, Never>?
 
     private var snapshotFileURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory,
-                                           in: .userDomainMask)[0]
+        let dir = ContainerLocator.applicationSupportDirectory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("cookie_audit_snapshot.json")
     }

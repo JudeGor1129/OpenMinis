@@ -778,7 +778,7 @@ extension AIChatViewModel {
     /// `Library/MinisChat/minis/<sid>/offloads/`.
     func migrateOffloadsIfNeeded(for sid: String) {
         let fm = FileManager.default
-        let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let lib = ContainerLocator.libraryDirectory
         let oldDir = lib.appendingPathComponent("MinisChat/offloads/\(sid)", isDirectory: true)
         guard fm.fileExists(atPath: oldDir.path) else { return }
 
@@ -883,6 +883,7 @@ extension AIChatViewModel {
     private func ensureMinisSymlinks(for sid: String) {
         let fm = FileManager.default
         let dataPath = RootfsManager.shared.dataPath
+        MinisFsRouter.shared.setWorkspaceDirectory(sessionWorkspaceDirectory, for: sid)
         Self.noteContainerMigrationIfNeeded()
 
         // Ensure /var/minis/ exists in data/
@@ -892,7 +893,7 @@ extension AIChatViewModel {
         let mappings: [(persistDir: URL, linuxDir: String)] = [
             (Self.minisOffloadsPersistentDir(for: sid), Self.minisOffloadsLinuxDir),
             (Self.minisAttachmentsPersistentDir(for: sid), Self.minisAttachmentsLinuxDir),
-            (Self.minisWorkspacePersistentDir(for: sid), Self.minisWorkspaceLinuxDir),
+            (sessionWorkspaceDirectory, Self.minisWorkspaceLinuxDir),
             (Self.minisBrowserPersistentDir(for: sid), Self.minisBrowserLinuxDir),
             (Self.minisMemoryPersistentDir, Self.minisMemoryLinuxDir),
             (Self.minisSkillsPersistentDir, Self.minisSkillsLinuxDir),

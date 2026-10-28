@@ -1080,7 +1080,7 @@ extension ConfigRegistry {
         r.register(ReadOnlyField(
             path: "system.mountedSession",
             displayName: "Mounted session",
-            description: "Chat session whose storage /var/minis currently points at. Each session has its own attachments/offloads/workspace — files from other sessions are not visible here. Empty when no session is mounted. Read-only.",
+            description: "Chat session whose storage /var/minis currently points at. Attachments/offloads/browser stay session-scoped; workspace is shared by sessions in the same group and isolated for ungrouped sessions. Empty when no session is mounted. Read-only.",
             valueSchema: .string(maxLength: 64),
             reader: {
                 .string(ISHExecutionCoordinator.mountedSessionIdSnapshot ?? "")

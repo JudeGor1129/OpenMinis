@@ -752,7 +752,7 @@ enum ModelsDevAPI {
     // MARK: - Disk Cache
 
     private static var cacheFileURL: URL {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let caches = ContainerLocator.cachesDirectory
         return caches.appendingPathComponent("com.openminis.app.models-dev-cache").appendingPathComponent("api.json")
     }
 

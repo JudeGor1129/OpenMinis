@@ -881,10 +881,10 @@ struct AIChatView: View {
             }
         }
         .sheet(item: $locateDownloadTarget) { target in
-            if let sid = vm.sessionId {
+            if vm.sessionId != nil {
                 MinisNavigationContainer {
                     FileBrowserView(
-                        rootPath: AIChatViewModel.minisWorkspacePersistentDir(for: sid),
+                        rootPath: vm.sessionWorkspaceDirectory,
                         rootLabel: "/var/minis/workspace",
                         highlightFileName: target.filename
                     )
@@ -1110,7 +1110,8 @@ struct AIChatView: View {
         .sheet(isPresented: $showFileBrowser) {
             MinisNavigationContainer {
                 let base = RootfsManager.shared.dataPath
-                let workspace = vm.sessionId.map { AIChatViewModel.minisWorkspacePersistentDir(for: $0) }
+                let workspace = (vm.sessionId != nil || vm.initialGroupId != nil)
+                    ? vm.sessionWorkspaceDirectory : nil
                 FileBrowserView(rootPath: workspace ?? base,
                                 initialPath: workspace ?? base.appendingPathComponent("var/minis"),
                                 rootLabel: workspace == nil ? "/" : "/var/minis/workspace")
@@ -6982,7 +6983,7 @@ private struct EmptyChatDirectoryTimeline: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(ChatColors.secondaryText)
             }
-            Text("Each chat gets its own **workspace**, **attachments**, **offloads**, and **browser** folders — wiped when the session ends.")
+            Text("Chats in the same group share one **workspace** named after the group; ungrouped chats keep an isolated workspace. **attachments**, **offloads**, and **browser** remain per chat.")
                 .font(.system(size: 12))
                 .foregroundStyle(ChatColors.primaryText)
                 .fixedSize(horizontal: false, vertical: true)

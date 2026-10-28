@@ -940,14 +940,22 @@ private struct LegacyGroupDetailView: View {
             }
         }
         .alert("解散分组？", isPresented: $dissolving) {
-            Button("解散", role: .destructive) {
+            Button("解散并保留工作区") {
                 Task { @MainActor in
+                    try? GroupWorkspaceStore.remove(folder: folder, preserve: true)
+                    _ = await ChatStore.shared.dissolveFolder(folder.id)
+                    dismiss()
+                }
+            }
+            Button("解散并删除工作区", role: .destructive) {
+                Task { @MainActor in
+                    try? GroupWorkspaceStore.remove(folder: folder, preserve: false)
                     _ = await ChatStore.shared.dissolveFolder(folder.id)
                     dismiss()
                 }
             }
             Button("取消", role: .cancel) {}
-        } message: { Text("会话和文件不会删除，会话将回到未分组列表。") }
+        } message: { Text("会话不会删除，并将回到未分组列表。保留时，工作区会移动到 /var/minis/shared/保留的分组工作区。") }
     }
 
     private func reload() {

@@ -124,13 +124,12 @@ extension AIChatViewModel {
     // Unified bidirectional file area between iOS and iSH:
     //   /var/minis/attachments/  — screenshots, images, media
     //   /var/minis/offloads/     — large tool outputs (migrated from /var/offloads/)
-    //   /var/minis/workspace/    — general session working area
+    //   /var/minis/workspace/    — shared by sessions in the same group;
+    //                              isolated for ungrouped sessions
     //
-    // Persistent storage: Library/MinisChat/minis/<sessionId>/{attachments,offloads,workspace}/
-    // iSH-visible path:   /var/minis/{attachments,offloads,workspace}/  (session-unaware)
-    //
-    // On session load/switch, the current session's files are synced into the
-    // iSH-visible directory so the model and shell commands always see /var/minis/.
+    // Attachments/offloads/browser remain under each session. Group workspaces
+    // live under MinisConfig/group-workspaces/<group-name>--<stable-id> and are
+    // routed per fs_context, so concurrent groups never see each other's files.
 
     nonisolated static let minisLinuxBaseDir = "/var/minis"
     nonisolated static let minisAttachmentsLinuxDir = "/var/minis/attachments"
@@ -145,7 +144,7 @@ extension AIChatViewModel {
 
     /// iOS persistent base for all minis data (Library/MinisChat/minis/).
     nonisolated static var minisPersistentBase: URL {
-        let lib = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let lib = ContainerLocator.libraryDirectory
         return lib.appendingPathComponent("MinisChat/minis", isDirectory: true)
     }
 

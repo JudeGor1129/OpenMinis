@@ -46,6 +46,7 @@ jobs:
           bash scripts/ios15/check-settings-source.sh 2>&1 | tee ci-logs/settings-source.txt
           bash scripts/ios15/check-group-skills.sh 2>&1 | tee ci-logs/group-skills.txt
           bash scripts/ios15/check-group-memory-source.sh 2>&1 | tee ci-logs/group-memory-source.txt
+          bash scripts/ios15/check-group-workspace.sh 2>&1 | tee ci-logs/group-workspace.txt
           bash scripts/ios15/check-structured-memory.sh 2>&1 | tee ci-logs/structured-memory.txt
           bash scripts/ios15/check-rootfs-build-settings.sh 2>&1 | tee ci-logs/rootfs-build-settings.txt
           bash scripts/ios15/check-frida-transcript-source.sh 2>&1 | tee ci-logs/frida-transcript-source.txt

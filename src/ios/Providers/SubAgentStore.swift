@@ -46,7 +46,7 @@ final class SubAgentStore: ObservableObject {
     private let fileURL: URL
 
     init() {
-        let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let libraryURL = ContainerLocator.libraryDirectory
         let baseURL = libraryURL.appendingPathComponent("MinisChat", isDirectory: true)
         try? FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
         self.fileURL = baseURL.appendingPathComponent("sub-agents.json")

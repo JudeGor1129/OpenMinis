@@ -64,7 +64,7 @@ enum SystemHelperClient {
     }
 
     static var stateDirectory: URL {
-        FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        ContainerLocator.libraryDirectory
             .appendingPathComponent("Application Support/MinisSystemAccess", isDirectory: true)
     }
 }

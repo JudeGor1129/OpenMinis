@@ -421,7 +421,7 @@ actor BackupImporter {
         // unpack + staging copies.
         let needed = Int64(Double(manifest.categories.values.reduce(0) { $0 + $1.bytes }) * 1.2)
         if needed > 0 {
-            let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let docs = ContainerLocator.documentsDirectory
             let free = (try? docs.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
                 .volumeAvailableCapacityForImportantUsage ?? Int64.max
             if free < needed {

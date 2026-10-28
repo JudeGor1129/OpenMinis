@@ -359,7 +359,7 @@ extension AIChatViewModel {
     }
 
     private var attachmentCacheDir: URL {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let caches = ContainerLocator.cachesDirectory
         return caches.appendingPathComponent("InputAttachments")
     }
 

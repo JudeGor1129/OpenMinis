@@ -565,7 +565,11 @@ actor ChatStore {
     ///      can query before it), but data backfills are deferred to
     ///      `runDeferredMigrations()`, called off the init path.
     init() {
-        let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        // [T-container-path-drift] Resolve the container explicitly rather than
+        // asking FileManager: once no-sandbox is present, `.libraryDirectory`
+        // stopped pointing at this app's container on device, which is exactly
+        // how the session store appeared to vanish while every file was intact.
+        let libraryURL = ContainerLocator.libraryDirectory
         let baseURL = libraryURL.appendingPathComponent("MinisChat", isDirectory: true)
         self.dbURL = baseURL.appendingPathComponent("minis.db")
         self.minisBaseURL = baseURL.appendingPathComponent("minis", isDirectory: true)
@@ -2574,6 +2578,8 @@ actor ChatStore {
         }
         sqlite3_finalize(stmt)
         markDirty(recordType: "Folder", recordId: folder.id)
+        let workspace = GroupWorkspaceStore.ensure(folderID: folder.id, name: folder.name)
+        logger.info("[GroupWorkspace] created \(workspace.lastPathComponent) for folder \(folder.id.prefix(8))")
         return folder
     }
 
@@ -2606,6 +2612,10 @@ actor ChatStore {
         }
         sqlite3_finalize(stmt)
         markDirty(recordType: "Folder", recordId: id)
+        let workspace = GroupWorkspaceStore.ensure(folderID: id, name: name)
+        for sessionID in sessionIdsInFolder(id) {
+            MinisFsRouter.shared.setWorkspaceDirectory(workspace, for: sessionID)
+        }
     }
 
     /// Toggle a folder's pin. Mirrors toggleSessionPin; also bumps
@@ -2673,6 +2683,8 @@ actor ChatStore {
         // Each freed session needs its own push — folder_id lives on SessionV2.
         for sid in memberIds {
             markDirty(recordType: "Session", recordId: sid)
+            MinisFsRouter.shared.setWorkspaceDirectory(
+                AIChatViewModel.minisWorkspacePersistentDir(for: sid), for: sid)
         }
         markDirty(recordType: "Folder", recordId: id, operation: "delete")
         return memberIds
@@ -2714,6 +2726,15 @@ actor ChatStore {
             sqlite3_finalize(stmt)
             markDirty(recordType: "Session", recordId: sid)
         }
+        let groupWorkspace: URL? = {
+            guard let folderId, let folder = getFolder(folderId) else { return nil }
+            return GroupWorkspaceStore.ensure(folderID: folderId, name: folder.name)
+        }()
+        for sid in sessionIds {
+            let target = groupWorkspace ?? AIChatViewModel.minisWorkspacePersistentDir(for: sid)
+            if let groupWorkspace { GroupWorkspaceStore.adoptSessionWorkspace(sessionID: sid, into: groupWorkspace) }
+            MinisFsRouter.shared.setWorkspaceDirectory(target, for: sid)
+        }
     }
 
     /// Set a session's folder only if it is currently ungrouped. Returns true
@@ -2740,6 +2761,10 @@ actor ChatStore {
         sqlite3_finalize(stmt)
         if changed {
             markDirty(recordType: "Session", recordId: sessionId)
+            let folder = getFolder(folderId)
+            let workspace = GroupWorkspaceStore.ensure(folderID: folderId, name: folder?.name)
+            GroupWorkspaceStore.adoptSessionWorkspace(sessionID: sessionId, into: workspace)
+            MinisFsRouter.shared.setWorkspaceDirectory(workspace, for: sessionId)
         }
         return changed
     }
@@ -2845,6 +2870,10 @@ actor ChatStore {
             sqlite3_step(stmt)
         }
         sqlite3_finalize(stmt)
+        let workspace = GroupWorkspaceStore.ensure(folderID: f.id, name: f.name)
+        for sessionID in sessionIdsInFolder(f.id) {
+            MinisFsRouter.shared.setWorkspaceDirectory(workspace, for: sessionID)
+        }
         iCloudLogger.info("[iCloud] applyRemoteFolder APPLIED: id=\(f.id.prefix(8)) name=\(f.name)")
     }
 
@@ -2854,6 +2883,10 @@ actor ChatStore {
     /// the deleting peer already pushed both its tombstone and its members'
     /// folder_id=NULL session updates; re-queueing here would delete-loop.
     func applyRemoteFolderDeletion(id: String) {
+        // Remote deletion has no local prompt; preserve the workspace by
+        // default in /var/minis/shared so files can never disappear silently.
+        let workspaceFolder = getFolder(id)
+        let workspaceSessionIDs = sessionIdsInFolder(id)
         // FULL: unfiles every session that was in the deleted folder.
         invalidateSessionListCache()
         var stmt: OpaquePointer?
@@ -2871,6 +2904,13 @@ actor ChatStore {
         // Match dissolveFolder's local behavior: leave a tombstone so a
         // fetchRecentV2 race can't resurrect the folder record we just dropped.
         recordDeletedRecordTombstone(type: "Folder", id: id)
+        if let workspaceFolder {
+            try? GroupWorkspaceStore.remove(folder: workspaceFolder, preserve: true)
+        }
+        for sessionID in workspaceSessionIDs {
+            MinisFsRouter.shared.setWorkspaceDirectory(
+                AIChatViewModel.minisWorkspacePersistentDir(for: sessionID), for: sessionID)
+        }
         iCloudLogger.info("[iCloud] applyRemoteFolderDeletion: id=\(id.prefix(8))")
     }
 
@@ -4483,7 +4523,7 @@ actor ChatStore {
     /// directory and writes a v2 dirty row for each file (composite key
     /// = "sessionId:relativePath"). Returns the count.
     private func scanAndMarkSessionFilesForResurrect(sessionId: String) -> Int {
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let sessionDir = library.appendingPathComponent("MinisChat/minis/\(sessionId)")
         guard let enumerator = FileManager.default.enumerator(
             at: sessionDir, includingPropertiesForKeys: [.isRegularFileKey],
@@ -5389,7 +5429,7 @@ actor ChatStore {
     @discardableResult
     private func scanAndMarkSessionFiles(sessionId: String, priority: Int = 0) -> Int {
         let fm = FileManager.default
-        let library = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let sessionDir = library.appendingPathComponent("MinisChat/minis/\(sessionId)")
         guard fm.fileExists(atPath: sessionDir.path) else { return 0 }
         // Standardize to resolve /private/var vs /var symlink differences
@@ -8299,7 +8339,7 @@ extension ChatStore {
 
     /// Estimated size of all session files (attachments, offloads, workspace, browser).
     func estimateFilesSize() -> Int64 {
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let minisBase = library.appendingPathComponent("MinisChat/minis")
         return directorySize(minisBase)
     }
@@ -8316,14 +8356,14 @@ extension ChatStore {
 
     /// Estimated size of provider config JSON.
     func estimateProvidersSize() -> Int64 {
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let configURL = library.appendingPathComponent("MinisChat/provider-config.json")
         return (try? configURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0) } ?? 0
     }
 
     /// Estimated size of env vars JSON.
     func estimateEnvVarsSize() -> Int64 {
-        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let library = ContainerLocator.libraryDirectory
         let envURL = library.appendingPathComponent("MinisChat/env-vars.json")
         return (try? envURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0) } ?? 0
     }

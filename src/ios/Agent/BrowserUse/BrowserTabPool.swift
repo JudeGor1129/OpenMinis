@@ -1648,7 +1648,7 @@ final class BrowserTabPool: ObservableObject {
     }
 
     nonisolated private static func storeURL(for sessionId: String) -> URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = ContainerLocator.applicationSupportDirectory
             .appendingPathComponent("MinisChat/browser_tabs", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("\(sessionId).json")

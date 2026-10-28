@@ -46,7 +46,7 @@ actor BuildRunStore {
             // safe under WAL and keeps this module independent of ChatStore's
             // actor interface while still making build_runs part of the app's
             // normal database backup/migration lifecycle.
-            let base = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            let base = ContainerLocator.libraryDirectory
                 .appendingPathComponent("MinisChat", isDirectory: true)
             self.databaseURL = base.appendingPathComponent("minis.db")
         }

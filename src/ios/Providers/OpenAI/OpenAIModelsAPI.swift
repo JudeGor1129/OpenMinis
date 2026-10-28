@@ -416,7 +416,7 @@ private enum OpenAIModelsCache {
     private static let ttl: TimeInterval = 7 * 24 * 3600
 
     private static var cacheDir: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        ContainerLocator.cachesDirectory
             .appendingPathComponent("com.openminis.app.openai-models-cache", isDirectory: true)
     }
 

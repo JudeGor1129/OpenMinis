@@ -13,13 +13,16 @@ helper = read(root / 'tools/privileged-helper/Helper.entitlements')
 extra_expected = {
     'platform-application': True,
     'com.apple.private.persona-mgmt': True,
+    'com.apple.private.security.no-sandbox': True,
+    'com.apple.private.security.storage.AppDataContainers': True,
+    'com.apple.private.security.storage.AppBundles': True,
 }
 helper_expected = {
     'platform-application': True,
     'com.apple.private.security.no-sandbox': True,
     'com.apple.private.security.container-required': False,
 }
-assert extra == extra_expected, 'GUI overlay must stay minimal and sandbox-mapped'
+assert extra == extra_expected, 'dedicated GUI entitlement overlay mismatch'
 assert helper == helper_expected, 'helper entitlement set mismatch'
 for key in set(extra_expected) | set(helper_expected):
     assert key not in base, f'common app entitlements gained privilege: {key}'
@@ -32,4 +35,4 @@ if len(sys.argv) == 3:
     merged = dict(base); merged.update(extra_expected)
     assert signed_app == merged, 'final GUI entitlements mismatch'
     assert signed_helper == helper_expected, 'final helper entitlements mismatch'
-print('PASS: sandbox-mapped GUI has only platform/persona claims; no-sandbox is isolated to helper.')
+print('PASS: GUI no-sandbox/persona plus explicit own-container grants; no privileged claims in base app or extensions.')

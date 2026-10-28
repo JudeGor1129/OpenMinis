@@ -120,7 +120,7 @@ final class ICloudSharedZoneTransport: NSObject, SyncTransport {
         }
     }
     private var etagCacheURL: URL {
-        FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        ContainerLocator.libraryDirectory
             .appendingPathComponent("MinisChat/cloud-sync-v2/etag-cache.plist")
     }
     /// Set to true whenever serverRecordCache mutates; cleared after
@@ -364,8 +364,7 @@ final class ICloudSharedZoneTransport: NSObject, SyncTransport {
 
     override init() {
         self.container = CKContainer(identifier: Self.containerIdentifier)
-        let dir = FileManager.default
-            .urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        let dir = ContainerLocator.libraryDirectory
             .appendingPathComponent("MinisChat/cloud-sync-v2", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         self.stateURL = dir.appendingPathComponent("state-v2.bin")

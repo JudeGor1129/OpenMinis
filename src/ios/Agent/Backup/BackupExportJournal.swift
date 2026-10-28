@@ -26,7 +26,7 @@ private let logger = AppLogger(category: "Backup")
 enum BackupExportJournal {
 
     private static var supportDir: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        ContainerLocator.applicationSupportDirectory
             .appendingPathComponent("BackupExport", isDirectory: true)
     }
 

@@ -660,7 +660,7 @@ private struct FolderAlertsModifier: ViewModifier {
     let allFolders: [ChatFolder]
     let memberCount: (String) -> Int
     let onRename: (ChatFolder, String, String) -> Void
-    let onDissolve: (ChatFolder) -> Void
+    let onDissolve: (ChatFolder, Bool) -> Void
     /// Offer to merge `source` into the existing same-named `target`.
     let onMergeInto: (_ source: ChatFolder, _ target: ChatFolder) -> Void
 
@@ -751,23 +751,24 @@ private struct FolderAlertsModifier: ViewModifier {
                 Text("A group named “\(pair.target.name)” already exists. Choose a different name, or move this group's chats into it.")
             }
             .alert(
-                "Dissolve Group?",
+                "解散分组？",
                 isPresented: Binding(
                     get: { folderToDissolve != nil },
                     set: { if !$0 { folderToDissolve = nil } }
                 ),
                 presenting: folderToDissolve
             ) { folder in
-                Button("Cancel", role: .cancel) { folderToDissolve = nil }
-                Button("Dissolve") {
-                    onDissolve(folder)
+                Button("取消", role: .cancel) { folderToDissolve = nil }
+                Button("解散并保留工作区") {
+                    onDissolve(folder, true)
+                    folderToDissolve = nil
+                }
+                Button("解散并删除工作区", role: .destructive) {
+                    onDissolve(folder, false)
                     folderToDissolve = nil
                 }
             } message: { folder in
-                // Spell out that no session is deleted — this action sits one
-                // menu away from the one that deletes everything, and the
-                // wording is what keeps them apart.
-                Text("\(memberCount(folder.id)) sessions will move back to the main list. No session will be deleted.")
+                Text("\(memberCount(folder.id)) 个会话将移回主列表，不会删除会话。保留工作区时，文件会移动到 /var/minis/shared/保留的分组工作区。")
             }
     }
 }
@@ -1383,6 +1384,9 @@ struct ModernContentView: View {
     /// When delete-all runs for a folder, the (by then empty) folder row is
     /// dropped after the sessions are gone. Cleared on cancel in onDismiss.
     @State private var pendingDeleteFolderId: String?
+    @State private var pendingDeleteFolder: ChatFolder?
+    @State private var pendingDeleteFolderKeepWorkspace = true
+    @State private var folderWorkspaceDeletePrompt: ChatFolder?
     /// "New chat in folder": the folder intent rides with the DRAFT ID, not a
     /// bare flag — a draft is promoted to a real row only on first message, so
     /// folder_id can't be written at draft time, and keying on the draft id
@@ -1951,6 +1955,26 @@ struct ModernContentView: View {
             }
             .presentationDetents([.medium])
         }
+        .alert(
+            "删除分组时如何处理工作区？",
+            isPresented: Binding(
+                get: { folderWorkspaceDeletePrompt != nil },
+                set: { if !$0 { folderWorkspaceDeletePrompt = nil } }
+            ),
+            presenting: folderWorkspaceDeletePrompt
+        ) { folder in
+            Button("取消", role: .cancel) { folderWorkspaceDeletePrompt = nil }
+            Button("保留工作区") {
+                folderWorkspaceDeletePrompt = nil
+                beginDeleteFolderWithSessions(folder, keepWorkspace: true)
+            }
+            Button("删除工作区", role: .destructive) {
+                folderWorkspaceDeletePrompt = nil
+                beginDeleteFolderWithSessions(folder, keepWorkspace: false)
+            }
+        } message: { folder in
+            Text("“\(folder.name)”的所有会话仍会按下一步确认删除。保留时，工作区会移动到 /var/minis/shared/保留的分组工作区；不保留则同时删除整个分组工作区。")
+        }
         .sheet(isPresented: $showDeleteConfirm, onDismiss: {
             if deleteInfo == nil {
                 // Deletion was performed — reset selection mode after sheet is fully dismissed
@@ -1960,6 +1984,8 @@ struct ModernContentView: View {
                 // Cancelled — a pending delete-folder-with-sessions must not
                 // linger and attach itself to a later unrelated delete.
                 pendingDeleteFolderId = nil
+                pendingDeleteFolder = nil
+                pendingDeleteFolderKeepWorkspace = true
             }
         }) {
             DeleteConfirmSheet(info: $deleteInfo, isLoading: isComputingDelete) {
@@ -2023,8 +2049,10 @@ struct ModernContentView: View {
                     refreshSessionList()
                 }
             },
-            onDissolve: { folder in
+            onDissolve: { folder, keepWorkspace in
                 Task { @MainActor in
+                    do { try GroupWorkspaceStore.remove(folder: folder, preserve: keepWorkspace) }
+                    catch { AppLogger(category: "GroupWorkspace").error("dissolve preserve/delete failed: \(error.localizedDescription)") }
                     _ = await ChatStore.shared.dissolveFolder(folder.id)
                     refreshSessionList()
                 }
@@ -2039,6 +2067,8 @@ struct ModernContentView: View {
                     if !memberIds.isEmpty {
                         await ChatStore.shared.setFolder(target.id, forSessions: memberIds)
                     }
+                    do { try GroupWorkspaceStore.merge(source: source, into: target) }
+                    catch { AppLogger(category: "GroupWorkspace").error("merge failed: \(error.localizedDescription)") }
                     _ = await ChatStore.shared.dissolveFolder(source.id)
                     refreshSessionList()
                 }
@@ -5656,9 +5686,27 @@ struct ModernContentView: View {
     /// owns session files, tombstones and sync, and re-implementing it would
     /// mean re-earning its correctness.
     private func requestDeleteFolderWithSessions(_ folder: ChatFolder) {
+        folderWorkspaceDeletePrompt = folder
+    }
+
+    private func beginDeleteFolderWithSessions(_ folder: ChatFolder, keepWorkspace: Bool) {
         let memberIds = Set(sessions.filter { $0.folderId == folder.id }.map(\.id))
         selectedIds = memberIds
         pendingDeleteFolderId = folder.id
+        pendingDeleteFolder = folder
+        pendingDeleteFolderKeepWorkspace = keepWorkspace
+        if memberIds.isEmpty {
+            Task { @MainActor in
+                do { try GroupWorkspaceStore.remove(folder: folder, preserve: keepWorkspace) }
+                catch { AppLogger(category: "GroupWorkspace").error("empty-folder delete failed: \(error.localizedDescription)") }
+                _ = await ChatStore.shared.dissolveFolder(folder.id)
+                refreshSessionList()
+            }
+            pendingDeleteFolderId = nil
+            pendingDeleteFolder = nil
+            pendingDeleteFolderKeepWorkspace = true
+            return
+        }
         deleteInfo = nil
         isComputingDelete = true
         showDeleteConfirm = true
@@ -5871,7 +5919,7 @@ struct ModernContentView: View {
 
     private nonisolated static func computeDeleteInfo(for ids: Set<String>, totalSessions: Int) -> DeleteInfo {
         let fm = FileManager.default
-        let libBase = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!
+        let libBase = ContainerLocator.libraryDirectory
         let minisBase = libBase.appendingPathComponent("MinisChat/minis", isDirectory: true)
         let dbPath = libBase.appendingPathComponent("MinisChat/minis.db")
 
@@ -5948,14 +5996,24 @@ struct ModernContentView: View {
         // isSelecting and selectedIds are reset in sheet's onDismiss to avoid animation conflicts.
         deleteInfo = nil
         let folderToDrop = pendingDeleteFolderId
+        let workspaceFolder = pendingDeleteFolder
+        let keepWorkspace = pendingDeleteFolderKeepWorkspace
         pendingDeleteFolderId = nil
+        pendingDeleteFolder = nil
+        pendingDeleteFolderKeepWorkspace = true
         Task { @MainActor in
             await Self.tearDownForDeletion(ids)
             for id in ids {
                 await ChatStore.shared.deleteSession(id)
             }
-            // Delete-all-in-folder: the folder is empty now; dissolving it
-            // just drops the row (and pushes the FolderV2 tombstone).
+            // Delete-all-in-folder: the folder is empty now. Apply the user's
+            // explicit workspace choice before dropping the folder row. A file
+            // operation failure leaves the workspace in place rather than
+            // silently losing data.
+            if let workspaceFolder {
+                do { try GroupWorkspaceStore.remove(folder: workspaceFolder, preserve: keepWorkspace) }
+                catch { AppLogger(category: "GroupWorkspace").error("delete/preserve failed: \(error.localizedDescription)") }
+            }
             if let fid = folderToDrop {
                 _ = await ChatStore.shared.dissolveFolder(fid)
                 await MainActor.run { refreshSessionList() }

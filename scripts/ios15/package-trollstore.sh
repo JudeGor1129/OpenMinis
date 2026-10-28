@@ -77,13 +77,14 @@ Install the .ipa through TrollStore, not ordinary certificate sideloading.
 The package uses ad-hoc signatures; successful CI signing is not an install test.
 The iOS 16.2 Live Activity extension is excluded. Apple Weather needs iOS 16+.
 Apple-hosted capabilities (push/iCloud/WeatherKit) are not guaranteed by TrollStore.
-The GUI receives only platform-application + persona-mgmt in this dedicated
-TrollStore package; it remains container-mapped and never becomes root. A
-separately signed short-lived helper requests a root persona and has no shell,
-delete, chmod/chown, launchctl, Frida, attach or script verbs. System access is
-default OFF, foreground-only, path-tiered, confirmed before write, audited,
-backed up and rollback-capable. Root persona availability is not proven by CI;
-verify identity/read/write/rollback on the target Xina/TrollStore device.
-Test launch, existing chat data, sharing and File Provider before system access.
+WARNING: dedicated TrollStore privileged package. The GUI requires platform,
+persona, no-sandbox, AppDataContainers and AppBundles because a sandboxed GUI
+was verified on-device to fail persona spawn with EPERM. ContainerLocator
+resolves the existing bundle-ID data container explicitly; normal entitlements
+and extensions remain unchanged. GUI stays uid501; only the short-lived helper
+requests uid0. The helper has no shell/delete/chmod/chown/launchctl/Frida verbs.
+System access is default OFF, foreground-only, path-tiered, confirmed before
+write, backed up, audited and rollback-capable. Test launch and existing chat
+data before enabling read-only identity verification on the target device.
 NOTES
 echo "IPA ready: $IPA"

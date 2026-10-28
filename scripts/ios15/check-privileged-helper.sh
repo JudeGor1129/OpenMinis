@@ -9,8 +9,24 @@ swift=src/ios/Agent/Chat/AIChatViewModel+SystemFileTools.swift
 settings=src/ios/Views/Settings/SystemAccessSettingsView.swift
 tests=src/ios/MinisTests/SystemFileToolsTests.swift
 project=src/ios/Minis.xcodeproj/project.pbxproj
+locator=src/ios/Shared/ContainerLocator.swift
 
-for file in "$helper" "$bridge" "$runner" "$swift" "$settings" "$tests"; do test -s "$file" || { echo "FAIL missing $file"; exit 1; }; done
+for file in "$helper" "$bridge" "$runner" "$swift" "$settings" "$tests" "$locator"; do test -s "$file" || { echo "FAIL missing $file"; exit 1; }; done
+grep -q 'MCMMetadataIdentifier' "$locator"
+grep -q 'Library/MinisChat/minis.db' "$locator"
+grep -q 'ContainerLocator.libraryDirectory' src/ios/Agent/Chat/ChatStore.swift
+grep -q 'ContainerLocator.documentsDirectory' src/ios/iSH/RootfsManager.swift
+grep -q 'ContainerLocator.libraryDirectory' src/ios/Agent/Build/BuildRunStore.swift
+grep -q 'ContainerLocator.libraryDirectory' "$swift"
+! grep -q 'AppLogger' "$locator"
+grep -q 'static var applicationSupportDirectory' "$locator"
+grep -q 'static var cachesDirectory' "$locator"
+if find src/ios -name '*.swift' ! -name 'ContainerLocator.swift' -exec grep -HE 'FileManager\.default\.urls\(for: \.(documentDirectory|libraryDirectory|applicationSupportDirectory|cachesDirectory)' {} + | grep -q .; then
+  echo 'FAIL: implicit app-container path remains under no-sandbox'; exit 1
+fi
+if grep -q 'com.apple.private.security.no-sandbox' src/ios/Minis.entitlements; then
+  echo 'FAIL: common app entitlement set must stay sandboxed'; exit 1
+fi
 ! grep -Eq 'system\(|/bin/(sh|bash)|execl|execv|popen|frida_' "$helper"
 grep -q 'set_persona_uid_np' "$runner"
 grep -q 'MINIS_HELPER_OUTPUT_LIMIT' "$runner"

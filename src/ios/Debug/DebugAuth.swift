@@ -67,7 +67,7 @@ final class DebugAuthenticator: @unchecked Sendable {
     // MARK: - Persistence
 
     private static var storeURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let base = ContainerLocator.applicationSupportDirectory
         return base.appendingPathComponent("DebugAuth/tokens.json")
     }
 

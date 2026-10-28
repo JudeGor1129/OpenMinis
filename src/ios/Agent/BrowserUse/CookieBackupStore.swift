@@ -127,8 +127,7 @@ final class CookieBackupStore {
     /// a `.lastVisit.json` sibling. Created on demand; excluded from backup so
     /// the login state never leaves this device.
     private var backupDirURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory,
-                                           in: .userDomainMask)[0]
+        let dir = ContainerLocator.applicationSupportDirectory
             .appendingPathComponent("BrowserCookieBackup", isDirectory: true)
         if !FileManager.default.fileExists(atPath: dir.path) {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

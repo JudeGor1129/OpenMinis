@@ -334,6 +334,11 @@ extension AIChatViewModel {
             return subPaths.map { directory.appendingPathComponent($0) }
                 .first { fm.fileExists(atPath: $0.path) }
         }
+        if host == "workspace", let sid = sessionId ?? activeSessionId,
+           let directory = MinisFsRouter.shared.workspaceDirectory(for: sid) {
+            return subPaths.map { directory.appendingPathComponent($0) }
+                .first { fm.fileExists(atPath: $0.path) }
+        }
 
         // Primary: resolve via the owning session (explicit), else frontmost
         if let sid = sessionId ?? activeSessionId {

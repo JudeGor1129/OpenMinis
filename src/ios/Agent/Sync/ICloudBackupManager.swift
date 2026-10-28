@@ -117,7 +117,7 @@ final class ICloudBackupManager: ObservableObject {
     // MARK: - Local Paths
 
     private var minisBaseURL: URL {
-        let lib = fm.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        let lib = ContainerLocator.libraryDirectory
         return lib.appendingPathComponent("MinisChat", isDirectory: true)
     }
 

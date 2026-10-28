@@ -450,7 +450,8 @@ final class FileMentionIndex: ObservableObject {
         return [
             ScanRoot(
                 scope: .workspace,
-                hostURL: AIChatViewModel.minisWorkspacePersistentDir(for: sid),
+                hostURL: MinisFsRouter.shared.workspaceDirectory(for: sid)
+                    ?? AIChatViewModel.minisWorkspacePersistentDir(for: sid),
                 linuxPrefix: AIChatViewModel.minisWorkspaceLinuxDir,
                 mountName: nil
             ),

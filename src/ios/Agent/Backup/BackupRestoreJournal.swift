@@ -17,8 +17,7 @@ private let logger = AppLogger(category: "Backup")
 enum BackupRestoreJournal {
 
     private static var supportDir: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory,
-                                            in: .userDomainMask)[0]
+        let base = ContainerLocator.applicationSupportDirectory
         return base.appendingPathComponent("BackupRestore", isDirectory: true)
     }
 
