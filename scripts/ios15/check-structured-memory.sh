@@ -24,6 +24,7 @@ grep -q 'MemoryCredentialGuard.admits' "$store"
 grep -q 'structuredMemoryPromptFragment' src/ios/Agent/Chat/AIChatViewModel.swift
 grep -q 'recordTokenBudgetSample' src/ios/Agent/Chat/AIChatViewModel.swift
 grep -q 'captureProjectContext' src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift
+grep -A 4 'func captureProjectContext' "$bridge" | grep -q 'memoryEnabled && groupMemoryEnabled'
 for tool in memory_manage create_checkpoint; do
   grep -q "name: \"$tool\"" src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
   grep -q "case \"$tool\"" src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift

@@ -88,6 +88,7 @@ extension AIChatViewModel {
     /// is considered. Ordinary user/assistant conversation never enters this
     /// path, so chat transcripts are not silently copied into long-term memory.
     func captureProjectContext(command: String, output: String, exitCode: Int, sourceMessageId: String?) async -> ProjectRecord? {
+        guard memoryEnabled && groupMemoryEnabled else { return nil }
         guard let evidence = ProjectScopeDetector.detect(command: command, output: output), let sessionId else { return nil }
         guard let project = await ChatStore.shared.upsertProject(evidence, sessionId: sessionId) else { return nil }
         let autoEnabled = (UserDefaults.standard.object(forKey: "memory.structured.auto.enabled") as? Bool) ?? true

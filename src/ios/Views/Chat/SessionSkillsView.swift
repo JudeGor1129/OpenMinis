@@ -444,7 +444,22 @@ private struct MinisGroupMemorySettings: View {
             Section {
                 Toggle("本分组启用记忆", isOn: Binding(get: { configuration.memoryEnabled ?? true }, set: { configuration.memoryEnabled = $0 }))
             } footer: {
-                Text("关闭后，本组任务不注入长期记忆及每日日志，记忆工具也会停用。不会删除文件；主页面保存后生效。")
+                Text("关闭后，本组任务不会读取或写入长期记忆、每日日志和结构化项目记忆，相关记忆工具也会停用。不会删除已有记录；主页面保存后生效。")
+            }
+            Section("结构化项目记忆") {
+                HStack {
+                    Label("本组使用结构化项目记忆", systemImage: "brain.head.profile")
+                    Spacer()
+                    Text((configuration.memoryEnabled ?? true) ? "已启用" : "已停用")
+                        .foregroundStyle((configuration.memoryEnabled ?? true) ? Color.green : Color.secondary)
+                }
+                NavigationLink {
+                    StructuredMemoryCenterView()
+                } label: {
+                    Label("管理结构化记忆", systemImage: "list.bullet.rectangle")
+                }
+            } footer: {
+                Text("此功能沿用上方“本分组启用记忆”总开关，不需要重复开关。自动写入还受“设置 → 记忆 → 自动项目记忆”全局开关控制；记录按项目隔离，不会与其他项目混用。")
             }
             Section("记忆文件") {
                 NavigationLink {

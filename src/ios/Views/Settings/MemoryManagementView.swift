@@ -30,10 +30,10 @@ struct MemoryManagementView: View {
                 NavigationLink {
                     StructuredMemoryCenterView()
                 } label: {
-                    Label("Structured Memory Center", systemImage: "brain.head.profile")
+                    Label("结构化记忆中心", systemImage: "brain.head.profile")
                 }
             } footer: {
-                Text("Search and manage project-scoped records, sources, confidence, pinning, expiry, and automatic admission.")
+                Text("搜索和管理项目作用域记录、来源、置信度、置顶状态、有效期与自动准入设置。")
             }
 
             ForEach(memoryFiles) { file in
@@ -348,14 +348,14 @@ struct StructuredMemoryCenterView: View {
     var body: some View {
         List {
             Section {
-                Toggle("Automatic project memory", isOn: $automaticMemory)
+                Toggle("自动项目记忆", isOn: $automaticMemory)
             } footer: {
-                Text("Only verified project-tool facts are admitted automatically. Ordinary conversation and credential-like content are never saved automatically.")
+                Text("仅自动保存经项目工具验证的事实。普通对话及疑似凭证内容绝不会自动保存。")
             }
 
-            Section("Structured records") {
+            Section("结构化记录") {
                 if records.isEmpty {
-                    Text("No matching structured memories")
+                    Text("未找到匹配的结构化记忆")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(records) { record in
@@ -364,9 +364,9 @@ struct StructuredMemoryCenterView: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
-                                Text(record.scope.capitalized)
+                                Text(structuredMemoryScopeLabel(record.scope))
                                     .font(.caption.weight(.semibold))
-                                Text(record.type)
+                                Text(structuredMemoryTypeLabel(record.type))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 if record.isPinned { Image(systemName: "pin.fill").font(.caption) }
@@ -387,9 +387,9 @@ struct StructuredMemoryCenterView: View {
                 .onDelete(perform: delete)
             }
         }
-        .navigationTitle("Structured Memory")
+        .navigationTitle("结构化记忆")
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: "Search memory")
+        .searchable(text: $query, prompt: "搜索记忆")
         .onAppear { reload() }
         .onChange(of: query) { _ in reload() }
         .onReceive(NotificationCenter.default.publisher(for: .structuredMemoryDidChange)) { _ in reload() }
@@ -425,47 +425,47 @@ private struct StructuredMemoryDetailView: View {
 
     var body: some View {
         Form {
-            Section("Content") {
+            Section("内容") {
                 TextEditor(text: $record.content)
                     .frame(minHeight: 150)
             }
-            Section("Scope and ranking") {
-                memoryDetailRow("Scope", record.scope)
-                memoryDetailRow("Type", record.type)
-                Toggle("Pinned", isOn: $record.isPinned)
+            Section("作用域与排序") {
+                memoryDetailRow("作用域", structuredMemoryScopeLabel(record.scope))
+                memoryDetailRow("类型", structuredMemoryTypeLabel(record.type))
+                Toggle("置顶", isOn: $record.isPinned)
                 VStack(alignment: .leading) {
-                    Text("Confidence \(Int(record.confidence * 100))%")
+                    Text("置信度 \(Int(record.confidence * 100))%")
                     Slider(value: $record.confidence, in: 0...1)
                 }
                 VStack(alignment: .leading) {
-                    Text("Importance \(Int(record.importance * 100))%")
+                    Text("重要性 \(Int(record.importance * 100))%")
                     Slider(value: $record.importance, in: 0...1)
                 }
             }
-            Section("Provenance") {
-                memoryDetailRow("Source", structuredMemorySource(record))
-                if let projectId = record.projectId { memoryDetailRow("Project", projectId) }
-                if let supersedes = record.supersedesId { memoryDetailRow("Supersedes", supersedes) }
-                memoryDetailRow("Status", record.status)
-                memoryDetailRow("Updated", record.updatedAt.formatted())
+            Section("来源信息") {
+                memoryDetailRow("来源", structuredMemorySource(record))
+                if let projectId = record.projectId { memoryDetailRow("项目", projectId) }
+                if let supersedes = record.supersedesId { memoryDetailRow("替代记录", supersedes) }
+                memoryDetailRow("状态", structuredMemoryStatusLabel(record.status))
+                memoryDetailRow("更新时间", record.updatedAt.formatted())
             }
             if let saveError {
                 Section { Text(saveError).foregroundStyle(.red) }
             }
             Section {
-                Button("Delete memory", role: .destructive) { confirmDelete = true }
+                Button("删除记忆", role: .destructive) { confirmDelete = true }
             }
         }
-        .navigationTitle("Memory Detail")
+        .navigationTitle("记忆详情")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Save") { save() }
+                Button("保存") { save() }
                     .disabled(record.status != "active" || record.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .confirmationDialog("Delete this structured memory?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
+        .confirmationDialog("确定删除这条结构化记忆？", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("删除", role: .destructive) {
                 Task { await ChatStore.shared.deleteStructuredMemory(id: record.id); await MainActor.run { dismiss() } }
             }
         }
@@ -485,7 +485,7 @@ private struct StructuredMemoryDetailView: View {
 
     private func save() {
         guard MemoryCredentialGuard.admits(record.content) else {
-            saveError = "Credential-like or empty content cannot be saved."
+            saveError = "内容为空或疑似包含凭证，无法保存。"
             return
         }
         record.updatedAt = Date()
@@ -493,7 +493,7 @@ private struct StructuredMemoryDetailView: View {
         Task {
             let ok = await ChatStore.shared.saveStructuredMemory(updated)
             await MainActor.run {
-                if ok { dismiss() } else { saveError = "Memory could not be saved." }
+                if ok { dismiss() } else { saveError = "记忆保存失败。" }
             }
         }
     }
@@ -501,6 +501,40 @@ private struct StructuredMemoryDetailView: View {
 
 private func structuredMemorySource(_ record: StructuredMemoryRecord) -> String {
     if !record.sourceRefs.isEmpty { return record.sourceRefs.joined(separator: ", ") }
-    if let session = record.sourceSessionId { return "session:\(session)" }
-    return "unknown source"
+    if let session = record.sourceSessionId { return "会话：\(session)" }
+    return "未知来源"
+}
+
+private func structuredMemoryScopeLabel(_ value: String) -> String {
+    switch value.lowercased() {
+    case "project": return "项目"
+    case "user": return "用户"
+    case "task": return "任务"
+    case "procedure": return "流程"
+    case "failure": return "失败"
+    case "artifact": return "产物"
+    default: return value
+    }
+}
+
+private func structuredMemoryTypeLabel(_ value: String) -> String {
+    switch value.lowercased() {
+    case "artifact": return "产物"
+    case "failure": return "失败"
+    case "procedure": return "流程"
+    case "fact": return "事实"
+    case "preference": return "偏好"
+    case "checkpoint": return "检查点"
+    default: return value
+    }
+}
+
+private func structuredMemoryStatusLabel(_ value: String) -> String {
+    switch value.lowercased() {
+    case "active": return "有效"
+    case "superseded": return "已替代"
+    case "expired": return "已过期"
+    case "deleted": return "已删除"
+    default: return value
+    }
 }
