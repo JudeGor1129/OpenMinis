@@ -132,7 +132,6 @@ struct ToolsSettingsView: View {
     @AppStorage(AgentToolSwitch.browser.key) private var browserEnabled: Bool = AgentToolSwitch.browser.defaultValue
     @AppStorage(AgentToolSwitch.frida.key) private var fridaEnabled = AgentToolSwitch.frida.defaultValue
     @AppStorage(AgentToolSwitch.ictrl.key) private var ictrlEnabled = AgentToolSwitch.ictrl.defaultValue
-    @AppStorage(HomeworkHintPolicy.enabledKey) private var homeworkCoachEnabled = false
 
     var body: some View {
         Form {
@@ -151,13 +150,6 @@ struct ToolsSettingsView: View {
             Section {
                 toolRow("Frida 服务器诊断", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
                 Text(OpenMinisFridaDiagnosticsAvailable() ? "仅检查服务器文件和本机 27042 端口；不会初始化 Frida Core、枚举进程、连接协议或执行脚本。" : "当前构建不支持 Frida 诊断。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Section {
-                Toggle("允许语音老师", isOn: $homeworkCoachEnabled)
-                    .accessibilityHint("允许前台相机和孩子语音提问；默认关闭")
-                Text("固定摄像头对准本子，孩子遇到不会的直接语音提问，模型结合题目裁图讲解知识点和解题思路。语音识别优先设备端，联网识别需要另行允许。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

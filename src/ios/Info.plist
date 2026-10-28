@@ -207,7 +207,7 @@
 	<key>NSCalendarsUsageDescription</key>
 	<string>Minis uses calendar access so the AI agent can query your schedule, check availability, and create events on your behalf.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Minis uses the camera for homework coaching and photos you choose to send to AI conversations.</string>
+	<string>Minis uses the camera for photos you choose to send to AI conversations.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Minis uses Face ID to protect locked chat sessions so only you can view their contents.</string>
 	<key>NSHealthShareUsageDescription</key>
@@ -223,7 +223,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Minis uses your location to record where agent sessions are started for your session history.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Minis uses the microphone for voice input and local homework-coaching activity detection.</string>
+	<string>Minis uses the microphone for voice input.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Minis needs permission to save videos and images to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

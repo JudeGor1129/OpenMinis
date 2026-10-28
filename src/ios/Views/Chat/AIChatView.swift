@@ -346,7 +346,6 @@ struct AIChatView: View {
     @State private var showAttachmentMenu = false
     @State private var isDropTargeted = false
     @State private var showCamera = false
-    @State private var showHomeworkCoach = false
     @State private var showPhotoPicker = false
     @State private var showDocumentPicker = false
     @State private var showMoveToSheet = false
@@ -482,7 +481,7 @@ struct AIChatView: View {
 
     /// True when any sheet or fullScreenCover is presented (suppress auto-focus to avoid keyboard bugs).
     private var hasOverlayPresented: Bool {
-        showFileBrowser || showBrowserSheet || showTerminal || showCamera || showHomeworkCoach
+        showFileBrowser || showBrowserSheet || showTerminal || showCamera
             || showPhotoPicker || showDocumentPicker || showModelPicker
     }
 
@@ -1320,9 +1319,6 @@ struct AIChatView: View {
                     }
                 }
             }
-        }
-        .sheet(isPresented: $showHomeworkCoach) {
-            HomeworkCoachView(vm: vm)
         }
         .fileImporter(
             isPresented: $showDocumentPicker,
@@ -3393,7 +3389,6 @@ struct AIChatView: View {
 
         if #available(iOS 17, *) {
             Menu {
-                Button { showHomeworkCoach = true } label: { Label("语音老师", systemImage: "camera.viewfinder") }
                 Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
                 Button { showPhotoPicker = true } label: { Label("Choose Photos & Videos", systemImage: "photo.on.rectangle") }
                 Button { showDocumentPicker = true } label: { Label("Add File", systemImage: "doc") }
@@ -3405,7 +3400,6 @@ struct AIChatView: View {
                 icon
             }
             .confirmationDialog("Add Attachment", isPresented: $showAttachmentMenu) {
-                Button { showHomeworkCoach = true } label: { Label("语音老师", systemImage: "camera.viewfinder") }
                 Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
                 Button { showPhotoPicker = true } label: { Label("Choose Photos & Videos", systemImage: "photo.on.rectangle") }
                 Button { showDocumentPicker = true } label: { Label("Add File", systemImage: "doc") }
