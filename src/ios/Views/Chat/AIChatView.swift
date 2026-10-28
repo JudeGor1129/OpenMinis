@@ -3413,13 +3413,33 @@ struct AIChatView: View {
         }
     }
 
-    /// Bottom toolbar under the text field (+ / edit-exit / mic / send).
+    /// Opens the current chat workspace from the composer's compact toolbar.
+    /// Uses the same 34pt circular treatment as the attachment and slash tools.
+    private var workspaceFolderButton: some View {
+        Button {
+            showFileBrowser = true
+        } label: {
+            Image(systemName: "folder")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(ChatColors.secondaryText)
+                .frame(width: 34, height: 34)
+                .background(ChatColors.inputIconBg)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("打开工作区文件夹"))
+        .accessibilityHint(Text("浏览当前会话的工作区文件"))
+    }
+
+    /// Bottom toolbar under the text field (+ / slash / workspace / mic / send).
     /// Returns AnyView to keep `inputBar`'s generic type compact; SwiftUI
     /// runtime demangle chokes on deep nested types otherwise.
     private var inputBottomRow: AnyView {
         let row = HStack(spacing: 12) {
             attachmentMenuButton
             slashMenuButton
+            workspaceFolderButton
             if vm.editingMessageIndex != nil { editExitButton }
             Spacer()
             // Mutually exclusive with editExitButton: while editing a past
@@ -3435,11 +3455,11 @@ struct AIChatView: View {
         return AnyView(row)
     }
 
-    /// [T-ios-de-voice-toolbar] Fixed controls in `inputBottomRow`: two 34pt
-    /// leading buttons, the 34pt mic and the 34pt send button, plus the four
+    /// [T-ios-de-voice-toolbar] Fixed controls in `inputBottomRow`: three 34pt
+    /// leading buttons, the 34pt mic and the 34pt send button, plus the five
     /// 12pt HStack gaps between them. Everything left over is what the
     /// read-aloud capsule may use.
-    private static let readAloudRowFixedWidth: CGFloat = 34 * 4 + 12 * 4
+    private static let readAloudRowFixedWidth: CGFloat = 34 * 5 + 12 * 5
 
     /// Free width below which the toggle drops its text and becomes icon-only.
     ///
@@ -3968,15 +3988,6 @@ struct AIChatView: View {
                 }
 
                 inputFieldOrWaveform
-
-                Button {
-                    showFileBrowser = true
-                } label: {
-                    Label("打开工作区文件夹", systemImage: "folder")
-                        .font(.caption)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.horizontal, 16)
 
                 inputBottomRow
                     // [T-ios-de-voice-toolbar] Measure the row so the
