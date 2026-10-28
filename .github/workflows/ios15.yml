@@ -1,8 +1,7 @@
 name: iOS 15 port diagnostics
 
-# Rebuild request (updated 2026-10-28, [ios15-full-build]): build the
-# build160 regression fixes (ROI drag freeze, coaching toggle, composer
-# breathing border) into a TrollStore test IPA.
+# Rebuild request (updated 2026-10-23b, [ios15-full-build]): regenerate the
+# deleted build 50 IPA without changing app source.
 on:
   push:
     paths:

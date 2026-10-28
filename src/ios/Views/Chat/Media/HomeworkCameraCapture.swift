@@ -30,7 +30,6 @@ final class HomeworkCameraCapture: NSObject, @unchecked Sendable {
     private var accepting = false
     private var frameOutstanding = false
     private var closed = false
-    private var editingRegion = false
     private var region: CGRect
     private var lastFrame = -Double.infinity
     private var loudDuration = 0.0
@@ -60,13 +59,6 @@ final class HomeworkCameraCapture: NSObject, @unchecked Sendable {
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
-
-    func setRegionEditing(_ editing: Bool) {
-        lock.lock()
-        editingRegion = editing
-        if editing { frameOutstanding = false }
-        lock.unlock()
-    }
 
     func setRegion(_ value: CGRect) {
         lock.lock()
@@ -328,7 +320,7 @@ extension HomeworkCameraCapture: AVCaptureVideoDataOutputSampleBufferDelegate,
         let now = ProcessInfo.processInfo.systemUptime
         guard now - lastFrame >= 0.4 else { return }
         lock.lock()
-        guard !frameOutstanding, accepting, !closed, !editingRegion else { lock.unlock(); return }
+        guard !frameOutstanding, accepting, !closed else { lock.unlock(); return }
         frameOutstanding = true
         lock.unlock()
         lastFrame = now

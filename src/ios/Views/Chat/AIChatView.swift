@@ -5290,10 +5290,8 @@ private struct SiriFlowBorder: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
-    @State private var cycleStart = Date()
 
     private let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-    private let cycleDuration: TimeInterval = 2.8
     private var colors: [Color] {
         [
             Color(red: 0.15, green: 0.82, blue: 1.0),
@@ -5306,51 +5304,41 @@ private struct SiriFlowBorder: View {
     }
 
     var body: some View {
-        Group {
-            if isProcessing {
-                TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
-                    let elapsed = max(0, context.date.timeIntervalSince(cycleStart))
-                    let phase = elapsed.truncatingRemainder(dividingBy: cycleDuration) / cycleDuration
-                    // Starts at zero, breathes in to full colour, then fades
-                    // back to zero before the next thought cycle.
-                    let breath = reduceMotion ? 0.85 : 0.5 - 0.5 * cos(phase * 2 * .pi)
-                    let angle = phase * 360.0
-                    let gradient = AngularGradient(
-                        gradient: Gradient(colors: colors),
-                        center: .center,
-                        startAngle: .degrees(angle),
-                        endAngle: .degrees(angle + 360)
-                    )
-                    let lightMode = colorScheme == .light
-                    let coreOpacity = (lightMode ? 0.72 : 0.52) * breath
-                    let auraOpacity = (lightMode ? 0.42 : 0.30) * breath
-                    let coreWidth = (lightMode ? 2.5 : 2.0) + 3.0 * breath
-                    let coreBlur = (lightMode ? 3.0 : 4.0) + 4.0 * (1.0 - breath)
-                    let auraBlur = (lightMode ? 10.0 : 14.0) + 8.0 * (1.0 - breath)
+        // The timeline is intentionally mounted only while the model is
+        // processing. Idle composers have no animation work and no visible
+        // border; this also avoids a stale final frame after completion.
+        if isProcessing {
+            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
+                let seconds = context.date.timeIntervalSinceReferenceDate
+                let phase = (seconds.truncatingRemainder(dividingBy: 4.0) / 4.0) * 360.0
+                let pulse = reduceMotion ? 0.7 : (0.2 + 0.8 * (0.5 + 0.5 * sin(seconds * .pi / 1.15)))
+                let gradient = AngularGradient(
+                    gradient: Gradient(colors: colors),
+                    center: .center,
+                    startAngle: .degrees(phase),
+                    endAngle: .degrees(phase + 360)
+                )
 
-                    ZStack {
-                        shape
-                            .stroke(gradient, lineWidth: coreWidth)
-                            .blur(radius: coreBlur)
-                            .opacity(coreOpacity)
-                        shape
-                            .stroke(gradient, lineWidth: 2)
-                            .blur(radius: auraBlur)
-                            .opacity(auraOpacity)
-                    }
-                    .blendMode(colorScheme == .dark ? .plusLighter : .normal)
-                    .allowsHitTesting(false)
+                // A soft bloom only: no crisp stroke and no visible frame.
+                // Keep the source line narrow and let the blur carry the color;
+                // a wide stroke reads as a second border on the composer.
+                let lightMode = colorScheme == .light
+                ZStack {
+                    // Light surfaces absorb more color, so use a stronger,
+                    // tighter core there and keep the wider aura clearly tinted.
+                    shape
+                        .stroke(gradient, lineWidth: lightMode ? 5 : 4)
+                        .blur(radius: lightMode ? 5 : 7)
+                        .opacity((lightMode ? 0.62 : 0.42) + (lightMode ? 0.30 : 0.38) * pulse)
+                    shape
+                        .stroke(gradient, lineWidth: lightMode ? 3 : 2)
+                        .blur(radius: lightMode ? 15 : 18)
+                        .opacity((lightMode ? 0.34 : 0.22) + (lightMode ? 0.25 : 0.24) * pulse)
                 }
-                .transition(.opacity)
+                .blendMode(colorScheme == .dark ? .plusLighter : .normal)
+                .allowsHitTesting(false)
             }
         }
-        .onAppear {
-            if isProcessing { cycleStart = Date() }
-        }
-        .onChange(of: isProcessing) { active in
-            if active { cycleStart = Date() }
-        }
-        .animation(MinisMotion.feedback, value: isProcessing)
     }
 }
 
