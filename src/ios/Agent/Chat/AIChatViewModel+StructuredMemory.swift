@@ -16,6 +16,7 @@ extension AIChatViewModel {
             return nil
         }
         let project = await ChatStore.shared.currentProject(sessionId: sessionId)
+        lastStructuredMemoryRecoveryProjectId = project?.id
         let allocation = TokenBudgetManager.allocation(contextWindow: contextWindow, modelId: modelId)
         let checkpoint = await ChatStore.shared.latestTaskCheckpoint(sessionId: sessionId, projectId: project?.id)
         let memories = await ChatStore.shared.searchStructuredMemories(
@@ -86,18 +87,34 @@ extension AIChatViewModel {
     /// Conservative automatic path: only evidence produced by a project tool
     /// is considered. Ordinary user/assistant conversation never enters this
     /// path, so chat transcripts are not silently copied into long-term memory.
-    func captureProjectContext(command: String, output: String, exitCode: Int, sourceMessageId: String?) async {
-        guard let evidence = ProjectScopeDetector.detect(command: command, output: output), let sessionId else { return }
-        guard let project = await ChatStore.shared.upsertProject(evidence, sessionId: sessionId) else { return }
+    func captureProjectContext(command: String, output: String, exitCode: Int, sourceMessageId: String?) async -> ProjectRecord? {
+        guard let evidence = ProjectScopeDetector.detect(command: command, output: output), let sessionId else { return nil }
+        guard let project = await ChatStore.shared.upsertProject(evidence, sessionId: sessionId) else { return nil }
         let autoEnabled = (UserDefaults.standard.object(forKey: "memory.structured.auto.enabled") as? Bool) ?? true
-        guard exitCode == 0, autoEnabled else { return }
+        guard autoEnabled else { return project }
+        let now = Date()
+        if exitCode != 0 {
+            let tail = String(output.suffix(2_000))
+            let content = "Command failed with exit code \(exitCode): \(String(command.prefix(500)))\n\(tail)"
+            if AutoMemoryAdmission.admits(content: content, origin: .projectTool, autoMemoryEnabled: autoEnabled) {
+                let record = StructuredMemoryRecord(
+                    id: UUID().uuidString, scope: "project", type: "failure", projectId: project.id,
+                    key: "failure." + String(command.prefix(120)), content: content,
+                    sourceSessionId: sessionId, sourceMessageId: sourceMessageId,
+                    sourceRefs: [project.canonicalPath], confidence: 0.85, importance: 0.75,
+                    createdAt: now, updatedAt: now, lastUsedAt: nil,
+                    expiresAt: now.addingTimeInterval(30 * 86_400), supersedesId: nil,
+                    sensitivity: "normal", status: "active", isPinned: false)
+                _ = await ChatStore.shared.saveStructuredMemory(record)
+            }
+            return project
+        }
 
         var candidates: [(String, String, Double)] = []
         if let branch = evidence.branch { candidates.append(("git.branch", "Current branch: \(branch)", 0.75)) }
         if let commit = evidence.commit { candidates.append(("git.commit", "Last observed commit: \(commit)", 0.85)) }
         if let remote = evidence.remote { candidates.append(("git.remote", "Git remote: \(remote)", 0.9)) }
         for build in evidence.buildCommands { candidates.append(("build.command", build, 0.8)) }
-        let now = Date()
         for (key, content, importance) in candidates {
             guard AutoMemoryAdmission.admits(content: content, origin: .projectTool, autoMemoryEnabled: autoEnabled) else { continue }
             let record = StructuredMemoryRecord(
@@ -110,6 +127,14 @@ extension AIChatViewModel {
             )
             _ = await ChatStore.shared.saveStructuredMemory(record)
         }
+        return project
+    }
+
+    func projectRecoveryReferenceIfNeeded(for project: ProjectRecord?) async -> String? {
+        guard let project, project.id != lastStructuredMemoryRecoveryProjectId else { return nil }
+        return await structuredMemoryPromptFragment(
+            modelId: selectedModel.id,
+            contextWindow: effectiveContextWindow(for: selectedModel))
     }
 
     func runMemorySlashCommand(_ raw: String) {
@@ -192,8 +217,9 @@ extension AIChatViewModel {
             return FileToolResult(output: saved ? "Saved structured memory \(record.id)." : "Structured memory could not be saved.", success: saved)
         case "edit":
             guard let id = args["id"] as? String, var record = await ChatStore.shared.structuredMemory(id: id),
+                  record.status == "active",
                   let content = args["content"] as? String, MemoryCredentialGuard.admits(content) else {
-                return FileToolResult(output: "Error: valid id and credential-free content are required.", success: false)
+                return FileToolResult(output: "Error: an active id and credential-free content are required.", success: false)
             }
             record.content = content
             record.updatedAt = Date()

@@ -53,6 +53,29 @@ final class StructuredMemoryTests: XCTestCase {
         XCTAssertEqual(evidence?.branch, "ios15-port")
     }
 
+    func testProjectSearchDoesNotMixScopes() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = ChatStore(baseURL: root)
+        let a = await store.upsertProject(ProjectEvidence(canonicalPath: "/tmp/a", remote: nil, branch: "a", commit: nil, buildCommands: [], stack: [], toolchain: []), sessionId: nil)
+        let b = await store.upsertProject(ProjectEvidence(canonicalPath: "/tmp/b", remote: nil, branch: "b", commit: nil, buildCommands: [], stack: [], toolchain: []), sessionId: nil)
+        guard let a, let b else { XCTFail("project migration/upsert failed"); return }
+        let now = Date()
+        for (project, content) in [(a, "alpha project fact"), (b, "beta project fact")] {
+            let record = StructuredMemoryRecord(id: UUID().uuidString, scope: "project", type: "fact", projectId: project.id,
+                key: nil, content: content, sourceSessionId: nil, sourceMessageId: nil, sourceRefs: [], confidence: 1,
+                importance: 1, createdAt: now, updatedAt: now, lastUsedAt: nil, expiresAt: nil,
+                supersedesId: nil, sensitivity: "normal", status: "active", isPinned: false)
+            let saved = await store.saveStructuredMemory(record)
+            XCTAssertTrue(saved)
+        }
+        let scoped = await store.searchStructuredMemories(projectId: a.id, limit: 10)
+        XCTAssertTrue(scoped.contains { $0.content.contains("alpha") })
+        XCTAssertFalse(scoped.contains { $0.content.contains("beta") })
+        let unscoped = await store.searchStructuredMemories(limit: 10)
+        XCTAssertFalse(unscoped.contains { $0.projectId != nil })
+    }
+
     func testFTSChineseSearchAndSupersession() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }

@@ -80,7 +80,7 @@ enum TokenBudgetManager {
         let input = max(0, window - output)
         return TokenBudgetSnapshot(
             modelId: modelId,
-            contextWindow: contextWindow,
+            contextWindow: window,
             systemAndTools: Int(Double(input) * 0.18),
             checkpointAndMemory: Int(Double(input) * 0.24),
             recentMessages: Int(Double(input) * 0.38),
@@ -240,10 +240,16 @@ enum ProjectScopeDetector {
         let canonical = URL(fileURLWithPath: path).standardizedFileURL.path
         let remote = firstMatch(#"(?:https?://|ssh://|git@)[^\s]+"#, in: output)?.first.map(String.init)
         let branch = firstMatch(#"(?m)^(?:##|On branch)\s+([^.\s]+)"#, in: output)?.first.map(String.init)
-        let commit = command.contains("git ") ? firstMatch(#"\b[0-9a-f]{7,40}\b"#, in: output)?.first.map(String.init) : nil
-        let buildLines = command.components(separatedBy: .newlines).filter {
+            ?? firstMatch(#"\"branch\"\s*:\s*\"([^\"]+)\""#, in: output)?.first.map(String.init)
+        let commit = firstMatch(#"\"(?:commit|gitCommit|git_commit)\"\s*:\s*\"([0-9a-f]{7,40})\""#, in: output)?.first.map(String.init)
+            ?? (command.contains("git ") ? firstMatch(#"\b[0-9a-f]{7,40}\b"#, in: output)?.first.map(String.init) : nil)
+        var buildLines = command.components(separatedBy: .newlines).filter {
             let s = $0.lowercased()
             return ["xcodebuild", "swift build", "swift test", "make", "npm test", "gradle", "cargo test", "pytest"].contains { s.contains($0) }
+        }
+        if let structuredCommand = firstMatch(#"\"command\"\s*:\s*\"([^\"]+)\""#, in: output)?.first.map(String.init),
+           !structuredCommand.isEmpty {
+            buildLines.append(structuredCommand)
         }
         let lower = command.lowercased() + "\n" + output.lowercased()
         let stack = [("Package.swift", "Swift"), (".xcodeproj", "iOS/Xcode"), ("Cargo.toml", "Rust"),

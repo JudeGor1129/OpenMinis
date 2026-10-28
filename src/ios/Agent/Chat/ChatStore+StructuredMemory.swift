@@ -50,7 +50,7 @@ extension ChatStore {
                 updated_at REAL NOT NULL,
                 last_used_at REAL,
                 expires_at REAL,
-                supersedes_id TEXT REFERENCES memories(id),
+                supersedes_id TEXT REFERENCES memories(id) ON DELETE SET NULL,
                 sensitivity TEXT NOT NULL DEFAULT 'normal',
                 status TEXT NOT NULL DEFAULT 'active',
                 is_pinned INTEGER NOT NULL DEFAULT 0,
@@ -265,7 +265,7 @@ extension ChatStore {
     }
 
     func searchStructuredMemories(query: String = "", projectId: String? = nil, limit: Int = 20,
-                                  includeInactive: Bool = false) -> [StructuredMemoryRecord] {
+                                  includeInactive: Bool = false, includeAllProjects: Bool = false) -> [StructuredMemoryRecord] {
         let terms = TextSegmenter.shared.segmentForSearch(query).map { $0.lowercased() }.filter { !$0.isEmpty }
         // Query the pre-tokenized FTS5 index first. A nil result means the
         // platform SQLite lacks FTS5 (or the table is unavailable), in which
@@ -296,7 +296,11 @@ extension ChatStore {
         while sqlite3_step(stmt) == SQLITE_ROW {
             let item = readMemory(stmt)
             let projectBoost = projectId != nil && item.projectId == projectId ? 1.0 : (item.scope == "user" || item.scope == "procedure" ? 0.35 : 0)
-            if projectId != nil && item.projectId != nil && item.projectId != projectId { continue }
+            if let projectId {
+                if item.projectId != nil && item.projectId != projectId { continue }
+            } else if item.projectId != nil && !includeAllProjects {
+                continue
+            }
             let ageDays = max(0, Date().timeIntervalSince(item.updatedAt) / 86_400)
             let decay = exp(-ageDays / 90)
             let score = projectBoost + item.importance * 1.3 + item.confidence * 0.7 + decay * 0.6 + (item.isPinned ? 2 : 0)

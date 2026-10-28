@@ -486,6 +486,16 @@ extension AIChatViewModel {
             }
             toolOutput = result.output
             toolSuccess = result.success
+            if let projectPath = toolArgs["project_path"] as? String, projectPath.hasPrefix("/") {
+                let quotedPath = projectPath.replacingOccurrences(of: "'", with: "'\\''")
+                let sourceMessageId = msgIdx < messages.count ? messages[msgIdx].id.uuidString : nil
+                let capturedProject = await captureProjectContext(
+                    command: "cd '\(quotedPath)' && \(tu.name)", output: result.output,
+                    exitCode: result.success ? 0 : 1, sourceMessageId: sourceMessageId)
+                if let recovery = await projectRecoveryReferenceIfNeeded(for: capturedProject) {
+                    toolOutput += "\n\n" + recovery
+                }
+            }
         case "ask_user":
             guard AgentToolSwitch.interaction.isEnabled else {
                 toolOutput = Self.toolsDisabledMessage
@@ -795,11 +805,12 @@ extension AIChatViewModel {
                 ctLogger.info("[EnvVarRedact] shell_execute: masked \(redactHits) env-var value(s) in tool result")
             }
             toolOutput = redactedOut
-            if result.exitCode == 0 {
-                let sourceMessageId = msgIdx < messages.count ? messages[msgIdx].id.uuidString : nil
-                await captureProjectContext(command: command, output: redactedOut,
-                                            exitCode: result.exitCode,
-                                            sourceMessageId: sourceMessageId)
+            let sourceMessageId = msgIdx < messages.count ? messages[msgIdx].id.uuidString : nil
+            let capturedProject = await captureProjectContext(
+                command: command, output: redactedOut,
+                exitCode: result.exitCode, sourceMessageId: sourceMessageId)
+            if let recovery = await projectRecoveryReferenceIfNeeded(for: capturedProject) {
+                toolOutput += "\n\n" + recovery
             }
 
         case "inspect_project", "search_code", "project_read_file", "apply_patch",
@@ -810,6 +821,16 @@ extension AIChatViewModel {
             }
             toolOutput = result.output
             toolSuccess = result.success
+            if let projectPath = toolArgs["path"] as? String, projectPath.hasPrefix("/") {
+                let quotedPath = projectPath.replacingOccurrences(of: "'", with: "'\\''")
+                let sourceMessageId = msgIdx < messages.count ? messages[msgIdx].id.uuidString : nil
+                let capturedProject = await captureProjectContext(
+                    command: "cd '\(quotedPath)' && \(tu.name)", output: result.output,
+                    exitCode: result.success ? 0 : 1, sourceMessageId: sourceMessageId)
+                if let recovery = await projectRecoveryReferenceIfNeeded(for: capturedProject) {
+                    toolOutput += "\n\n" + recovery
+                }
+            }
 
         case "file_read":
             let fileResult: FileToolResult

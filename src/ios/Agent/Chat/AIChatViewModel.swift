@@ -804,6 +804,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Structured memory's measured share of `contextFixedTokens`; kept
     /// separately so TokenBudgetManager can attribute rather than double-count.
     var structuredMemoryInjectedTokens = 0
+    /// Project recovery reference already surfaced in the current agent loop.
+    /// Prevents every shell/tool iteration from re-injecting the same checkpoint.
+    var lastStructuredMemoryRecoveryProjectId: String?
     /// Category snapshot for the request currently in flight. The provider's
     /// actual/cache usage is persisted against it after the call returns.
     var lastTokenBudgetSnapshot: TokenBudgetSnapshot?

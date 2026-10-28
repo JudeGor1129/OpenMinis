@@ -51,6 +51,7 @@ jobs:
           bash scripts/ios15/check-frida-transcript-source.sh 2>&1 | tee ci-logs/frida-transcript-source.txt
           bash scripts/ios15/check-host-file-tools.sh 2>&1 | tee ci-logs/host-file-tools.txt
           bash scripts/ios15/check-programming-build-tools.sh 2>&1 | tee ci-logs/programming-build-tools.txt
+          bash scripts/ios15/check-programming-tools.sh 2>&1 | tee ci-logs/programming-tools.txt
           bash scripts/ios15/check-navigation.sh 2>&1 | tee ci-logs/navigation.txt
           bash scripts/ios15/check-fileprovider.sh 2>&1 | tee ci-logs/fileprovider.txt
           bash scripts/ios15/check-localization.sh 2>&1 | tee ci-logs/localization.txt

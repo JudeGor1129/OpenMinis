@@ -349,6 +349,9 @@ extension AIChatViewModel {
             "index": [
                 "incremental": true, "commit": index.commit,
                 "files": index.files.count, "symbols": symbolCount,
+                "indexed_bytes": index.files.values.reduce(0) { $0 + $1.byteCount },
+                "max_indexed_bytes": 48 * 1_024 * 1_024,
+                "workflow_roles": ProgrammingRolePolicy.descriptors,
                 "semantic_provider": Self.semanticSearchProvider.providerName,
                 "semantic_available": Self.semanticSearchProvider.isAvailable,
                 "fallback": "BM25-like lexical ranking + exact symbol + keyword"
@@ -442,13 +445,18 @@ extension AIChatViewModel {
             try? JSONDecoder().decode(CodeIndexSnapshot.self, from: $0)
         }
         var files: [String: IndexedCodeFile] = [:]
-        for url in projectFiles(rootURL: rootURL, maxDepth: 20, includeHidden: false, maxFiles: 50_000) {
+        var indexedBytes = 0
+        let maximumIndexedBytes = 48 * 1_024 * 1_024
+        for url in projectFiles(rootURL: rootURL, maxDepth: 20, includeHidden: false, maxFiles: 12_000) {
             guard Self.programmingSearchExtensions.contains(url.pathExtension.lowercased()),
                   let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
-                  values.isRegularFile == true, (values.fileSize ?? 0) <= 2_000_000,
-                  let data = try? Data(contentsOf: url), !data.contains(0),
+                  values.isRegularFile == true, (values.fileSize ?? 0) <= 2_000_000 else { continue }
+            let fileSize = values.fileSize ?? 0
+            guard indexedBytes + fileSize <= maximumIndexedBytes else { continue }
+            guard let data = try? Data(contentsOf: url), !data.contains(0),
                   let text = String(data: data, encoding: .utf8) else { continue }
             let rel = relative(url, to: rootURL)
+            indexedBytes += data.count
             let hash = sha256(data)
             if let cached = old?.files[rel], cached.hash == hash {
                 files[rel] = cached
@@ -489,6 +497,13 @@ extension AIChatViewModel {
         for entry in index.files.values {
             let url = rootURL.appendingPathComponent(entry.relativePath)
             guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let symbolCandidate = entry.symbols.contains {
+                $0.name.caseInsensitiveCompare(query) == .orderedSame
+                    || $0.name.range(of: query, options: .caseInsensitive) != nil
+            }
+            let lexicalCandidate = text.range(of: query, options: .caseInsensitive) != nil
+                || terms.contains { text.range(of: $0, options: .caseInsensitive) != nil }
+            guard symbolCandidate || lexicalCandidate else { continue }
             let tokens = tokenize(text)
             for term in Set(tokens).intersection(terms) { documentFrequency[term, default: 0] += 1 }
             searchable.append((entry, text, tokens))

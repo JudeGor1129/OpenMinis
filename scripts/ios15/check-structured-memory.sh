@@ -38,6 +38,8 @@ for file in StructuredMemory.swift ChatStore+StructuredMemory.swift AIChatViewMo
   [[ "$(grep -Fc "/* $file in Sources */" "$project")" -eq 2 ]] || { echo "FAIL: $file is not in Minis Sources"; exit 1; }
 done
 grep -q 'testFTSChineseSearchAndSupersession' "$tests"
+grep -q 'testProjectSearchDoesNotMixScopes' "$tests"
+grep -q 'includeAllProjects' "$store"
 grep -q 'testCredentialAdmissionRejectsSecrets' "$tests"
 grep -q 'testCheckpointCodecPreservesRecoveryFields' "$tests"
 

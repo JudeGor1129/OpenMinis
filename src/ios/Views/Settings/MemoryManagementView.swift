@@ -398,7 +398,8 @@ struct StructuredMemoryCenterView: View {
     private func reload() {
         let value = query
         Task {
-            let loaded = await ChatStore.shared.searchStructuredMemories(query: value, limit: 100)
+            let loaded = await ChatStore.shared.searchStructuredMemories(
+                query: value, limit: 100, includeInactive: true, includeAllProjects: true)
             await MainActor.run { records = loaded }
         }
     }
@@ -460,7 +461,7 @@ private struct StructuredMemoryDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Save") { save() }
-                    .disabled(record.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(record.status != "active" || record.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .confirmationDialog("Delete this structured memory?", isPresented: $confirmDelete, titleVisibility: .visible) {
