@@ -262,10 +262,12 @@ enum ProjectScopeDetector {
     private static func firstMatch(_ pattern: String, in text: String) -> [Substring]? {
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return nil }
-        return (1..<match.numberOfRanges).compactMap { index in
+        let captures: [Substring] = (1..<match.numberOfRanges).compactMap { index -> Substring? in
             guard let range = Range(match.range(at: index), in: text) else { return nil }
             return text[range]
-        }.isEmpty ? Range(match.range, in: text).map { [text[$0]] } :
-            (1..<match.numberOfRanges).compactMap { Range(match.range(at: $0), in: text).map { text[$0] } }
+        }
+        if !captures.isEmpty { return captures }
+        guard let fullRange = Range(match.range, in: text) else { return nil }
+        return [text[fullRange]]
     }
 }

@@ -69,7 +69,7 @@ extension AIChatViewModel {
             }
             return "Nothing was saved."
         }
-        let project = if let sessionId { await ChatStore.shared.currentProject(sessionId: sessionId) } else { nil }
+        let project: ProjectRecord? = if let sessionId { await ChatStore.shared.currentProject(sessionId: sessionId) } else { nil }
         let now = Date()
         let memory = StructuredMemoryRecord(
             id: UUID().uuidString, scope: project == nil ? "user" : "project", type: "fact",
@@ -148,7 +148,7 @@ extension AIChatViewModel {
             }
             if lower.hasPrefix("/forget ") {
                 let query = String(text.dropFirst("/forget ".count))
-                let project = if let sessionId { await ChatStore.shared.currentProject(sessionId: sessionId) } else { nil }
+                let project: ProjectRecord? = if let sessionId { await ChatStore.shared.currentProject(sessionId: sessionId) } else { nil }
                 let hits = await ChatStore.shared.searchStructuredMemories(query: query, projectId: project?.id, limit: 20)
                 for hit in hits { await ChatStore.shared.deleteStructuredMemory(id: hit.id) }
                 appendSystemInfo(hits.isEmpty ? "No matching structured memories." : "Forgot \(hits.count) matching structured memories.", icon: "brain.head.profile")
@@ -162,7 +162,7 @@ extension AIChatViewModel {
                 return
             }
             let query = action == "search" ? (pieces.count > 1 ? pieces[1] : "") : ""
-            let project = if let sessionId { await ChatStore.shared.currentProject(sessionId: sessionId) } else { nil }
+            let project: ProjectRecord? = if let sessionId { await ChatStore.shared.currentProject(sessionId: sessionId) } else { nil }
             let hits = await ChatStore.shared.searchStructuredMemories(query: query, projectId: project?.id, limit: 20)
             let output = hits.isEmpty ? "No structured memories found." : hits.map {
                 "[\($0.id.prefix(8))] \($0.scope)/\($0.type) confidence=\(String(format: "%.2f", $0.confidence)) source=\($0.sourceSessionId ?? "unknown")\n\($0.content)"
@@ -185,7 +185,7 @@ extension AIChatViewModel {
             return FileToolResult(output: "Error: invalid structured-memory arguments", success: false)
         }
         let action = ((args["action"] as? String) ?? "list").lowercased()
-        let project = if let sessionId { await ChatStore.shared.currentProject(sessionId: sessionId) } else { nil }
+        let project: ProjectRecord? = if let sessionId { await ChatStore.shared.currentProject(sessionId: sessionId) } else { nil }
         switch action {
         case "list", "search":
             let query = action == "search" ? ((args["query"] as? String) ?? "") : ""
