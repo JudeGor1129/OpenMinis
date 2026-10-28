@@ -48,7 +48,7 @@ enum SystemHelperClient {
         var body = payload
         body["mode"] = SystemAccessSettings.mode.rawValue
         return await withCheckedContinuation { continuation in
-            let request = OpenMinisPrivilegedRequest(action: action, payload: body as NSDictionary)
+            let request = OpenMinisPrivilegedRequest(action: action, payload: body)
             request.run { [request] text in
                 _ = request
                 let object: [String: Any]

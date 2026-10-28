@@ -53,7 +53,7 @@ struct SystemAccessSettingsView: View {
                 }
             }
 
-            Section("审计与回滚") {
+            Section {
                 if auditEntries.isEmpty {
                     Text("暂无系统文件写入记录").foregroundStyle(.secondary)
                 }
@@ -72,6 +72,8 @@ struct SystemAccessSettingsView: View {
                     }
                 }
                 Button("刷新审计记录") { reloadAudit() }
+            } header: {
+                Text("审计与回滚")
             } footer: {
                 Text("审计只保存路径、动作、时间、字节数和前后哈希，不保存文件正文或凭证。")
             }

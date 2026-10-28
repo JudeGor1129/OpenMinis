@@ -446,7 +446,7 @@ private struct MinisGroupMemorySettings: View {
             } footer: {
                 Text("关闭后，本组任务不会读取或写入长期记忆、每日日志和结构化项目记忆，相关记忆工具也会停用。不会删除已有记录；主页面保存后生效。")
             }
-            Section("结构化项目记忆") {
+            Section {
                 HStack {
                     Label("本组使用结构化项目记忆", systemImage: "brain.head.profile")
                     Spacer()
@@ -458,6 +458,8 @@ private struct MinisGroupMemorySettings: View {
                 } label: {
                     Label("管理结构化记忆", systemImage: "list.bullet.rectangle")
                 }
+            } header: {
+                Text("结构化项目记忆")
             } footer: {
                 Text("此功能沿用上方“本分组启用记忆”总开关，不需要重复开关。自动写入还受“设置 → 记忆 → 自动项目记忆”全局开关控制；记录按项目隔离，不会与其他项目混用。")
             }
