@@ -795,6 +795,12 @@ extension AIChatViewModel {
                 ctLogger.info("[EnvVarRedact] shell_execute: masked \(redactHits) env-var value(s) in tool result")
             }
             toolOutput = redactedOut
+            if result.exitCode == 0 {
+                let sourceMessageId = msgIdx < messages.count ? messages[msgIdx].id.uuidString : nil
+                await captureProjectContext(command: command, output: redactedOut,
+                                            exitCode: result.exitCode,
+                                            sourceMessageId: sourceMessageId)
+            }
 
         case "inspect_project", "search_code", "project_read_file", "apply_patch",
              "git_status", "git_diff", "run_lint":
@@ -1121,6 +1127,22 @@ extension AIChatViewModel {
 
         case "memory_get":
             let memResult = executeMemoryGet(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = memResult.output
+            }
+            toolOutput = memResult.output
+            toolSuccess = memResult.success
+
+        case "memory_manage":
+            let memResult = await executeStructuredMemoryTool(from: argsJson)
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = memResult.output
+            }
+            toolOutput = memResult.output
+            toolSuccess = memResult.success
+
+        case "create_checkpoint":
+            let memResult = await executeCreateCheckpointTool(from: argsJson)
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].content = memResult.output
             }

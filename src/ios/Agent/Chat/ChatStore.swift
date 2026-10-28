@@ -485,7 +485,7 @@ struct RawMessage: Identifiable, Codable, Hashable {
 actor ChatStore {
     static let shared = ChatStore()
 
-    private var db: OpaquePointer?
+    var db: OpaquePointer?
     /// Base URL for per-session media storage: Library/MinisChat/minis/
     let minisBaseURL: URL
 
@@ -1069,6 +1069,10 @@ actor ChatStore {
             )
         """)
         exec("CREATE INDEX IF NOT EXISTS idx_webapp_shortcuts_created ON webapp_shortcuts(created_at DESC)")
+
+        // Versioned, idempotent structured-memory migration. Kept in the same
+        // SQLite file so sessions, project scope and checkpoints remain atomic.
+        createStructuredMemoryTables()
 
         purgeUnusableSessionRows()
     }
@@ -5831,9 +5835,13 @@ extension RawMessage {
                     let path = extractStringParam("path", from: tu.input)
                     kind = .readImageTool(path: path)
                     content = "Reading image \(path)..."
-                case "memory_write", "memory_get":
+                case "memory_write", "memory_get", "memory_manage", "create_checkpoint":
                     kind = .memoryTool(action: tu.name)
-                    content = tu.name == "memory_write" ? "Writing memory..." : "Reading memory..."
+                    switch tu.name {
+                    case "memory_write": content = "Writing memory..."
+                    case "memory_get", "memory_manage": content = "Reading memory..."
+                    default: content = "Saving task checkpoint..."
+                    }
                 case SubAgentDefinition.toolName:
                     kind = .delegateTool(title: tu.description ?? "")
                     content = "Delegating..."

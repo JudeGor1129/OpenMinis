@@ -26,6 +26,16 @@ struct MemoryManagementView: View {
                 Text(AppLocalized("settings_memory_global_enabled_footer"))
             }
 
+            Section {
+                NavigationLink {
+                    StructuredMemoryCenterView()
+                } label: {
+                    Label("Structured Memory Center", systemImage: "brain.head.profile")
+                }
+            } footer: {
+                Text("Search and manage project-scoped records, sources, confidence, pinning, expiry, and automatic admission.")
+            }
+
             ForEach(memoryFiles) { file in
                 NavigationLink {
                     MemoryFileEditView(fileName: file.name, isGlobal: file.isGlobal)
@@ -325,4 +335,171 @@ extension Notification.Name {
     /// memory_write tool, or by an inbound iCloud sync merge. Observers
     /// can use this to refresh their in-memory snapshot of memory files.
     static let memoryFilesDidChange = Notification.Name("com.openminis.app.memoryFilesDidChange")
+}
+
+
+// MARK: - Structured Memory Center
+
+struct StructuredMemoryCenterView: View {
+    @AppStorage("memory.structured.auto.enabled") private var automaticMemory = true
+    @State private var query = ""
+    @State private var records: [StructuredMemoryRecord] = []
+
+    var body: some View {
+        List {
+            Section {
+                Toggle("Automatic project memory", isOn: $automaticMemory)
+            } footer: {
+                Text("Only verified project-tool facts are admitted automatically. Ordinary conversation and credential-like content are never saved automatically.")
+            }
+
+            Section("Structured records") {
+                if records.isEmpty {
+                    Text("No matching structured memories")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(records) { record in
+                    NavigationLink {
+                        StructuredMemoryDetailView(record: record)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack {
+                                Text(record.scope.capitalized)
+                                    .font(.caption.weight(.semibold))
+                                Text(record.type)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if record.isPinned { Image(systemName: "pin.fill").font(.caption) }
+                                Spacer()
+                                Text(String(format: "%.0f%%", record.confidence * 100))
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text(record.content)
+                                .lineLimit(3)
+                            Text(structuredMemorySource(record))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .onDelete(perform: delete)
+            }
+        }
+        .navigationTitle("Structured Memory")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: "Search memory")
+        .onAppear { reload() }
+        .onChange(of: query) { _ in reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .structuredMemoryDidChange)) { _ in reload() }
+    }
+
+    private func reload() {
+        let value = query
+        Task {
+            let loaded = await ChatStore.shared.searchStructuredMemories(query: value, limit: 100)
+            await MainActor.run { records = loaded }
+        }
+    }
+
+    private func delete(at offsets: IndexSet) {
+        let ids = offsets.map { records[$0].id }
+        records.remove(atOffsets: offsets)
+        Task {
+            for id in ids { await ChatStore.shared.deleteStructuredMemory(id: id) }
+        }
+    }
+}
+
+private struct StructuredMemoryDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var record: StructuredMemoryRecord
+    @State private var saveError: String?
+    @State private var confirmDelete = false
+
+    init(record: StructuredMemoryRecord) {
+        _record = State(initialValue: record)
+    }
+
+    var body: some View {
+        Form {
+            Section("Content") {
+                TextEditor(text: $record.content)
+                    .frame(minHeight: 150)
+            }
+            Section("Scope and ranking") {
+                memoryDetailRow("Scope", record.scope)
+                memoryDetailRow("Type", record.type)
+                Toggle("Pinned", isOn: $record.isPinned)
+                VStack(alignment: .leading) {
+                    Text("Confidence \(Int(record.confidence * 100))%")
+                    Slider(value: $record.confidence, in: 0...1)
+                }
+                VStack(alignment: .leading) {
+                    Text("Importance \(Int(record.importance * 100))%")
+                    Slider(value: $record.importance, in: 0...1)
+                }
+            }
+            Section("Provenance") {
+                memoryDetailRow("Source", structuredMemorySource(record))
+                if let projectId = record.projectId { memoryDetailRow("Project", projectId) }
+                if let supersedes = record.supersedesId { memoryDetailRow("Supersedes", supersedes) }
+                memoryDetailRow("Status", record.status)
+                memoryDetailRow("Updated", record.updatedAt.formatted())
+            }
+            if let saveError {
+                Section { Text(saveError).foregroundStyle(.red) }
+            }
+            Section {
+                Button("Delete memory", role: .destructive) { confirmDelete = true }
+            }
+        }
+        .navigationTitle("Memory Detail")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Save") { save() }
+                    .disabled(record.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .confirmationDialog("Delete this structured memory?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                Task { await ChatStore.shared.deleteStructuredMemory(id: record.id); await MainActor.run { dismiss() } }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func memoryDetailRow(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+            Spacer(minLength: 12)
+            Text(value)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(3)
+        }
+    }
+
+    private func save() {
+        guard MemoryCredentialGuard.admits(record.content) else {
+            saveError = "Credential-like or empty content cannot be saved."
+            return
+        }
+        record.updatedAt = Date()
+        let updated = record
+        Task {
+            let ok = await ChatStore.shared.saveStructuredMemory(updated)
+            await MainActor.run {
+                if ok { dismiss() } else { saveError = "Memory could not be saved." }
+            }
+        }
+    }
+}
+
+private func structuredMemorySource(_ record: StructuredMemoryRecord) -> String {
+    if !record.sourceRefs.isEmpty { return record.sourceRefs.joined(separator: ", ") }
+    if let session = record.sourceSessionId { return "session:\(session)" }
+    return "unknown source"
 }

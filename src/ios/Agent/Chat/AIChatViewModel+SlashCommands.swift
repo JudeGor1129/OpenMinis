@@ -324,6 +324,16 @@ extension AIChatViewModel {
     func tryExecuteInputAsSlashCommand() -> Bool {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.hasPrefix("/") else { return false }
+        let lower = text.lowercased()
+        if lower.hasPrefix("/remember ") || lower.hasPrefix("/forget ") || lower.hasPrefix("/memory ") {
+            inputText = ""
+            savedInputBeforeSlash = nil
+            savedCaretBeforeSlash = nil
+            showSlashMenu = false
+            slashMenuSelectedIndex = -1
+            runMemorySlashCommand(text)
+            return true
+        }
         let name = String(text.dropFirst()).lowercased()
         guard let cmd = Self.availableSlashCommands.first(where: { $0.title.lowercased() == name }) else {
             return false

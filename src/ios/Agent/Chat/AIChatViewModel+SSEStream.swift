@@ -465,7 +465,7 @@ extension AIChatViewModel {
                     case "browser_use": .browserTool(action: "")
                     case "ictrl_call": .shellTool(command: "iCTRL")
                     case "read_image": .readImageTool(path: "")
-                    case "memory_write", "memory_get": .memoryTool(action: name)
+                    case "memory_write", "memory_get", "memory_manage", "create_checkpoint": .memoryTool(action: name)
                     case SubAgentDefinition.toolName: .delegateTool(title: "")
                     default: .shellTool(command: name)
                     }

@@ -1160,6 +1160,14 @@ extension AIChatViewModel {
         )
         logger.info("[Compact] Persisting v2 marker: id=\(marker.id.prefix(8)) lcmId=\(lastCompactedMessageId.prefix(8)) lcmHistoryIdx=\(lcmHistoryIdx ?? -1)/agentHistory.count=\(self.agentHistory.count) historyCount=\(historyCount) includesBoundary=\(includesBoundary)")
         await ChatStore.shared.insertCompactMarker(marker)
+        let checkpointProject = await ChatStore.shared.currentProject(sessionId: sessionId)
+        let previousCheckpoint = await ChatStore.shared.latestTaskCheckpoint(
+            sessionId: sessionId, projectId: checkpointProject?.id)
+        let checkpoint = StructuredCheckpointCodec.parse(
+            summary, sessionId: sessionId, projectId: checkpointProject?.id,
+            sourceMarkerId: marker.id, previousCheckpointId: previousCheckpoint?.id)
+        await ChatStore.shared.saveTaskCheckpoint(checkpoint)
+        await ChatStore.shared.linkTaskCheckpoint(checkpoint.id, toCompactMarker: marker.id)
 
         // Phase B: update cache so effectiveAgentHistory() starts using the new summary immediately.
         self.cachedLatestMarker = marker
@@ -1598,15 +1606,23 @@ extension AIChatViewModel {
         - Important constraints, rules, or user preferences mentioned
         - Any tool calls and their results that affect current state
 
-        STRUCTURE:
-        1. Start with a one-line description of what the conversation was about (use past tense — \
-           "User asked X, agent did Y", NOT "Goal: X").
-        2. Then a concise narrative of what happened, preserving technical details.
-        3. End with a "What had been done so far" section listing completed work — NOT a "todo" \
-           or "pending" list. Do not invent ongoing objectives or carry-over tasks from old turns; \
-           if the user wants to continue, they will say so in their next message.
+        STRUCTURE — output these headings exactly, in this order:
+        ## Goal
+        ## Acceptance Criteria
+        ## Facts & Constraints
+        ## Completed Steps
+        ## Changed Files
+        ## Commands Run
+        ## Test Results
+        ## Failures & Blockers
+        ## Next Action
 
-        PRIORITIZE recent context over older history — recent decisions and recent file/path \
+        Use concise bullet lists under every heading except Goal. Preserve active work only when the
+        latest conversation clearly left it unfinished; otherwise write `None` under Next Action.
+        Do not turn old, superseded requests into ongoing work. This structure is parsed into a local
+        task checkpoint, so never omit a heading and never invent files, commands, tests, or outcomes.
+
+        PRIORITIZE recent context over older history — recent decisions and recent file/path
         references are most useful for continuity.
 
         Do NOT translate or alter code snippets, file paths, identifiers, or error messages. \
@@ -1660,9 +1676,9 @@ extension AIChatViewModel {
         ---
         END OF CONVERSATION TO COMPACT.
 
-        Now generate a structured context summary following the system prompt instructions. \
-        Do NOT continue the conversation above — summarize it. Write everything in past tense, \
-        framed as "what was discussed / what was done", NOT as an ongoing goal or todo list.
+        Now generate the nine-heading structured checkpoint required by the system prompt. \
+        Do NOT continue the conversation above; summarize verified state. Preserve an unfinished \
+        Next Action only when the latest turns explicitly establish one, otherwise write None.
         """
 
         let stream = try await provider.streamMessage(

@@ -494,6 +494,9 @@
 		E5VMC0006 /* AIChatViewModel+BackgroundTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */; };
 		E5VMC0007 /* AIChatViewModel+ConcurrentTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */; };
 		E5VMP0001 /* AIChatViewModel+ProgrammingTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMP0011 /* AIChatViewModel+ProgrammingTools.swift */; };
+		E5SM0001 /* StructuredMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SM0011 /* StructuredMemory.swift */; };
+		E5SM0002 /* ChatStore+StructuredMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SM0012 /* ChatStore+StructuredMemory.swift */; };
+		E5SM0003 /* AIChatViewModel+StructuredMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5SM0013 /* AIChatViewModel+StructuredMemory.swift */; };
 		E5VMD0001 /* MinisURLPathDecoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMD0011 /* MinisURLPathDecoding.swift */; };
 		E5VTS1001 /* VoiceTextSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7656F4130247E4002A3AC0C /* VoiceTextSanitizer.swift */; };
 		E5W000001 /* PortableRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5W000011 /* PortableRecord.swift */; };
@@ -1231,6 +1234,9 @@
 		E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+BackgroundTask.swift"; sourceTree = "<group>"; };
 		E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ConcurrentTools.swift"; sourceTree = "<group>"; };
 		E5VMP0011 /* AIChatViewModel+ProgrammingTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ProgrammingTools.swift"; sourceTree = "<group>"; };
+		E5SM0011 /* StructuredMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructuredMemory.swift; sourceTree = "<group>"; };
+		E5SM0012 /* ChatStore+StructuredMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChatStore+StructuredMemory.swift"; sourceTree = "<group>"; };
+		E5SM0013 /* AIChatViewModel+StructuredMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+StructuredMemory.swift"; sourceTree = "<group>"; };
 		E5VMD0011 /* MinisURLPathDecoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinisURLPathDecoding.swift; sourceTree = "<group>"; };
 		E5W000011 /* PortableRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortableRecord.swift; sourceTree = "<group>"; };
 		E5W000012 /* Syncable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Syncable.swift; sourceTree = "<group>"; };
@@ -2204,6 +2210,9 @@
 				E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */,
 				E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */,
 				E5VMP0011 /* AIChatViewModel+ProgrammingTools.swift */,
+				E5SM0011 /* StructuredMemory.swift */,
+				E5SM0012 /* ChatStore+StructuredMemory.swift */,
+				E5SM0013 /* AIChatViewModel+StructuredMemory.swift */,
 				E53000014 /* ChatStore.swift */,
 				E5SDS0011 /* SessionDeletionSupport.swift */,
 				BB1000110F700000000000AA /* ContextPolicy.swift */,
@@ -2988,6 +2997,9 @@
 				E5VMC0006 /* AIChatViewModel+BackgroundTask.swift in Sources */,
 				E5VMC0007 /* AIChatViewModel+ConcurrentTools.swift in Sources */,
 				E5VMP0001 /* AIChatViewModel+ProgrammingTools.swift in Sources */,
+				E5SM0001 /* StructuredMemory.swift in Sources */,
+				E5SM0002 /* ChatStore+StructuredMemory.swift in Sources */,
+				E5SM0003 /* AIChatViewModel+StructuredMemory.swift in Sources */,
 				E5LD00001 /* ToolLoopDetector.swift in Sources */,
 				E53000002 /* AIChatView.swift in Sources */,
 				E5CAL0001 /* CookieAuditLogger.swift in Sources */,
