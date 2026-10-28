@@ -1,0 +1,5 @@
+iCTRL source snapshot imported from the user-mounted archive:
+/var/minis/mounts/Downloads/iCTRL-ios15.4.1-port-a3566b2.zip
+SHA-256: 98975fc5f5beac99f926ebbb95fd62adb6c51fd2fadf5699415133fdb6c94027
+Snapshot label: a3566b2
+The mounted source tree was compared against this archive before import.
