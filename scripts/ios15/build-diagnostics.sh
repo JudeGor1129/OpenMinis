@@ -20,6 +20,7 @@ bash deps/build_ish.sh
 bash deps/prepare_alpine_rootfs.sh
 IOS_DEPLOYMENT_TARGET=15.0 bash deps/build_rclone_ios.sh
 bash scripts/ios15/build-privileged-helper.sh
+sh scripts/ios15/check-helper-response.sh
 
 # TrollStore test IPA, built with Release optimizations. In this disposable CI checkout,
 # lower existing 16.0 settings (project, app, Share and FileProvider) to 15.0.

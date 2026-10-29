@@ -27,6 +27,18 @@ struct SystemAccessEnvelope {
     var ok: Bool { value["ok"] as? Bool == true }
     var error: String? { value["error"] as? String }
     var code: String? { value["code"] as? String }
+
+    var diagnosticSummary: String {
+        var lines: [String] = []
+        if let code { lines.append("错误代码：\(code)") }
+        if let stage = value["stage"] as? String { lines.append("执行阶段：\(stage)") }
+        let ids = ["uid", "euid", "gid", "egid"].map { key in
+            "\(key)=\((value[key] as? NSNumber)?.stringValue ?? "未返回")"
+        }.joined(separator: " ")
+        lines.append("helper \(ids)")
+        if let exitCode = value["exit_code"] as? NSNumber { lines.append("退出码：\(exitCode)") }
+        return lines.joined(separator: "\n")
+    }
 }
 
 @MainActor
@@ -48,7 +60,9 @@ enum SystemHelperClient {
         var body = payload
         body["mode"] = SystemAccessSettings.mode.rawValue
         return await withCheckedContinuation { continuation in
-            let request = OpenMinisPrivilegedRequest(action: action, payload: body)
+            let request = OpenMinisPrivilegedRequest(
+                action: action, payload: body,
+                requestDirectoryURL: stateDirectory.appendingPathComponent("Requests", isDirectory: true))
             request.run { [request] text in
                 _ = request
                 let object: [String: Any]

@@ -17,6 +17,19 @@ final class SystemFileToolsTests: XCTestCase {
         XCTAssertNil(AIChatViewModel.hostWriteDenial(for: "/var/mobile/Documents/test.txt", allowSystem: false))
     }
 
+    func testIdentityDiagnosticsPreserveSpecificFailureAndIDs() {
+        let result = SystemAccessEnvelope(value: [
+            "ok": false, "code": "request_open_failed", "stage": "request_validation",
+            "uid": 0, "euid": 0, "gid": 0, "egid": 0, "exit_code": 1
+        ])
+        XCTAssertFalse(result.ok)
+        XCTAssertTrue(result.diagnosticSummary.contains("request_open_failed"))
+        XCTAssertTrue(result.diagnosticSummary.contains("request_validation"))
+        XCTAssertTrue(result.diagnosticSummary.contains("uid=0 euid=0 gid=0 egid=0"))
+        let missing = SystemAccessEnvelope(value: ["ok": false])
+        XCTAssertTrue(missing.diagnosticSummary.contains("uid=未返回"))
+    }
+
     func testModesHaveDistinctChineseLabels() {
         XCTAssertEqual(SystemAccessMode.readonly.title, "只读")
         XCTAssertEqual(SystemAccessMode.limited.title, "有限写入")

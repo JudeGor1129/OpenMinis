@@ -4,6 +4,8 @@ struct SystemAccessSettingsView: View {
     @AppStorage(SystemAccessSettings.enabledKey) private var enabled = false
     @AppStorage(SystemAccessSettings.modeKey) private var modeRaw = SystemAccessMode.readonly.rawValue
     @State private var status = "尚未验证 helper 身份"
+    @State private var identityDetails = ""
+    @State private var isVerifyingIdentity = false
     @State private var auditEntries: [[String: Any]] = []
     @State private var rollbackResult: String?
     private var helperPackaged: Bool { OpenMinisPrivilegedHelperPackaged() }
@@ -33,8 +35,14 @@ struct SystemAccessSettingsView: View {
 
             Section("能力状态") {
                 Button("验证 root helper 身份") { verifyIdentity() }
-                    .disabled(!enabled)
-                Text(status).font(.caption).foregroundStyle(.secondary)
+                    .disabled(!enabled || isVerifyingIdentity)
+                if isVerifyingIdentity {
+                    HStack { ProgressView(); Text("正在验证 helper 身份…") }
+                }
+                Text(status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                if !identityDetails.isEmpty {
+                    Text(identityDetails).font(.caption.monospaced()).textSelection(.enabled)
+                }
                 Text(OpenMinisNativeIdentity()).font(.caption2).textSelection(.enabled)
             }
 
@@ -88,9 +96,15 @@ struct SystemAccessSettingsView: View {
     }
 
     private func verifyIdentity() {
-        Task {
+        guard !isVerifyingIdentity else { return }
+        isVerifyingIdentity = true
+        Task { @MainActor in
+            defer { isVerifyingIdentity = false }
             let response = await SystemHelperClient.run(action: "identity", payload: [:])
-            status = response.ok ? "已验证：helper 真实 uid/euid 为 0" : "验证失败：\(response.error ?? response.code ?? "未知错误")"
+            status = response.ok
+                ? "身份已验证：helper 的 uid/euid/gid/egid 均为 0。文件读写能力仍需单独验证。"
+                : "验证失败：\(response.error ?? response.code ?? "未知错误")"
+            identityDetails = response.diagnosticSummary
         }
     }
 

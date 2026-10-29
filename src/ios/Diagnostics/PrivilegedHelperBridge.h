@@ -8,7 +8,10 @@ FOUNDATION_EXPORT void OpenMinisCancelPrivilegedRequests(void);
 /// generated mode-0600 app-container file and consumed/unlinked by the helper;
 /// file content and credentials never appear in argv.
 @interface OpenMinisPrivilegedRequest : NSObject
-- (instancetype)initWithAction:(NSString *)action payload:(NSDictionary *)payload;
+- (instancetype)initWithAction:(NSString *)action
+                      payload:(NSDictionary *)payload
+          requestDirectoryURL:(NSURL *)requestDirectoryURL
+    NS_SWIFT_NAME(init(action:payload:requestDirectoryURL:));
 - (void)runWithCompletion:(void (^)(NSString *resultJSON))completion;
 - (void)cancel;
 @end

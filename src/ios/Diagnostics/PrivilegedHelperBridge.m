@@ -1,5 +1,6 @@
 #import "PrivilegedHelperBridge.h"
 #import "HelperProcessRunner.h"
+#import "HelperResponseValidation.h"
 #import <UIKit/UIKit.h>
 #include <errno.h>
 #include <string.h>
@@ -32,7 +33,7 @@ NSString *OpenMinisNativeIdentity(void) {
 static NSString *JSONError(NSString *action, NSString *code, NSString *message) {
     NSDictionary *object = @{ @"protocol": @2, @"ok": @NO, @"action": action ?: @"unknown",
         @"code": code ?: @"bridge_error", @"error": message ?: @"Bridge request failed.",
-        @"root_verified": @NO };
+        @"root_verified": @NO, @"stage": @"bridge" };
     NSData *data = [NSJSONSerialization dataWithJSONObject:object options:0 error:NULL];
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"{\"ok\":false}";
 }
@@ -48,18 +49,16 @@ void OpenMinisCancelPrivilegedRequests(void) {
         for (OpenMinisPrivilegedRequest *request in requests.allObjects) [request cancel];
     }
 }
-static NSURL *RequestDirectory(void) {
-    NSURL *library = [NSFileManager.defaultManager URLsForDirectory:NSLibraryDirectory inDomains:NSUserDomainMask].firstObject;
-    return [[[library URLByAppendingPathComponent:@"Application Support" isDirectory:YES]
-        URLByAppendingPathComponent:@"MinisSystemAccess" isDirectory:YES]
-        URLByAppendingPathComponent:@"Requests" isDirectory:YES];
-}
-static NSString *WriteRequestFile(NSString *action, NSDictionary *payload, NSError **error) {
+static NSString *WriteRequestFile(NSString *action, NSDictionary *payload, NSURL *directory, NSError **error) {
     NSMutableDictionary *body = [payload mutableCopy] ?: [NSMutableDictionary dictionary];
     body[@"protocol"] = @2; body[@"action"] = action;
     NSData *data = [NSJSONSerialization dataWithJSONObject:body options:0 error:error];
     if (!data || data.length > 3 * 1024 * 1024) return nil;
-    NSURL *directory = RequestDirectory();
+    if (!directory.isFileURL || ![directory.lastPathComponent isEqualToString:@"Requests"] ||
+        ![directory.URLByDeletingLastPathComponent.lastPathComponent isEqualToString:@"MinisSystemAccess"]) {
+        if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:EINVAL userInfo:nil];
+        return nil;
+    }
     if (![NSFileManager.defaultManager createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:error]) return nil;
     if (chmod(directory.fileSystemRepresentation, 0700) != 0) {
         if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:errno userInfo:nil];
@@ -85,12 +84,14 @@ static NSString *WriteRequestFile(NSString *action, NSDictionary *payload, NSErr
 @implementation OpenMinisPrivilegedRequest {
     NSString *_action;
     NSDictionary *_payload;
+    NSURL *_requestDirectoryURL;
     MinisHelperControl _control;
     BOOL _started;
 }
-- (instancetype)initWithAction:(NSString *)action payload:(NSDictionary *)payload {
+- (instancetype)initWithAction:(NSString *)action payload:(NSDictionary *)payload requestDirectoryURL:(NSURL *)requestDirectoryURL {
     if ((self = [super init])) {
         _action = [action copy]; _payload = [payload copy] ?: @{};
+        _requestDirectoryURL = [requestDirectoryURL copy];
         MinisHelperControlInit(&_control);
         NSHashTable *requests = Requests();
         @synchronized (requests) { [requests addObject:self]; }
@@ -138,7 +139,7 @@ static NSString *WriteRequestFile(NSString *action, NSDictionary *payload, NSErr
         completion(JSONError(_action, @"authorization_refused", refusal)); return;
     }
     NSError *requestError = nil;
-    NSString *requestPath = WriteRequestFile(_action, _payload, &requestError);
+    NSString *requestPath = WriteRequestFile(_action, _payload, _requestDirectoryURL, &requestError);
     if (!requestPath) {
         [NSNotificationCenter.defaultCenter removeObserver:background];
         [NSNotificationCenter.defaultCenter removeObserver:settings];
@@ -182,14 +183,10 @@ static NSString *WriteRequestFile(NSString *action, NSDictionary *payload, NSErr
     if (result->spawn_error) return JSONError(_action, @"spawn_failed", [NSString stringWithFormat:@"Persona spawn failed: %d (%s).", result->spawn_error, strerror(result->spawn_error)]);
     if (result->term_signal) return JSONError(_action, @"signal", [NSString stringWithFormat:@"Helper terminated by signal %d.", result->term_signal]);
     NSData *data = result->out_data ? [NSData dataWithBytes:result->out_data length:result->out_size] : nil;
-    NSDictionary *object = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL] : nil;
-    if (![object isKindOfClass:NSDictionary.class] || ![object[@"protocol"] isEqual:@2] || ![object[@"action"] isEqual:_action])
-        return JSONError(_action, @"invalid_response", @"Helper returned an invalid protocol envelope.");
-    BOOL root = [object[@"root_verified"] boolValue] && [object[@"uid"] intValue] == 0 && [object[@"euid"] intValue] == 0;
-    if (!root) return JSONError(_action, @"root_not_verified", @"Helper did not verify real root identity.");
-    if (result->exit_code != 0 && [object[@"ok"] boolValue])
-        return JSONError(_action, @"exit_mismatch", @"Helper success envelope had a non-zero exit code.");
-    NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    id raw = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL] : nil;
+    NSDictionary *checked = MinisValidateHelperResponse(raw, _action, result->exit_code);
+    NSData *checkedData = [NSJSONSerialization dataWithJSONObject:checked options:0 error:NULL];
+    NSString *text = checkedData ? [[NSString alloc] initWithData:checkedData encoding:NSUTF8StringEncoding] : nil;
     return text ?: JSONError(_action, @"invalid_utf8", @"Helper response was not UTF-8 JSON.");
 }
 @end

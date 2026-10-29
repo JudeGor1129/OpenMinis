@@ -32,6 +32,18 @@ grep -q 'set_persona_uid_np' "$runner"
 grep -q 'MINIS_HELPER_OUTPUT_LIMIT' "$runner"
 grep -q 'waitpid' "$runner"
 grep -q 'requestPath' "$runner"
+grep -q 'requestDirectoryURL: stateDirectory.appendingPathComponent' "$swift"
+! grep -q 'URLsForDirectory:NSLibraryDirectory' "$bridge"
+grep -q 'MinisValidateHelperResponse' "$bridge"
+grep -q 'MinisHelperHasZeroID' src/ios/Diagnostics/HelperResponseValidation.h
+python3 - <<'PY'
+from pathlib import Path
+source = Path('tools/privileged-helper/MinisPrivilegedHelper.m').read_text()
+main = source[source.index('int main('):]
+assert main.index('DoIdentity(action)') < main.index('ConsumeRequest('), 'identity must not depend on request validation'
+assert 'IdentityFields()' in source[source.index('static void Fail('):source.index('static BOOL IsUUIDName(')]
+print('PASS: early helper errors preserve stage and actual IDs; identity is independent of request validation.')
+PY
 grep -q 'NSFilePosixPermissions:@0700' "$bridge"
 grep -q 'chmod(temp.fileSystemRepresentation, 0600)' "$bridge"
 grep -q 'S_IXUSR' "$bridge"
@@ -58,6 +70,7 @@ for name in AIChatViewModel+SystemFileTools.swift SystemAccessSettingsView.swift
   test "$(grep -Fc "/* $name in Sources */" "$project")" -eq 2 || { echo "FAIL target membership $name"; exit 1; }
 done
 sh scripts/ios15/check-privileged-runner.sh
+sh scripts/ios15/check-helper-response.sh
 bash -n scripts/ios15/package-trollstore.sh scripts/ios15/build-privileged-helper.sh scripts/ios15/build-diagnostics.sh
 if command -v xcrun >/dev/null; then
   SDK=$(xcrun --sdk iphoneos --show-sdk-path)

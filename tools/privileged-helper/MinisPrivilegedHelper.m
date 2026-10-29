@@ -19,19 +19,36 @@
 #define BACKUP_LIMIT (2u * 1024u * 1024u)
 #define PROTOCOL_VERSION 2
 
+static NSString *ExecutionStage = @"startup";
+static NSDictionary *IdentityFields(void) {
+    return @{@"uid": @(getuid()), @"euid": @(geteuid()),
+             @"gid": @(getgid()), @"egid": @(getegid()),
+             @"root_verified": @(getuid() == 0 && geteuid() == 0 && getgid() == 0 && getegid() == 0)};
+}
+
 static void Emit(NSDictionary *object, int code) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:object options:0 error:NULL];
-    if (data) {
-        (void)write(STDOUT_FILENO, data.bytes, data.length);
-        (void)write(STDOUT_FILENO, "\n", 1);
+    if (!data) _exit(74);
+    const uint8_t *bytes = data.bytes;
+    size_t remaining = data.length;
+    while (remaining) {
+        ssize_t count = write(STDOUT_FILENO, bytes, remaining);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) _exit(74);
+        bytes += count;
+        remaining -= (size_t)count;
     }
-    exit(code);
+    (void)write(STDOUT_FILENO, "\n", 1);
+    _exit(code);
 }
 
 static void Fail(NSString *action, NSString *code, NSString *message) {
-    Emit(@{@"protocol": @PROTOCOL_VERSION, @"ok": @NO,
+    NSMutableDictionary *result = [IdentityFields() mutableCopy];
+    [result addEntriesFromDictionary:@{@"protocol": @PROTOCOL_VERSION, @"ok": @NO,
            @"action": action ?: @"unknown", @"code": code ?: @"error",
-           @"error": message ?: @"Request failed."}, 1);
+           @"stage": ExecutionStage ?: @"unknown",
+           @"error": message ?: @"Request failed."}];
+    Emit(result, 1);
 }
 
 static BOOL IsUUIDName(NSString *name) {
@@ -297,9 +314,10 @@ static void AppendAudit(NSString *base, NSDictionary *metadata, NSString *action
 }
 
 static NSDictionary *CommonResult(NSString *action) {
-    return @{@"protocol": @PROTOCOL_VERSION, @"ok": @YES, @"action": action,
-             @"uid": @(getuid()), @"euid": @(geteuid()), @"gid": @(getgid()), @"egid": @(getegid()),
-             @"root_verified": @(getuid() == 0 && geteuid() == 0 && getgid() == 0 && getegid() == 0)};
+    NSMutableDictionary *result = [IdentityFields() mutableCopy];
+    [result addEntriesFromDictionary:@{@"protocol": @PROTOCOL_VERSION, @"ok": @YES,
+        @"action": action, @"stage": ExecutionStage ?: @"unknown"}];
+    return result;
 }
 
 static NSDictionary *MutableCommon(NSString *action) { return [CommonResult(action) mutableCopy]; }
@@ -322,9 +340,15 @@ static NSString *RequiredMode(NSDictionary *request, NSString *action, BOOL writ
 
 static void DoIdentity(NSString *action) {
     NSMutableDictionary *result = [MutableCommon(action) mutableCopy];
-    result[@"helper_version"] = @"2.0";
+    result[@"helper_version"] = @"2.1";
     result[@"capabilities"] = @[@"bounded_utf8_read", @"atomic_utf8_write", @"rollback"];
-    Emit(result, 0);
+    BOOL root = [result[@"root_verified"] boolValue];
+    result[@"ok"] = @(root);
+    if (!root) {
+        result[@"code"] = @"root_not_verified";
+        result[@"error"] = @"Helper launched but did not receive real uid/euid/gid/egid 0.";
+    }
+    Emit(result, root ? 0 : 77);
 }
 
 static void DoRead(NSDictionary *request, NSString *action) {
@@ -465,6 +489,12 @@ int main(int argc, char **argv) {
         pthread_t monitor;
         if (pthread_create(&monitor, NULL, LeaseMonitor, NULL) != 0) Fail(action, @"lease_failed", @"Cannot monitor parent lease.");
         pthread_detach(monitor);
+        // Identity is a read-only process probe. It must not depend on request
+        // path/owner/JSON checks, otherwise a staging error masquerades as a
+        // persona failure. File verbs still require every request check below.
+        ExecutionStage = @"identity";
+        if ([action isEqualToString:@"identity"]) DoIdentity(action);
+        ExecutionStage = @"request_validation";
         NSString *base = nil;
         NSData *body = ConsumeRequest([NSString stringWithUTF8String:argv[2]], &base, action);
         NSError *error = nil;
@@ -472,9 +502,10 @@ int main(int argc, char **argv) {
         if (![request isKindOfClass:NSDictionary.class]) Fail(action, @"invalid_json", @"Request is not a JSON object.");
         if (![request[@"protocol"] isEqual:@PROTOCOL_VERSION] || ![request[@"action"] isEqual:action])
             Fail(action, @"protocol_mismatch", @"Request protocol/action mismatch.");
+        ExecutionStage = @"root_validation";
         if (getuid() != 0 || geteuid() != 0 || getgid() != 0 || getegid() != 0)
             Fail(action, @"root_not_verified", @"Helper did not receive real root identity.");
-        if ([action isEqualToString:@"identity"]) DoIdentity(action);
+        ExecutionStage = action;
         if ([action isEqualToString:@"read"]) DoRead(request, action);
         if ([action isEqualToString:@"write"]) DoWrite(request, base, action);
         if ([action isEqualToString:@"rollback"]) DoRollback(request, base, action);
