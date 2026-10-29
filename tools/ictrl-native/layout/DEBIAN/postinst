@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+[ "${1:-}" = configure ] || exit 0
+plist=/var/jb/Library/LaunchDaemons/com.judegor.ictrl-native.plist
+launchctl=/var/jb/bin/launchctl
+if [ ! -x "$launchctl" ] || [ ! -f "$plist" ]; then
+    echo 'iCTRL Native: launchctl or daemon plist missing; service not loaded' >&2
+    exit 1
+fi
+# Stop the old crash-looping version before loading the replacement. Only this label.
+"$launchctl" unload "$plist" >/dev/null 2>&1 || true
+if "$launchctl" load -w "$plist"; then
+    echo 'iCTRL Native: launchd load accepted (not proof that RPC is healthy)'
+else
+    rc=$?
+    echo "iCTRL Native: launchctl load failed, exit=$rc" >&2
+    exit "$rc"
+fi
+exit 0

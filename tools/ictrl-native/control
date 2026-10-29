@@ -1,0 +1,9 @@
+Package: com.judegor.ictrl-native
+Name: iCTRL Native (Read-only Prototype)
+Version: 0.1.2
+Architecture: iphoneos-arm64
+Description: Local-only native device info and screen capture bridge. No XCTest or DDI. Experimental iOS 15.4.1 rootless build.
+Maintainer: JudeGor
+Author: JudeGor
+Section: Development
+Depends: firmware (>= 15.4), mobilesubstrate

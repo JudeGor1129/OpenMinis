@@ -1,0 +1,60 @@
+name: iCTRL Native rootless DEB
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: tools/ictrl-native
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer || true
+          xcodebuild -version
+
+      - name: Install Theos and ldid
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install ldid
+          git clone --depth 1 --recursive https://github.com/theos/theos.git "$RUNNER_TEMP/theos"
+          echo "THEOS=$RUNNER_TEMP/theos" >> "$GITHUB_ENV"
+
+      - name: Build rootless DEB
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .theos packages
+          mkdir -p .theos/obj packages
+          make package FINALPACKAGE=1 -j2 2>&1 | tee "$RUNNER_TEMP/ictrl-native-build.log"
+          test -s packages/*.deb
+          dpkg-deb -I packages/*.deb
+          dpkg-deb -c packages/*.deb
+          dpkg-deb --fsys-tarfile packages/*.deb | tar -tvf - | grep -E 'ictrld|iCTRLBridge.dylib'
+          shasum -a 256 packages/*.deb | tee packages/SHA256SUMS.txt
+
+      - name: Upload DEB and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ictrl-native-rootless-${{ github.run_number }}
+          path: |
+            tools/ictrl-native/packages/*.deb
+            tools/ictrl-native/packages/SHA256SUMS.txt
+            ${{ runner.temp }}/ictrl-native-build.log
+          if-no-files-found: warn
+          retention-days: 14

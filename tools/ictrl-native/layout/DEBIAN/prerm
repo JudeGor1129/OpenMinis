@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in remove|upgrade|deconfigure)
+    plist=/var/jb/Library/LaunchDaemons/com.judegor.ictrl-native.plist
+    launchctl=/var/jb/bin/launchctl
+    if [ -x "$launchctl" ] && [ -f "$plist" ]; then
+        "$launchctl" unload -w "$plist" >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
+exit 0
