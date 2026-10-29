@@ -127,9 +127,16 @@ static NSDictionary<NSString *, NSString *> *AllowedRoots(NSString *mode, BOOL w
     return roots;
 }
 
-typedef struct { __unsafe_unretained NSString *literal; __unsafe_unretained NSString *real; __unsafe_unretained NSString *tier; } SafePath;
+@interface SafePath : NSObject
+@property(nonatomic, copy) NSString *literal;
+@property(nonatomic, copy) NSString *real;
+@property(nonatomic, copy) NSString *tier;
+@end
 
-static SafePath ValidateTarget(NSString *raw, BOOL mayNotExist, NSString *action, NSString *mode, BOOL writing) {
+@implementation SafePath
+@end
+
+static SafePath *ValidateTarget(NSString *raw, BOOL mayNotExist, NSString *action, NSString *mode, BOOL writing) {
     if (![raw isKindOfClass:NSString.class] || !raw.isAbsolutePath || raw.length > PATH_MAX - 1 ||
         [raw containsString:@"//"] || [raw rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location != NSNotFound)
         Fail(action, @"path_invalid", @"Path must be a canonical absolute path.");
@@ -175,7 +182,11 @@ static SafePath ValidateTarget(NSString *raw, BOOL mayNotExist, NSString *action
     if (!Under(real, realRoot)) Fail(action, @"realpath_outside_tier", @"Resolved path escapes its literal tier.");
     for (NSString *deny in PermanentDenies()) if (Under(real, deny))
         Fail(action, @"path_permanently_denied", @"Resolved path enters a permanent deny tier.");
-    return (SafePath){ raw, real, tier };
+    SafePath *safe = [SafePath new];
+    safe.literal = raw;
+    safe.real = real;
+    safe.tier = tier;
+    return safe;
 }
 
 static NSData *ReadRegular(NSString *path, NSUInteger limit, struct stat *snapshot, NSString *action) {
@@ -303,7 +314,7 @@ static void DoIdentity(NSString *action) {
 
 static void DoRead(NSDictionary *request, NSString *action) {
     NSString *mode = RequiredMode(request, action, NO);
-    SafePath safe = ValidateTarget(RequiredString(request, @"path", action), NO, action, mode, NO);
+    SafePath *safe = ValidateTarget(RequiredString(request, @"path", action), NO, action, mode, NO);
     NSUInteger asked = [request[@"max_bytes"] isKindOfClass:NSNumber.class] ? [request[@"max_bytes"] unsignedIntegerValue] : 131072;
     if (asked == 0 || asked > READ_LIMIT) Fail(action, @"read_bound_invalid", @"max_bytes must be 1...262144.");
     NSData *data = ReadRegular(safe.literal, asked, NULL, action);
@@ -344,7 +355,7 @@ static void DoWrite(NSDictionary *request, NSString *base, NSString *action) {
     if (![expected isEqualToString:@"missing"] && !IsSHA(expected)) Fail(action, @"expected_sha_invalid", @"expected_sha256 must be lowercase SHA-256 or missing.");
     NSData *newData = [content dataUsingEncoding:NSUTF8StringEncoding];
     if (!newData || newData.length > CONTENT_LIMIT) Fail(action, @"content_too_large", @"UTF-8 content exceeds 1 MiB.");
-    SafePath safe = ValidateTarget(path, YES, action, mode, YES);
+    SafePath *safe = ValidateTarget(path, YES, action, mode, YES);
     struct stat originalStat = {0};
     BOOL existed = lstat(path.fileSystemRepresentation, &originalStat) == 0;
     NSData *oldData = nil; NSString *beforeSHA = nil;
@@ -391,7 +402,7 @@ static void DoRollback(NSDictionary *request, NSString *base, NSString *action) 
     NSDictionary *backup = LoadBackup(base, sourceID, action);
     NSString *path = RequiredString(backup, @"path", action);
     NSString *afterSHA = RequiredString(backup, @"after_sha256", action);
-    SafePath safe = ValidateTarget(path, NO, action, mode, YES);
+    SafePath *safe = ValidateTarget(path, NO, action, mode, YES);
     struct stat currentStat; NSData *current = ReadRegular(path, BACKUP_LIMIT, &currentStat, action);
     if (![HexSHA(current) isEqualToString:afterSHA])
         Fail(action, @"rollback_race", @"Current file no longer matches the audited write; rollback refused.");
