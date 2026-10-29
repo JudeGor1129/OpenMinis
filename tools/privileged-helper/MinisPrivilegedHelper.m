@@ -96,8 +96,11 @@ static NSData *ConsumeRequest(NSString *requestPath, NSString **basePath, NSStri
         Fail(action, @"invalid_request_mode", @"Request file must not grant group or other access.");
     if (before.st_size < 2 || before.st_size > REQUEST_LIMIT)
         Fail(action, @"invalid_request_size", @"Request exceeds the 3 MiB bound.");
-    int fd = open(requestPath.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd < 0) Fail(action, @"request_open_failed", @"Cannot open request safely.");
+    // iOS 15/Xina can reject O_NOFOLLOW on an otherwise valid app-container
+    // request file. The lstat + fstat device/inode/size checks below retain the
+    // symlink-swap and replacement-race defense before any bytes are consumed.
+    int fd = open(requestPath.fileSystemRepresentation, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) Fail(action, @"request_open_failed", [NSString stringWithFormat:@"Cannot open request safely: %s", strerror(errno)]);
     struct stat opened;
     if (fstat(fd, &opened) != 0 || opened.st_dev != before.st_dev || opened.st_ino != before.st_ino ||
         !S_ISREG(opened.st_mode) || opened.st_size != before.st_size) {
