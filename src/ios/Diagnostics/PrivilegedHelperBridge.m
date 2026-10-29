@@ -49,49 +49,26 @@ void OpenMinisCancelPrivilegedRequests(void) {
         for (OpenMinisPrivilegedRequest *request in requests.allObjects) [request cancel];
     }
 }
-static NSString *WriteRequestFile(NSString *action, NSDictionary *payload, NSURL *directory, NSError **error) {
+static NSData *RequestFrameBody(NSString *action, NSDictionary *payload, NSError **error) {
     NSMutableDictionary *body = [payload mutableCopy] ?: [NSMutableDictionary dictionary];
     body[@"protocol"] = @2; body[@"action"] = action;
     NSData *data = [NSJSONSerialization dataWithJSONObject:body options:0 error:error];
-    if (!data || data.length > 3 * 1024 * 1024) return nil;
-    if (!directory.isFileURL || ![directory.lastPathComponent isEqualToString:@"Requests"] ||
-        ![directory.URLByDeletingLastPathComponent.lastPathComponent isEqualToString:@"MinisSystemAccess"]) {
-        if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:EINVAL userInfo:nil];
+    if (data && data.length > 3 * 1024 * 1024) {
+        if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:EMSGSIZE userInfo:nil];
         return nil;
     }
-    if (![NSFileManager.defaultManager createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:error]) return nil;
-    if (chmod(directory.fileSystemRepresentation, 0700) != 0) {
-        if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:errno userInfo:nil];
-        return nil;
-    }
-    NSString *name = [NSUUID.UUID.UUIDString stringByAppendingPathExtension:@"json"];
-    NSURL *url = [directory URLByAppendingPathComponent:name isDirectory:NO];
-    NSURL *temp = [directory URLByAppendingPathComponent:[@"." stringByAppendingString:name] isDirectory:NO];
-    if (![data writeToURL:temp options:NSDataWritingAtomic error:error]) return nil;
-    if (chmod(temp.fileSystemRepresentation, 0600) != 0) {
-        [NSFileManager.defaultManager removeItemAtURL:temp error:NULL];
-        if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:errno userInfo:nil];
-        return nil;
-    }
-    if (rename(temp.fileSystemRepresentation, url.fileSystemRepresentation) != 0) {
-        [NSFileManager.defaultManager removeItemAtURL:temp error:NULL];
-        if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:errno userInfo:nil];
-        return nil;
-    }
-    return url.path;
+    return data;
 }
 
 @implementation OpenMinisPrivilegedRequest {
     NSString *_action;
     NSDictionary *_payload;
-    NSURL *_requestDirectoryURL;
     MinisHelperControl _control;
     BOOL _started;
 }
-- (instancetype)initWithAction:(NSString *)action payload:(NSDictionary *)payload requestDirectoryURL:(NSURL *)requestDirectoryURL {
+- (instancetype)initWithAction:(NSString *)action payload:(NSDictionary *)payload {
     if ((self = [super init])) {
         _action = [action copy]; _payload = [payload copy] ?: @{};
-        _requestDirectoryURL = [requestDirectoryURL copy];
         MinisHelperControlInit(&_control);
         NSHashTable *requests = Requests();
         @synchronized (requests) { [requests addObject:self]; }
@@ -139,11 +116,13 @@ static NSString *WriteRequestFile(NSString *action, NSDictionary *payload, NSURL
         completion(JSONError(_action, @"authorization_refused", refusal)); return;
     }
     NSError *requestError = nil;
-    NSString *requestPath = WriteRequestFile(_action, _payload, _requestDirectoryURL, &requestError);
-    if (!requestPath) {
+    // Frozen, immutable request bytes. They are sent over the helper's FD 3
+    // request channel and never written to disk or placed in argv.
+    NSData *requestBody = RequestFrameBody(_action, _payload, &requestError);
+    if (!requestBody) {
         [NSNotificationCenter.defaultCenter removeObserver:background];
         [NSNotificationCenter.defaultCenter removeObserver:settings];
-        completion(JSONError(_action, @"request_staging_failed", requestError.localizedDescription)); return;
+        completion(JSONError(_action, @"request_encoding_failed", requestError.localizedDescription)); return;
     }
     dispatch_async(PrivilegedQueue(), ^{
         @autoreleasepool {
@@ -154,7 +133,6 @@ static NSString *WriteRequestFile(NSString *action, NSDictionary *payload, NSURL
                     lateRefusal = @"App left foreground before helper launch.";
             });
             if (lateRefusal) {
-                [NSFileManager.defaultManager removeItemAtPath:requestPath error:NULL];
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [NSNotificationCenter.defaultCenter removeObserver:background];
                     [NSNotificationCenter.defaultCenter removeObserver:settings];
@@ -163,9 +141,8 @@ static NSString *WriteRequestFile(NSString *action, NSDictionary *payload, NSURL
                 return;
             }
             MinisHelperResult result = MinisHelperRun(HelperPath().fileSystemRepresentation,
-                self->_action.UTF8String, requestPath.fileSystemRepresentation,
+                self->_action.UTF8String, requestBody.bytes, requestBody.length,
                 true, 20000, &self->_control);
-            [NSFileManager.defaultManager removeItemAtPath:requestPath error:NULL];
             NSString *response = [self checkedResult:&result];
             MinisHelperResultFree(&result);
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -181,6 +158,10 @@ static NSString *WriteRequestFile(NSString *action, NSDictionary *payload, NSURL
     if (result->timed_out) return JSONError(_action, @"timeout", @"Helper request timed out and was killed.");
     if (result->output_limit) return JSONError(_action, @"output_limit", @"Helper exceeded the output limit and was killed.");
     if (result->spawn_error) return JSONError(_action, @"spawn_failed", [NSString stringWithFormat:@"Persona spawn failed: %d (%s).", result->spawn_error, strerror(result->spawn_error)]);
+    // Prefer the helper's own JSON (it carries real IDs and stage); only
+    // synthesize a channel error when the helper produced no reply at all.
+    if (result->request_error && result->exit_code != 0 && result->out_size == 0)
+        return JSONError(_action, @"request_channel_failed", [NSString stringWithFormat:@"Request channel failed: %d (%s).", result->request_error, strerror(result->request_error)]);
     if (result->term_signal) return JSONError(_action, @"signal", [NSString stringWithFormat:@"Helper terminated by signal %d.", result->term_signal]);
     NSData *data = result->out_data ? [NSData dataWithBytes:result->out_data length:result->out_size] : nil;
     id raw = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL] : nil;

@@ -8,6 +8,7 @@
 typedef struct { atomic_bool cancelled; atomic_int launch_state; } MinisHelperControl;
 typedef struct {
     int spawn_error;
+    int request_error;
     int exit_code;
     int term_signal;
     bool timed_out;
@@ -18,13 +19,15 @@ typedef struct {
 } MinisHelperResult;
 void MinisHelperControlInit(MinisHelperControl *control);
 void MinisHelperCancel(MinisHelperControl *control);
-/// Fixed executable + allowlisted action + generated request file path, never a
-/// shell. Request bodies and credentials are never placed in argv. On Apple
-/// rootPersona sets checked persona attrs; elsewhere it fails ENOTSUP. Drains
-/// both pipes, caps combined output, kills/reaps on timeout/cancel, CLOEXEC all
-/// extra FDs.
+/// Fixed executable + allowlisted action, never a shell. argv is exactly
+/// {executable, action}. FD 0 carries the one-byte launch/revocation lease;
+/// FD 3 carries one frame (4-byte big-endian length + requestData, at most
+/// 3 MiB) sent without blocking alongside output draining. "identity" gets no
+/// frame (FD 3 EOF). On Apple rootPersona sets checked persona attrs; elsewhere
+/// it fails ENOTSUP. Caps combined output, kills/reaps on timeout/cancel, and
+/// CLOEXECs every other FD.
 MinisHelperResult MinisHelperRun(const char *executable, const char *action,
-    const char *requestPath, bool rootPersona, unsigned timeout_ms,
-    MinisHelperControl *control);
+    const void *requestData, size_t requestSize, bool rootPersona,
+    unsigned timeout_ms, MinisHelperControl *control);
 void MinisHelperResultFree(MinisHelperResult *result);
 #endif

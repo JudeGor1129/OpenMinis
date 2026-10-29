@@ -13,7 +13,6 @@
 #include <unistd.h>
 #include "HelperLease.h"
 
-#define REQUEST_LIMIT (3u * 1024u * 1024u)
 #define READ_LIMIT (256u * 1024u)
 #define CONTENT_LIMIT (1024u * 1024u)
 #define BACKUP_LIMIT (2u * 1024u * 1024u)
@@ -51,76 +50,24 @@ static void Fail(NSString *action, NSString *code, NSString *message) {
     Emit(result, 1);
 }
 
-static BOOL IsUUIDName(NSString *name) {
-    if (![name.pathExtension isEqualToString:@"json"]) return NO;
-    NSString *stem = name.stringByDeletingPathExtension;
-    return [[NSUUID alloc] initWithUUIDString:stem] != nil;
-}
-
-static BOOL IsContainerRequestParent(NSString *path) {
-    NSArray<NSString *> *parts = path.pathComponents;
-    for (NSUInteger i = 2; i + 5 < parts.count; i++) {
-        if (![parts[i] isEqualToString:@"Application"] ||
-            ![parts[i - 1] isEqualToString:@"Data"] ||
-            ![parts[i - 2] isEqualToString:@"Containers"] ||
-            ![[NSUUID alloc] initWithUUIDString:parts[i + 1]]) continue;
-        return [parts[i + 2] isEqualToString:@"Library"] &&
-               [parts[i + 3] isEqualToString:@"Application Support"] &&
-               [parts[i + 4] isEqualToString:@"MinisSystemAccess"] &&
-               [parts[i + 5] isEqualToString:@"Requests"] && i + 6 == parts.count;
-    }
-    return NO;
-}
-
-static NSData *ConsumeRequest(NSString *requestPath, NSString **basePath, NSString *action) {
-    if (![requestPath isAbsolutePath] || !IsUUIDName(requestPath.lastPathComponent))
-        Fail(action, @"invalid_request_path", @"Request path is not a generated UUID JSON file.");
-    NSString *parent = requestPath.stringByDeletingLastPathComponent;
-    char resolvedParent[PATH_MAX];
-    if (!realpath(parent.fileSystemRepresentation, resolvedParent))
-        Fail(action, @"invalid_request_path", @"Request parent cannot be resolved.");
-    NSString *realParent = [NSString stringWithUTF8String:resolvedParent];
-    if (!IsContainerRequestParent(realParent))
-        Fail(action, @"invalid_request_path", @"Request is outside the app-container request directory.");
-    struct stat parentStat;
-    if (lstat(realParent.fileSystemRepresentation, &parentStat) != 0 || !S_ISDIR(parentStat.st_mode) ||
-        S_ISLNK(parentStat.st_mode) || (parentStat.st_uid != 0 && parentStat.st_uid != 501) ||
-        (parentStat.st_mode & 077) != 0)
-        Fail(action, @"invalid_request_parent", @"Request directory owner or permissions are unsafe.");
-    struct stat before;
-    if (lstat(requestPath.fileSystemRepresentation, &before) != 0 || !S_ISREG(before.st_mode) || S_ISLNK(before.st_mode))
-        Fail(action, @"invalid_request_file", @"Request must be a regular non-symlink file.");
-    if (before.st_uid != 0 && before.st_uid != 501)
-        Fail(action, @"invalid_request_owner", @"Request owner must be mobile or root.");
-    if ((before.st_mode & 077) != 0)
-        Fail(action, @"invalid_request_mode", @"Request file must not grant group or other access.");
-    if (before.st_size < 2 || before.st_size > REQUEST_LIMIT)
-        Fail(action, @"invalid_request_size", @"Request exceeds the 3 MiB bound.");
-    // iOS 15/Xina can reject O_NOFOLLOW on an otherwise valid app-container
-    // request file. The lstat + fstat device/inode/size checks below retain the
-    // symlink-swap and replacement-race defense before any bytes are consumed.
-    int fd = open(requestPath.fileSystemRepresentation, O_RDONLY | O_CLOEXEC);
-    if (fd < 0) Fail(action, @"request_open_failed", [NSString stringWithFormat:@"Cannot open request safely: %s", strerror(errno)]);
-    struct stat opened;
-    if (fstat(fd, &opened) != 0 || opened.st_dev != before.st_dev || opened.st_ino != before.st_ino ||
-        !S_ISREG(opened.st_mode) || opened.st_size != before.st_size) {
-        close(fd); Fail(action, @"request_race", @"Request changed while it was opened.");
-    }
-    NSMutableData *data = [NSMutableData dataWithLength:(NSUInteger)opened.st_size];
-    uint8_t *cursor = data.mutableBytes; size_t left = data.length;
-    while (left) {
-        ssize_t n = read(fd, cursor, left);
-        if (n < 0 && errno == EINTR) continue;
-        if (n <= 0) { close(fd); Fail(action, @"request_read_failed", @"Cannot read complete request."); }
-        cursor += n; left -= (size_t)n;
-    }
-    close(fd);
-    if (unlink(requestPath.fileSystemRepresentation) != 0)
-        Fail(action, @"request_unlink_failed", @"Request could not be consumed.");
-    int pfd = open(parent.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (pfd >= 0) { (void)fsync(pfd); close(pfd); }
-    *basePath = realParent.stringByDeletingLastPathComponent;
-    return data;
+static NSString *StateBase(NSString *action) {
+    // Audit/backup state lives in one fixed directory under the active
+    // rootless bootstrap. The helper resolves it itself instead of trusting a
+    // path from the GUI, and refuses symlinked components or loose modes.
+    char bootstrap[PATH_MAX];
+    if (!realpath("/var/jb", bootstrap))
+        Fail(action, @"state_directory_invalid", @"Active rootless bootstrap cannot be resolved.");
+    NSString *expected = [[NSString stringWithUTF8String:bootstrap]
+        stringByAppendingPathComponent:@"var/tmp/MinisSystemAccess"];
+    char resolved[PATH_MAX];
+    if (!realpath(expected.fileSystemRepresentation, resolved) ||
+        ![[NSString stringWithUTF8String:resolved] isEqualToString:expected])
+        Fail(action, @"state_directory_invalid", @"System-access state directory is missing or not canonical.");
+    struct stat st;
+    if (lstat(expected.fileSystemRepresentation, &st) != 0 || !S_ISDIR(st.st_mode) || S_ISLNK(st.st_mode) ||
+        (st.st_uid != 0 && st.st_uid != 501) || (st.st_mode & 077) != 0)
+        Fail(action, @"state_directory_invalid", @"System-access state directory owner or permissions are unsafe.");
+    return expected;
 }
 
 static NSString *HexSHA(NSData *data) {
@@ -481,9 +428,24 @@ static void DoRollback(NSDictionary *request, NSString *base, NSString *action) 
 
 static void *LeaseMonitor(void *unused) { (void)unused; MinisHelperWaitForRevocation(STDIN_FILENO); return NULL; }
 
+static NSData *ConsumeFramedRequest(NSString *action) {
+    unsigned char *bytes = NULL; size_t size = 0;
+    int error = MinisHelperReadRequestFrame(MINIS_HELPER_REQUEST_FD, &bytes, &size);
+    if (error != 0) {
+        Fail(action, error == EOVERFLOW ? @"request_too_large" : @"request_pipe_failed",
+             [NSString stringWithFormat:@"Request pipe failed: %s", strerror(error)]);
+    }
+    NSData *data = [NSData dataWithBytesNoCopy:bytes length:size freeWhenDone:YES];
+    NSError *parseError = nil;
+    NSDictionary *object = [NSJSONSerialization JSONObjectWithData:data options:0 error:&parseError];
+    if (![object isKindOfClass:NSDictionary.class]) Fail(action, @"invalid_json", @"Request frame is not a JSON object.");
+    return data;
+}
+
 int main(int argc, char **argv) {
     @autoreleasepool {
-        if (argc != 3 || !argv[1] || !argv[2]) return 64;
+        // argv carries only the allowlisted verb; the request body arrives on FD 3.
+        if (argc != 2 || !argv[1]) return 64;
         NSString *action = [NSString stringWithUTF8String:argv[1]];
         NSSet *allowed = [NSSet setWithArray:@[@"identity", @"read", @"write", @"rollback"]];
         if (![allowed containsObject:action]) Fail(action, @"action_denied", @"Action is not allowlisted.");
@@ -498,8 +460,7 @@ int main(int argc, char **argv) {
         ExecutionStage = @"identity";
         if ([action isEqualToString:@"identity"]) DoIdentity(action);
         ExecutionStage = @"request_validation";
-        NSString *base = nil;
-        NSData *body = ConsumeRequest([NSString stringWithUTF8String:argv[2]], &base, action);
+        NSData *body = ConsumeFramedRequest(action);
         NSError *error = nil;
         NSDictionary *request = [NSJSONSerialization JSONObjectWithData:body options:0 error:&error];
         if (![request isKindOfClass:NSDictionary.class]) Fail(action, @"invalid_json", @"Request is not a JSON object.");
@@ -510,8 +471,8 @@ int main(int argc, char **argv) {
             Fail(action, @"root_not_verified", @"Helper did not receive real root identity.");
         ExecutionStage = action;
         if ([action isEqualToString:@"read"]) DoRead(request, action);
-        if ([action isEqualToString:@"write"]) DoWrite(request, base, action);
-        if ([action isEqualToString:@"rollback"]) DoRollback(request, base, action);
+        if ([action isEqualToString:@"write"]) DoWrite(request, StateBase(action), action);
+        if ([action isEqualToString:@"rollback"]) DoRollback(request, StateBase(action), action);
         Fail(action, @"action_denied", @"Action is not implemented.");
     }
 }

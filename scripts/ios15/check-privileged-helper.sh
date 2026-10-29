@@ -17,7 +17,9 @@ grep -q 'Library/MinisChat/minis.db' "$locator"
 grep -q 'ContainerLocator.libraryDirectory' src/ios/Agent/Chat/ChatStore.swift
 grep -q 'ContainerLocator.documentsDirectory' src/ios/iSH/RootfsManager.swift
 grep -q 'ContainerLocator.libraryDirectory' src/ios/Agent/Build/BuildRunStore.swift
-grep -q 'ContainerLocator.libraryDirectory' "$swift"
+# Root persona cannot open app-container files on Xina; helper state is the
+# fixed rootless temp directory, which the helper canonicalizes itself.
+grep -q 'URL(fileURLWithPath: "/var/jb/var/tmp/MinisSystemAccess", isDirectory: true)' "$swift"
 ! grep -q 'AppLogger' "$locator"
 grep -q 'static var applicationSupportDirectory' "$locator"
 grep -q 'static var cachesDirectory' "$locator"
@@ -31,11 +33,23 @@ fi
 grep -q 'set_persona_uid_np' "$runner"
 grep -q 'MINIS_HELPER_OUTPUT_LIMIT' "$runner"
 grep -q 'waitpid' "$runner"
-grep -q 'requestPath' "$runner"
-grep -q 'lstat(requestPath.fileSystemRepresentation' "$helper"
-grep -q 'opened.st_dev != before.st_dev' "$helper"
-! grep -q 'open(requestPath.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)' "$helper"
-grep -q 'requestDirectoryURL: stateDirectory.appendingPathComponent' "$swift"
+# Request bodies travel on a dedicated FD 3 frame channel, never on disk/argv.
+grep -q 'posix_spawn_file_actions_adddup2(&actions, request\[0\], 3)' "$runner"
+grep -q 'pump_request' "$runner"
+grep -q 'SO_NOSIGPIPE' "$runner"
+grep -q 'MinisHelperReadRequestFrame(MINIS_HELPER_REQUEST_FD' "$helper"
+grep -q 'MINIS_HELPER_REQUEST_LIMIT (3u \* 1024u \* 1024u)' tools/privileged-helper/HelperLease.h
+grep -q 'argc != 2' "$helper"
+! grep -q 'requestPath' "$runner" "$helper" "$bridge"
+! grep -q 'WriteRequestFile' "$bridge"
+! grep -q 'requestDirectoryURL' "$swift" "$bridge" src/ios/Diagnostics/PrivilegedHelperBridge.h
+! grep -q 'MinisSystemAccess/Requests' "$swift" "$helper"
+grep -q 'requestBody.bytes, requestBody.length' "$bridge"
+grep -q 'withTaskCancellationHandler' "$swift"
+grep -q 'request.cancel()' "$swift"
+# The helper resolves its own backup/audit root under the active bootstrap.
+grep -q 'static NSString \*StateBase(' "$helper"
+grep -q 'var/tmp/MinisSystemAccess' "$helper"
 ! grep -q 'URLsForDirectory:NSLibraryDirectory' "$bridge"
 grep -q 'MinisValidateHelperResponse' "$bridge"
 grep -q 'MinisHelperHasZeroID' src/ios/Diagnostics/HelperResponseValidation.h
@@ -43,12 +57,11 @@ python3 - <<'PY'
 from pathlib import Path
 source = Path('tools/privileged-helper/MinisPrivilegedHelper.m').read_text()
 main = source[source.index('int main('):]
-assert main.index('DoIdentity(action)') < main.index('ConsumeRequest('), 'identity must not depend on request validation'
-assert 'IdentityFields()' in source[source.index('static void Fail('):source.index('static BOOL IsUUIDName(')]
+assert main.index('DoIdentity(action)') < main.index('ConsumeFramedRequest('), 'identity must not depend on request validation'
+assert main.index('ConsumeFramedRequest(') < main.index('root_validation'), 'request must be framed before root checks'
+assert 'IdentityFields()' in source[source.index('static void Fail('):source.index('static NSString *StateBase(')]
 print('PASS: early helper errors preserve stage and actual IDs; identity is independent of request validation.')
 PY
-grep -q 'NSFilePosixPermissions:@0700' "$bridge"
-grep -q 'chmod(temp.fileSystemRepresentation, 0600)' "$bridge"
 grep -q 'S_IXUSR' "$bridge"
 ! grep -q 'access(path.fileSystemRepresentation, X_OK)' "$bridge"
 grep -q 'UIApplicationDidEnterBackgroundNotification' "$bridge"

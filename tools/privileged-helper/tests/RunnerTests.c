@@ -14,7 +14,8 @@
 
 static int failures;
 static const char *fixture;
-static const char *request = "/tmp/00000000-0000-4000-8000-000000000000.json";
+static const char request[] = "{\"protocol\":2,\"action\":\"read\"}";
+#define REQ request, sizeof(request) - 1
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %s:%d: %s\n", __func__, __LINE__, #c); ++failures; } } while (0)
 static double now(void) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
@@ -57,7 +58,7 @@ static void *cancel_after_100ms(void *arg) {
 }
 static void test_identity(void) {
     int before = failures;
-    MinisHelperResult r = MinisHelperRun(fixture, "identity", request, false, 3000, NULL);
+    MinisHelperResult r = MinisHelperRun(fixture, "identity", REQ, false, 3000, NULL);
     clean_exit(&r, 0);
     char expected[160];
     snprintf(expected, sizeof(expected), "uid=%lu euid=%lu gid=%lu egid=%lu\n",
@@ -69,7 +70,7 @@ static void test_identity(void) {
 }
 static void test_dual(void) {
     int before = failures; double start = now();
-    MinisHelperResult r = MinisHelperRun(fixture, "dual", request, false, 3000, NULL);
+    MinisHelperResult r = MinisHelperRun(fixture, "dual", REQ, false, 3000, NULL);
     clean_exit(&r, 0); CHECK(now() - start < 3.0);
     CHECK(r.out_size == 98304 && r.err_size == 98304);
     if (r.out_data) for (size_t i = 0; i < r.out_size; ++i) CHECK(r.out_data[i] == 'O');
@@ -80,7 +81,7 @@ static void test_dual(void) {
 }
 static void test_limit(void) {
     int before = failures; double start = now();
-    MinisHelperResult r = MinisHelperRun(fixture, "overflow", request, false, 3000, NULL);
+    MinisHelperResult r = MinisHelperRun(fixture, "overflow", REQ, false, 3000, NULL);
     CHECK(r.spawn_error == 0); CHECK(r.output_limit); CHECK(!r.timed_out && !r.cancelled);
     CHECK(r.out_size + r.err_size == MINIS_HELPER_OUTPUT_LIMIT);
     CHECK(r.out_size > 0 && r.err_size > 0);
@@ -89,7 +90,7 @@ static void test_limit(void) {
 }
 static void test_timeout(void) {
     int before = failures; double start = now();
-    MinisHelperResult r = MinisHelperRun(fixture, "block", request, false, 180, NULL);
+    MinisHelperResult r = MinisHelperRun(fixture, "block", REQ, false, 180, NULL);
     CHECK(r.spawn_error == 0); CHECK(r.timed_out); CHECK(!r.cancelled && !r.output_limit);
     CHECK(r.term_signal == SIGKILL && r.exit_code == -1);
     CHECK(now() - start >= 0.15 && now() - start < 2.0);
@@ -100,7 +101,7 @@ static void test_cancel(void) {
     pthread_t thread; int e = pthread_create(&thread, NULL, cancel_after_100ms, &control);
     CHECK(e == 0); if (e) { report("pthread cancellation", before); return; }
     double start = now();
-    MinisHelperResult r = MinisHelperRun(fixture, "block", request, false, 3000, &control);
+    MinisHelperResult r = MinisHelperRun(fixture, "block", REQ, false, 3000, &control);
     CHECK(pthread_join(thread, NULL) == 0);
     CHECK(r.spawn_error == 0 && r.cancelled); CHECK(!r.timed_out && !r.output_limit);
     CHECK(r.term_signal == SIGKILL && r.exit_code == -1);
@@ -109,34 +110,37 @@ static void test_cancel(void) {
 }
 static void test_status(void) {
     int before = failures;
-    MinisHelperResult r = MinisHelperRun(fixture, "exit7", request, false, 3000, NULL);
+    MinisHelperResult r = MinisHelperRun(fixture, "exit7", REQ, false, 3000, NULL);
     clean_exit(&r, 7); MinisHelperResultFree(&r);
-    r = MinisHelperRun(fixture, "sigterm", request, false, 3000, NULL);
+    r = MinisHelperRun(fixture, "sigterm", REQ, false, 3000, NULL);
     CHECK(r.spawn_error == 0 && r.exit_code == -1 && r.term_signal == SIGTERM);
     CHECK(!r.timed_out && !r.cancelled && !r.output_limit); MinisHelperResultFree(&r);
     report("exit 7 and SIGTERM are distinct results", before);
 }
 static void test_spawn_and_preflag(void) {
     int before = failures;
-    MinisHelperResult invalid = MinisHelperRun(fixture, "identity", NULL, false, 3000, NULL);
+    MinisHelperResult invalid = MinisHelperRun(fixture, "frame", NULL, 16, false, 3000, NULL);
     CHECK(invalid.spawn_error == EINVAL && invalid.exit_code == -1 && !invalid.out_data && !invalid.err_data);
     MinisHelperResultFree(&invalid);
-    invalid = MinisHelperRun(fixture, "identity", "relative.json", false, 3000, NULL);
+    invalid = MinisHelperRun(fixture, "frame", request, 3u * 1024u * 1024u + 1u, false, 3000, NULL);
     CHECK(invalid.spawn_error == EINVAL && invalid.exit_code == -1 && !invalid.out_data && !invalid.err_data);
     MinisHelperResultFree(&invalid);
-    report("missing or relative request path is rejected before spawn", before);
+    invalid = MinisHelperRun("relative-helper", "frame", REQ, false, 3000, NULL);
+    CHECK(invalid.spawn_error == EINVAL && invalid.exit_code == -1 && !invalid.out_data && !invalid.err_data);
+    MinisHelperResultFree(&invalid);
+    report("NULL body, >3 MiB body and relative executable are rejected before spawn", before);
     before = failures;
     /* A child path under an executable regular file cannot exist. */
     char *missing = malloc(strlen(fixture) + 16); CHECK(missing != NULL);
     if (!missing) return;
     sprintf(missing, "%s/no-such-child", fixture);
-    MinisHelperResult r = MinisHelperRun(missing, "identity", request, false, 3000, NULL);
+    MinisHelperResult r = MinisHelperRun(missing, "identity", REQ, false, 3000, NULL);
     CHECK(r.spawn_error == ENOTDIR || r.spawn_error == ENOENT);
     CHECK(r.exit_code == -1 && r.term_signal == 0 && !r.cancelled);
     MinisHelperResultFree(&r); report("unknown executable produces spawn error", before);
     before = failures;
     MinisHelperControl control; MinisHelperControlInit(&control); MinisHelperCancel(&control);
-    r = MinisHelperRun(missing, "identity", request, false, 3000, &control);
+    r = MinisHelperRun(missing, "identity", REQ, false, 3000, &control);
     CHECK(r.cancelled && r.spawn_error == 0 && r.exit_code == -1);
     CHECK(!r.timed_out && !r.output_limit && r.term_signal == 0);
     CHECK(!r.out_data && !r.err_data && !r.out_size && !r.err_size);
@@ -148,31 +152,85 @@ static void test_persona(void) {
     puts("SKIP Darwin rootPersona (no privileged persona calls)");
 #else
     int before = failures;
-    MinisHelperResult r = MinisHelperRun(fixture, "identity", request, true, 3000, NULL);
+    MinisHelperResult r = MinisHelperRun(fixture, "identity", REQ, true, 3000, NULL);
     CHECK(r.spawn_error == ENOTSUP && r.exit_code == -1 && r.term_signal == 0);
     CHECK(!r.out_size && !r.err_size && !r.cancelled && !r.timed_out && !r.output_limit);
     MinisHelperResultFree(&r); report("Linux rootPersona rejects with ENOTSUP", before);
 #endif
 }
+
+static unsigned long checksum(const unsigned char *data, size_t size) {
+    unsigned long sum = 0;
+    for (size_t i = 0; i < size; ++i) sum = (sum * 31u + data[i]) & 0xffffffffu;
+    return sum;
+}
+static void expect_frame(const unsigned char *data, size_t size, const char *name) {
+    int before = failures; double start = now();
+    MinisHelperResult r = MinisHelperRun(fixture, "frame", data, size, false, 5000, NULL);
+    clean_exit(&r, 0); CHECK(r.request_error == 0); CHECK(now() - start < 5.0);
+    char expected[96];
+    snprintf(expected, sizeof(expected), "frame=%lu sum=%lu\n", (unsigned long)size, checksum(data, size));
+    CHECK(r.out_data && !strcmp(r.out_data, expected));
+    if (r.out_data && strcmp(r.out_data, expected)) fprintf(stderr, "INFO got %s", r.out_data);
+    MinisHelperResultFree(&r); report(name, before);
+}
+static void test_request_frames(void) {
+    expect_frame((const unsigned char *)request, sizeof(request) - 1, "FD3 small JSON frame delivered byte-exact");
+    size_t big = 3u * 1024u * 1024u;
+    unsigned char *data = malloc(big); CHECK(data != NULL);
+    if (!data) return;
+    for (size_t i = 0; i < big; ++i) data[i] = (unsigned char)(i * 131u + 7u);
+    expect_frame(data, big, "FD3 3 MiB frame delivered without deadlock");
+    free(data);
+}
+static void test_request_peer_exit(void) {
+    int before = failures; double start = now();
+    size_t big = 2u * 1024u * 1024u;
+    unsigned char *data = calloc(big, 1); CHECK(data != NULL);
+    if (!data) return;
+    /* Child exits without reading FD 3: runner must not hang and must reap exit 0. */
+    MinisHelperResult r = MinisHelperRun(fixture, "noread", data, big, false, 3000, NULL);
+    CHECK(r.spawn_error == 0 && r.exit_code == 0 && r.term_signal == 0);
+    CHECK(!r.timed_out && !r.cancelled); CHECK(now() - start < 3.0);
+    CHECK(r.out_data && !strcmp(r.out_data, "NOREAD\n"));
+    CHECK(r.request_error == 0 || r.request_error == EPIPE || r.request_error == ECONNRESET);
+    MinisHelperResultFree(&r); free(data);
+    report("child exit before reading FD3 does not hang; real status reaped", before);
+}
+static void test_identity_closes_request(void) {
+    int before = failures;
+    /* The fixture's identity verb requires FD3 EOF and exits 82 on any byte. */
+    MinisHelperResult r = MinisHelperRun(fixture, "identity", REQ, false, 3000, NULL);
+    clean_exit(&r, 0); MinisHelperResultFree(&r);
+    report("identity receives no request bytes (FD3 EOF)", before);
+}
+static void test_inherited_fds(void) {
+    int before = failures;
+    MinisHelperResult r = MinisHelperRun(fixture, "fds", REQ, false, 3000, NULL);
+    clean_exit(&r, 0); MinisHelperResultFree(&r);
+    report("child inherits only fds 0..3", before);
+}
 static void test_fd_rounds(void) {
     int before = failures, initial = fd_count();
     if (initial < 0) { puts("SKIP /proc/self/fd unavailable (Darwin supported)"); return; }
     for (int round = 0; round < 16; ++round) {
-        MinisHelperResult r = MinisHelperRun(fixture, "identity", request, false, 3000, NULL);
+        MinisHelperResult r = MinisHelperRun(fixture, "identity", REQ, false, 3000, NULL);
         clean_exit(&r, 0); MinisHelperResultFree(&r);
-        r = MinisHelperRun(fixture, "dual", request, false, 3000, NULL);
+        r = MinisHelperRun(fixture, "dual", REQ, false, 3000, NULL);
         clean_exit(&r, 0); MinisHelperResultFree(&r);
-        r = MinisHelperRun(fixture, "overflow", request, false, 3000, NULL);
+        r = MinisHelperRun(fixture, "frame", REQ, false, 3000, NULL);
+        clean_exit(&r, 0); MinisHelperResultFree(&r);
+        r = MinisHelperRun(fixture, "overflow", REQ, false, 3000, NULL);
         CHECK(r.output_limit && r.term_signal == SIGKILL); reaped(&r); MinisHelperResultFree(&r);
-        r = MinisHelperRun(fixture, "block", request, false, 30, NULL);
+        r = MinisHelperRun(fixture, "block", REQ, false, 30, NULL);
         CHECK(r.timed_out && r.term_signal == SIGKILL); reaped(&r); MinisHelperResultFree(&r);
         MinisHelperControl c; MinisHelperControlInit(&c); MinisHelperCancel(&c);
-        r = MinisHelperRun(fixture, "identity", request, false, 3000, &c);
+        r = MinisHelperRun(fixture, "identity", REQ, false, 3000, &c);
         CHECK(r.cancelled); MinisHelperResultFree(&r);
-        r = MinisHelperRun("/dev/null/no-such-executable", "identity", request, false, 3000, NULL);
+        r = MinisHelperRun("/dev/null/no-such-executable", "identity", REQ, false, 3000, NULL);
         CHECK(r.spawn_error == ENOTDIR || r.spawn_error == ENOENT); MinisHelperResultFree(&r);
 #ifndef __APPLE__
-        r = MinisHelperRun(fixture, "identity", request, true, 3000, NULL);
+        r = MinisHelperRun(fixture, "identity", REQ, true, 3000, NULL);
         CHECK(r.spawn_error == ENOTSUP); MinisHelperResultFree(&r);
 #endif
         CHECK(fd_count() == initial);
@@ -189,8 +247,16 @@ int main(int argc, char **argv) {
     if (argc != 2 || argv[1][0] != '/') { fputs("usage: runner-tests /absolute/fixture\n", stderr); return 2; }
     fixture = argv[1]; setvbuf(stdout, NULL, _IOLBF, 0);
     signal(SIGALRM, watchdog); alarm(120);
+#ifndef __APPLE__
+    /* Darwin uses SO_NOSIGPIPE on the request socket. Some Linux emulators
+       (iSH) ignore MSG_NOSIGNAL, so ignore SIGPIPE here; the peer-exit test
+       still asserts the runner reaps the child and reports its real status. */
+    signal(SIGPIPE, SIG_IGN);
+#endif
     test_identity(); test_dual(); test_limit(); test_timeout(); test_cancel();
-    test_status(); test_spawn_and_preflag(); test_persona(); test_fd_rounds();
+    test_status(); test_spawn_and_preflag(); test_persona();
+    test_request_frames(); test_request_peer_exit(); test_identity_closes_request();
+    test_inherited_fds(); test_fd_rounds();
 #ifndef __APPLE__
     // Linux CI owns the test process's complete child set. macOS hosted
     // runners may have unrelated supervision children; every child spawned by

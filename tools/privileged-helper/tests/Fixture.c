@@ -24,15 +24,50 @@ static void pid_line(void) {
     int n = snprintf(line, sizeof(line), "%ld\n", (long)getpid());
     write_all(STDOUT_FILENO, line, (size_t)n);
 }
+/* Reads one production-format frame from FD 3 and reports its size plus a
+   simple checksum, so the runner test can verify exact delivery. */
+static int echo_frame(void) {
+    unsigned char *data = NULL; size_t size = 0;
+    int e = MinisHelperReadRequestFrame(MINIS_HELPER_REQUEST_FD, &data, &size);
+    if (e) {
+        char line[64];
+        int n = snprintf(line, sizeof(line), "frame_error=%d\n", e);
+        write_all(STDOUT_FILENO, line, (size_t)n);
+        return 3;
+    }
+    unsigned long sum = 0;
+    for (size_t i = 0; i < size; ++i) sum = (sum * 31u + data[i]) & 0xffffffffu;
+    free(data);
+    char line[96];
+    int n = snprintf(line, sizeof(line), "frame=%lu sum=%lu\n", (unsigned long)size, sum);
+    write_all(STDOUT_FILENO, line, (size_t)n);
+    return 0;
+}
 int main(int argc, char **argv) {
-    if (argc != 3 || argv[2][0] != '/') return 64;
+    if (argc != 2 || !argv[1][0]) return 64;
     if (!MinisHelperAwaitLaunchPermit(STDIN_FILENO)) return 125;
+    if (!strcmp(argv[1], "frame")) return echo_frame();
+    if (!strcmp(argv[1], "noread")) {
+        /* Exits without reading FD 3: the runner must not hang or SIGPIPE. */
+        write_all(STDOUT_FILENO, "NOREAD\n", 7);
+        return 0;
+    }
+    if (!strcmp(argv[1], "fds")) {
+        /* Only 0..3 may be inherited; any other open descriptor is a leak. */
+        for (int fd = 4; fd < 256; ++fd) if (fcntl(fd, F_GETFD) >= 0) return 80;
+        return fcntl(3, F_GETFD) >= 0 ? 0 : 81;
+    }
     if (!strcmp(argv[1], "lease")) {
         write_all(STDOUT_FILENO, "READY\n", 6);
         MinisHelperWaitForRevocation(STDIN_FILENO);
         return 91;
     }
     if (!strcmp(argv[1], "identity")) {
+        /* The runner sends no body for identity and closes its FD3 end. */
+        char probe;
+        ssize_t got;
+        do { got = read(MINIS_HELPER_REQUEST_FD, &probe, 1); } while (got < 0 && errno == EINTR);
+        if (got != 0) return 82;
         printf("uid=%lu euid=%lu gid=%lu egid=%lu\n", (unsigned long)getuid(),
                (unsigned long)geteuid(), (unsigned long)getgid(), (unsigned long)getegid());
         return 0;

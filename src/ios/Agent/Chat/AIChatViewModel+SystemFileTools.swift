@@ -47,39 +47,47 @@ enum SystemHelperClient {
         guard SystemAccessSettings.enabled else {
             return SystemAccessEnvelope(value: ["ok": false, "code": "disabled", "error": "系统目录访问未在设置中开启。"]) 
         }
-        do {
-            try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true,
-                attributes: [.protectionKey: FileProtectionType.complete])
-            var values = URLResourceValues()
-            values.isExcludedFromBackup = true
-            var directory = stateDirectory
-            try directory.setResourceValues(values)
-        } catch {
-            return SystemAccessEnvelope(value: ["ok": false, "code": "state_directory_failed", "error": error.localizedDescription])
+        // Backup/audit state is needed only by write and rollback. Request
+        // bodies travel over the helper's FD 3 channel, so identity and read
+        // never depend on this directory existing.
+        if action == "write" || action == "rollback" {
+            do {
+                try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700])
+                try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stateDirectory.path)
+            } catch {
+                return SystemAccessEnvelope(value: ["ok": false, "code": "state_directory_failed", "error": error.localizedDescription])
+            }
         }
         var body = payload
         body["mode"] = SystemAccessSettings.mode.rawValue
-        return await withCheckedContinuation { continuation in
-            let request = OpenMinisPrivilegedRequest(
-                action: action, payload: body,
-                requestDirectoryURL: stateDirectory.appendingPathComponent("Requests", isDirectory: true))
-            request.run { [request] text in
-                _ = request
-                let object: [String: Any]
-                if let data = text.data(using: .utf8),
-                   let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    object = parsed
-                } else {
-                    object = ["ok": false, "code": "invalid_bridge_output", "error": text]
+        let request = OpenMinisPrivilegedRequest(action: action, payload: body)
+        // Task cancellation revokes the helper lease. A request cancelled before
+        // it starts is refused by the bridge's authorization check.
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                request.run { [request] text in
+                    _ = request
+                    let object: [String: Any]
+                    if let data = text.data(using: .utf8),
+                       let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        object = parsed
+                    } else {
+                        object = ["ok": false, "code": "invalid_bridge_output", "error": text]
+                    }
+                    continuation.resume(returning: SystemAccessEnvelope(value: object))
                 }
-                continuation.resume(returning: SystemAccessEnvelope(value: object))
             }
+        } onCancel: {
+            request.cancel()
         }
     }
 
+    /// Xina's root persona receives uid 0 but gets EPERM inside the app data
+    /// container, so helper state lives in the rootless bootstrap temp area.
+    /// The helper resolves this path itself and rejects symlinks/loose modes.
     static var stateDirectory: URL {
-        ContainerLocator.libraryDirectory
-            .appendingPathComponent("Application Support/MinisSystemAccess", isDirectory: true)
+        URL(fileURLWithPath: "/var/jb/var/tmp/MinisSystemAccess", isDirectory: true)
     }
 }
 

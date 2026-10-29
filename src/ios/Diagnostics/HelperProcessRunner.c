@@ -35,8 +35,8 @@ void MinisHelperCancel(MinisHelperControl *c) {
 static int safe_channel(int p[2]) {
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, p) < 0) return errno;
     for (int i = 0; i < 2; i++) {
-        if (p[i] < 3) {
-            int newfd = fcntl(p[i], F_DUPFD_CLOEXEC, 3);
+        if (p[i] < 4) {
+            int newfd = fcntl(p[i], F_DUPFD_CLOEXEC, 4);
             if (newfd < 0) { int e = errno; close(p[0]); close(p[1]); return e; }
             close(p[i]); p[i] = newfd;
         }
@@ -70,8 +70,8 @@ static uint64_t now_ms(void) {
 static int safe_pipe(int p[2]) {
     if (pipe(p) < 0) return errno;
     for (int i = 0; i < 2; i++) {
-        if (p[i] < 3) {
-            int newfd = fcntl(p[i], F_DUPFD_CLOEXEC, 3);
+        if (p[i] < 4) {
+            int newfd = fcntl(p[i], F_DUPFD_CLOEXEC, 4);
             if (newfd < 0) { int e = errno; close(p[0]); close(p[1]); return e; }
             close(p[i]); p[i] = newfd;
         }
@@ -114,12 +114,36 @@ static void drain(int *fd, char *data, size_t *size, MinisHelperResult *r) {
     }
 }
 
+static void pump_request(int *fd, const unsigned char header[4], const void *data,
+                         size_t size, size_t *sent, MinisHelperResult *r) {
+    if (*fd < 0) return;
+#ifdef SO_NOSIGPIPE
+    const int flags = 0; // configured once before entering the event loop
+#else
+    const int flags = MSG_NOSIGNAL;
+#endif
+    // Bound work per event-loop tick so timeout/cancel checks cannot starve.
+    size_t budget = 64 * 1024;
+    while (*sent < size + 4 && budget) {
+        const unsigned char *p = *sent < 4 ? header + *sent
+            : (const unsigned char *)data + *sent - 4;
+        size_t count = *sent < 4 ? 4 - *sent : size + 4 - *sent;
+        if (count > budget) count = budget;
+        ssize_t n = send(*fd, p, count, flags);
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
+        if (n <= 0) { r->request_error = n == 0 ? EIO : errno; close(*fd); *fd = -1; return; }
+        *sent += (size_t)n; budget -= (size_t)n;
+    }
+    if (*sent == size + 4) { (void)shutdown(*fd, SHUT_WR); close(*fd); *fd = -1; }
+}
+
 MinisHelperResult MinisHelperRun(const char *executable, const char *action,
-    const char *requestPath, bool rootPersona, unsigned timeout_ms,
+    const void *requestData, size_t requestSize, bool rootPersona, unsigned timeout_ms,
     MinisHelperControl *control) {
     MinisHelperResult r = { .exit_code = -1 };
     if (!executable || executable[0] != '/' || !action || !action[0] ||
-        !requestPath || requestPath[0] != '/' || timeout_ms == 0) { r.spawn_error = EINVAL; return r; }
+        (!requestData && requestSize) || requestSize > 3u * 1024u * 1024u || timeout_ms == 0) { r.spawn_error = EINVAL; return r; }
     if (control && atomic_load(&control->cancelled)) { r.cancelled = true; return r; }
     r.out_data = calloc(MINIS_HELPER_OUTPUT_LIMIT + 1, 1);
     r.err_data = calloc(MINIS_HELPER_OUTPUT_LIMIT + 1, 1);
@@ -128,7 +152,7 @@ MinisHelperResult MinisHelperRun(const char *executable, const char *action,
         r.out_data = r.err_data = NULL;
         r.spawn_error = ENOMEM; return r;
     }
-    int out[2], err[2], life[2];
+    int out[2], err[2], life[2], request[2];
     if ((r.spawn_error = safe_pipe(out))) { MinisHelperResultFree(&r); return r; }
     if ((r.spawn_error = safe_pipe(err))) {
         close(out[0]); close(out[1]); MinisHelperResultFree(&r); return r;
@@ -137,6 +161,20 @@ MinisHelperResult MinisHelperRun(const char *executable, const char *action,
         close(out[0]); close(out[1]); close(err[0]); close(err[1]);
         MinisHelperResultFree(&r); return r;
     }
+    if ((r.spawn_error = safe_channel(request))) {
+        close(out[0]); close(out[1]); close(err[0]); close(err[1]);
+        close(life[0]); close(life[1]); MinisHelperResultFree(&r); return r;
+    }
+#ifdef SO_NOSIGPIPE
+    int noSigPipe = 1;
+    if (setsockopt(request[1], SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe)) < 0) {
+        r.spawn_error = errno;
+        close(out[0]); close(out[1]); close(err[0]); close(err[1]);
+        close(life[0]); close(life[1]); close(request[0]); close(request[1]);
+        return r;
+    }
+#endif
+    // safe_pipe/safe_channel reserve 0..3; no source can alias child fd3.
     posix_spawnattr_t attr;
     posix_spawn_file_actions_t actions;
     int e = posix_spawnattr_init(&attr);
@@ -154,17 +192,19 @@ MinisHelperResult MinisHelperRun(const char *executable, const char *action,
     sigemptyset(&empty);
     TRY_CALL(posix_spawnattr_setsigmask(&attr, &empty));
     if (rootPersona) TRY_CALL(persona(&attr));
-    // Child receives life[0] as stdin; parent retains life[1] for permit/lease.
+    // FD 0 is the one-byte launch/revocation lease. FD 3 is a distinct framed
+    // JSON request channel; request bodies never touch disk or argv.
     TRY_CALL(posix_spawn_file_actions_adddup2(&actions, life[0], STDIN_FILENO));
-    TRY_CALL(posix_spawn_file_actions_addclose(&actions, life[0]));
-    TRY_CALL(posix_spawn_file_actions_addclose(&actions, life[1]));
+    TRY_CALL(posix_spawn_file_actions_adddup2(&actions, request[0], 3));
     TRY_CALL(posix_spawn_file_actions_adddup2(&actions, out[1], STDOUT_FILENO));
     TRY_CALL(posix_spawn_file_actions_adddup2(&actions, err[1], STDERR_FILENO));
     for (int i = 0; i < 2; i++) {
+        TRY_CALL(posix_spawn_file_actions_addclose(&actions, life[i]));
+        TRY_CALL(posix_spawn_file_actions_addclose(&actions, request[i]));
         TRY_CALL(posix_spawn_file_actions_addclose(&actions, out[i]));
         TRY_CALL(posix_spawn_file_actions_addclose(&actions, err[i]));
     }
-    char *args[] = { (char *)executable, (char *)action, (char *)requestPath, NULL };
+    char *args[] = { (char *)executable, (char *)action, NULL };
     char *env[] = { "PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=/var/empty", "TMPDIR=/tmp", "LANG=C", NULL };
     pid_t pid = -1;
     if (control && atomic_load(&control->cancelled)) {
@@ -175,9 +215,9 @@ cleanup:
     posix_spawn_file_actions_destroy(&actions);
     posix_spawnattr_destroy(&attr);
 pipes:
-    close(out[1]); close(err[1]); close(life[0]);
+    close(out[1]); close(err[1]); close(life[0]); close(request[0]);
     if (e) {
-        close(out[0]); close(err[0]); close(life[1]);
+        close(out[0]); close(err[0]); close(life[1]); close(request[1]);
         if (r.cancelled && e == ECANCELED) return r;
         r.spawn_error = e; return r;
     }
@@ -188,7 +228,7 @@ pipes:
             close(life[1]); life[1] = -1;
             kill(-pid, SIGKILL); kill(pid, SIGKILL);
             while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
-            close(out[0]); close(err[0]);
+            close(out[0]); close(err[0]); close(request[1]);
             return r;
         }
     }
@@ -199,16 +239,22 @@ pipes:
         close(life[1]); life[1] = -1;
         kill(-pid, SIGKILL); kill(pid, SIGKILL);
         while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
-        close(out[0]); close(err[0]);
+        close(out[0]); close(err[0]); close(request[1]);
         return r;
     }
-    if (fcntl(out[0], F_SETFL, O_NONBLOCK) < 0 || fcntl(err[0], F_SETFL, O_NONBLOCK) < 0) {
+    if (fcntl(out[0], F_SETFL, O_NONBLOCK) < 0 || fcntl(err[0], F_SETFL, O_NONBLOCK) < 0 ||
+        fcntl(request[1], F_SETFL, O_NONBLOCK) < 0) {
         int saved_error = errno;
         close(life[1]); life[1] = -1;
         kill(-pid, SIGKILL); kill(pid, SIGKILL);
         while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
-        close(out[0]); close(err[0]); r.spawn_error = saved_error; return r;
+        close(out[0]); close(err[0]); close(request[1]); r.spawn_error = saved_error; return r;
     }
+    uint32_t length = (uint32_t)requestSize;
+    unsigned char requestHeader[4] = {(unsigned char)(length >> 24), (unsigned char)(length >> 16),
+        (unsigned char)(length >> 8), (unsigned char)length};
+    size_t requestSent = 0;
+    if (!strcmp(action, "identity")) { close(request[1]); request[1] = -1; }
     uint64_t started = now_ms();
     bool reaped = false, killed = false;
     int status = 0;
@@ -226,6 +272,7 @@ pipes:
             if (!reaped) kill(pid, SIGKILL);
             killed = true;
         }
+        if ((killed || reaped) && request[1] >= 0) { close(request[1]); request[1] = -1; }
         if (killed) {
             if (out[0] >= 0) { close(out[0]); out[0] = -1; }
             if (err[0] >= 0) { close(err[0]); err[0] = -1; }
@@ -237,19 +284,22 @@ pipes:
             }
             break;
         }
-        struct pollfd fds[2] = {
-            {out[0], POLLIN, 0}, {err[0], POLLIN, 0}
+        struct pollfd fds[3] = {
+            {out[0], POLLIN, 0}, {err[0], POLLIN, 0}, {request[1], POLLOUT, 0}
         };
-        int poll_result = poll(fds, 2, 25);
+        int poll_result = poll(fds, 3, 25);
         if (poll_result < 0 && errno != EINTR) { r.spawn_error = errno; r.cancelled = true; continue; }
         drain(&out[0], r.out_data, &r.out_size, &r);
         drain(&err[0], r.err_data, &r.err_size, &r);
+        if (!r.output_limit && !r.cancelled && !r.timed_out)
+            pump_request(&request[1], requestHeader, requestData, requestSize, &requestSent, &r);
     }
     if (!r.spawn_error && reaped) {
         if (WIFEXITED(status)) r.exit_code = WEXITSTATUS(status);
         else if (WIFSIGNALED(status)) r.term_signal = WTERMSIG(status);
     }
     if (life[1] >= 0) close(life[1]);
+    if (request[1] >= 0) close(request[1]);
     return r;
 #undef TRY_CALL
 }
