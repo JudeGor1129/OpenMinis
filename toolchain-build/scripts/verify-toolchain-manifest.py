@@ -84,7 +84,7 @@ def main(directory):
     for header in ("llvm/ADT/ArrayRef.h", "clang/Frontend/CompilerInstance.h"):
         safe_file(root, "dev-headers/common/include/" + header)
     for arch in ("arm64", "arm64e"):
-        for header in ("llvm/Config/config.h", "llvm/Config/llvm-config.h", "llvm/Config/abi-breaking.h", "llvm/IR/Intrinsics.inc", "clang/Basic/Version.inc", "clang/Config/config.h"):
+        for header in ("llvm/Config/config.h", "llvm/Config/llvm-config.h", "llvm/Config/abi-breaking.h", "llvm/IR/IntrinsicEnums.inc", "llvm/IR/IntrinsicImpl.inc", "clang/Basic/Version.inc", "clang/Config/config.h"):
             safe_file(root, f"dev-headers/{arch}/include/{header}")
     for license in ("LLVM-LICENSE.txt", "Clang-LICENSE.txt"):
         safe_file(root, "dev-headers/licenses/" + license)

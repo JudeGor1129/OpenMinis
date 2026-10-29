@@ -13,7 +13,7 @@ for ARCH in $ARCHS; do
   case "$ARCH" in arm64|arm64e) ;; *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; esac
   case "$SEEN" in *" $ARCH "*) echo "Duplicate architecture: $ARCH" >&2; exit 1 ;; esac
   SEEN="$SEEN$ARCH "
-  for HEADER in llvm/Config/llvm-config.h llvm/Config/config.h llvm/Config/abi-breaking.h llvm/IR/Intrinsics.inc; do
+  for HEADER in llvm/Config/llvm-config.h llvm/Config/config.h llvm/Config/abi-breaking.h llvm/IR/IntrinsicEnums.inc llvm/IR/IntrinsicImpl.inc; do
     [ -f "$WORK/build-ios-$ARCH/include/$HEADER" ] || { echo "Missing generated header: $ARCH/include/$HEADER" >&2; exit 1; }
   done
   for HEADER in clang/Basic/Version.inc clang/Config/config.h; do
@@ -28,6 +28,30 @@ for LICENSE in llvm/LICENSE.TXT clang/LICENSE.TXT; do
 done
 
 mkdir -p "$BUILD"
+
+# The builtin resource headers include generated arm_neon/arm_sve/etc. files.
+# They are emitted into lib/clang/<major>/include by Clang's resource-header
+# target, not kept only in clang/lib/Headers. Export the generated directory
+# from the first requested slice; both slices use the same pinned source.
+RESOURCE_INCLUDE=""
+for ARCH in $ARCHS; do
+  candidate="$(find "$WORK/build-ios-$ARCH" -type f \
+    -path '*/lib/clang/*/include/arm_neon.h' -print -quit 2>/dev/null | \
+    sed 's#/arm_neon\.h$##')"
+  [ -n "$candidate" ] || { echo "Missing generated Clang resource headers: $ARCH/lib/clang/*/include" >&2; exit 1; }
+  for HEADER in arm_neon.h arm_fp16.h arm_sve.h arm_sme.h arm_bf16.h arm_mve.h arm_cde.h; do
+    [ -f "$candidate/$HEADER" ] || { echo "Missing generated Clang resource header: $ARCH/$HEADER" >&2; exit 1; }
+  done
+  if [ -z "$RESOURCE_INCLUDE" ]; then RESOURCE_INCLUDE="$candidate"; fi
+done
+rm -rf "$BUILD/clang-resource"
+mkdir -p "$BUILD/clang-resource/include"
+# Start with the pinned source builtin headers, then overlay generated target
+# headers so the runtime resource is complete rather than arm-only fragments.
+cp -R "$SOURCE/clang/lib/Headers/." "$BUILD/clang-resource/include/"
+cp -R "$RESOURCE_INCLUDE/." "$BUILD/clang-resource/include/"
+echo "Exported Clang resource headers from $SOURCE/clang/lib/Headers + $RESOURCE_INCLUDE"
+
 STAGE="$(mktemp -d "$BUILD/.dev-headers.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/common/include" "$STAGE/licenses"
