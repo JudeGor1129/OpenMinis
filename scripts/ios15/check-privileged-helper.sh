@@ -53,6 +53,11 @@ grep -q 'var/tmp/MinisSystemAccess' "$helper"
 ! grep -q 'URLsForDirectory:NSLibraryDirectory' "$bridge"
 grep -q 'MinisValidateHelperResponse' "$bridge"
 grep -q 'MinisHelperHasZeroID' src/ios/Diagnostics/HelperResponseValidation.h
+# ValidateTarget returns response paths beyond its stack frame. Keep them
+# ARC-owned; unsafe_unretained caused a device SIGSEGV while building JSON.
+grep -q '@interface SafePath : NSObject' "$helper"
+grep -Fq '@property(nonatomic, copy) NSString *literal;' "$helper"
+! grep -Fq '__unsafe_unretained NSString *literal' "$helper"
 python3 - <<'PY'
 from pathlib import Path
 source = Path('tools/privileged-helper/MinisPrivilegedHelper.m').read_text()
