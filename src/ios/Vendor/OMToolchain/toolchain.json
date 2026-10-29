@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "status": "placeholder",
+  "note": "No compiler archive is committed or linked. The prebuilt arm64e-only archives from the build173 source package are not in git (249 MB exceeds GitHub's file limit). Replace this file with the schema-2 toolchain.json from a verified ios-toolchain.yml artifact before enabling OM_TOOLCHAIN_ENABLED.",
+  "architectures": [],
+  "artifacts": {}
+}

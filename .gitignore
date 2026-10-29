@@ -146,3 +146,12 @@ deps/lame-3.100/**/.deps/
 # not a vendored binary — same treatment as the iOS Rclone.xcframework it is
 # built alongside (deps/build_rclone_ios.sh).
 src/android/app/libs/rclone.aar
+
+# Embedded toolchain: archives come from the ios-toolchain.yml artifact and
+# are never committed (libomllvm-*.a is ~250 MB). Build trees stay local.
+/src/ios/Vendor/OMToolchain/*.a
+/toolchain-build/work/
+/toolchain-build/build/
+/toolchain-build/bridge-*/obj/
+/toolchain-build/bridge-*/packages/
+*.twork-cache

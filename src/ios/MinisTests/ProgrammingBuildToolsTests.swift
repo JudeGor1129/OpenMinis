@@ -44,8 +44,36 @@ final class ProgrammingBuildToolsTests: XCTestCase {
     }
 
     func testProviderRosterContainsAllRealAdapters() {
-        XCTAssertEqual(Set(BuildProviderID.allCases), Set([.localISH, .theos, .remoteGitHubActions, .macSSH]))
+        XCTAssertEqual(Set(BuildProviderID.allCases), Set([.localISH, .theos, .remoteGitHubActions, .macSSH, .embeddedToolchain]))
         XCTAssertEqual(Set(BuildProviderRegistry.providers.map { $0.id }), Set(BuildProviderID.allCases))
+    }
+
+    func testEmbeddedToolchainStaysUnavailableAndNeverRunsShell() async {
+        final class CallCounter { var value = 0 }
+        let shellCalls = CallCounter()
+        let inspection = BuildProjectInspection(
+            canonicalPath: "/tmp/embedded-toolchain-probe", kind: .unknown, manifests: [], languageStack: ["c"],
+            gitBranch: nil, gitCommit: nil, gitIsDirty: false, gitRemote: nil,
+            suggestedProviders: [.embeddedToolchain], suggestedCommands: [])
+        let request = BuildRequest(
+            projectPath: "/tmp/embedded-toolchain-probe", provider: .embeddedToolchain, configuration: "Debug",
+            toolchain: "auto", command: nil, testCommand: nil, artifactPaths: [], timeoutSeconds: 60,
+            cachePolicy: .ignore, attempt: 1, maxAttempts: 3, workflow: nil, workflowInputs: [:])
+        let context = BuildProviderContext(inspection: inspection, request: request) { _, _ in
+            shellCalls.value += 1
+            return BuildShellResult(output: "", exitCode: 0)
+        }
+        let provider = EmbeddedToolchainBuildProvider()
+        let availability = await provider.availability(for: context)
+        XCTAssertEqual(availability.state, .unavailable)
+        XCTAssertTrue(availability.missingConfiguration.contains("in-process BuildProvider execution adapter"))
+        guard case .unavailable = await provider.build(context: context, runID: "probe") else {
+            return XCTFail("Embedded build must not execute before the runtime gates pass.")
+        }
+        guard case .unavailable = await provider.test(context: context, runID: "probe") else {
+            return XCTFail("Embedded test must not execute before the runtime gates pass.")
+        }
+        XCTAssertEqual(shellCalls.value, 0)
     }
 
     func testBuildRunMigrationIsIdempotent() async throws {

@@ -1,0 +1,101 @@
+name: Build embedded iOS toolchain
+
+# The repository token used from the device can push but cannot dispatch
+# workflows, so a push to the pinned build inputs also starts this build.
+# Bump the request line below to request a rebuild without code changes.
+# Rebuild request: 2026-10-29 build173 integration (artifact 12401257637 expired).
+on:
+  push:
+    branches: [ios15-port]
+    paths:
+      - 'toolchain-build/scripts/**'
+      - 'toolchain-build/deps/**'
+      - 'toolchain-build/verify-artifacts.sh'
+      - '.github/workflows/ios-toolchain.yml'
+  workflow_dispatch:
+    inputs:
+      llvm_min_ios:
+        description: Minimum iOS deployment target for the embedded compiler
+        required: true
+        default: "14.0"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-toolchain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-disabled-bridge:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check bridge before the expensive LLVM build
+        run: bash toolchain-build/bridge-check/check-macos.sh
+
+  build-toolchain:
+    needs: check-disabled-bridge
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Show host toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+          cmake --version
+          ninja --version
+
+      - name: Fetch pinned sources
+        run: bash toolchain-build/scripts/fetch-sources.sh
+
+      - name: Build arm64 and arm64e archives
+        env:
+          ARCHS: arm64 arm64e
+          LLVM_MIN_IOS: ${{ inputs.llvm_min_ios }}
+        run: bash toolchain-build/scripts/build-ios-toolchain.sh
+
+      - name: Verify archives, resource and development headers
+        run: bash toolchain-build/verify-artifacts.sh toolchain-build/build/ios
+
+      - name: Compile development header probes for both architectures
+        run: bash toolchain-build/scripts/check-dev-headers.sh toolchain-build/build/ios
+
+      - name: Compile and statically link the enabled bridge for both architectures
+        run: bash toolchain-build/scripts/check-enabled-bridge.sh toolchain-build/build/ios
+
+      - name: Upload bridge check diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenMinis-enabled-bridge-check-${{ github.sha }}
+          path: |
+            toolchain-build/build/ios/enabled-link-check/*.log
+            toolchain-build/build/ios/enabled-link-check/*-version.txt
+            toolchain-build/build/ios/enabled-link-check/enabled-link-report.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload toolchain artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenMinis-iOS-toolchain-${{ github.sha }}
+          path: |
+            toolchain-build/build/ios/libomllvm-arm64.a
+            toolchain-build/build/ios/libomllvm-arm64e.a
+            toolchain-build/build/ios/libomld64.a
+            toolchain-build/build/ios/clang-resource/
+            toolchain-build/build/ios/dev-headers/
+            toolchain-build/build/ios/toolchain.json
+          if-no-files-found: error
+          retention-days: 14

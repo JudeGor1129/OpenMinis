@@ -1,0 +1,28 @@
+name: Check disabled toolchain bridge
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'toolchain-build/bridge-check/**'
+      - 'src/ios/Vendor/OMToolchain/**'
+      - 'src/ios/Views/Rootfs/RootfsBuildSettingsView.swift'
+      - 'src/ios/MinisApp-Bridging-Header.h'
+      - 'src/ios/Minis.xcodeproj/project.pbxproj'
+      - '.github/workflows/ios-toolchain-bridge-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  disabled-bridge:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Check disabled bridge and Swift import
+        run: bash toolchain-build/bridge-check/check-macos.sh

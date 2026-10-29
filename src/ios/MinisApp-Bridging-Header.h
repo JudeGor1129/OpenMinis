@@ -67,6 +67,9 @@
 #import "Diagnostics/FridaCoreBridge.h"
 #import "Diagnostics/PrivilegedHelperBridge.h"
 
+// In-process compiler capability bridge. Disabled builds report unavailable.
+#import "Vendor/OMToolchain/OMToolchain.h"
+
 #endif /* MinisApp_Bridging_Header_h */
 
 // rclone static library (deps/frameworks/Rclone.xcframework) — see RcloneBridge.swift

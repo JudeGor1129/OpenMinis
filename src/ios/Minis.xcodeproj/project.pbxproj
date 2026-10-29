@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D0A173000000000000000001 /* OMToolchain.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0A173000000000000000011 /* OMToolchain.mm */; };
+		D0A173000000000000000002 /* clang-resource in Resources */ = {isa = PBXBuildFile; fileRef = D0A173000000000000000012 /* clang-resource */; };
 		B10000000000000000000001 /* BuildModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* BuildModels.swift */; };
 		B10000000000000000000002 /* BuildProjectDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* BuildProjectDetector.swift */; };
 		B10000000000000000000003 /* BuildProviders.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000003 /* BuildProviders.swift */; };
@@ -14,6 +16,7 @@
 		B10000000000000000000005 /* BuildRunStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005 /* BuildRunStore.swift */; };
 		B10000000000000000000006 /* ProgrammingBuildTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006 /* ProgrammingBuildTools.swift */; };
 		B10000000000000000000007 /* AIChatViewModel+BuildTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007 /* AIChatViewModel+BuildTools.swift */; };
+		B10000000000000000000008 /* EmbeddedToolchainBuildProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000008 /* EmbeddedToolchainBuildProvider.swift */; };
 		21FED4B7BB6F6D9476C9992E /* VoiceProvider+System.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88993FC8E3F0199C6638F664 /* VoiceProvider+System.swift */; };
 		241D530017827D7F0EB604DE /* VoiceProviderFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2941B643B8A2F048A2B154E /* VoiceProviderFactory.swift */; };
 		2A4FD49F872431D703328384 /* VoiceOutputPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 424510790AF3FB2452D3CCE3 /* VoiceOutputPlayer.swift */; };
@@ -669,6 +672,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D0A173000000000000000010 /* OMToolchain.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OMToolchain.h; sourceTree = "<group>"; };
+		D0A173000000000000000011 /* OMToolchain.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = OMToolchain.mm; sourceTree = "<group>"; };
+		D0A173000000000000000012 /* clang-resource */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "clang-resource"; sourceTree = "<group>"; };
 		B20000000000000000000001 /* BuildModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuildModels.swift"; sourceTree = "<group>"; };
 		B20000000000000000000002 /* BuildProjectDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuildProjectDetector.swift"; sourceTree = "<group>"; };
 		B20000000000000000000003 /* BuildProviders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuildProviders.swift"; sourceTree = "<group>"; };
@@ -676,6 +682,7 @@
 		B20000000000000000000005 /* BuildRunStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuildRunStore.swift"; sourceTree = "<group>"; };
 		B20000000000000000000006 /* ProgrammingBuildTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProgrammingBuildTools.swift"; sourceTree = "<group>"; };
 		B20000000000000000000007 /* AIChatViewModel+BuildTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+BuildTools.swift"; sourceTree = "<group>"; };
+		B20000000000000000000008 /* EmbeddedToolchainBuildProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EmbeddedToolchainBuildProvider.swift"; sourceTree = "<group>"; };
 		0ED149397BEA7E0408C92688 /* GroupVoiceModelsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GroupVoiceModelsView.swift; sourceTree = "<group>"; };
 		0F5379380323FA8C6477708C /* GroupSlotPicker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GroupSlotPicker.swift; sourceTree = "<group>"; };
 		16FF3462D09402F14B610CD6 /* VoiceWaveformView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VoiceWaveformView.swift; sourceTree = "<group>"; };
@@ -1577,9 +1584,20 @@
 			);
 			sourceTree = "<group>";
 		};
+		D0A173000000000000000020 /* OMToolchain */ = {
+			isa = PBXGroup;
+			children = (
+				D0A173000000000000000010 /* OMToolchain.h */,
+				D0A173000000000000000011 /* OMToolchain.mm */,
+				D0A173000000000000000012 /* clang-resource */,
+			);
+			path = Vendor/OMToolchain;
+			sourceTree = "<group>";
+		};
 		E51000031 /* Minis */ = {
 			isa = PBXGroup;
 			children = (
+				D0A173000000000000000020 /* OMToolchain */,
 				E51000011 /* MinisApp.swift */,
 				E5QA0102 /* AppDelegate.swift */,
 				E5E000018 /* Minis.entitlements */,
@@ -2190,6 +2208,7 @@
 				B20000000000000000000004 /* BuildVerification.swift */,
 				B20000000000000000000005 /* BuildRunStore.swift */,
 				B20000000000000000000006 /* ProgrammingBuildTools.swift */,
+				B20000000000000000000008 /* EmbeddedToolchainBuildProvider.swift */,
 			);
 			path = Build;
 			sourceTree = "<group>";
@@ -2751,6 +2770,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D0A173000000000000000002 /* clang-resource in Resources */,
 				E51000004 /* Preview Assets.xcassets in Resources */,
 				AA26CCB72F31067900AECF2D /* alpine-rootfs.zip in Resources */,
 				E5BSH0004 /* bashism_rules.json in Resources */,
@@ -2934,6 +2954,7 @@
 				AA26CCBC2F324FE400AECF2D /* FileBrowserView.swift in Sources */,
 				AA26CCBE2F31080100AECF2D /* RootfsManager.swift in Sources */,
 				E51000001 /* MinisApp.swift in Sources */,
+				D0A173000000000000000001 /* OMToolchain.mm in Sources */,
 				E5FPBH02 /* FileProviderBootHealth.swift in Sources */,
 				E5QA0001 /* QuickActionRouter.swift in Sources */,
 				E5QA0003 /* QuickActionWorkflow.swift in Sources */,
@@ -2980,6 +3001,7 @@
 				B10000000000000000000005 /* BuildRunStore.swift in Sources */,
 				B10000000000000000000006 /* ProgrammingBuildTools.swift in Sources */,
 				B10000000000000000000007 /* AIChatViewModel+BuildTools.swift in Sources */,
+				B10000000000000000000008 /* EmbeddedToolchainBuildProvider.swift in Sources */,
 
 				E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */,
 				E5VMB0001 /* AIChatViewModel+Compaction.swift in Sources */,

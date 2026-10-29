@@ -15,7 +15,7 @@ test -f "$tests" || { echo 'FAIL: programming build unit tests missing'; exit 1;
 grep -q 'testCommandRunnerUsesCapturedExitCodeNotSuccessText' "$tests" || { echo 'FAIL: exit-code truth test missing'; exit 1; }
 grep -q 'testBuildRunMigrationIsIdempotent' "$tests" || { echo 'FAIL: migration idempotence test missing'; exit 1; }
 
-for file in BuildModels.swift BuildProjectDetector.swift BuildProviders.swift BuildVerification.swift BuildRunStore.swift ProgrammingBuildTools.swift; do
+for file in BuildModels.swift BuildProjectDetector.swift BuildProviders.swift BuildVerification.swift BuildRunStore.swift ProgrammingBuildTools.swift EmbeddedToolchainBuildProvider.swift; do
   test -f "$build/$file" || { echo "FAIL: missing $build/$file"; exit 1; }
   test "$(grep -c "$file in Sources" "$pbx")" -eq 2 || { echo "FAIL: $file must have one PBXBuildFile and one Sources entry"; exit 1; }
 done
@@ -25,6 +25,15 @@ test "$(grep -c 'AIChatViewModel+BuildTools.swift in Sources' "$pbx")" -eq 2 || 
 for provider in LocalISHBuildProvider TheosBuildProvider RemoteGitHubActionsProvider MacSSHBuildProvider; do
   grep -q "struct $provider: BuildProvider" "$build/BuildProviders.swift" || { echo "FAIL: missing $provider"; exit 1; }
 done
+grep -q 'struct EmbeddedToolchainBuildProvider: BuildProvider' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: embedded toolchain provider missing'; exit 1; }
+grep -q 'EmbeddedToolchainBuildProvider()' "$build/BuildProviders.swift" || { echo 'FAIL: embedded toolchain provider not registered'; exit 1; }
+grep -q 'case embeddedToolchain = "embedded_toolchain"' "$build/BuildModels.swift" || { echo 'FAIL: embedded provider ID missing'; exit 1; }
+grep -q 'OM_TOOLCHAIN_VERIFIED' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: embedded provider verification gate missing'; exit 1; }
+grep -q 'state: .unavailable' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: embedded provider must remain non-executable'; exit 1; }
+grep -q '\.unavailable(await availability(for: context))' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: embedded build/test must stay non-executable'; exit 1; }
+if grep -q 'context.executor' "$build/EmbeddedToolchainBuildProvider.swift"; then echo 'FAIL: embedded readiness provider must not run shell commands'; exit 1; fi
+grep -q '"verification": verified ? @"passed" : @"missing"' src/ios/Vendor/OMToolchain/OMToolchain.mm || { echo 'FAIL: bridge verification status missing'; exit 1; }
+grep -q 'linked && verified && headersReady && sdkReady' src/ios/Vendor/OMToolchain/OMToolchain.mm || { echo 'FAIL: bridge readiness does not require verification gate'; exit 1; }
 grep -q '^protocol BuildProvider' "$build/BuildProviders.swift" || { echo 'FAIL: BuildProvider seam missing'; exit 1; }
 grep -q 'state: available ? .available : .unavailable' "$build/BuildProviders.swift" || { echo 'FAIL: providers do not expose structured availability'; exit 1; }
 

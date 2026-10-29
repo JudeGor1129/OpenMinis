@@ -5,9 +5,40 @@ import SwiftUI
 /// persisted, while the actual build remains an explicit terminal action.
 struct RootfsBuildSettingsView: View {
     @StateObject private var model = RootfsBuildSettingsViewModel()
+    @State private var embeddedStatus: [String: String] = [:]
 
     var body: some View {
         List {
+            Section("原生内置工具链（不经过 iSH）") {
+                HStack {
+                    Text("编译器链接状态")
+                    Spacer()
+                    Text(embeddedStatus["compiler_linked"] == "yes" ? "已链接" : "未启用")
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Text("App 架构")
+                    Spacer()
+                    Text(embeddedStatus["host_architecture"] ?? "unknown")
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Text("Clang 基础头文件")
+                    Spacer()
+                    Text(embeddedStatus["resource_headers"] == "present" ? "已准备" : "缺失")
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Text("原生 iOS SDK")
+                    Spacer()
+                    Text(embeddedStatus["sdk"] == "present" ? "已准备" : "未配置")
+                        .foregroundStyle(.secondary)
+                }
+                Text(embeddedStatus["reason"] ?? "正在检查内置资源。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 HStack(spacing: 12) {
                     Image(systemName: model.toolchainSymbol)
@@ -123,7 +154,10 @@ struct RootfsBuildSettingsView: View {
         }
         .navigationTitle("编译环境")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { model.refreshIfNeeded() }
+        .onAppear {
+            embeddedStatus = OMToolchain.capabilityStatus()
+            model.refreshIfNeeded()
+        }
     }
 }
 

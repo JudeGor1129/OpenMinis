@@ -16,6 +16,7 @@ enum BuildProviderRegistry {
         TheosBuildProvider(),
         RemoteGitHubActionsProvider(),
         MacSSHBuildProvider(),
+        EmbeddedToolchainBuildProvider(),
     ]
 
     static func provider(_ id: BuildProviderID) -> (any BuildProvider)? {

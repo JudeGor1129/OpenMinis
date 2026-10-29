@@ -1,0 +1,391 @@
+diff --git a/clang/lib/CodeGen/CGCall.cpp b/clang/lib/CodeGen/CGCall.cpp
+index 40cc275d4027331..64adcf0348b56a5 100644
+--- a/clang/lib/CodeGen/CGCall.cpp
++++ b/clang/lib/CodeGen/CGCall.cpp
+@@ -2740,7 +2740,9 @@ void CodeGenModule::ConstructAttributeList(StringRef Name,
+     // is used.
+     // FIXME: what if we just haven't processed the function definition
+     // yet, or if it's an external definition like C99 inline?
+-    if (CodeGenOpts.NoPLT) {
++    // Suppress NonLazyBind on arm64e: inline GOT loads bypass the
++    // linker's authentication stubs.
++    if (CodeGenOpts.NoPLT && !getTriple().isArm64e()) {
+       if (auto *Fn = dyn_cast<FunctionDecl>(TargetDecl)) {
+         if (!Fn->isDefined() && !AttrOnCallSite) {
+           FuncAttrs.addAttribute(llvm::Attribute::NonLazyBind);
+diff --git a/clang/lib/CodeGen/CGObjC.cpp b/clang/lib/CodeGen/CGObjC.cpp
+index c724a063bafe844..dc13b1782461e1b 100644
+--- a/clang/lib/CodeGen/CGObjC.cpp
++++ b/clang/lib/CodeGen/CGObjC.cpp
+@@ -2331,10 +2331,12 @@ static llvm::Value *emitObjCValueOperation(CodeGenFunction &CGF,
+       llvm::FunctionType::get(CGF.Int8PtrTy, CGF.Int8PtrTy, false);
+     fn = CGF.CGM.CreateRuntimeFunction(fnType, fnName);
+ 
+-    // We have Native ARC, so set nonlazybind attribute for performance
+-    if (llvm::Function *f = dyn_cast<llvm::Function>(fn.getCallee()))
+-      if (fnName == "objc_retain")
+-        f->addFnAttr(llvm::Attribute::NonLazyBind);
++    // We have Native ARC, so set nonlazybind attribute for performance.
++    // Suppress on arm64e (inline GOT loads bypass auth stubs).
++    if (!CGF.CGM.getTriple().isArm64e())
++      if (llvm::Function *f = dyn_cast<llvm::Function>(fn.getCallee()))
++        if (fnName == "objc_retain")
++          f->addFnAttr(llvm::Attribute::NonLazyBind);
+   }
+ 
+   // Cast the argument to 'id'.
+@@ -2907,9 +2909,11 @@ void CodeGenFunction::EmitObjCRelease(llvm::Value *value,
+         llvm::FunctionType::get(Builder.getVoidTy(), Int8PtrTy, false);
+     fn = CGM.CreateRuntimeFunction(fnType, "objc_release");
+     setARCRuntimeFunctionLinkage(CGM, fn);
+-    // We have Native ARC, so set nonlazybind attribute for performance
+-    if (llvm::Function *f = dyn_cast<llvm::Function>(fn.getCallee()))
+-      f->addFnAttr(llvm::Attribute::NonLazyBind);
++    // We have Native ARC, so set nonlazybind attribute for performance.
++    // Suppress on arm64e (inline GOT loads bypass auth stubs).
++    if (!CGM.getTriple().isArm64e())
++      if (llvm::Function *f = dyn_cast<llvm::Function>(fn.getCallee()))
++        f->addFnAttr(llvm::Attribute::NonLazyBind);
+   }
+ 
+   // Cast the argument to 'id'.
+diff --git a/clang/lib/CodeGen/CGObjCMac.cpp b/clang/lib/CodeGen/CGObjCMac.cpp
+index 69c5e88f3c76874..6676752e33058d4 100644
+--- a/clang/lib/CodeGen/CGObjCMac.cpp
++++ b/clang/lib/CodeGen/CGObjCMac.cpp
+@@ -66,12 +66,17 @@ class ObjCCommonTypesHelper {
+   llvm::FunctionCallee getMessageSendFn() const {
+     // Add the non-lazy-bind attribute, since objc_msgSend is likely to
+     // be called a lot.
++    // Suppress on arm64e (inline GOT loads bypass auth stubs).
+     llvm::Type *params[] = {ObjectPtrTy, SelectorPtrTy};
++    llvm::AttributeList Attrs;
++    if (!CGM.getTriple().isArm64e()) {
++      Attrs = llvm::AttributeList::get(CGM.getLLVMContext(),
++                                       llvm::AttributeList::FunctionIndex,
++                                       llvm::Attribute::NonLazyBind);
++    }
+     return CGM.CreateRuntimeFunction(
+         llvm::FunctionType::get(ObjectPtrTy, params, true), "objc_msgSend",
+-        llvm::AttributeList::get(CGM.getLLVMContext(),
+-                                 llvm::AttributeList::FunctionIndex,
+-                                 llvm::Attribute::NonLazyBind));
++        Attrs);
+   }
+ 
+   /// void objc_msgSend_stret (id, SEL, ...)
+@@ -554,11 +559,14 @@ class ObjCTypesHelper : public ObjCCommonTypesHelper {
+   llvm::FunctionCallee getSetJmpFn() {
+     // This is specifically the prototype for x86.
+     llvm::Type *params[] = {CGM.DefaultPtrTy};
++    llvm::AttributeList Attrs;
++    if (!CGM.getTriple().isArm64e()) {
++      Attrs = llvm::AttributeList::get(CGM.getLLVMContext(),
++                                       llvm::AttributeList::FunctionIndex,
++                                       llvm::Attribute::NonLazyBind);
++    }
+     return CGM.CreateRuntimeFunction(
+-        llvm::FunctionType::get(CGM.Int32Ty, params, false), "_setjmp",
+-        llvm::AttributeList::get(CGM.getLLVMContext(),
+-                                 llvm::AttributeList::FunctionIndex,
+-                                 llvm::Attribute::NonLazyBind));
++        llvm::FunctionType::get(CGM.Int32Ty, params, false), "_setjmp", Attrs);
+   }
+ 
+ public:
+@@ -703,13 +711,13 @@ class ObjCNonFragileABITypesHelper : public ObjCCommonTypesHelper {
+     // classref except by calling this function.
+     llvm::Type *params[] = {Int8PtrPtrTy};
+     llvm::LLVMContext &C = CGM.getLLVMContext();
+-    llvm::AttributeSet AS = llvm::AttributeSet::get(
+-        C, {
+-               llvm::Attribute::get(C, llvm::Attribute::NonLazyBind),
+-               llvm::Attribute::getWithMemoryEffects(
+-                   C, llvm::MemoryEffects::none()),
+-               llvm::Attribute::get(C, llvm::Attribute::NoUnwind),
+-           });
++    llvm::SmallVector<llvm::Attribute, 3> AttrVec = {
++        llvm::Attribute::getWithMemoryEffects(C, llvm::MemoryEffects::none()),
++        llvm::Attribute::get(C, llvm::Attribute::NoUnwind),
++    };
++    if (!CGM.getTriple().isArm64e())
++      AttrVec.push_back(llvm::Attribute::get(C, llvm::Attribute::NonLazyBind));
++    llvm::AttributeSet AS = llvm::AttributeSet::get(C, AttrVec);
+     llvm::FunctionCallee F = CGM.CreateRuntimeFunction(
+         llvm::FunctionType::get(ClassnfABIPtrTy, params, false),
+         "objc_loadClassref",
+diff --git a/clang/test/CodeGen/arm64e-suppress-nonlazybind.c b/clang/test/CodeGen/arm64e-suppress-nonlazybind.c
+new file mode 100644
+index 000000000000000..f9a8f3140facb62
+--- /dev/null
++++ b/clang/test/CodeGen/arm64e-suppress-nonlazybind.c
+@@ -0,0 +1,20 @@
++// RUN: %clang_cc1 -triple arm64e-apple-ios -fno-plt -emit-llvm %s -o - | FileCheck %s --check-prefix=ARM64E
++// RUN: %clang_cc1 -triple arm64-apple-ios -fno-plt -emit-llvm %s -o - | FileCheck %s --check-prefix=ARM64
++//
++// On arm64e, NonLazyBind must NOT be applied. NonLazyBind causes inline
++// GOT loads that bypass the linker's authentication stubs. Calls must go
++// through stubs that load from __auth_got and authenticate via braa.
++
++void external_function(void);
++
++void caller(void) {
++  external_function();
++}
++
++// arm64e: the declaration should NOT have nonlazybind.
++// ARM64E: declare{{.*}} void @external_function()
++// ARM64E-NOT: nonlazybind
++
++// arm64: -fno-plt adds nonlazybind normally.
++// ARM64: ; Function Attrs:{{.*}}nonlazybind
++// ARM64: declare{{.*}} void @external_function()
+diff --git a/llvm/include/llvm/CodeGen/LibcallLoweringInfo.h b/llvm/include/llvm/CodeGen/LibcallLoweringInfo.h
+index 136642e10c44d25..5cebeaf154c29e2 100644
+--- a/llvm/include/llvm/CodeGen/LibcallLoweringInfo.h
++++ b/llvm/include/llvm/CodeGen/LibcallLoweringInfo.h
+@@ -99,6 +99,10 @@ class LibcallLoweringModuleAnalysisResult {
+ 
+   operator bool() const { return RTLCI != nullptr; }
+ 
++  const RTLIB::RuntimeLibcallsInfo *getRuntimeLibcallsInfo() const {
++    return RTLCI;
++  }
++
+   LLVM_ABI bool invalidate(Module &, const PreservedAnalyses &,
+                            ModuleAnalysisManager::Invalidator &);
+ 
+diff --git a/llvm/lib/CodeGen/GlobalISel/CallLowering.cpp b/llvm/lib/CodeGen/GlobalISel/CallLowering.cpp
+index a580b784624532d..1a4991c9c27a78e 100644
+--- a/llvm/lib/CodeGen/GlobalISel/CallLowering.cpp
++++ b/llvm/lib/CodeGen/GlobalISel/CallLowering.cpp
+@@ -21,6 +21,7 @@
+ #include "llvm/CodeGen/MachineRegisterInfo.h"
+ #include "llvm/CodeGen/TargetLowering.h"
+ #include "llvm/IR/DataLayout.h"
++#include "llvm/IR/DiagnosticInfo.h"
+ #include "llvm/IR/LLVMContext.h"
+ #include "llvm/IR/Module.h"
+ #include "llvm/Target/TargetMachine.h"
+@@ -172,11 +173,18 @@ bool CallLowering::lowerCall(MachineIRBuilder &MIRBuilder, const CallBase &CB,
+   }
+ 
+   if (const Function *F = dyn_cast<Function>(CalleeV)) {
+-    if (F->hasFnAttribute(Attribute::NonLazyBind)) {
++    if (F->hasFnAttribute(Attribute::NonLazyBind) &&
++        !MF.getTarget().getTargetTriple().isArm64e()) {
+       LLT Ty = getLLTForType(*F->getType(), DL);
+       Register Reg = MIRBuilder.buildGlobalValue(Ty, F).getReg(0);
+       Info.Callee = MachineOperand::CreateReg(Reg, false);
+     } else {
++      // NonLazyBind is incompatible with arm64e: it emits an unauthenticated
++      // indirect branch (blr) which bypasses pointer authentication.
++      if (F->hasFnAttribute(Attribute::NonLazyBind))
++        MF.getFunction().getContext().diagnose(DiagnosticInfoUnsupported(
++            MF.getFunction(),
++            "nonlazybind attribute is not compatible with arm64e"));
+       Info.Callee = MachineOperand::CreateGA(F, 0);
+     }
+   } else if (isa<GlobalIFunc>(CalleeV) || isa<GlobalAlias>(CalleeV)) {
+diff --git a/llvm/lib/CodeGen/PreISelIntrinsicLowering.cpp b/llvm/lib/CodeGen/PreISelIntrinsicLowering.cpp
+index 2fa92b61bb297ae..09fdf1a0addb136 100644
+--- a/llvm/lib/CodeGen/PreISelIntrinsicLowering.cpp
++++ b/llvm/lib/CodeGen/PreISelIntrinsicLowering.cpp
+@@ -148,7 +148,7 @@ static CallInst::TailCallKind getOverridingTailCallKind(const Function &F) {
+ }
+ 
+ static bool lowerObjCCall(Function &F, RTLIB::LibcallImpl NewFn,
+-                          bool setNonLazyBind = false) {
++                          const RTLIB::RuntimeLibcallsInfo *RTLCI = nullptr) {
+   assert(IntrinsicInst::mayLowerToFunctionCall(F.getIntrinsicID()) &&
+          "Pre-ISel intrinsics do lower into regular function calls");
+   if (F.use_empty())
+@@ -166,10 +166,10 @@ static bool lowerObjCCall(Function &F, RTLIB::LibcallImpl NewFn,
+ 
+   if (Function *Fn = dyn_cast<Function>(FCache.getCallee())) {
+     Fn->setLinkage(F.getLinkage());
+-    if (setNonLazyBind && !Fn->isWeakForLinker()) {
+-      // If we have Native ARC, set nonlazybind attribute for these APIs for
+-      // performance.
+-      Fn->addFnAttr(Attribute::NonLazyBind);
++    if (RTLCI && !Fn->isWeakForLinker()) {
++      auto [FuncTy, Attrs] = RTLCI->getFunctionTy(
++          M->getContext(), M->getTargetTriple(), M->getDataLayout(), NewFn);
++      Fn->addFnAttrs(AttrBuilder(M->getContext(), Attrs.getFnAttrs()));
+     }
+   }
+ 
+@@ -658,6 +658,7 @@ static bool expandLoopTrap(Function &Intr) {
+ bool PreISelIntrinsicLowering::lowerIntrinsics(Module &M) const {
+   // Map unique constants to globals.
+   DenseMap<Constant *, GlobalVariable *> CMap;
++  const auto *RTLCI = ModuleLibcalls.getRuntimeLibcallsInfo();
+   bool Changed = false;
+   for (Function &F : M) {
+     switch (F.getIntrinsicID()) {
+@@ -731,10 +732,10 @@ bool PreISelIntrinsicLowering::lowerIntrinsics(Module &M) const {
+       Changed |= lowerObjCCall(F, RTLIB::impl_objc_moveWeak);
+       break;
+     case Intrinsic::objc_release:
+-      Changed |= lowerObjCCall(F, RTLIB::impl_objc_release, true);
++      Changed |= lowerObjCCall(F, RTLIB::impl_objc_release, RTLCI);
+       break;
+     case Intrinsic::objc_retain:
+-      Changed |= lowerObjCCall(F, RTLIB::impl_objc_retain, true);
++      Changed |= lowerObjCCall(F, RTLIB::impl_objc_retain, RTLCI);
+       break;
+     case Intrinsic::objc_retainAutorelease:
+       Changed |= lowerObjCCall(F, RTLIB::impl_objc_retainAutorelease);
+diff --git a/llvm/lib/IR/RuntimeLibcalls.cpp b/llvm/lib/IR/RuntimeLibcalls.cpp
+index d72277fa2b17976..67ccf2b891cc1e2 100644
+--- a/llvm/lib/IR/RuntimeLibcalls.cpp
++++ b/llvm/lib/IR/RuntimeLibcalls.cpp
+@@ -471,6 +471,18 @@ RuntimeLibcallsInfo::getFunctionTy(LLVMContext &Ctx, const Triple &TT,
+ 
+     return {FunctionType::get(Type::getVoidTy(Ctx), ArgTys, false), Attrs};
+   }
++  case RTLIB::impl_objc_retain:
++  case RTLIB::impl_objc_release: {
++    // NonLazyBind improves performance via direct GOT loads. Suppress on
++    // arm64e: inline GOT loads bypass authenticated stubs.
++    if (TT.isArm64e())
++      return {};
++    AttrBuilder FuncAttrBuilder(Ctx);
++    FuncAttrBuilder.addAttribute(Attribute::NonLazyBind);
++    AttributeList Attrs;
++    Attrs = Attrs.addFnAttributes(Ctx, FuncAttrBuilder);
++    return {nullptr, Attrs};
++  }
+   default:
+     return {};
+   }
+diff --git a/llvm/lib/Target/AArch64/AArch64FastISel.cpp b/llvm/lib/Target/AArch64/AArch64FastISel.cpp
+index 6c218de2c43c33d..7396f301e9e15d9 100644
+--- a/llvm/lib/Target/AArch64/AArch64FastISel.cpp
++++ b/llvm/lib/Target/AArch64/AArch64FastISel.cpp
+@@ -46,6 +46,7 @@
+ #include "llvm/IR/Constants.h"
+ #include "llvm/IR/DataLayout.h"
+ #include "llvm/IR/DerivedTypes.h"
++#include "llvm/IR/DiagnosticInfo.h"
+ #include "llvm/IR/Function.h"
+ #include "llvm/IR/GetElementPtrTypeIterator.h"
+ #include "llvm/IR/GlobalValue.h"
+@@ -3226,6 +3227,13 @@ bool AArch64FastISel::fastLowerCall(CallLoweringInfo &CLI) {
+   if (RegInfo->isAnyArgRegReserved(*MF))
+     RegInfo->emitReservedArgRegCallError(*MF);
+ 
++  if (auto *F = dyn_cast_or_null<Function>(Callee))
++    if (F->hasFnAttribute(Attribute::NonLazyBind) &&
++        Subtarget->getTargetTriple().isArm64e())
++      MF->getFunction().getContext().diagnose(DiagnosticInfoUnsupported(
++          MF->getFunction(),
++          "nonlazybind attribute is not compatible with arm64e"));
++
+   // Issue the call.
+   MachineInstrBuilder MIB;
+   if (Subtarget->useSmallAddressing()) {
+diff --git a/llvm/lib/Target/AArch64/AArch64ISelLowering.cpp b/llvm/lib/Target/AArch64/AArch64ISelLowering.cpp
+index 57a2d73e00f57ac..912dba8a4afb235 100644
+--- a/llvm/lib/Target/AArch64/AArch64ISelLowering.cpp
++++ b/llvm/lib/Target/AArch64/AArch64ISelLowering.cpp
+@@ -10440,6 +10440,12 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
+   unsigned OpFlags = 0;
+   if (auto *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
+     CalledGlobal = G->getGlobal();
++    if (auto *F = dyn_cast<Function>(CalledGlobal))
++      if (F->hasFnAttribute(Attribute::NonLazyBind) &&
++          Subtarget->getTargetTriple().isArm64e())
++        DAG.getContext()->diagnose(DiagnosticInfoUnsupported(
++            MF.getFunction(),
++            "nonlazybind attribute is not compatible with arm64e"));
+     OpFlags = Subtarget->classifyGlobalFunctionReference(CalledGlobal,
+                                                          getTargetMachine());
+     if (OpFlags & AArch64II::MO_GOT) {
+@@ -10450,9 +10456,12 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
+       Callee = DAG.getTargetGlobalAddress(GV, DL, PtrVT, 0, OpFlags);
+     }
+   } else if (auto *S = dyn_cast<ExternalSymbolSDNode>(Callee)) {
++    // Unauthenticated GOT loads are incompatible with arm64e: the
++    // resulting indirect branch (blr) bypasses pointer authentication.
+     bool UseGot = (getTargetMachine().getCodeModel() == CodeModel::Large &&
+                    Subtarget->isTargetMachO()) ||
+-                  MF.getFunction().getParent()->getRtLibUseGOT();
++                  (MF.getFunction().getParent()->getRtLibUseGOT() &&
++                   !Subtarget->getTargetTriple().isArm64e());
+     const char *Sym = S->getSymbol();
+     if (UseGot) {
+       Callee = DAG.getTargetExternalSymbol(Sym, PtrVT, AArch64II::MO_GOT);
+diff --git a/llvm/lib/Target/AArch64/GISel/AArch64CallLowering.cpp b/llvm/lib/Target/AArch64/GISel/AArch64CallLowering.cpp
+index af88bc51e1ae737..af3a869efa9454d 100644
+--- a/llvm/lib/Target/AArch64/GISel/AArch64CallLowering.cpp
++++ b/llvm/lib/Target/AArch64/GISel/AArch64CallLowering.cpp
+@@ -1405,7 +1405,10 @@ bool AArch64CallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
+   else {
+     // For an intrinsic call (e.g. memset), use GOT if "RtLibUseGOT" (-fno-plt)
+     // is set.
+-    if (Info.Callee.isSymbol() && F.getParent()->getRtLibUseGOT()) {
++    // Unauthenticated GOT loads are incompatible with arm64e: the
++    // resulting indirect branch (blr) bypasses pointer authentication.
++    if (Info.Callee.isSymbol() && F.getParent()->getRtLibUseGOT() &&
++        !Subtarget.getTargetTriple().isArm64e()) {
+       auto MIB = MIRBuilder.buildInstr(TargetOpcode::G_GLOBAL_VALUE);
+       DstOp(getLLTForType(*F.getType(), DL)).addDefToMIB(MRI, MIB);
+       MIB.addExternalSymbol(Info.Callee.getSymbolName(), AArch64II::MO_GOT);
+diff --git a/llvm/test/CodeGen/AArch64/arm64e-nonlazybind.ll b/llvm/test/CodeGen/AArch64/arm64e-nonlazybind.ll
+new file mode 100644
+index 000000000000000..a33548f0d7079db
+--- /dev/null
++++ b/llvm/test/CodeGen/AArch64/arm64e-nonlazybind.ll
+@@ -0,0 +1,16 @@
++; RUN: not llc -mtriple=arm64e-apple-ios -global-isel=false %s -o /dev/null 2>&1 | FileCheck %s
++; RUN: not llc -mtriple=arm64e-apple-ios -global-isel %s -o /dev/null 2>&1 | FileCheck %s
++; RUN: not llc -mtriple=arm64e-apple-ios -fast-isel %s -o /dev/null 2>&1 | FileCheck %s
++
++; nonlazybind emits an unauthenticated indirect branch (blr) that bypasses
++; pointer authentication, which is incompatible with arm64e. Verify each ISel
++; rejects it.
++
++; CHECK: error: {{.*}}: nonlazybind attribute is not compatible with arm64e
++
++declare void @external() nonlazybind
++
++define void @caller() nounwind {
++  call void @external()
++  ret void
++}
+diff --git a/llvm/test/Transforms/PreISelIntrinsicLowering/AArch64/arm64e-objc-arc.ll b/llvm/test/Transforms/PreISelIntrinsicLowering/AArch64/arm64e-objc-arc.ll
+new file mode 100644
+index 000000000000000..4c5c951054fdcff
+--- /dev/null
++++ b/llvm/test/Transforms/PreISelIntrinsicLowering/AArch64/arm64e-objc-arc.ll
+@@ -0,0 +1,29 @@
++; RUN: opt -mtriple=arm64e-apple-ios -passes=pre-isel-intrinsic-lowering -S -o - %s | FileCheck %s --check-prefix=ARM64E
++; RUN: opt -mtriple=arm64-apple-ios -passes=pre-isel-intrinsic-lowering -S -o - %s | FileCheck %s --check-prefix=ARM64
++;
++; Test that objc_retain and objc_release do not get nonlazybind on arm64e.
++
++define ptr @test_objc_retain(ptr %arg0) {
++entry:
++  %0 = call ptr @llvm.objc.retain(ptr %arg0)
++  ret ptr %0
++}
++
++define void @test_objc_release(ptr %arg0) {
++entry:
++  call void @llvm.objc.release(ptr %arg0)
++  ret void
++}
++
++declare void @llvm.objc.release(ptr)
++declare ptr @llvm.objc.retain(ptr)
++
++; arm64e: retain and release should NOT have nonlazybind.
++; ARM64E-DAG: declare void @objc_release(ptr)
++; ARM64E-DAG: declare ptr @objc_retain(ptr)
++; ARM64E-NOT: nonlazybind
++
++; arm64: retain and release should have nonlazybind.
++; ARM64-DAG: declare void @objc_release(ptr) [[NLB:#[0-9]+]]
++; ARM64-DAG: declare ptr @objc_retain(ptr) [[NLB]]
++; ARM64: attributes [[NLB]] = { nonlazybind }
