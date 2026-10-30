@@ -35,6 +35,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Test artifact script contracts before building LLVM
+        run: python3 toolchain-build/scripts/test-artifact-script-contracts.py
       - name: Check bridge before the expensive LLVM build
         run: bash toolchain-build/bridge-check/check-macos.sh
 
@@ -55,18 +57,56 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-path
           cmake --version
           ninja --version
+          # Cache identity includes the real compiler and SDK, not just runner OS.
+          identity="$( { xcrun --sdk iphoneos clang++ --version; xcrun --sdk iphoneos --show-sdk-version; } | shasum -a 256 | cut -d ' ' -f 1)"
+          printf 'OM_KIT_PLATFORM=%s\n' "$identity" >> "$GITHUB_ENV"
+
+      - name: Restore compiled toolchain kit
+        id: restore-kit
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: toolchain-build/build/ios
+          key: om-kit-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.OM_KIT_PLATFORM }}-${{ inputs.llvm_min_ios || '14.0' }}-${{ hashFiles('toolchain-build/scripts/build-ios-toolchain.sh', 'toolchain-build/scripts/build-ld64-inprocess.py', 'toolchain-build/scripts/build-ld64-inprocess.sh', 'toolchain-build/scripts/export-dev-headers.sh', 'toolchain-build/scripts/fetch-sources.sh', 'toolchain-build/deps/**') }}
 
       - name: Fetch pinned sources
+        if: steps.restore-kit.outputs.cache-hit != 'true'
         run: bash toolchain-build/scripts/fetch-sources.sh
 
       - name: Build arm64 and arm64e archives
+        if: steps.restore-kit.outputs.cache-hit != 'true'
         env:
           ARCHS: arm64 arm64e
           LLVM_MIN_IOS: ${{ inputs.llvm_min_ios }}
         run: bash toolchain-build/scripts/build-ios-toolchain.sh
 
       - name: Verify archives, resource and development headers
+        id: verify-kit
         run: bash toolchain-build/verify-artifacts.sh toolchain-build/build/ios
+
+      # Save ONLY after fresh hash/layout and real lipo checks pass. A later
+      # bridge failure must not destroy ~100 minutes of successful compilation.
+      - name: Save verified compilation inputs
+        continue-on-error: true
+        if: steps.verify-kit.outcome == 'success' && steps.restore-kit.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: toolchain-build/build/ios
+          key: ${{ steps.restore-kit.outputs.cache-primary-key }}
+
+      - name: Upload verified inputs (not runtime-enabled)
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenMinis-toolchain-verified-inputs-${{ github.sha }}
+          path: |
+            toolchain-build/build/ios/libomllvm-arm64.a
+            toolchain-build/build/ios/libomllvm-arm64e.a
+            toolchain-build/build/ios/libomld64.a
+            toolchain-build/build/ios/clang-resource/
+            toolchain-build/build/ios/dev-headers/
+            toolchain-build/build/ios/toolchain.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Compile development header probes for both architectures
         run: bash toolchain-build/scripts/check-dev-headers.sh toolchain-build/build/ios
@@ -97,5 +137,6 @@ jobs:
             toolchain-build/build/ios/clang-resource/
             toolchain-build/build/ios/dev-headers/
             toolchain-build/build/ios/toolchain.json
+            toolchain-build/build/ios/enabled-link-check/enabled-link-report.json
           if-no-files-found: error
           retention-days: 14
