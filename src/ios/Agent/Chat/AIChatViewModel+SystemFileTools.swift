@@ -447,7 +447,7 @@ struct SessionSystemAccessSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { store.setMode(selected, for: sessionID); dismiss() }
-                        .fontWeight(.semibold)
+                        .font(.body.bold())
                 }
             }
             .modifier(SessionSystemAccessSheetStyle())
