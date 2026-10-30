@@ -16,15 +16,8 @@ enum SystemAccessMode: String, CaseIterable, Identifiable {
 }
 
 enum SystemAccessSettings {
-    static let enabledKey = "system.access.enabled"
-    static let modeKey = "system.access.mode"
-    static var enabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
-    static var mode: SystemAccessMode {
-        SystemAccessMode(rawValue: UserDefaults.standard.string(forKey: modeKey) ?? "readonly") ?? .readonly
-    }
-
-    /// Legacy app-wide switch remains for Settings compatibility. Chat tools
-    /// additionally require SessionSystemAccessStore to authorize this session.
+    // Deprecated global preference names are intentionally ignored. Existing
+    // installations do not inherit an old global grant into any conversation.
     @MainActor
     static func mode(for sessionID: String?) -> SystemAccessMode? {
         switch SessionSystemAccessStore.shared.mode(for: sessionID) {
@@ -57,12 +50,20 @@ struct SystemAccessEnvelope {
 
 @MainActor
 enum SystemHelperClient {
-    static func run(action: String, payload: [String: Any], sessionID: String? = nil) async -> SystemAccessEnvelope {
-        let sessionMode = SystemAccessSettings.mode(for: sessionID)
-        guard sessionMode != nil || action == "identity" else {
+    static func probeIdentity() async -> SystemAccessEnvelope {
+        await perform(OpenMinisPrivilegedRequest.identityProbe())
+    }
+
+    static func run(action: String, payload: [String: Any], sessionID: String?, requiredMode: SystemAccessMode? = nil) async -> SystemAccessEnvelope {
+        guard let effectiveMode = SystemAccessSettings.mode(for: sessionID) else {
             return SystemAccessEnvelope(value: ["ok": false, "code": "session_access_disabled", "error": "本会话未开启系统目录访问。"])
         }
-        let effectiveMode = sessionMode ?? .readonly
+        if let requiredMode, requiredMode != effectiveMode {
+            return SystemAccessEnvelope(value: ["ok": false, "code": "session_permission_changed", "error": "确认期间本会话权限已变化，请重新确认。"])
+        }
+        if (action == "write" || action == "rollback"), effectiveMode == .readonly {
+            return SystemAccessEnvelope(value: ["ok": false, "code": "write_mode_required", "error": "本会话仅允许只读访问。"])
+        }
         // Backup/audit state is needed only by write and rollback. Request
         // bodies travel over the helper's FD 3 channel, so identity and read
         // never depend on this directory existing.
@@ -77,7 +78,11 @@ enum SystemHelperClient {
         }
         var body = payload
         body["mode"] = effectiveMode.rawValue
-        let request = OpenMinisPrivilegedRequest(action: action, payload: body)
+        let request = OpenMinisPrivilegedRequest(action: action, payload: body, sessionID: sessionID)
+        return await perform(request)
+    }
+
+    private static func perform(_ request: OpenMinisPrivilegedRequest) async -> SystemAccessEnvelope {
         // Task cancellation revokes the helper lease. A request cancelled before
         // it starts is refused by the bridge's authorization check.
         return await withTaskCancellationHandler {
@@ -112,19 +117,31 @@ final class SystemWriteConfirmer {
     static let shared = SystemWriteConfirmer()
     private var pending = false
 
-    func confirm(title: String, message: String, confirmButtonTitle: String) async -> Bool {
-        guard !pending, UIApplication.shared.applicationState == .active else { return false }
+    func confirm(title: String, message: String, confirmButtonTitle: String, sessionID: String) async -> Bool {
+        guard !pending, UIApplication.shared.applicationState == .active,
+              AIChatViewModel.activeSessionId == sessionID,
+              SessionSystemAccessStore.shared.mode(for: sessionID).rank >= 2 else { return false }
         pending = true
         defer { pending = false }
-        guard var presenter = UIApplication.shared.connectedScenes
+        guard let presenter = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)
-            .first(where: \.isKeyWindow)?.rootViewController else { return false }
-        while let shown = presenter.presentedViewController { presenter = shown }
-        return await withCheckedContinuation { continuation in
-            let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in continuation.resume(returning: false) })
-            alert.addAction(UIAlertAction(title: confirmButtonTitle, style: .destructive) { _ in continuation.resume(returning: true) })
-            presenter.present(alert, animated: true)
+            .first(where: \.isKeyWindow)?.rootViewController,
+              presenter.presentedViewController == nil, presenter.viewIfLoaded?.window != nil else { return false }
+        let decision = SystemApprovalDecision()
+        decision.authorized = {
+            UIApplication.shared.applicationState == .active && AIChatViewModel.activeSessionId == sessionID &&
+            SessionSystemAccessStore.shared.mode(for: sessionID).rank >= 2
+        }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard decision.install(continuation) else { return }
+                let controller = SystemApprovalController(title: title, message: message, action: confirmButtonTitle, decision: decision)
+                decision.controller = controller
+                decision.observeRevocation()
+                presenter.present(controller, animated: !UIAccessibility.isReduceMotionEnabled)
+            }
+        } onCancel: {
+            Task { @MainActor in decision.finish(false) }
         }
     }
 }
@@ -132,14 +149,16 @@ final class SystemWriteConfirmer {
 @MainActor
 enum SystemAccessAudit {
     static var fileURL: URL { SystemHelperClient.stateDirectory.appendingPathComponent("Audit/system-access.jsonl") }
-    static func entries(limit: Int = 100) -> [[String: Any]] {
+    static func entries(limit: Int = 100, sessionID: String? = nil) -> [[String: Any]] {
         guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else { return [] }
-        return text.split(separator: "\n").suffix(max(1, min(500, limit))).reversed().compactMap {
+        let parsed: [[String: Any]] = text.split(separator: "\n").compactMap {
             guard let data = String($0).data(using: .utf8),
                   let object = try? JSONSerialization.jsonObject(with: data),
                   let dictionary = object as? [String: Any] else { return nil }
             return dictionary
         }
+        let scoped = sessionID.map { sid in parsed.filter { ($0["session_id"] as? String) == sid } } ?? parsed
+        return Array(scoped.suffix(max(1, min(500, limit))).reversed())
     }
 }
 
@@ -159,8 +178,8 @@ extension AIChatViewModel {
     }
 
     func executeSystemAccessTool(name: String, args: [String: Any]) async -> FileToolResult {
-        let sessionID = self.sessionId
-        guard let sessionMode = SystemAccessSettings.mode(for: sessionID) else {
+        guard remoteDeviceId == nil, let sessionID = self.sessionId,
+              let sessionMode = SystemAccessSettings.mode(for: sessionID) else {
             return FileToolResult(output: "本会话未开启系统目录访问。请从会话右上角菜单打开“本会话权限”。", success: false)
         }
         switch name {
@@ -178,13 +197,13 @@ extension AIChatViewModel {
             return await executeConfirmedSystemRollback(args, sessionID: sessionID, mode: sessionMode)
         case "system_access_audit":
             let limit = max(1, min(500, (args["limit"] as? Int) ?? 100))
-            return systemToolJSON(["ok": true, "entries": SystemAccessAudit.entries(limit: limit)], success: true)
+            return systemToolJSON(["ok": true, "entries": SystemAccessAudit.entries(limit: limit, sessionID: sessionID)], success: true)
         default:
             return FileToolResult(output: "未知系统访问操作。", success: false)
         }
     }
 
-    private func executeConfirmedSystemWrite(_ args: [String: Any], sessionID: String?, mode: SessionSystemAccessMode) async -> FileToolResult {
+    private func executeConfirmedSystemWrite(_ args: [String: Any], sessionID: String, mode: SystemAccessMode) async -> FileToolResult {
         guard mode != .readonly else {
             return FileToolResult(output: "当前为只读模式；请在设置中切换为有限写入或专家写入。", success: false)
         }
@@ -198,39 +217,39 @@ extension AIChatViewModel {
         let existed = read.ok
         let old = read.value["content"] as? String ?? ""
         let expected = (read.value["sha256"] as? String) ?? "missing"
-        if !read.ok, read.code != "target_missing", read.code != "open_failed" {
+        if !read.ok, read.code != "target_missing" {
             return systemToolJSON(read.value, success: false)
         }
         let preview = Self.boundedSystemDiff(old: old, new: content)
         let message = "路径：\(path)\n模式：\(mode.title)\n原大小：\(old.utf8.count) B\n新大小：\(content.utf8.count) B\n\n\(preview)\n\n继续后将先备份，再进行原子替换。"
-        guard await SystemWriteConfirmer.shared.confirm(title: existed ? "确认修改系统文件" : "确认创建系统文件", message: message, confirmButtonTitle: "写入") else {
+        guard await SystemWriteConfirmer.shared.confirm(title: existed ? "确认修改系统文件" : "确认创建系统文件", message: message, confirmButtonTitle: "写入", sessionID: sessionID) else {
             return FileToolResult(output: "用户已取消系统文件写入。", success: false)
         }
         let auditID = UUID().uuidString
         let result = await SystemHelperClient.run(action: "write", payload: [
             "path": path, "content": content, "expected_sha256": expected, "audit_id": auditID
-        ], sessionID: sessionID)
+        ], sessionID: sessionID, requiredMode: mode)
         return systemToolJSON(result.value, success: result.ok)
     }
 
-    private func executeConfirmedSystemRollback(_ args: [String: Any], sessionID: String?, mode: SessionSystemAccessMode) async -> FileToolResult {
+    private func executeConfirmedSystemRollback(_ args: [String: Any], sessionID: String, mode: SystemAccessMode) async -> FileToolResult {
         guard mode != .readonly else {
             return FileToolResult(output: "当前为只读模式，无法回滚系统文件。", success: false)
         }
         guard let sourceID = args["audit_id"] as? String,
-              let entry = SystemAccessAudit.entries(limit: 500).first(where: { ($0["audit_id"] as? String) == sourceID }),
+              let entry = SystemAccessAudit.entries(limit: 500, sessionID: sessionID).first(where: { ($0["audit_id"] as? String) == sourceID }),
               let path = entry["path"] as? String else {
             return FileToolResult(output: "未找到可回滚的 audit_id。", success: false)
         }
         guard await SystemWriteConfirmer.shared.confirm(
             title: "确认回滚系统文件",
             message: "路径：\(path)\n审计记录：\(sourceID)\n\n仅当当前文件仍与该次写入的哈希一致时才会回滚。",
-            confirmButtonTitle: "回滚") else {
+            confirmButtonTitle: "回滚", sessionID: sessionID) else {
             return FileToolResult(output: "用户已取消系统文件回滚。", success: false)
         }
         let result = await SystemHelperClient.run(action: "rollback", payload: [
             "rollback_audit_id": sourceID, "audit_id": UUID().uuidString
-        ], sessionID: sessionID)
+        ], sessionID: sessionID, requiredMode: mode)
         return systemToolJSON(result.value, success: result.ok)
     }
 
@@ -298,6 +317,14 @@ enum SessionSystemAccessMode: String, CaseIterable, Identifiable, Codable, Equat
     case expert
 
     var id: String { rawValue }
+    var rank: Int {
+        switch self {
+        case .disabled: return 0
+        case .readonly: return 1
+        case .limited: return 2
+        case .expert: return 3
+        }
+    }
     var title: String {
         switch self {
         case .disabled: return "关闭"
@@ -321,25 +348,34 @@ enum SessionSystemAccessMode: String, CaseIterable, Identifiable, Codable, Equat
 final class SessionSystemAccessStore: ObservableObject {
     static let shared = SessionSystemAccessStore()
     @Published private(set) var revision = 0
-    private let defaults = UserDefaults.standard
-    private let prefix = "system.access.session."
-    private init() {}
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
     func mode(for sessionID: String?) -> SessionSystemAccessMode {
-        guard let sessionID, !sessionID.isEmpty, !sessionID.hasPrefix("__new__") else { return .disabled }
-        let key = prefix + sessionID.replacingOccurrences(of: ".", with: "_")
+        guard let key = OpenMinisSystemAccessSessionKey(sessionID) else { return .disabled }
         return SessionSystemAccessMode(rawValue: defaults.string(forKey: key) ?? "") ?? .disabled
     }
 
     func setMode(_ mode: SessionSystemAccessMode, for sessionID: String?) {
-        guard let sessionID, !sessionID.isEmpty, !sessionID.hasPrefix("__new__") else { return }
-        let key = prefix + sessionID.replacingOccurrences(of: ".", with: "_")
+        guard let sessionID, let key = OpenMinisSystemAccessSessionKey(sessionID) else { return }
+        let previous = self.mode(for: sessionID)
+        guard previous != mode else { return }
         if mode == .disabled { defaults.removeObject(forKey: key) }
         else { defaults.set(mode.rawValue, forKey: key) }
+        // Only requests belonging to THIS session are revoked. In-flight and
+        // queued requests cannot keep a stronger grant after a downgrade.
+        if mode.rank < previous.rank { OpenMinisCancelPrivilegedRequestsForSession(sessionID) }
         revision &+= 1
     }
 }
 
+struct SessionSystemAccessTarget: Identifiable {
+    let id: String
+    let title: String
+}
+
+@MainActor
 struct SessionSystemAccessSheet: View {
     let sessionID: String?
     let sessionTitle: String
@@ -376,7 +412,7 @@ struct SessionSystemAccessSheet: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: mode.icon)
-                                    .foregroundStyle(mode == .expert ? .red : mode == .limited ? .orange : .secondary)
+                                    .foregroundStyle(mode == .expert ? Color.red : mode == .limited ? Color.orange : Color.secondary)
                                     .frame(width: 24)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(mode.title).foregroundStyle(.primary)
@@ -434,6 +470,134 @@ private struct SessionSystemAccessSheetStyle: ViewModifier {
             content.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         } else {
             content
+        }
+    }
+}
+
+
+// MARK: - Native approval presentation (no composer/ThinkOrb animation changes)
+
+@MainActor
+final class SystemApprovalDecision {
+    private(set) var result: Bool?
+    private var continuation: CheckedContinuation<Bool, Never>?
+    private var observers: [NSObjectProtocol] = []
+    var controller: UIViewController?
+    var authorized: () -> Bool = { true }
+
+    // Handles cancellation that won the race before the continuation existed.
+    func install(_ continuation: CheckedContinuation<Bool, Never>) -> Bool {
+        if let result { continuation.resume(returning: result); return false }
+        self.continuation = continuation
+        return true
+    }
+
+    func observeRevocation() {
+        for name in [UIApplication.willResignActiveNotification, UserDefaults.didChangeNotification] {
+            let leavingForeground = name == UIApplication.willResignActiveNotification
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if leavingForeground || !self.authorized() { self.finish(false) }
+                }
+            })
+        }
+    }
+
+    func finish(_ accepted: Bool) {
+        guard result == nil else { return }
+        let value = accepted && authorized()
+        result = value
+        let completion = continuation
+        continuation = nil
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers.removeAll()
+        let presented = controller
+        controller = nil
+        // Resume only AFTER dismissal: no new modal can contend with this one.
+        if let presented, presented.presentingViewController != nil {
+            presented.dismiss(animated: !UIAccessibility.isReduceMotionEnabled) {
+                completion?.resume(returning: value)
+            }
+        } else {
+            completion?.resume(returning: value)
+        }
+    }
+}
+
+@MainActor
+private final class SystemApprovalController: UIHostingController<SystemApprovalPanel> {
+    private let decision: SystemApprovalDecision
+
+    init(title: String, message: String, action: String, decision: SystemApprovalDecision) {
+        self.decision = decision
+        super.init(rootView: SystemApprovalPanel(title: title, message: message, action: action, decision: decision))
+        modalPresentationStyle = UIDevice.current.userInterfaceIdiom == .pad ? .formSheet : .pageSheet
+        view.backgroundColor = .systemGroupedBackground
+        if let sheet = sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+            sheet.preferredCornerRadius = 28
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("Programmatic presentation only") }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        decision.finish(false) // swipe-dismiss, external dismissal, or cancellation
+    }
+}
+
+@MainActor
+private struct SystemApprovalPanel: View {
+    let title: String
+    let message: String
+    let action: String
+    let decision: SystemApprovalDecision
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        MinisNavigationContainer {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Label(title, systemImage: "lock.shield")
+                        .font(.title2.weight(.semibold))
+                    Text("仅作用于本会话。请核对路径与修改内容。")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Text(message)
+                        .font(.callout).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(18)
+                        .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                }
+                .padding(24)
+            }
+            .background(Color(UIColor.systemGroupedBackground))
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 10) {
+                    Button(role: .destructive) { decision.finish(true) } label: {
+                        Text(action).frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent).tint(.red)
+                    Button("取消") { decision.finish(false) }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .padding(.horizontal, 24).padding(.vertical, 14)
+                .background {
+                    if reduceTransparency { Color(UIColor.systemBackground) }
+                    else { Rectangle().fill(.regularMaterial) }
+                }
+            }
+            .navigationTitle("确认系统文件操作")
+            .navigationBarTitleDisplayMode(.inline)
+            .minisNavigationBarBackdropMaterial()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { decision.finish(false) }
+                }
+            }
         }
     }
 }

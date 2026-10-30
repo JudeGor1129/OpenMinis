@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "HelperLease.h"
+#import "../../src/ios/Diagnostics/SessionSystemAccessPolicy.h"
 
 #define READ_LIMIT (256u * 1024u)
 #define CONTENT_LIMIT (1024u * 1024u)
@@ -313,6 +314,8 @@ static void DoIdentity(NSString *action) {
 }
 
 static void DoRead(NSDictionary *request, NSString *action) {
+    NSString *sessionID = RequiredString(request, @"session_id", action);
+    if (!MinisSessionSystemAccessKey(sessionID)) Fail(action, @"session_id_invalid", @"A persisted session is required.");
     NSString *mode = RequiredMode(request, action, NO);
     SafePath *safe = ValidateTarget(RequiredString(request, @"path", action), NO, action, mode, NO);
     NSUInteger asked = [request[@"max_bytes"] isKindOfClass:NSNumber.class] ? [request[@"max_bytes"] unsignedIntegerValue] : 131072;
@@ -347,6 +350,8 @@ static NSDictionary *LoadBackup(NSString *base, NSString *auditID, NSString *act
 
 static void DoWrite(NSDictionary *request, NSString *base, NSString *action) {
     NSString *mode = RequiredMode(request, action, YES);
+    NSString *sessionID = RequiredString(request, @"session_id", action);
+    if (!MinisSessionSystemAccessKey(sessionID)) Fail(action, @"session_id_invalid", @"A persisted session is required.");
     NSString *path = RequiredString(request, @"path", action);
     NSString *content = RequiredString(request, @"content", action);
     NSString *expected = RequiredString(request, @"expected_sha256", action).lowercaseString;
@@ -366,7 +371,7 @@ static void DoWrite(NSDictionary *request, NSString *base, NSString *action) {
         Fail(action, @"expected_sha_mismatch", @"Target is missing but expected_sha256 did not say missing.");
     }
     NSString *afterSHA = HexSHA(newData);
-    NSDictionary *backup = @{@"state_version": @1, @"audit_id": auditID, @"path": safe.literal,
+    NSDictionary *backup = @{@"session_id": sessionID, @"state_version": @1, @"audit_id": auditID, @"path": safe.literal,
         @"real_path": safe.real, @"tier": safe.tier, @"original_exists": @(existed),
         @"before_sha256": beforeSHA ?: (id)NSNull.null, @"after_sha256": afterSHA,
         @"before_mode": @(existed ? (originalStat.st_mode & 0777) : 0),
@@ -384,7 +389,7 @@ static void DoWrite(NSDictionary *request, NSString *base, NSString *action) {
     }
     AtomicData(newData, path, existed ? (originalStat.st_mode & 0777) : 0644, action);
     NSMutableDictionary *metadata = [NSMutableDictionary dictionaryWithDictionary:@{
-        @"audit_id": auditID, @"action": action, @"path": safe.literal, @"real_path": safe.real,
+        @"session_id": sessionID, @"audit_id": auditID, @"action": action, @"path": safe.literal, @"real_path": safe.real,
         @"tier": safe.tier, @"before_sha256": beforeSHA ?: (id)NSNull.null, @"after_sha256": afterSHA,
         @"bytes_before": @(oldData.length), @"bytes_after": @(newData.length),
         @"backup_available": @YES, @"at": @([[NSDate date] timeIntervalSince1970]),
@@ -396,10 +401,16 @@ static void DoWrite(NSDictionary *request, NSString *base, NSString *action) {
 
 static void DoRollback(NSDictionary *request, NSString *base, NSString *action) {
     NSString *mode = RequiredMode(request, action, YES);
+    NSString *sessionID = RequiredString(request, @"session_id", action);
+    if (!MinisSessionSystemAccessKey(sessionID)) Fail(action, @"session_id_invalid", @"A persisted session is required.");
     NSString *sourceID = RequiredString(request, @"rollback_audit_id", action);
     NSString *newAuditID = RequiredString(request, @"audit_id", action);
     if (![[NSUUID alloc] initWithUUIDString:newAuditID]) Fail(action, @"invalid_audit_id", @"audit_id must be a UUID.");
     NSDictionary *backup = LoadBackup(base, sourceID, action);
+    // Refuse foreign and pre-session-policy backups BEFORE reading/restoring
+    // any target. Possessing an audit UUID is not authorization to roll it back.
+    if (!MinisSessionAuditOwnerMatches(backup, sessionID))
+        Fail(action, @"rollback_session_mismatch", @"This backup belongs to another session or has no session binding.");
     NSString *path = RequiredString(backup, @"path", action);
     NSString *afterSHA = RequiredString(backup, @"after_sha256", action);
     SafePath *safe = ValidateTarget(path, NO, action, mode, YES);
@@ -427,7 +438,7 @@ static void DoRollback(NSDictionary *request, NSString *base, NSString *action) 
         if (unlink(path.fileSystemRepresentation) != 0) Fail(action, @"rollback_unlink_failed", @"Cannot remove the file created by the audited write.");
         SyncDirectory(path.stringByDeletingLastPathComponent, action);
     }
-    NSDictionary *metadata = @{@"audit_id": newAuditID, @"action": action, @"rollback_of": sourceID,
+    NSDictionary *metadata = @{@"session_id": sessionID, @"audit_id": newAuditID, @"action": action, @"rollback_of": sourceID,
         @"path": safe.literal, @"real_path": safe.real, @"tier": safe.tier,
         @"before_sha256": afterSHA, @"after_sha256": restoredSHA ?: (id)NSNull.null,
         @"bytes_before": @(current.length), @"bytes_after": @(restoredBytes), @"backup_available": @NO,

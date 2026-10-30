@@ -4,7 +4,6 @@ struct SystemAccessSettingsView: View {
     @State private var status = "尚未验证 helper 身份"
     @State private var identityDetails = ""
     @State private var isVerifyingIdentity = false
-    @State private var auditEntries: [[String: Any]] = []
     private var helperPackaged: Bool { OpenMinisPrivilegedHelperPackaged() }
 
     var body: some View {
@@ -43,31 +42,9 @@ struct SystemAccessSettingsView: View {
                     .foregroundStyle(.red)
             }
 
-            Section {
-                if auditEntries.isEmpty {
-                    Text("暂无系统文件写入记录").foregroundStyle(.secondary)
-                }
-                ForEach(Array(auditEntries.enumerated()), id: \.offset) { _, entry in
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text((entry["path"] as? String) ?? "未知路径").font(.subheadline)
-                        Text("动作：\((entry["action"] as? String) ?? "unknown")")
-                            .font(.caption).foregroundStyle(.secondary)
-                        if let auditID = entry["audit_id"] as? String {
-                            Text(auditID).font(.caption2.monospaced()).textSelection(.enabled)
-                        }
-                    }
-                }
-                Button("刷新审计记录") { reloadAudit() }
-            } header: {
-                Text("审计与回滚")
-            } footer: {
-                Text("审计只保存路径、动作、时间、字节数和前后哈希，不保存文件正文或凭证。")
-            }
-
         }
         .navigationTitle("系统目录访问")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear(perform: reloadAudit)
     }
 
     private func verifyIdentity() {
@@ -75,14 +52,12 @@ struct SystemAccessSettingsView: View {
         isVerifyingIdentity = true
         Task { @MainActor in
             defer { isVerifyingIdentity = false }
-            let response = await SystemHelperClient.run(action: "identity", payload: [:])
+            let response = await SystemHelperClient.probeIdentity()
             status = response.ok
                 ? "身份已验证：helper 的 uid/euid/gid/egid 均为 0。文件读写能力仍需单独验证。"
                 : "验证失败：\(response.error ?? response.code ?? "未知错误")"
             identityDetails = response.diagnosticSummary
         }
     }
-
-    private func reloadAudit() { auditEntries = SystemAccessAudit.entries(limit: 100) }
 
 }

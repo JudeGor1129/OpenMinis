@@ -1,0 +1,47 @@
+name: Session system access regression
+
+on:
+  push:
+    branches: [ui-ios27-session-permission, ios15-port]
+    paths:
+      - 'src/ios/Agent/Chat/AIChatViewModel+SystemFileTools.swift'
+      - 'src/ios/Diagnostics/PrivilegedHelperBridge.*'
+      - 'src/ios/Diagnostics/SessionSystemAccessPolicy.h'
+      - 'src/ios/Views/Chat/AIChatView.swift'
+      - 'src/ios/Views/Settings/SystemAccessSettingsView.swift'
+      - 'src/ios/Shared/MinisNavigationContainer.swift'
+      - 'tools/privileged-helper/**'
+      - 'scripts/ios15/check-session-system-access.sh'
+      - 'scripts/ios15/session-system-access-typecheck.swift'
+      - '.github/workflows/session-system-access.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: session-access-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  session-policy-and-swift:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Show Xcode and check policy and iOS15 Swift UI types
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ci-logs
+          xcodebuild -version
+          bash scripts/ios15/check-session-system-access.sh 2>&1 | tee ci-logs/session-access.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: session-system-access-${{ github.run_id }}
+          path: ci-logs/session-access.txt
+          if-no-files-found: error
+          retention-days: 14

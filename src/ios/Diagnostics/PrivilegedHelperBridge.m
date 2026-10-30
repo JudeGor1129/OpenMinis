@@ -1,14 +1,16 @@
 #import "PrivilegedHelperBridge.h"
 #import "HelperProcessRunner.h"
 #import "HelperResponseValidation.h"
+#import "SessionSystemAccessPolicy.h"
 #import <UIKit/UIKit.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
-static NSString *const SystemAccessEnabled = @"system.access.enabled";
-static NSString *const SystemAccessMode = @"system.access.mode";
+NSString *OpenMinisSystemAccessSessionKey(NSString *sessionID) {
+    return MinisSessionSystemAccessKey(sessionID);
+}
 
 static dispatch_queue_t PrivilegedQueue(void) {
     static dispatch_queue_t queue;
@@ -49,9 +51,18 @@ void OpenMinisCancelPrivilegedRequests(void) {
         for (OpenMinisPrivilegedRequest *request in requests.allObjects) [request cancel];
     }
 }
-static NSData *RequestFrameBody(NSString *action, NSDictionary *payload, NSError **error) {
+void OpenMinisCancelPrivilegedRequestsForSession(NSString *sessionID) {
+    NSHashTable *requests = Requests();
+    @synchronized (requests) {
+        for (OpenMinisPrivilegedRequest *request in requests.allObjects)
+            if ([request.sessionID isEqualToString:sessionID]) [request cancel];
+    }
+}
+static NSData *RequestFrameBody(NSString *action, NSDictionary *payload, NSString *sessionID, NSError **error) {
     NSMutableDictionary *body = [payload mutableCopy] ?: [NSMutableDictionary dictionary];
     body[@"protocol"] = @2; body[@"action"] = action;
+    if (sessionID) body[@"session_id"] = sessionID;
+    else [body removeObjectForKey:@"session_id"];
     NSData *data = [NSJSONSerialization dataWithJSONObject:body options:0 error:error];
     if (data && data.length > 3 * 1024 * 1024) {
         if (error) *error = [NSError errorWithDomain:NSPOSIXErrorDomain code:EMSGSIZE userInfo:nil];
@@ -62,29 +73,40 @@ static NSData *RequestFrameBody(NSString *action, NSDictionary *payload, NSError
 
 @implementation OpenMinisPrivilegedRequest {
     NSString *_action;
-    NSDictionary *_payload;
+    NSString *_sessionID;
+    NSString *_requestedMode;
+    NSData *_requestBody;
+    NSError *_encodingError;
+    BOOL _identityProbe;
     MinisHelperControl _control;
     BOOL _started;
 }
-- (instancetype)initWithAction:(NSString *)action payload:(NSDictionary *)payload {
+- (instancetype)initWithAction:(NSString *)action payload:(NSDictionary *)payload sessionID:(NSString *)sessionID {
     if ((self = [super init])) {
-        _action = [action copy]; _payload = [payload copy] ?: @{};
+        _action = [action copy];
+        _sessionID = [sessionID copy];
+        _requestedMode = [payload[@"mode"] isKindOfClass:NSString.class] ? [payload[@"mode"] copy] : nil;
+        NSError *error = nil;
+        _requestBody = [RequestFrameBody(_action, payload, _sessionID, &error) copy];
+        _encodingError = error;
         MinisHelperControlInit(&_control);
         NSHashTable *requests = Requests();
         @synchronized (requests) { [requests addObject:self]; }
     }
     return self;
 }
++ (instancetype)identityProbe {
+    OpenMinisPrivilegedRequest *request = [[self alloc] initWithAction:@"identity" payload:@{} sessionID:nil];
+    request->_identityProbe = YES;
+    return request;
+}
+- (NSString *)sessionID { return _sessionID; }
 - (void)cancel { MinisHelperCancel(&_control); }
 - (NSString *)authorizationRefusal {
     if (atomic_load(&_control.cancelled)) return @"Request cancelled.";
-    NSSet *allowed = [NSSet setWithArray:@[@"identity", @"read", @"write", @"rollback"]];
-    if (![allowed containsObject:_action]) return @"Action is not allowlisted.";
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    if (![defaults boolForKey:SystemAccessEnabled]) return @"System access is disabled in Settings > Agent Tools.";
-    NSString *mode = [defaults stringForKey:SystemAccessMode] ?: @"readonly";
-    if (([_action isEqualToString:@"write"] || [_action isEqualToString:@"rollback"]) && [mode isEqualToString:@"readonly"])
-        return @"System access is in read-only mode.";
+    NSString *refusal = MinisSessionSystemAccessRefusal(_action, _sessionID, _requestedMode,
+                                                       NSUserDefaults.standardUserDefaults, _identityProbe);
+    if (refusal) return refusal;
     if (!OpenMinisPrivilegedHelperPackaged()) return @"Signed system helper is unavailable; install the dedicated TrollStore build.";
     return nil;
 }
@@ -104,8 +126,9 @@ static NSData *RequestFrameBody(NSString *action, NSDictionary *payload, NSError
         completion(JSONError(_action, @"foreground_required", @"System access requires the active foreground app.")); return;
     }
     __weak OpenMinisPrivilegedRequest *weakSelf = self;
-    id background = [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { [weakSelf cancel]; }];
+    id background = [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { (void)note; [weakSelf cancel]; }];
     id settings = [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+        (void)note;
         OpenMinisPrivilegedRequest *request = weakSelf;
         if (request && [request authorizationRefusal]) [request cancel];
     }];
@@ -115,14 +138,13 @@ static NSData *RequestFrameBody(NSString *action, NSDictionary *payload, NSError
         [NSNotificationCenter.defaultCenter removeObserver:settings];
         completion(JSONError(_action, @"authorization_refused", refusal)); return;
     }
-    NSError *requestError = nil;
-    // Frozen, immutable request bytes. They are sent over the helper's FD 3
-    // request channel and never written to disk or placed in argv.
-    NSData *requestBody = RequestFrameBody(_action, _payload, &requestError);
+    // The bytes and requested mode were frozen at initialization. Rechecking
+    // defaults above and immediately before launch cannot enlarge this request.
+    NSData *requestBody = _requestBody;
     if (!requestBody) {
         [NSNotificationCenter.defaultCenter removeObserver:background];
         [NSNotificationCenter.defaultCenter removeObserver:settings];
-        completion(JSONError(_action, @"request_encoding_failed", requestError.localizedDescription)); return;
+        completion(JSONError(_action, @"request_encoding_failed", _encodingError.localizedDescription)); return;
     }
     dispatch_async(PrivilegedQueue(), ^{
         @autoreleasepool {

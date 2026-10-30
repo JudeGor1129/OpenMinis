@@ -194,7 +194,7 @@ struct AIChatView: View {
     /// callbacks. See `ComposerActionChannel`.
     @State private var composerActions = ComposerActionChannel()
     @State private var showingSessionSearch = false
-    @State private var showingSessionSystemAccess = false
+    @State private var sessionSystemAccessTarget: SessionSystemAccessTarget?
     @State private var sessionExportURL: URL?
     @State private var sessionExportError: String?
     @State private var manualScreenAwake = false
@@ -831,11 +831,10 @@ struct AIChatView: View {
             exportError: $sessionExportError,
             rows: sessionSearchRows
         ))
-        .sheet(isPresented: $showingSessionSystemAccess) {
-            SessionSystemAccessSheet(
-                sessionID: vm.sessionId,
-                sessionTitle: titlePillSession?.title ?? "当前会话"
-            )
+        .sheet(item: $sessionSystemAccessTarget) { target in
+            SessionSystemAccessSheet(sessionID: target.id, sessionTitle: target.title)
+                .minisResizableSheet()
+                .minisSheetGrabberHidden(false)
         }
         .sheet(item: $titlePillEditSession) { session in
             SessionEditSheet(session: session) { newTitle, newCategory in
@@ -2049,6 +2048,8 @@ struct AIChatView: View {
             showFastModeToggle: activeModelSupportsFastMode,
             fastModeEnabled: codexFastModeEnabled,
             sessionAccessMode: sessionAccessStore.mode(for: vm.sessionId),
+            sessionAccessAvailable: !isReadOnly && vm.sessionId != nil && OpenMinisPrivilegedHelperPackaged(),
+            permissionSessionID: vm.sessionId,
             onNewChat: { requestNewChatFromMenu() },
             // [T-chat-menu-compact-entry] Same effect as the /compact slash
             // command (AIChatViewModel+SlashCommands case "compact").
@@ -2107,7 +2108,10 @@ struct AIChatView: View {
                 copySessionDataToClipboard()
                 #endif
             },
-            onSessionAccess: { showingSessionSystemAccess = true }
+            onSessionAccess: {
+                guard !isReadOnly, let sid = vm.sessionId, OpenMinisPrivilegedHelperPackaged() else { return }
+                sessionSystemAccessTarget = SessionSystemAccessTarget(id: sid, title: titlePillSession?.title ?? "当前会话")
+            }
         )
     }
 
@@ -2238,7 +2242,9 @@ struct AIChatView: View {
             enhancedCacheEnabled: cached.vm.enhancedCacheEnabled,
             showFastModeToggle: activeModelSupportsFastMode,
             fastModeEnabled: codexFastModeEnabled,
-            sessionAccessMode: sessionAccessStore.mode(for: vm.sessionId)
+            sessionAccessMode: sessionAccessStore.mode(for: vm.sessionId),
+            sessionAccessAvailable: !isReadOnly && vm.sessionId != nil && OpenMinisPrivilegedHelperPackaged(),
+            permissionSessionID: vm.sessionId
         )
     }
 
@@ -5711,6 +5717,8 @@ private struct ChatToolbarKey: Equatable {
     let showFastModeToggle: Bool
     let fastModeEnabled: Bool
     let sessionAccessMode: SessionSystemAccessMode
+    let sessionAccessAvailable: Bool
+    let permissionSessionID: String?
 }
 
 /// [T-ios-navbar-toolbar-host] Zero-footprint host that owns the navigation
@@ -5824,6 +5832,8 @@ private struct ChatTrailingMenu: View, Equatable {
     let showFastModeToggle: Bool
     let fastModeEnabled: Bool
     let sessionAccessMode: SessionSystemAccessMode
+    let sessionAccessAvailable: Bool
+    let permissionSessionID: String?
 
     let onNewChat: () -> Void
     let onCompact: () -> Void
@@ -5856,6 +5866,8 @@ private struct ChatTrailingMenu: View, Equatable {
             && lhs.showFastModeToggle == rhs.showFastModeToggle
             && lhs.fastModeEnabled == rhs.fastModeEnabled
             && lhs.sessionAccessMode == rhs.sessionAccessMode
+            && lhs.sessionAccessAvailable == rhs.sessionAccessAvailable
+            && lhs.permissionSessionID == rhs.permissionSessionID
     }
 
     var body: some View {
@@ -5939,7 +5951,7 @@ private struct ChatTrailingMenu: View, Equatable {
             Button { onSessionAccess() } label: {
                 Label("本会话权限：\(sessionAccessMode.title)", systemImage: sessionAccessMode.icon)
             }
-            .disabled(!hasSession)
+            .disabled(!sessionAccessAvailable)
 
             // [T-codex-fast-mode-menu-group] Model-control toggles in their
             // own divider-separated section (mirrors the UIKit buildMenu).
@@ -6018,6 +6030,8 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
     let showFastModeToggle: Bool
     let fastModeEnabled: Bool
     let sessionAccessMode: SessionSystemAccessMode
+    let sessionAccessAvailable: Bool
+    let permissionSessionID: String?
 
     let onNewChat: () -> Void
     let onCompact: () -> Void
@@ -6051,6 +6065,8 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
         let showFastModeToggle: Bool
         let fastModeEnabled: Bool
         let sessionAccessMode: SessionSystemAccessMode
+    let sessionAccessAvailable: Bool
+    let permissionSessionID: String?
     }
 
     private var key: Key {
@@ -6061,7 +6077,9 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
             enhancedCacheEnabled: enhancedCacheEnabled,
             showFastModeToggle: showFastModeToggle,
             fastModeEnabled: fastModeEnabled,
-            sessionAccessMode: sessionAccessMode)
+            sessionAccessMode: sessionAccessMode,
+            sessionAccessAvailable: sessionAccessAvailable,
+            permissionSessionID: permissionSessionID)
     }
 
     final class Coordinator {
@@ -6204,7 +6222,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
         })
         sessionGroup.append(UIAction(title: "本会话权限：\(key.sessionAccessMode.title)",
                                      image: UIImage(systemName: key.sessionAccessMode.icon),
-                                     attributes: key.hasSession ? [] : [.disabled]) { _ in
+                                     attributes: key.sessionAccessAvailable ? [] : [.disabled]) { _ in
             coordinator.parent.onSessionAccess()
         })
         groups.append(UIMenu(options: .displayInline, children: sessionGroup))
