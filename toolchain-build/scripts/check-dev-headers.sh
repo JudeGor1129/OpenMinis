@@ -17,7 +17,7 @@ for ARCH in arm64 arm64e; do
     -I "$DIR/dev-headers/common/include" \
     -c "$ROOT/scripts/DevHeaderProbe.cpp" -o "$WORK/probe-$ARCH.o"
   xcrun lipo -info "$WORK/probe-$ARCH.o"
-  xcrun lipo -verify_arch "$ARCH" "$WORK/probe-$ARCH.o"
+  xcrun lipo "$WORK/probe-$ARCH.o" -verify_arch "$ARCH"
 done
 echo "Development header probes compiled for arm64 and arm64e."
 echo "Not tested: enabled bridge APIs, static library link, PAC behavior or runtime."

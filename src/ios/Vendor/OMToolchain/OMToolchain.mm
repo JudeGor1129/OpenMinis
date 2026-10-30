@@ -196,9 +196,11 @@ struct ArgvStorage {
 
     dispatch_sync(OMQueue(), ^{
         @try {
-            // argv[0] is required by CreateFromArgs for "-cc1 -cc1" round-trip
-            // diagnostics, but is otherwise ignored.
-            ArgvStorage argv(cc1Arguments, /*prependProgramName=*/true);
+            // CreateFromArgs takes cc1 options only; argv[0] is a separate
+            // argument. Accept an optional leading -cc1 from legacy callers.
+            NSArray<NSString *> *frontendArguments = [cc1Arguments.firstObject isEqualToString:@"-cc1"]
+                ? [cc1Arguments subarrayWithRange:NSMakeRange(1, cc1Arguments.count - 1)] : cc1Arguments;
+            ArgvStorage argv(frontendArguments, /*prependProgramName=*/false);
 
             std::string outBuf, errBuf;
             llvm::raw_string_ostream outStream(outBuf);
@@ -222,7 +224,7 @@ struct ArgvStorage {
 
             auto invocation = std::make_shared<clang::CompilerInvocation>();
             const bool parsed = clang::CompilerInvocation::CreateFromArgs(
-                *invocation, argv.arrayRef(), parseDiags, /*Argv0=*/argv.argv[0]);
+                *invocation, argv.arrayRef(), parseDiags, /*Argv0=*/"clang");
 
             // CreateFromArgs already ran ParseLangArgs/ParseCodeGenArgs and, for
             // an arm64e triple, setDefaultPointerAuthOptions — which is what

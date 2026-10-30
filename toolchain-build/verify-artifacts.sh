@@ -20,11 +20,11 @@ command -v python3 >/dev/null 2>&1 || { echo "Python 3 required for manifest/has
 python3 "$ROOT/scripts/verify-toolchain-manifest.py" "$DIR"
 if command -v xcrun >/dev/null 2>&1; then
   xcrun lipo -info "$DIR/libomllvm-arm64.a"
-  xcrun lipo -verify_arch arm64 "$DIR/libomllvm-arm64.a"
+  xcrun lipo "$DIR/libomllvm-arm64.a" -verify_arch arm64
   xcrun lipo -info "$DIR/libomllvm-arm64e.a"
-  xcrun lipo -verify_arch arm64e "$DIR/libomllvm-arm64e.a"
+  xcrun lipo "$DIR/libomllvm-arm64e.a" -verify_arch arm64e
   xcrun lipo -info "$DIR/libomld64.a"
-  xcrun lipo -verify_arch arm64 arm64e "$DIR/libomld64.a"
+  xcrun lipo "$DIR/libomld64.a" -verify_arch arm64 arm64e
 else
   echo "Archive slice checks not run: Xcode xcrun is unavailable. Only manifest integrity checked."
 fi
