@@ -3,7 +3,7 @@ name: Build embedded iOS toolchain
 # The repository token used from the device can push but cannot dispatch
 # workflows, so a push to the pinned build inputs also starts this build.
 # Bump the request line below to request a rebuild without code changes.
-# Rebuild request: 2026-10-29 retry after fixing LLVM 24 generated-header names and resource export; prior job was cancelled by macOS runner capacity.
+# Rebuild request: retry after SafePath fix and repeated macOS runner capacity cancellations; Run3 never started.
 on:
   push:
     branches: [ios15-port]
