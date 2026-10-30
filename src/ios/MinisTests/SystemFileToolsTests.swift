@@ -35,4 +35,21 @@ final class SystemFileToolsTests: XCTestCase {
         XCTAssertEqual(SystemAccessMode.limited.title, "有限写入")
         XCTAssertEqual(SystemAccessMode.expert.title, "专家写入")
     }
+
+    @MainActor
+    func testSessionSystemAccessDefaultsOffAndPersistsPerSession() {
+        let first = "ui-test-\(UUID().uuidString)"
+        let second = "ui-test-\(UUID().uuidString)"
+        let store = SessionSystemAccessStore.shared
+        store.setMode(.disabled, for: first)
+        store.setMode(.disabled, for: second)
+        XCTAssertEqual(store.mode(for: first), .disabled)
+        XCTAssertEqual(store.mode(for: second), .disabled)
+        store.setMode(.readonly, for: first)
+        XCTAssertEqual(store.mode(for: first), .readonly)
+        XCTAssertEqual(store.mode(for: second), .disabled)
+        store.setMode(.disabled, for: first)
+        XCTAssertEqual(store.mode(for: first), .disabled)
+        XCTAssertEqual(store.mode(for: "__new__draft"), .disabled)
+    }
 }

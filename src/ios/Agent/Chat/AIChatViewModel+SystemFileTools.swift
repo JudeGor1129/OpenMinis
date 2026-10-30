@@ -1,4 +1,6 @@
+import Combine
 import Foundation
+import SwiftUI
 import UIKit
 
 // MARK: - Safe system-file access
@@ -19,6 +21,18 @@ enum SystemAccessSettings {
     static var enabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
     static var mode: SystemAccessMode {
         SystemAccessMode(rawValue: UserDefaults.standard.string(forKey: modeKey) ?? "readonly") ?? .readonly
+    }
+
+    /// Legacy app-wide switch remains for Settings compatibility. Chat tools
+    /// additionally require SessionSystemAccessStore to authorize this session.
+    @MainActor
+    static func mode(for sessionID: String?) -> SystemAccessMode? {
+        switch SessionSystemAccessStore.shared.mode(for: sessionID) {
+        case .disabled: return nil
+        case .readonly: return .readonly
+        case .limited: return .limited
+        case .expert: return .expert
+        }
     }
 }
 
@@ -43,10 +57,12 @@ struct SystemAccessEnvelope {
 
 @MainActor
 enum SystemHelperClient {
-    static func run(action: String, payload: [String: Any]) async -> SystemAccessEnvelope {
-        guard SystemAccessSettings.enabled else {
-            return SystemAccessEnvelope(value: ["ok": false, "code": "disabled", "error": "系统目录访问未在设置中开启。"]) 
+    static func run(action: String, payload: [String: Any], sessionID: String? = nil) async -> SystemAccessEnvelope {
+        let sessionMode = SystemAccessSettings.mode(for: sessionID)
+        guard sessionMode != nil || action == "identity" else {
+            return SystemAccessEnvelope(value: ["ok": false, "code": "session_access_disabled", "error": "本会话未开启系统目录访问。"])
         }
+        let effectiveMode = sessionMode ?? .readonly
         // Backup/audit state is needed only by write and rollback. Request
         // bodies travel over the helper's FD 3 channel, so identity and read
         // never depend on this directory existing.
@@ -60,7 +76,7 @@ enum SystemHelperClient {
             }
         }
         var body = payload
-        body["mode"] = SystemAccessSettings.mode.rawValue
+        body["mode"] = effectiveMode.rawValue
         let request = OpenMinisPrivilegedRequest(action: action, payload: body)
         // Task cancellation revokes the helper lease. A request cancelled before
         // it starts is refused by the bridge's authorization check.
@@ -143,22 +159,23 @@ extension AIChatViewModel {
     }
 
     func executeSystemAccessTool(name: String, args: [String: Any]) async -> FileToolResult {
-        guard SystemAccessSettings.enabled else {
-            return FileToolResult(output: "系统目录访问已关闭。请在设置 → Agent Tools → 系统目录访问中开启。", success: false)
+        let sessionID = self.sessionId
+        guard let sessionMode = SystemAccessSettings.mode(for: sessionID) else {
+            return FileToolResult(output: "本会话未开启系统目录访问。请从会话右上角菜单打开“本会话权限”。", success: false)
         }
         switch name {
         case "system_access_status":
-            let result = await SystemHelperClient.run(action: "identity", payload: [:])
+            let result = await SystemHelperClient.run(action: "identity", payload: [:], sessionID: sessionID)
             return systemToolJSON(result.value, success: result.ok)
         case "system_file_read":
             guard let path = args["path"] as? String else { return FileToolResult(output: "缺少 path。", success: false) }
             let maxBytes = max(1, min(262_144, (args["max_bytes"] as? Int) ?? 65_536))
-            let result = await SystemHelperClient.run(action: "read", payload: ["path": path, "max_bytes": maxBytes])
+            let result = await SystemHelperClient.run(action: "read", payload: ["path": path, "max_bytes": maxBytes], sessionID: sessionID)
             return systemToolJSON(result.value, success: result.ok)
         case "system_file_write":
-            return await executeConfirmedSystemWrite(args)
+            return await executeConfirmedSystemWrite(args, sessionID: sessionID, mode: sessionMode)
         case "system_file_rollback":
-            return await executeConfirmedSystemRollback(args)
+            return await executeConfirmedSystemRollback(args, sessionID: sessionID, mode: sessionMode)
         case "system_access_audit":
             let limit = max(1, min(500, (args["limit"] as? Int) ?? 100))
             return systemToolJSON(["ok": true, "entries": SystemAccessAudit.entries(limit: limit)], success: true)
@@ -167,8 +184,8 @@ extension AIChatViewModel {
         }
     }
 
-    private func executeConfirmedSystemWrite(_ args: [String: Any]) async -> FileToolResult {
-        guard SystemAccessSettings.mode != .readonly else {
+    private func executeConfirmedSystemWrite(_ args: [String: Any], sessionID: String?, mode: SessionSystemAccessMode) async -> FileToolResult {
+        guard mode != .readonly else {
             return FileToolResult(output: "当前为只读模式；请在设置中切换为有限写入或专家写入。", success: false)
         }
         guard let path = args["path"] as? String, let content = args["content"] as? String else {
@@ -177,7 +194,7 @@ extension AIChatViewModel {
         guard content.utf8.count <= 1_048_576 else {
             return FileToolResult(output: "拒绝：写入内容超过 1 MiB。", success: false)
         }
-        let read = await SystemHelperClient.run(action: "read", payload: ["path": path, "max_bytes": 262_144])
+        let read = await SystemHelperClient.run(action: "read", payload: ["path": path, "max_bytes": 262_144], sessionID: sessionID)
         let existed = read.ok
         let old = read.value["content"] as? String ?? ""
         let expected = (read.value["sha256"] as? String) ?? "missing"
@@ -185,19 +202,19 @@ extension AIChatViewModel {
             return systemToolJSON(read.value, success: false)
         }
         let preview = Self.boundedSystemDiff(old: old, new: content)
-        let message = "路径：\(path)\n模式：\(SystemAccessSettings.mode.title)\n原大小：\(old.utf8.count) B\n新大小：\(content.utf8.count) B\n\n\(preview)\n\n继续后将先备份，再进行原子替换。"
+        let message = "路径：\(path)\n模式：\(mode.title)\n原大小：\(old.utf8.count) B\n新大小：\(content.utf8.count) B\n\n\(preview)\n\n继续后将先备份，再进行原子替换。"
         guard await SystemWriteConfirmer.shared.confirm(title: existed ? "确认修改系统文件" : "确认创建系统文件", message: message, confirmButtonTitle: "写入") else {
             return FileToolResult(output: "用户已取消系统文件写入。", success: false)
         }
         let auditID = UUID().uuidString
         let result = await SystemHelperClient.run(action: "write", payload: [
             "path": path, "content": content, "expected_sha256": expected, "audit_id": auditID
-        ])
+        ], sessionID: sessionID)
         return systemToolJSON(result.value, success: result.ok)
     }
 
-    private func executeConfirmedSystemRollback(_ args: [String: Any]) async -> FileToolResult {
-        guard SystemAccessSettings.mode != .readonly else {
+    private func executeConfirmedSystemRollback(_ args: [String: Any], sessionID: String?, mode: SessionSystemAccessMode) async -> FileToolResult {
+        guard mode != .readonly else {
             return FileToolResult(output: "当前为只读模式，无法回滚系统文件。", success: false)
         }
         guard let sourceID = args["audit_id"] as? String,
@@ -213,7 +230,7 @@ extension AIChatViewModel {
         }
         let result = await SystemHelperClient.run(action: "rollback", payload: [
             "rollback_audit_id": sourceID, "audit_id": UUID().uuidString
-        ])
+        ], sessionID: sessionID)
         return systemToolJSON(result.value, success: result.ok)
     }
 
@@ -268,5 +285,155 @@ extension AIChatViewModel {
                     "limit": AgentToolParam(type: .integer, description: "返回最近记录数，1...500。")],
                 required: ["tool_title"], propertyOrdering: ["tool_title", "limit"]),
         ]
+    }
+}
+
+
+// MARK: - Session-scoped permission UI
+
+enum SessionSystemAccessMode: String, CaseIterable, Identifiable, Codable, Equatable {
+    case disabled
+    case readonly
+    case limited
+    case expert
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .disabled: return "关闭"
+        case .readonly: return "只读"
+        case .limited: return "有限写入"
+        case .expert: return "专家写入"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .disabled: return "lock.slash"
+        case .readonly: return "eye"
+        case .limited: return "pencil.line"
+        case .expert: return "exclamationmark.triangle"
+        }
+    }
+}
+
+@MainActor
+final class SessionSystemAccessStore: ObservableObject {
+    static let shared = SessionSystemAccessStore()
+    @Published private(set) var revision = 0
+    private let defaults = UserDefaults.standard
+    private let prefix = "system.access.session."
+    private init() {}
+
+    func mode(for sessionID: String?) -> SessionSystemAccessMode {
+        guard let sessionID, !sessionID.isEmpty, !sessionID.hasPrefix("__new__") else { return .disabled }
+        let key = prefix + sessionID.replacingOccurrences(of: ".", with: "_")
+        return SessionSystemAccessMode(rawValue: defaults.string(forKey: key) ?? "") ?? .disabled
+    }
+
+    func setMode(_ mode: SessionSystemAccessMode, for sessionID: String?) {
+        guard let sessionID, !sessionID.isEmpty, !sessionID.hasPrefix("__new__") else { return }
+        let key = prefix + sessionID.replacingOccurrences(of: ".", with: "_")
+        if mode == .disabled { defaults.removeObject(forKey: key) }
+        else { defaults.set(mode.rawValue, forKey: key) }
+        revision &+= 1
+    }
+}
+
+struct SessionSystemAccessSheet: View {
+    let sessionID: String?
+    let sessionTitle: String
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var store = SessionSystemAccessStore.shared
+    @State private var selected: SessionSystemAccessMode
+
+    init(sessionID: String?, sessionTitle: String) {
+        self.sessionID = sessionID
+        self.sessionTitle = sessionTitle
+        _selected = State(initialValue: SessionSystemAccessStore.shared.mode(for: sessionID))
+    }
+
+    var body: some View {
+        MinisNavigationContainer {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("本会话权限", systemImage: "lock.shield")
+                            .font(.headline)
+                        Text(sessionTitle.isEmpty ? "当前会话" : sessionTitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 6)
+                } footer: {
+                    Text("权限只作用于这个会话。新会话默认关闭，不会继承其他会话的权限。")
+                }
+                Section("访问级别") {
+                    ForEach(SessionSystemAccessMode.allCases) { mode in
+                        Button {
+                            withAnimation(MinisMotion.feedback) { selected = mode }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: mode.icon)
+                                    .foregroundStyle(mode == .expert ? .red : mode == .limited ? .orange : .secondary)
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(mode.title).foregroundStyle(.primary)
+                                    Text(Self.detail(for: mode))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if selected == mode {
+                                    Image(systemName: "checkmark")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.tint)
+                                        .transition(.opacity.combined(with: .scale))
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(selected == mode ? .isSelected : [])
+                    }
+                }
+                Section {
+                    Label("写入和回滚仍会显示确认界面，并执行哈希、备份和审计检查。", systemImage: "info.circle")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("本会话权限")
+            .navigationBarTitleDisplayMode(.inline)
+            .minisNavigationBarBackdropMaterial()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { store.setMode(selected, for: sessionID); dismiss() }
+                        .fontWeight(.semibold)
+                }
+            }
+            .modifier(SessionSystemAccessSheetStyle())
+        }
+    }
+
+    private static func detail(for mode: SessionSystemAccessMode) -> String {
+        switch mode {
+        case .disabled: return "本会话不会提供系统目录工具"
+        case .readonly: return "只读取受审查目录中的小型 UTF-8 文本"
+        case .limited: return "允许有限文本写入，并要求逐次确认"
+        case .expert: return "额外目录范围，适合熟悉越狱环境时使用"
+        }
+    }
+}
+
+private struct SessionSystemAccessSheetStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 16.0, *) {
+            content.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+        } else {
+            content
+        }
     }
 }

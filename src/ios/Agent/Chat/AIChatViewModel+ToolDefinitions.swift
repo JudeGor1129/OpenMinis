@@ -568,7 +568,8 @@ extension AIChatViewModel {
         // High-level programming loop tools share the BuildProvider seam; they
         // intentionally remain separate from model ProviderConfig routing.
         tools.append(contentsOf: programmingBuildToolDefinitions())
-        if SystemAccessSettings.enabled && OpenMinisPrivilegedHelperPackaged() {
+        if OpenMinisPrivilegedHelperPackaged(),
+           SessionSystemAccessStore.shared.mode(for: sessionId) != .disabled {
             tools.append(contentsOf: systemAccessToolDefinitions())
         }
         if AgentToolSwitch.ictrl.isEnabled {

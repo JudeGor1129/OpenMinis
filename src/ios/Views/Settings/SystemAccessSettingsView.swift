@@ -1,41 +1,30 @@
 import SwiftUI
 
 struct SystemAccessSettingsView: View {
-    @AppStorage(SystemAccessSettings.enabledKey) private var enabled = false
-    @AppStorage(SystemAccessSettings.modeKey) private var modeRaw = SystemAccessMode.readonly.rawValue
     @State private var status = "尚未验证 helper 身份"
     @State private var identityDetails = ""
     @State private var isVerifyingIdentity = false
     @State private var auditEntries: [[String: Any]] = []
-    @State private var rollbackResult: String?
     private var helperPackaged: Bool { OpenMinisPrivilegedHelperPackaged() }
-
-    private var mode: Binding<SystemAccessMode> {
-        Binding(get: { SystemAccessMode(rawValue: modeRaw) ?? .readonly },
-                set: { modeRaw = $0.rawValue })
-    }
 
     var body: some View {
         List {
             Section {
-                Toggle("启用系统目录访问", isOn: $enabled)
-                    .disabled(!helperPackaged)
-                    .onChange(of: enabled) { value in
-                        if !value { OpenMinisCancelPrivilegedRequests() }
-                    }
-                Picker("访问模式", selection: mode) {
-                    ForEach(SystemAccessMode.allCases) { item in Text(item.title).tag(item) }
+                Label("系统目录权限按会话控制", systemImage: "lock.shield")
+                Text("默认关闭。请进入目标会话，在消息页右上角 More 菜单中打开“本会话权限”。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if !helperPackaged {
+                    Label("当前安装包不包含系统 helper。", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
                 }
-                .disabled(!enabled)
             } footer: {
-                Text(helperPackaged
-                     ? "默认关闭。GUI 不会变成 root；每次操作由短生命周期独立 helper 执行。写入需要前台确认、旧哈希校验、备份、审计和原子替换。"
-                     : "当前安装包不包含系统 helper。请安装专用 TrollStore 构建；普通签名版本不会获得系统访问能力。")
+                Text("权限不会从一个会话继承到另一个会话。写入和回滚仍需要前台确认、旧哈希校验、备份、审计和原子替换。")
             }
 
             Section("能力状态") {
                 Button("验证 root helper 身份") { verifyIdentity() }
-                    .disabled(!enabled || isVerifyingIdentity)
+                    .disabled(!helperPackaged || isVerifyingIdentity)
                 if isVerifyingIdentity {
                     HStack { ProgressView(); Text("正在验证 helper 身份…") }
                 }
@@ -54,13 +43,6 @@ struct SystemAccessSettingsView: View {
                     .foregroundStyle(.red)
             }
 
-            if mode.wrappedValue == .expert {
-                Section {
-                    Label("专家模式可能破坏越狱启动环境。它仍不允许任意命令、递归删除、chmod/chown 或 launchctl。", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                }
-            }
-
             Section {
                 if auditEntries.isEmpty {
                     Text("暂无系统文件写入记录").foregroundStyle(.secondary)
@@ -72,10 +54,6 @@ struct SystemAccessSettingsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                         if let auditID = entry["audit_id"] as? String {
                             Text(auditID).font(.caption2.monospaced()).textSelection(.enabled)
-                            if entry["backup_available"] as? Bool == true {
-                                Button("回滚此修改", role: .destructive) { rollback(auditID, path: entry["path"] as? String) }
-                                    .disabled(!enabled || mode.wrappedValue == .readonly)
-                            }
                         }
                     }
                 }
@@ -86,9 +64,6 @@ struct SystemAccessSettingsView: View {
                 Text("审计只保存路径、动作、时间、字节数和前后哈希，不保存文件正文或凭证。")
             }
 
-            if let rollbackResult {
-                Section("最近结果") { Text(rollbackResult).font(.caption).textSelection(.enabled) }
-            }
         }
         .navigationTitle("系统目录访问")
         .navigationBarTitleDisplayMode(.inline)
@@ -110,17 +85,4 @@ struct SystemAccessSettingsView: View {
 
     private func reloadAudit() { auditEntries = SystemAccessAudit.entries(limit: 100) }
 
-    private func rollback(_ auditID: String, path: String?) {
-        Task {
-            guard await SystemWriteConfirmer.shared.confirm(
-                title: "确认回滚系统文件",
-                message: "路径：\(path ?? "未知")\n审计记录：\(auditID)\n\n只有当前文件哈希仍匹配时才会回滚。",
-                confirmButtonTitle: "回滚") else { return }
-            let response = await SystemHelperClient.run(action: "rollback", payload: [
-                "rollback_audit_id": auditID, "audit_id": UUID().uuidString
-            ])
-            rollbackResult = response.ok ? "回滚成功" : "回滚失败：\(response.error ?? "未知错误")"
-            reloadAudit()
-        }
-    }
 }

@@ -47,6 +47,10 @@ grep -q 'argc != 2' "$helper"
 grep -q 'requestBody.bytes, requestBody.length' "$bridge"
 grep -q 'withTaskCancellationHandler' "$swift"
 grep -q 'request.cancel()' "$swift"
+# System-directory tools are session-scoped; the default session mode is closed.
+grep -q 'SessionSystemAccessStore' "$swift"
+grep -q 'session_access_disabled' "$swift"
+grep -q '本会话权限' src/ios/Views/Chat/AIChatView.swift
 # The helper resolves its own backup/audit root under the active bootstrap.
 grep -q 'static NSString \*StateBase(' "$helper"
 grep -q 'var/tmp/MinisSystemAccess' "$helper"
