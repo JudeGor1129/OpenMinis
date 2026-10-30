@@ -370,6 +370,8 @@ final class SessionSystemAccessStore: ObservableObject {
     }
 }
 
+/// iOS 27-style permission sheet target. This is peripheral UI only;
+/// ThinkOrb, composer breathing border, and input animation timing are untouched.
 struct SessionSystemAccessTarget: Identifiable {
     let id: String
     let title: String
