@@ -106,6 +106,7 @@ jobs:
             toolchain-build/build/ios/dev-headers/
             toolchain-build/build/ios/toolchain.json
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
 
       - name: Compile development header probes for both architectures
@@ -139,4 +140,5 @@ jobs:
             toolchain-build/build/ios/toolchain.json
             toolchain-build/build/ios/enabled-link-check/enabled-link-report.json
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
