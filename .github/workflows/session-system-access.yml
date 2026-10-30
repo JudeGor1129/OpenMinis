@@ -1,4 +1,5 @@
 name: Session system access regression
+# Typecheck retry after replacing iOS16-only fontWeight with iOS15-compatible bold font.
 
 on:
   push:
