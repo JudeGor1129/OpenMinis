@@ -7,6 +7,9 @@ on:
     paths:
       - 'src/ios/**'
       - 'scripts/ios15/**'
+      - 'toolchain-build/verified-toolchain-lock.json'
+      - 'toolchain-build/verify-artifacts.sh'
+      - 'toolchain-build/scripts/verify-toolchain-manifest.py'
       - 'deps/build_rclone_ios.sh'
       - '.github/workflows/ios15.yml'
   workflow_dispatch:
@@ -22,6 +25,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ios15-${{ github.ref }}
@@ -52,6 +56,7 @@ jobs:
           bash scripts/ios15/check-frida-transcript-source.sh 2>&1 | tee ci-logs/frida-transcript-source.txt
           bash scripts/ios15/check-host-file-tools.sh 2>&1 | tee ci-logs/host-file-tools.txt
           bash scripts/ios15/check-privileged-helper.sh 2>&1 | tee ci-logs/system-access.txt
+          python3 scripts/ios15/check-embedded-toolchain-integration.py 2>&1 | tee ci-logs/embedded-toolchain-source-gate.txt
           bash scripts/ios15/check-programming-build-tools.sh 2>&1 | tee ci-logs/programming-build-tools.txt
           bash scripts/ios15/check-programming-tools.sh 2>&1 | tee ci-logs/programming-tools.txt
           bash scripts/ios15/check-navigation.sh 2>&1 | tee ci-logs/navigation.txt
@@ -150,6 +155,14 @@ jobs:
           mkdir -p deps/include deps/libs
           cp build/frida-probe/devkit/frida-core.h deps/include/frida-core.h
           cp build/frida-probe/devkit/libfrida-core.a deps/libs/libfrida-core.a
+      - name: Download and verify embedded toolchain
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash scripts/ios15/prepare-embedded-toolchain.sh 2>&1 | tee ci-logs/embedded-toolchain.txt
+
       - name: Build dependencies and collect compiler diagnostics
         shell: bash
         run: |

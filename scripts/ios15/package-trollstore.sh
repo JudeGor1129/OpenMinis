@@ -10,6 +10,9 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/Payload" "$OUT" ci-logs
 ditto "$SOURCE" "$STAGE/Payload/Minis.app"
 APP="$STAGE/Payload/Minis.app"
+python3 scripts/ios15/verify-bundled-clang-resource.py \
+  build/ios15/embedded-toolchain/toolchain.json "$APP/clang-resource" \
+  | tee ci-logs/embedded-packaged-clang-resource.txt
 HELPER=build/ios15/privileged-helper/minis-privileged-helper
 [[ -f "$HELPER" ]] || { echo 'error: system helper build product missing' >&2; exit 1; }
 cp "$HELPER" "$APP/minis-privileged-helper"

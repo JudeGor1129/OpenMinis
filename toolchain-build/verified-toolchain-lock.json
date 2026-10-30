@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "repository": "JudeGor1129/OpenMinis",
+  "workflow_run_id": 41028768787,
+  "head_sha": "647a43094e8529b8b497baa41f1fcabc839f883a",
+  "artifact": {
+    "id": 12965155835,
+    "name": "OpenMinis-iOS-toolchain-647a43094e8529b8b497baa41f1fcabc839f883a",
+    "archive_sha256": "726e52922cb426a1593066ab2804a5ba4a9d42d7c01d1eeb1dd2bd67c618408b",
+    "expires_at": "2026-11-13T08:48:46Z"
+  },
+  "manifest": {
+    "path": "toolchain.json",
+    "sha256": "592c978375e40185f0fca918d603e9be7da3e605d4f4eab9ee136dd632bbbbc9",
+    "schema": 2,
+    "architectures": ["arm64", "arm64e"],
+    "llvm_commit": "40f30ea173b50c130c01d843b612f9563ca63930",
+    "minimum_ios": "14.0",
+    "archives": {
+      "libomllvm-arm64.a": {
+        "arch": "arm64",
+        "bytes": 245102608,
+        "sha256": "e1ea7014d8c5722bb4ea5a5f08d40f125ecb731d66c0c5317c46604db0488735"
+      },
+      "libomllvm-arm64e.a": {
+        "arch": "arm64e",
+        "bytes": 249173824,
+        "sha256": "41871c26713fc732a5d64172a79f6caa8529b4b66a4cb495ac13a7d94165156f"
+      },
+      "libomld64.a": {
+        "bytes": 13807104,
+        "sha256": "4e3c97b52a588c25230a8e06f9573fef19a49d4771fb895d88804d094cc9cfeb"
+      }
+    }
+  },
+  "enabled_link_report": {
+    "path": "enabled-link-check/enabled-link-report.json",
+    "sha256": "2c133acb8ef4dea237ede0f3ec00fe1ebedab4cc2fe913cc42e9e40fed34e504",
+    "check": "enabled bridge compile and static link only",
+    "probe_minimum_ios": "16.0",
+    "result_architectures": ["arm64", "arm64", "arm64e", "arm64e"],
+    "result_filetypes": [1, 2, 1, 2],
+    "not_tested": [
+      "execution of probes",
+      "runCC1 source compilation",
+      "runLinker dylib generation",
+      "PAC instructions or behavior",
+      "diagnostics and repeated jobs",
+      "full Minis build",
+      "installation and iPhone runtime"
+    ]
+  }
+}
