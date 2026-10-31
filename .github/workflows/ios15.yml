@@ -57,6 +57,7 @@ jobs:
           bash scripts/ios15/check-host-file-tools.sh 2>&1 | tee ci-logs/host-file-tools.txt
           bash scripts/ios15/check-privileged-helper.sh 2>&1 | tee ci-logs/system-access.txt
           python3 scripts/ios15/check-embedded-toolchain-integration.py 2>&1 | tee ci-logs/embedded-toolchain-source-gate.txt
+          bash scripts/ios15/check-embedded-toolchain-runtime-diagnostics.sh 2>&1 | tee ci-logs/embedded-toolchain-runtime-source-gate.txt
           bash scripts/ios15/check-programming-build-tools.sh 2>&1 | tee ci-logs/programming-build-tools.txt
           bash scripts/ios15/check-programming-tools.sh 2>&1 | tee ci-logs/programming-tools.txt
           bash scripts/ios15/check-navigation.sh 2>&1 | tee ci-logs/navigation.txt

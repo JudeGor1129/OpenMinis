@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		D0A173000000000000000001 /* OMToolchain.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0A173000000000000000011 /* OMToolchain.mm */; };
+		D0A173000000000000000003 /* OMToolchainDiagnostics.m in Sources */ = {isa = PBXBuildFile; fileRef = D0A173000000000000000014 /* OMToolchainDiagnostics.m */; };
 		D0A173000000000000000002 /* clang-resource in Resources */ = {isa = PBXBuildFile; fileRef = D0A173000000000000000012 /* clang-resource */; };
 		B10000000000000000000001 /* BuildModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* BuildModels.swift */; };
 		B10000000000000000000002 /* BuildProjectDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* BuildProjectDetector.swift */; };
@@ -674,6 +675,8 @@
 /* Begin PBXFileReference section */
 		D0A173000000000000000010 /* OMToolchain.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OMToolchain.h; sourceTree = "<group>"; };
 		D0A173000000000000000011 /* OMToolchain.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = OMToolchain.mm; sourceTree = "<group>"; };
+		D0A173000000000000000013 /* OMToolchainDiagnostics.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OMToolchainDiagnostics.h; sourceTree = "<group>"; };
+		D0A173000000000000000014 /* OMToolchainDiagnostics.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = OMToolchainDiagnostics.m; sourceTree = "<group>"; };
 		D0A173000000000000000012 /* clang-resource */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "clang-resource"; sourceTree = "<group>"; };
 		B20000000000000000000001 /* BuildModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuildModels.swift"; sourceTree = "<group>"; };
 		B20000000000000000000002 /* BuildProjectDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuildProjectDetector.swift"; sourceTree = "<group>"; };
@@ -1589,6 +1592,8 @@
 			children = (
 				D0A173000000000000000010 /* OMToolchain.h */,
 				D0A173000000000000000011 /* OMToolchain.mm */,
+				D0A173000000000000000013 /* OMToolchainDiagnostics.h */,
+				D0A173000000000000000014 /* OMToolchainDiagnostics.m */,
 				D0A173000000000000000012 /* clang-resource */,
 			);
 			path = Vendor/OMToolchain;
@@ -2955,6 +2960,7 @@
 				AA26CCBE2F31080100AECF2D /* RootfsManager.swift in Sources */,
 				E51000001 /* MinisApp.swift in Sources */,
 				D0A173000000000000000001 /* OMToolchain.mm in Sources */,
+				D0A173000000000000000003 /* OMToolchainDiagnostics.m in Sources */,
 				E5FPBH02 /* FileProviderBootHealth.swift in Sources */,
 				E5QA0001 /* QuickActionRouter.swift in Sources */,
 				E5QA0003 /* QuickActionWorkflow.swift in Sources */,

@@ -67,8 +67,9 @@
 #import "Diagnostics/FridaCoreBridge.h"
 #import "Diagnostics/PrivilegedHelperBridge.h"
 
-// In-process compiler capability bridge. Disabled builds report unavailable.
+// In-process compiler capability bridge and fixed-fixture runtime diagnostics.
 #import "Vendor/OMToolchain/OMToolchain.h"
+#import "Vendor/OMToolchain/OMToolchainDiagnostics.h"
 
 #endif /* MinisApp_Bridging_Header_h */
 

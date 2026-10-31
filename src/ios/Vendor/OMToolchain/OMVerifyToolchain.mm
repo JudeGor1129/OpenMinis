@@ -110,6 +110,8 @@ static BOOL ScanPAC(const char *path, PacTally *out) {
 }
 
 int main(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
     @autoreleasepool {
         printf("== OpenMinis in-process toolchain verification ==\n\n");
 
@@ -158,7 +160,10 @@ int main(int argc, char **argv) {
         printf("                           A-key PACIASP=%u RETAA=%u PACIA-literal=%u\n",
                tally.paciasp, tally.retaa, tally.otherPacia);
 
-        if (tally.pacibsp == 0 || tally.autibsp == 0 || tally.retab == 0) {
+        BOOL objectUsesBKey = tally.pacibsp > 0 &&
+            (tally.autibsp > 0 || tally.retab > 0) &&
+            tally.paciasp == 0 && tally.retaa == 0 && tally.otherPacia == 0;
+        if (!objectUsesBKey) {
             printf("\nFAIL: object is not B-key arm64e\n");
             if (tally.otherPacia || tally.paciasp || tally.retaa) {
                 printf("      it was produced with the A key (PACIA/RETAA), which is the\n"
@@ -206,7 +211,10 @@ int main(int argc, char **argv) {
         }
         printf("linked dylib PACIBSP=%u AUTIBSP=%u RETAB=%u  PACIASP=%u RETAA=%u\n\n",
                tally.pacibsp, tally.autibsp, tally.retab, tally.paciasp, tally.retaa);
-        if (tally.pacibsp == 0 || tally.autibsp == 0) {
+        BOOL linkedUsesBKey = tally.pacibsp > 0 &&
+            (tally.autibsp > 0 || tally.retab > 0) &&
+            tally.paciasp == 0 && tally.retaa == 0 && tally.otherPacia == 0;
+        if (!linkedUsesBKey) {
             printf("FAIL: linked output lost B-key signing\n");
             return 5;
         }

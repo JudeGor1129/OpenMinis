@@ -233,6 +233,8 @@ struct ArgvStorage {
             if (invocation->getFrontendOpts().Inputs.empty()) {
                 errStream << "OMToolchain: no input file\n";
                 status = OMToolchainStatusBadArguments;
+                outStream.flush();
+                errStream.flush();
                 outString = ToNSString(outBuf);
                 errString = ToNSString(errBuf);
                 return;
@@ -254,6 +256,8 @@ struct ArgvStorage {
             diagsBuffer->FlushDiagnostics(instance->getDiagnostics());
             if (!parsed) {
                 status = OMToolchainStatusDiagnostics;
+                outStream.flush();
+                errStream.flush();
                 outString = ToNSString(outBuf);
                 errString = ToNSString(errBuf);
                 return;

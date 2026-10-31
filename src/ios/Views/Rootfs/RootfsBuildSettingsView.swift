@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 /// Build settings for the Alpine/Theos environment. The selected SDK is
 /// persisted, while the actual build remains an explicit terminal action.
@@ -34,8 +35,24 @@ struct RootfsBuildSettingsView: View {
                     Text(embeddedStatus["sdk"] == "present" ? "已准备" : "未配置")
                         .foregroundStyle(.secondary)
                 }
+                HStack {
+                    Text("BuildProvider")
+                    Spacer()
+                    Text("保持禁用")
+                        .foregroundStyle(.orange)
+                }
+                NavigationLink {
+                    EmbeddedToolchainDiagnosticsView()
+                } label: {
+                    Label("运行受限真机诊断", systemImage: "stethoscope")
+                }
+                .disabled(embeddedStatus["compiler_linked"] != "yes" ||
+                          embeddedStatus["resource_headers"] != "present")
                 Text(embeddedStatus["reason"] ?? "正在检查内置资源。")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("诊断只使用固定 C/Objective-C 夹具，最多重复 3 轮；产物不会执行，通过也不会开放 BuildProvider。")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
@@ -157,6 +174,120 @@ struct RootfsBuildSettingsView: View {
         .onAppear {
             embeddedStatus = OMToolchain.capabilityStatus()
             model.refreshIfNeeded()
+        }
+    }
+}
+
+private struct EmbeddedToolchainDiagnosticsView: View {
+    @State private var status: [String: String] = [:]
+    @State private var iterations = 1
+    @State private var isRunning = false
+    @State private var reportText = ""
+    @State private var reportPassed: Bool?
+    @State private var copyNotice = ""
+
+    private var canRun: Bool {
+        status["compiler_linked"] == "yes" && status["resource_headers"] == "present"
+    }
+
+    var body: some View {
+        List {
+            Section("运行门禁") {
+                diagnosticRow("编译器", value: status["compiler_linked"] == "yes" ? "已链接" : "未链接")
+                diagnosticRow("Clang 资源", value: status["resource_headers"] == "present" ? "已锁定" : "缺失")
+                diagnosticRow("iOS SDK", value: status["sdk"] == "present" ? "可用" : "未配置（仅测无 SDK 夹具）")
+                diagnosticRow("BuildProvider", value: "保持禁用", color: .orange)
+                diagnosticRow("产物执行", value: "不会执行", color: .secondary)
+            }
+
+            Section {
+                Stepper("重复编译/链接：\(iterations) 轮", value: $iterations, in: 1...3)
+                    .disabled(isRunning)
+                Button {
+                    runDiagnostics()
+                } label: {
+                    HStack {
+                        Label("开始固定夹具诊断", systemImage: "waveform.path.ecg")
+                        Spacer()
+                        if isRunning { ProgressView() }
+                    }
+                }
+                .disabled(!canRun || isRunning)
+
+                if let reportPassed {
+                    Label(reportPassed ? "诊断步骤全部通过" : "诊断发现失败",
+                          systemImage: reportPassed ? "checkmark.seal.fill" : "xmark.octagon.fill")
+                        .foregroundStyle(reportPassed ? .green : .orange)
+                }
+            } header: {
+                Text("受限运行时测试")
+            } footer: {
+                Text("固定夹具覆盖 arm64/arm64e C、无 SDK Objective-C、B-key PAC、Mach-O 架构、预期编译/链接失败后的恢复、重复任务和常驻内存采样。最多 3 轮，避免 ld64 已知的进程内常驻分配无限增长。")
+            }
+
+            if !reportText.isEmpty {
+                Section {
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        Text(reportText)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                    }
+                    Button {
+                        UIPasteboard.general.string = reportText
+                        copyNotice = "已复制诊断 JSON"
+                    } label: {
+                        Label("复制诊断 JSON", systemImage: "doc.on.doc")
+                    }
+                    if !copyNotice.isEmpty {
+                        Text(copyNotice)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("结构化报告")
+                } footer: {
+                    Text("报告中的 passed 只表示本次固定夹具通过；不会写入运行时验证宏，也不会开放 BuildProvider。")
+                }
+            }
+        }
+        .navigationTitle("内置工具链诊断")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { status = OMToolchain.capabilityStatus() }
+    }
+
+    @ViewBuilder
+    private func diagnosticRow(_ title: String, value: String, color: Color = .secondary) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(color)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    private func runDiagnostics() {
+        guard canRun, !isRunning else { return }
+        isRunning = true
+        reportPassed = nil
+        reportText = ""
+        copyNotice = ""
+        let selectedIterations = iterations
+        Task {
+            let rendered = await Task.detached(priority: .userInitiated) { () -> (String, Bool) in
+                let report = OMToolchainDiagnostics.run(iterations: UInt(selectedIterations))
+                let passed = (report["passed"] as? NSNumber)?.boolValue ?? false
+                let data = try? JSONSerialization.data(withJSONObject: report,
+                                                       options: [.prettyPrinted, .sortedKeys])
+                let text = data.flatMap { String(data: $0, encoding: .utf8) }
+                    ?? "{\"passed\":false,\"reason\":\"JSON serialization failed\"}"
+                return (text, passed)
+            }.value
+            reportText = rendered.0
+            reportPassed = rendered.1
+            status = OMToolchain.capabilityStatus()
+            isRunning = false
         }
     }
 }
