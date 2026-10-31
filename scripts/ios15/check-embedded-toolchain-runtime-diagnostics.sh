@@ -11,20 +11,21 @@ VIEW=src/ios/Views/Rootfs/RootfsBuildSettingsView.swift
 CAPTURE_HEADER=src/ios/Vendor/OMToolchain/OMStdioCapture.h
 CAPTURE_UNIT=toolchain-build/scripts/test-stdio-capture.c
 TOOLCHAIN_IMPL=src/ios/Vendor/OMToolchain/OMToolchain.mm
+PROBE_BLOCK_CAPTURE=toolchain-build/scripts/probe-linker-block-capture.mm
 
 for file in "$DIAGNOSTICS" "$HEADER" "$BRIDGE" "$PROVIDER" "$VIEW" \
-            "$CAPTURE_HEADER" "$CAPTURE_UNIT" "$TOOLCHAIN_IMPL"; do
+            "$CAPTURE_HEADER" "$CAPTURE_UNIT" "$TOOLCHAIN_IMPL" "$PROBE_BLOCK_CAPTURE"; do
   [[ -f "$file" ]] || { echo "error: missing runtime diagnostic source: $file" >&2; exit 1; }
 done
 plutil -lint "$PROJECT"
 
 python3 - "$PROJECT" "$DIAGNOSTICS" "$HEADER" "$BRIDGE" "$PROVIDER" "$VIEW" \
-          "$CAPTURE_HEADER" "$CAPTURE_UNIT" "$TOOLCHAIN_IMPL" <<'PY'
+          "$CAPTURE_HEADER" "$CAPTURE_UNIT" "$TOOLCHAIN_IMPL" "$PROBE_BLOCK_CAPTURE" <<'PY'
 from pathlib import Path
 import sys
 (project, impl, header, bridge, provider, view,
- capture_header, capture_unit, toolchain_impl) = [Path(p).read_text(encoding="utf-8")
-                                                  for p in sys.argv[1:]]
+ capture_header, capture_unit, toolchain_impl,
+ probe_block_capture) = [Path(p).read_text(encoding="utf-8") for p in sys.argv[1:]]
 
 def require(condition, message):
     if not condition:
@@ -65,6 +66,10 @@ require("link_probe_minimal_dylib" in impl and "link_probe_full_dylib" in impl,
         "the linker argument ladder is what localises a rejected argument set")
 require("no capture files left behind" in capture_unit,
         "the capture unit test must assert that its temporary files are removed")
+require("argvPointer->argv.data()" in toolchain_impl,
+        "runLinker must reach its argv through a pointer; a captured copy is const")
+require("argvPointer->argv.data()" in probe_block_capture,
+        "the block-capture probe must reproduce the shape runLinker uses")
 print("PASS: fixed-fixture runtime diagnostic source policy and Provider lock verified.")
 PY
 
@@ -83,6 +88,14 @@ CAPTURE_BIN="$(mktemp -d)/om-stdio-capture-test"
 clang -std=gnu11 -Wall -Wextra -Werror -I src/ios/Vendor/OMToolchain \
   "$CAPTURE_UNIT" -o "$CAPTURE_BIN"
 "$CAPTURE_BIN"
+
+# runLinker itself needs the LLVM archives to compile, so the shape it uses to
+# reach the linker entry point is compiled here against the device SDK instead.
+# A captured C++ object is const inside a block; getting that wrong cost a full
+# build cycle once already.
+xcrun --sdk iphoneos clang++ -target arm64-apple-ios15.0 -isysroot "$SDK" \
+  -std=c++17 -fobjc-arc -fblocks -Wall -Wextra -Werror \
+  -fsyntax-only "$PROBE_BLOCK_CAPTURE"
 
 echo 'PASS: runtime diagnostics compile with the selected iPhoneOS SDK.'
 echo 'NOTE: no LLVM/ld64 entry point was executed by this source gate.'

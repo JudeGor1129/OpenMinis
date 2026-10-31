@@ -394,6 +394,14 @@ struct ArgvStorage {
 
     dispatch_sync(OMQueue(), ^{
         ArgvStorage argv(ld64Arguments, /*prependProgramName=*/true);
+        // The block below captures its surroundings by value, and a captured
+        // copy is const -- which would turn argv.argv.data() into a
+        // `const char *const *` that the linker entry point cannot take.
+        // Reaching it through a pointer keeps the pointee mutable.
+        // toolchain-build/scripts/probe-linker-block-capture.mm compiles
+        // exactly this shape, because nothing on a machine without the LLVM
+        // archives can check it any other way.
+        ArgvStorage *argvPointer = &argv;
         __block NSString *capturedOut = @"";
         __block NSString *capturedErr = @"";
 
@@ -405,7 +413,8 @@ struct ArgvStorage {
             om_ld64_reset_state();
             om_ld64_reset_branches();
             om_ld64_reset_threads();
-            return om_ld64_main(static_cast<int>(argv.owned.size()), argv.argv.data());
+            return om_ld64_main(static_cast<int>(argvPointer->owned.size()),
+                                argvPointer->argv.data());
         }, &capturedOut, &capturedErr);
 
         outString = capturedOut;

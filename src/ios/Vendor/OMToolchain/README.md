@@ -26,6 +26,8 @@ With the reason visible, the open question became *which* argument ld64 rejects.
 
 The capture is exercised on the host by `toolchain-build/scripts/test-stdio-capture.c`, compiled and run by the runtime-diagnostic source gate. It covers the round trip, bounded reads, the abandon form, refused nesting, the guard being released, and that no temporary file survives -- a descriptor left behind would follow the app around for the rest of its life, which is far cheaper to find on a host than on a device.
 
+The same gate compiles `toolchain-build/scripts/probe-linker-block-capture.mm`. `runLinker` builds its argv in one block and calls the linker entry point from a nested one, and a captured C++ object is const inside the capturing block: reaching `argv.data()` off the captured copy produced a `const char *const *` that the entry point cannot take, and that mistake cost a full build cycle because no machine without the LLVM archives can compile `runLinker` itself. The probe reproduces the shape with stand-ins that need no LLVM.
+
 The builtin headers copied from the local extracted Twork app are preparation assets, not a verified match for the pinned LLVM revision. Replace them with headers from the same successful LLVM build before enabling compilation. The resource root must contain `include/`.
 
 Enabling `OM_TOOLCHAIN_ENABLED=1` additionally requires matching LLVM/Clang static archives, LLVM/Clang development headers (including generated headers), ld64, C++ link flags and an iOS SDK. It is not enough to supply builtin headers. Keep Minis' deployment target at 16.0; the compiler library's 14.0 minimum does not lower the app's requirements.
