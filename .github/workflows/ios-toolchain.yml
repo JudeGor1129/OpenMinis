@@ -15,6 +15,10 @@ on:
       # green workflow.
       - 'toolchain-build/src/**'
       - 'toolchain-build/verify-artifacts.sh'
+      # The gate scripts are build inputs too: this workflow runs
+      # scripts/ios15/check-tapi-shim.sh, so editing the gate must rebuild --
+      # otherwise a run can carry a gate that does not match the tree it checks.
+      - 'scripts/ios15/**'
       - '.github/workflows/ios-toolchain.yml'
   workflow_dispatch:
     inputs:
