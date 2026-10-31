@@ -138,6 +138,17 @@ if [ ! -f "$SHIM_INCLUDES_COMMON/llvm/TextAPI/TextAPIReader.h" ]; then
   echo "   the shim links against llvm::MachO::TextAPIReader; run export-dev-headers.sh first" >&2
   MISSING=1
 fi
+# The shim also includes llvm/Support/Compiler.h, which pulls in llvm-config.h --
+# and that one is generated per architecture, not in the common set. Checking it
+# here turns a 90-minute build that dies on one missing header into an immediate,
+# explicit failure.
+for ARCH in ${ARCHS:-arm64 arm64e}; do
+  if [ ! -f "$SHIM_INCLUDES_ARCH_DIR/$ARCH/include/llvm/Config/llvm-config.h" ]; then
+    echo "!! missing generated LLVM headers for $ARCH under $SHIM_INCLUDES_ARCH_DIR/$ARCH/include" >&2
+    echo "   the shim needs llvm/Config/llvm-config.h from this architecture's export" >&2
+    MISSING=1
+  fi
+done
 if [ "$MISSING" -ne 0 ]; then
   exit 1
 fi
@@ -220,7 +231,13 @@ LANG_KIND="$1"; ARCH="$2"; SRC="$3"; OBJ="$4"
 # Optional per-translation-unit include directories. The tapi-shim needs the
 # LLVM headers generated for THIS architecture, which the shared COMMON_INCLUDES
 # cannot express. Empty for every ld64 source.
-EXTRA_INCLUDES="${5:-}"
+#
+# Every trailing argument is consumed rather than just the fifth: xargs splits a
+# plan line on whitespace, so a value holding two -I flags arrives as two
+# arguments. Reading only $5 silently dropped the architecture's generated
+# headers, and the shim then failed on llvm/Config/llvm-config.h.
+shift 4
+EXTRA_INCLUDES="$*"
 : "${COMMON_INCLUDES:?}"
 : "${COMMON_FLAGS:?}"
 : "${CXX_STD:?}"
