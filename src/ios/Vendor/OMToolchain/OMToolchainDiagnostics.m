@@ -447,7 +447,10 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
         NSString *missingObject = [[root URLByAppendingPathComponent:@"missing-input.o"] path];
         NSString *failedDylib = [[root URLByAppendingPathComponent:@"expected-link-failure.dylib"] path];
         stdoutText = nil; stderrText = nil; started = [NSDate date];
-        status = OMLink(missingObject, failedDylib, @"arm64", &stdoutText, &stderrText);
+        // No libSystem stub here on purpose: this step asserts that a missing
+        // input is rejected on its own, so the libSystem check cannot be the
+        // reason this link fails.
+        status = OMLink(missingObject, failedDylib, @"arm64", nil, &stdoutText, &stderrText);
         duration = -started.timeIntervalSinceNow;
         passed = status != OMToolchainStatusOK;
         allPassed = allPassed && passed;
@@ -457,7 +460,8 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
 
         NSString *recoveryDylib = [[root URLByAppendingPathComponent:@"recovery.dylib"] path];
         stdoutText = nil; stderrText = nil; started = [NSDate date];
-        status = OMLink(recoveryObject, recoveryDylib, @"arm64", &stdoutText, &stderrText);
+        status = OMLink(recoveryObject, recoveryDylib, @"arm64", libSystemStub,
+                        &stdoutText, &stderrText);
         duration = -started.timeIntervalSinceNow;
         inspection = OMInspectMachO(recoveryDylib);
         passed = status == OMToolchainStatusOK &&
@@ -479,7 +483,7 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
                 OMToolchainStatus compileStatus = OMCompile(cSource.path, object, @"arm64", NO,
                                                              &repeatOut, &repeatErr);
                 OMToolchainStatus linkStatus = compileStatus == OMToolchainStatusOK
-                    ? OMLink(object, dylib, @"arm64", &repeatOut, &repeatErr)
+                    ? OMLink(object, dylib, @"arm64", libSystemStub, &repeatOut, &repeatErr)
                     : OMToolchainStatusUnavailable;
                 NSDictionary *repeatInspection = OMInspectMachO(dylib);
                 BOOL repeatPassed = compileStatus == OMToolchainStatusOK &&
