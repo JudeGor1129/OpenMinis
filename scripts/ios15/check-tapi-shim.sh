@@ -49,8 +49,10 @@ require("dev-headers/common/include" in script and "llvm/TextAPI/TextAPIReader.h
         "the build must locate this build tree's LLVM headers for the shim")
 require("EXPECTED_OBJECTS" in script,
         "the object count must account for the shim, or a dropped unit goes unnoticed")
-require('EXTRA_INCLUDES="${5:-}"' in script and "$EXTRA_INCLUDES" in script,
-        "the compile driver must accept per-architecture include directories for the shim")
+require('shift 4' in script and 'EXTRA_INCLUDES="$*"' in script,
+        "the compile driver must take per-architecture include directories from every trailing argument")
+require('$EXTRA_INCLUDES' in script,
+        "the compile driver must actually use those include directories")
 
 # 2. The shim must stay a shim: no dynamic loading, no second parser, and no
 #    ld64 internals, since it is compiled into ld64's own archive.
