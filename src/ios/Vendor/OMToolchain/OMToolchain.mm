@@ -478,15 +478,90 @@ struct ArgvStorage {
 
 #pragma mark - Argument assembly
 
+/// True when `path` looks like a materialised SDK this process can actually
+/// read: headers plus a real libSystem stub.
+///
+/// The size floor is not cosmetic. An SDK installed inside the iSH rootfs has
+/// 58 symlinks under usr/lib, and iSH keeps a link's target in its own metadata
+/// while the host file is a tiny placeholder holding the target's *name* --
+/// `libSystem.tbd` is 15 bytes of text. A native process must use
+/// `libSystem.B.tbd`, the real stub, and this check rejects the placeholder
+/// rather than letting the linker fail later with a confusing parse error.
++ (BOOL)isUsableSDKAtPath:(NSString *)path {
+    if (path.length == 0) return NO;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    BOOL isDirectory = NO;
+    if (![fm fileExistsAtPath:[path stringByAppendingPathComponent:@"usr/include"]
+                  isDirectory:&isDirectory] || !isDirectory) {
+        return NO;
+    }
+    NSString *stub = [[path stringByAppendingPathComponent:@"usr/lib"]
+        stringByAppendingPathComponent:@"libSystem.B.tbd"];
+    NSDictionary *attributes = [fm attributesOfItemAtPath:stub error:NULL];
+    return attributes.fileSize >= 1024;
+}
+
+/// Orders two iPhoneOS<version>.sdk file names by their numeric components.
++ (NSComparisonResult)compareVersionName:(NSString *)lhs with:(NSString *)rhs {
+    NSString *left = [[lhs stringByDeletingPathExtension] stringByReplacingOccurrencesOfString:@"iPhoneOS" withString:@""];
+    NSString *right = [[rhs stringByDeletingPathExtension] stringByReplacingOccurrencesOfString:@"iPhoneOS" withString:@""];
+    return [left compare:right options:NSNumericSearch];
+}
+
+/// Highest usable iPhoneOS<version>.sdk inside `directory`, or nil.
++ (NSString *)highestSDKInDirectory:(NSString *)directory {
+    if (directory.length == 0) return nil;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSArray<NSString *> *entries = [fm contentsOfDirectoryAtPath:directory error:NULL];
+    NSString *best = nil;
+    for (NSString *name in entries) {
+        if (![name hasPrefix:@"iPhoneOS"] || ![name hasSuffix:@".sdk"]) continue;
+        NSString *candidate = [directory stringByAppendingPathComponent:name];
+        if (![self isUsableSDKAtPath:candidate]) continue;
+        if (best == nil || [self compareVersionName:name with:[best lastPathComponent]] == NSOrderedDescending) {
+            best = candidate;
+        }
+    }
+    return best;
+}
+
+/// The app-owned SDK library, populated by 管理 iPhoneSDK. Kept outside the iSH
+/// rootfs on purpose: a rootfs reset or reinstall deletes that tree, and the
+/// SDK has to outlive it.
++ (NSString *)appOwnedSDKPath {
+    NSArray<NSString *> *support = NSSearchPathForDirectoriesInDomains(
+        NSApplicationSupportDirectory, NSUserDomainMask, YES);
+    if (support.count == 0) return nil;
+    NSString *store = [[support firstObject]
+        stringByAppendingPathComponent:@"MinisToolchain/SDKs"];
+
+    NSString *selected = [[NSUserDefaults standardUserDefaults]
+        stringForKey:@"toolchain.selectedSDKVersion"];
+    if (selected.length > 0) {
+        NSString *candidate = [store stringByAppendingPathComponent:
+            [NSString stringWithFormat:@"iPhoneOS%@.sdk", selected]];
+        if ([self isUsableSDKAtPath:candidate]) return candidate;
+    }
+    return [self highestSDKInDirectory:store];
+}
+
 + (void)resolveDefaultPathsForSysroot:(NSString *_Nullable *_Nullable)sysroot
                           resourceDir:(NSString *_Nullable *_Nullable)resourceDir {
     NSBundle *bundle = [NSBundle mainBundle];
     NSFileManager *fm = [NSFileManager defaultManager];
     if (sysroot && *sysroot == nil) {
-        NSString *candidate = [bundle.resourcePath stringByAppendingPathComponent:@"SDKs/iPhoneOS.sdk"];
-        if ([fm fileExistsAtPath:[candidate stringByAppendingPathComponent:@"usr/include"]]) {
-            *sysroot = candidate;
+        // Preference order: an SDK imported into the app-owned library, then one
+        // bundled with the app. The copy inside the iSH rootfs is deliberately
+        // NOT consulted: a rootfs reset deletes it, and its 72 symlinks are
+        // placeholder files for a native process -- the linker would read a
+        // 10-byte text file where it expects a 370 KB stub. The build settings
+        // page copies the whole SDK here instead.
+        NSString *candidate = [self appOwnedSDKPath];
+        if (candidate == nil) {
+            NSString *bundled = [bundle.resourcePath stringByAppendingPathComponent:@"SDKs/iPhoneOS.sdk"];
+            if ([self isUsableSDKAtPath:bundled]) candidate = bundled;
         }
+        if (candidate != nil) *sysroot = candidate;
     }
     if (resourceDir && *resourceDir == nil) {
         // -resource-dir takes the parent of include/, never include/ itself.

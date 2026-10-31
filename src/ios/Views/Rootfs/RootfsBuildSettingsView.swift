@@ -113,6 +113,11 @@ struct RootfsBuildSettingsView: View {
                     }
                 }
 
+                // 原生工具链只使用 App 自己目录里的 SDK。这一行把 iSH 环境里那份
+                // 整份拷过来（含 72 个符号链接的就地展开），拷完之后 rootfs 被重置
+                // 或重装都不再影响构建。
+                ToolchainSDKImportRow()
+
                 HStack {
                     Text("最低部署版本")
                     Spacer()
@@ -496,5 +501,246 @@ final class RootfsBuildSettingsViewModel: ObservableObject {
 
     private func shellQuote(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+
+// MARK: - iPhoneOS SDK 整份导入
+//
+// 把 iSH rootfs 里的 iPhoneOS SDK 整份拷进 App 自己的目录。
+//
+// 为什么不直接读 rootfs 里的那份：iSH 把符号链接的目标存在自己的元数据里，
+// 宿主文件系统上留下的是一个「内容=目标名」的小文件。SDK 里这样的条目有 72 个
+// （58 个在 usr/lib，6 个头文件，8 个 framework），其中就包括链接必备的
+// libSystem.tbd —— 原生 ld64 打开它只会读到 15 字节文本，而不是 370 KB 的库桩。
+// 所以拷贝时必须就地展开它们，否则拷出来照样不能用。
+//
+// 另外 rootfs 会被「重置 rootfs / 重装 App」删掉，SDK 放在 App 自己目录才能活下去。
+
+/// 导入进度与结果。
+@MainActor
+final class ToolchainSDKImporter: ObservableObject {
+    enum Phase: Equatable {
+        case idle
+        case scanning
+        case copying(done: Int, total: Int)
+        case finished(String)
+        case failed(String)
+    }
+
+    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var installedPath: String?
+
+    /// App 自有的 SDK 库。与 OMToolchain 的解析顺序保持一致。
+    static var storeDirectory: URL {
+        ContainerLocator.applicationSupportDirectory
+            .appendingPathComponent("MinisToolchain/SDKs", isDirectory: true)
+    }
+
+    /// iSH rootfs 中可用的 SDK（宿主路径）。
+    nonisolated static func rootfsSDKPath() -> URL? {
+        let guestRoot = ContainerLocator.documentsDirectory
+            .appendingPathComponent("alpine-rootfs/data", isDirectory: true)
+        let selected = UserDefaults.standard.string(forKey: "rootfs.selectedIPhoneOSSDK") ?? ""
+        if selected.hasPrefix("/") {
+            let candidate = guestRoot.appendingPathComponent(selected)
+            if isUsable(candidate) { return candidate }
+        }
+        let sdksDirectory = guestRoot.appendingPathComponent("opt/theos/sdks", isDirectory: true)
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: sdksDirectory, includingPropertiesForKeys: nil)) ?? []
+        return entries
+            .filter { $0.lastPathComponent.hasPrefix("iPhoneOS") }
+            .sorted { $0.lastPathComponent.compare($1.lastPathComponent, options: .numeric) == .orderedDescending }
+            .first { isUsable($0) }
+    }
+
+    /// 已导入且可用的 SDK。
+    nonisolated static func importedSDKPath() -> URL? {
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: storeDirectory, includingPropertiesForKeys: nil)) ?? []
+        return entries
+            .filter { $0.lastPathComponent.hasPrefix("iPhoneOS") }
+            .sorted { $0.lastPathComponent.compare($1.lastPathComponent, options: .numeric) == .orderedDescending }
+            .first { isUsable($0) }
+    }
+
+    /// 可用 = 有头文件，且 libSystem 库桩是真文件而不是占位符。
+    nonisolated static func isUsable(_ sdk: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(
+            atPath: sdk.appendingPathComponent("usr/include").path, isDirectory: &isDirectory),
+            isDirectory.boolValue else { return false }
+        return stubBytes(sdk) >= 1024
+    }
+
+    /// `usr/lib/libSystem.B.tbd` 的字节数，0 表示不存在。
+    nonisolated static func stubBytes(_ sdk: URL) -> Int {
+        let stub = sdk.appendingPathComponent("usr/lib/libSystem.B.tbd")
+        let attributes = try? FileManager.default.attributesOfItem(atPath: stub.path)
+        return (attributes?[.size] as? NSNumber)?.intValue ?? 0
+    }
+
+    func start() {
+        guard case .idle = phase else { return }
+        phase = .scanning
+        Task { await self.runImport() }
+    }
+
+    private func runImport() async {
+        let source = await Task.detached { Self.rootfsSDKPath() }.value
+        guard let source else {
+            phase = .failed("没有找到可用的 iPhoneOS SDK。请先在 iSH 环境里安装 Theos 的 SDK。")
+            return
+        }
+
+        let result = await Task.detached { () -> Result<(URL, ImportStats), Error> in
+            do {
+                let stats = try Self.copySDK(from: source, progress: { done, total in
+                    Task { @MainActor in self.phase = .copying(done: done, total: total) }
+                })
+                return .success((source, stats))
+            } catch {
+                return .failure(error)
+            }
+        }.value
+
+        switch result {
+        case .success(let (_, stats)):
+            guard let installed = Self.importedSDKPath() else {
+                phase = .failed("拷贝完成但导入的 SDK 不可用（libSystem 库桩缺失）。")
+                return
+            }
+            installedPath = installed.path
+            var summary = "已导入 \(installed.lastPathComponent)：\(stats.files) 个文件，展开 \(stats.symlinks) 个符号链接"
+            if stats.skipped > 0 { summary += "，跳过 \(stats.skipped) 个悬空条目" }
+            phase = .finished(summary)
+        case .failure(let error):
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    struct ImportStats {
+        var files = 0
+        var symlinks = 0
+        var skipped = 0
+    }
+
+    enum ImportError: LocalizedError {
+        case destinationExists
+        var errorDescription: String? {
+            "目标目录已存在，请先删除后再导入。"
+        }
+    }
+
+    /// 逐项拷贝，按需把符号链接占位文件还原成真正的符号链接。
+    nonisolated static func copySDK(from source: URL,
+                                    progress: @escaping (Int, Int) -> Void) throws -> ImportStats {
+        let fm = FileManager.default
+        let destination = storeDirectory.appendingPathComponent(source.lastPathComponent)
+        guard !fm.fileExists(atPath: destination.path) else { throw ImportError.destinationExists }
+        try fm.createDirectory(at: storeDirectory, withIntermediateDirectories: true)
+
+        var stats = ImportStats()
+        guard let enumerator = fm.enumerator(at: source,
+                                             includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
+                                             options: []) else {
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        var pending: [URL] = []
+        while let entry = enumerator.nextObject() as? URL { pending.append(entry) }
+        let total = max(pending.count, 1)
+
+        for url in pending {
+            try Task.checkCancellation()
+            let relative = url.path.replacingOccurrences(of: source.path, with: "")
+            let target = destination.appendingPathComponent(relative)
+            guard !fm.fileExists(atPath: target.path) else { continue }
+
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+            if values?.isDirectory == true {
+                try fm.createDirectory(at: target, withIntermediateDirectories: true)
+            } else if let linkTarget = symlinkTargetIfPlaceholder(url) {
+                let resolved = url.deletingLastPathComponent()
+                    .appendingPathComponent(linkTarget).standardizedFileURL
+                if fm.fileExists(atPath: resolved.path) {
+                    try fm.createSymbolicLink(atPath: target.path, withDestinationPath: linkTarget)
+                    stats.symlinks += 1
+                } else {
+                    stats.skipped += 1   // 悬空链接：原样拷过去只会是一个假的文本文件
+                }
+            } else {
+                try fm.createDirectory(at: target.deletingLastPathComponent(),
+                                       withIntermediateDirectories: true)
+                try fm.copyItem(at: url, to: target)
+                stats.files += 1
+            }
+            progress(stats.files + stats.symlinks + stats.skipped, total)
+        }
+        return stats
+    }
+
+    /// iSH 的符号链接在这个进程看来是一个「内容=目标相对路径」的小文件。
+    ///
+    /// 判据刻意收得很紧：必须很小、是单行可打印文本、不含空格与 `#`/`<`（真实
+    /// 的小头文件都含这些），并且目标确实存在于同一目录树下 —— 否则宁可当普通
+    /// 文件处理，避免把某个恰好长得像路径的小文件误判成链接。
+    nonisolated static func symlinkTargetIfPlaceholder(_ url: URL) -> String? {
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isSymbolicLinkKey]),
+              values.isSymbolicLink != true,
+              let size = values.fileSize, size > 0, size < 512,
+              let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .utf8) else { return nil }
+
+        let target = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty, target == text.trimmingCharacters(in: .newlines) else { return nil }
+        for rejected in [" ", "\t", "#", "<", "\"", "\n"] where target.contains(rejected) { return nil }
+        guard target.contains("."), !target.hasPrefix("/") else { return nil }
+
+        let resolved = url.deletingLastPathComponent()
+            .appendingPathComponent(target).standardizedFileURL
+        return FileManager.default.fileExists(atPath: resolved.path) ? target : nil
+    }
+}
+
+/// 编译环境页里的「整份拷贝」入口。
+struct ToolchainSDKImportRow: View {
+    @StateObject private var importer = ToolchainSDKImporter()
+    @State private var installed: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            switch importer.phase {
+            case .idle:
+                if let installed {
+                    Label("已导入 \(installed)", systemImage: "checkmark.circle")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button {
+                        importer.start()
+                    } label: {
+                        Label("把整份 iPhoneOS SDK 拷贝到本机", systemImage: "square.and.arrow.down")
+                    }
+                }
+            case .scanning:
+                HStack { ProgressView(); Text("正在查找 SDK…").foregroundStyle(.secondary) }
+            case .copying(let done, let total):
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: Double(done), total: Double(total))
+                    Text("已拷贝 \(done)/\(total) 项")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            case .finished(let summary):
+                Label(summary, systemImage: "checkmark.seal")
+                    .font(.footnote).foregroundStyle(.secondary)
+            case .failed(let reason):
+                Label(reason, systemImage: "exclamationmark.triangle")
+                    .font(.footnote).foregroundStyle(.orange)
+            }
+        }
+        .onAppear {
+            installed = ToolchainSDKImporter.importedSDKPath()?.lastPathComponent
+        }
     }
 }

@@ -130,23 +130,48 @@ static OMToolchainStatus OMCompile(NSString *source, NSString *output, NSString 
     return [OMToolchain runCC1:arguments stdout:stdoutText stderr:stderrText];
 }
 
+/// The SDK's real libSystem stub, or nil when no usable SDK was found.
+///
+/// This is the file that unblocks dynamic linking. ld64 refuses to emit a
+/// dynamic output when the link pulled in no dylib at all -- InputFiles.cpp
+/// gates on `state.dylibs.size() == 0`, and the message it throws names
+/// libSystem:
+///
+///     ld: dynamic executables or dylibs must link with libSystem.dylib
+///
+/// One parseable stub is enough, and this one is enough on its own because
+/// libSystem.B.tbd inlines its 37 re-exported libraries as documents. The name
+/// matters: `libSystem.tbd` is an iSH placeholder file here (15 bytes of text
+/// holding the target's name), while libSystem.B.tbd is the real 370 KB stub.
+static NSString *OMLibSystemStub(NSString *sysroot) {
+    if (sysroot.length == 0) return nil;
+    NSString *stub = [[sysroot stringByAppendingPathComponent:@"usr/lib"]
+        stringByAppendingPathComponent:@"libSystem.B.tbd"];
+    NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:stub error:NULL];
+    return attributes.fileSize >= 1024 ? stub : nil;
+}
+
 /// The exact argv for the acceptance dylib link, so the report can show what
 /// actually ran instead of leaving the reader to infer it.
 static NSArray<NSString *> *OMDylibLinkArguments(NSString *object, NSString *output,
-                                                 NSString *architecture) {
-    return @[
+                                                 NSString *architecture,
+                                                 NSString *libSystemStub) {
+    NSMutableArray<NSString *> *arguments = [@[
         @"-arch", architecture,
         @"-dylib",
         @"-platform_version", @"ios", @"15.0", @"16.5",
         @"-o", output,
         @"-install_name", [NSString stringWithFormat:@"@rpath/om-runtime-%@.dylib", architecture],
         object,
-    ];
+    ] mutableCopy];
+    if (libSystemStub) [arguments addObject:libSystemStub];
+    return arguments;
 }
 
 static OMToolchainStatus OMLink(NSString *object, NSString *output, NSString *architecture,
+                                NSString *libSystemStub,
                                 NSString **stdoutText, NSString **stderrText) {
-    return [OMToolchain runLinker:OMDylibLinkArguments(object, output, architecture)
+    return [OMToolchain runLinker:OMDylibLinkArguments(object, output, architecture, libSystemStub)
                            stdout:stdoutText stderr:stderrText];
 }
 
@@ -198,6 +223,12 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
             report[@"steps"] = @[];
             return report;
         }
+
+        // ld64's "must link with libSystem.dylib" error is really "this link
+        // pulled in no dylib at all", so a stub has to be an input. Resolve it
+        // once here: it is what every dynamic link in build187 was missing.
+        NSString *libSystemStub = OMLibSystemStub(capability[@"sysroot"]);
+        report[@"libsystem_stub"] = libSystemStub ? libSystemStub : @"unavailable";
 
         NSString *identifier = [NSString stringWithFormat:@"om-runtime-%@", NSUUID.UUID.UUIDString];
         NSURL *root = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
@@ -271,7 +302,8 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
                                       @"macho": inspection})];
 
             stdoutText = nil; stderrText = nil; started = [NSDate date];
-            status = passed ? OMLink(object, dylib, architecture, &stdoutText, &stderrText)
+            status = passed ? OMLink(object, dylib, architecture, libSystemStub,
+                                     &stdoutText, &stderrText)
                             : OMToolchainStatusUnavailable;
             duration = -started.timeIntervalSinceNow;
             inspection = OMInspectMachO(dylib);
@@ -284,7 +316,8 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
             [steps addObject:OMStep([NSString stringWithFormat:@"link_%@_dylib", architecture],
                                     status, passed, duration, stdoutText, stderrText,
                                     @{@"output_bytes": @(OMFileBytes(dylib)),
-                                      @"arguments": OMDylibLinkArguments(object, dylib, architecture),
+                                      @"arguments": OMDylibLinkArguments(object, dylib, architecture, libSystemStub),
+                                      @"libsystem_stub": libSystemStub ? [libSystemStub lastPathComponent] : @"unavailable",
                                       @"macho": inspection})];
             [residentSamples addObject:@(OMResidentBytes())];
         }
@@ -321,6 +354,18 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
                   @"flags": @[@"-arch", @"arm64", @"-dylib",
                               @"-platform_version", @"ios", @"15.0", @"16.5",
                               @"-install_name", @"@rpath/om-probe.dylib"],
+                  // Mirrors the acceptance link, which now supplies the SDK's
+                  // libSystem stub, so a change there cannot drift away from
+                  // what this probe measures.
+                  @"extra": libSystemStub ? @[libSystemStub] : @[],
+                  @"filetype": @(MH_DYLIB)},
+                // The decisive probe: a dylib link whose only dylib input is the
+                // SDK's real libSystem stub. Before the shim landed, this failed
+                // because ld64 could not read .tbd at all; with the shim but
+                // without this input it fails because no dylib was linked.
+                @{@"name": @"link_probe_libsystem_dylib",
+                  @"flags": @[@"-arch", @"arm64", @"-dylib"],
+                  @"extra": libSystemStub ? @[libSystemStub] : @[],
                   @"filetype": @(MH_DYLIB)},
                 @{@"name": @"link_probe_executable",
                   @"flags": @[@"-arch", @"arm64",
@@ -334,6 +379,9 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
                 NSMutableArray<NSString *> *probeArguments =
                     [NSMutableArray arrayWithArray:probe[@"flags"]];
                 [probeArguments addObjectsFromArray:@[@"-o", probeOutput, probeObject]];
+                if ([probe[@"extra"] isKindOfClass:[NSArray class]]) {
+                    [probeArguments addObjectsFromArray:probe[@"extra"]];
+                }
                 NSString *probeStdout = nil, *probeStderr = nil;
                 NSDate *probeStarted = [NSDate date];
                 OMToolchainStatus probeStatus = [OMToolchain runLinker:probeArguments
