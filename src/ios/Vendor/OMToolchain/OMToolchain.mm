@@ -21,6 +21,95 @@
 #include <mach-o/loader.h>
 #include <string.h>
 
+// ld64 reports failures with fprintf(stderr, ...), and inside the app fd 2
+// goes nowhere the host can read, so a failed link used to arrive with no
+// reason attached. This header moves fd 1/2 onto temp files for the duration
+// of one call. Included unconditionally so the plain app configuration keeps
+// compiling it too; with no toolchain linked nothing calls into it.
+#include "OMStdioCapture.h"
+
+// Used by the capture helper below, which is compiled in both configurations.
+// With the toolchain disabled nothing calls it, but it still has to compile:
+// that is the shipping default, and it is the only configuration a machine
+// without the LLVM archives can check locally.
+#include <string>
+#include <vector>
+
+/// Bytes of linker output kept per stream.
+#define OM_LINKER_CAPTURE_BYTES (16 * 1024)
+
+/// Outcome of one captured linker invocation.
+typedef struct {
+    int  exitStatus;    ///< value returned by the linker entry point
+    BOOL internalError; ///< the entry point unwound instead of returning
+} OMLinkerRun;
+
+/// Runs `invoke` with fd 1/2 captured and folds the result into the text slots.
+///
+/// ld64 reports every failure with `fprintf(stderr, ...)` and a non-zero return,
+/// but fd 2 inside the app is not something the caller can read back -- a failed
+/// link arrived as "ld64 exited with status 1" with no reason attached. Moving
+/// the descriptor for the duration of the call is the only way to see the real
+/// message. A line written by another thread during those few milliseconds can
+/// land in the capture; that is a better trade than never seeing the reason.
+///
+/// `*outText` and `*errText` are always assigned. Placed outside the
+/// OM_TOOLCHAIN_ENABLED switch on purpose (see above), so `maybe_unused` keeps
+/// the disabled configuration warning-free.
+[[maybe_unused]] static inline OMLinkerRun OMRunLinkerCapturing(int (^invoke)(void),
+                                                               NSString **outText,
+                                                               NSString **errText) {
+    OMLinkerRun run = { 0, NO };
+    if (outText) *outText = @"";
+    if (errText) *errText = @"";
+
+    OMStdioCapture capture;
+    OMStdioCaptureInit(&capture);
+
+    std::vector<char> capturedOut(OM_LINKER_CAPTURE_BYTES);
+    std::vector<char> capturedErr(OM_LINKER_CAPTURE_BYTES);
+    capturedOut[0] = '\0';
+    capturedErr[0] = '\0';
+    const BOOL capturing = OMStdioCaptureBegin(&capture,
+                                               NSTemporaryDirectory().UTF8String) == 1;
+
+    @try {
+        run.exitStatus = invoke();
+    } @catch (NSException *e) {
+        // fd 1/2 have to go back even when the call unwinds, or the host's own
+        // stderr stays redirected for the rest of the process.
+        OMStdioCaptureEnd(&capture, NULL, 0, NULL, 0);
+        run.internalError = YES;
+        if (errText) {
+            *errText = [NSString stringWithFormat:@"OMToolchain: ObjC exception %@: %@\n",
+                        e.name, e.reason];
+        }
+        return run;
+    } @catch (...) {
+        OMStdioCaptureEnd(&capture, NULL, 0, NULL, 0);
+        run.internalError = YES;
+        if (errText) *errText = @"OMToolchain: unknown exception in linker\n";
+        return run;
+    }
+
+    OMStdioCaptureEnd(&capture, capturedOut.data(), capturedOut.size(),
+                      capturedErr.data(), capturedErr.size());
+
+    if (outText) *outText = [NSString stringWithUTF8String:capturedOut.data()] ?: @"";
+    NSMutableString *reported = [NSMutableString string];
+    if (run.exitStatus != 0) {
+        [reported appendFormat:@"OMToolchain: ld64 exited with status %d\n", run.exitStatus];
+    }
+    if (capturedErr[0] != '\0') {
+        [reported appendString:[NSString stringWithUTF8String:capturedErr.data()] ?: @""];
+    }
+    if (!capturing) {
+        [reported appendString:@"OMToolchain: linker output could not be captured\n"];
+    }
+    if (errText) *errText = reported;
+    return run;
+}
+
 // The normal app can build and expose accurate capability status before the
 // matching LLVM archives and development headers are supplied. Enabling this
 // switch requires real compiler/linker libraries; it never loads a library
@@ -304,29 +393,27 @@ struct ArgvStorage {
     __block NSString *errString = @"";
 
     dispatch_sync(OMQueue(), ^{
-        @try {
-            // ld64 writes diagnostics to stderr and is not reentrant; the
-            // vendored build provides explicit reset hooks for its singletons.
+        ArgvStorage argv(ld64Arguments, /*prependProgramName=*/true);
+        __block NSString *capturedOut = @"";
+        __block NSString *capturedErr = @"";
+
+        const OMLinkerRun run = OMRunLinkerCapturing(^int {
+            // ld64 is not reentrant; the vendored build provides explicit reset
+            // hooks for its singletons. They run inside the captured call, so a
+            // throw from them is reported like any other linker failure.
             om_ld64_reset_options();
             om_ld64_reset_state();
             om_ld64_reset_branches();
             om_ld64_reset_threads();
+            return om_ld64_main(static_cast<int>(argv.owned.size()), argv.argv.data());
+        }, &capturedOut, &capturedErr);
 
-            ArgvStorage argv(ld64Arguments, /*prependProgramName=*/true);
-            const int rc = om_ld64_main(static_cast<int>(argv.owned.size()),
-                                        argv.argv.data());
-            status = (rc == 0) ? OMToolchainStatusOK : OMToolchainStatusDiagnostics;
-            if (rc != 0) {
-                errString = [NSString stringWithFormat:
-                             @"OMToolchain: ld64 exited with status %d\n", rc];
-            }
-        } @catch (NSException *e) {
+        outString = capturedOut;
+        errString = capturedErr;
+        if (run.internalError) {
             status = OMToolchainStatusInternalError;
-            errString = [NSString stringWithFormat:@"OMToolchain: ObjC exception %@: %@\n",
-                         e.name, e.reason];
-        } @catch (...) {
-            status = OMToolchainStatusInternalError;
-            errString = @"OMToolchain: unknown exception in linker\n";
+        } else {
+            status = (run.exitStatus == 0) ? OMToolchainStatusOK : OMToolchainStatusDiagnostics;
         }
     });
 

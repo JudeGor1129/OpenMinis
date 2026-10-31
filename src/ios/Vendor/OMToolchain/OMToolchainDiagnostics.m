@@ -130,9 +130,11 @@ static OMToolchainStatus OMCompile(NSString *source, NSString *output, NSString 
     return [OMToolchain runCC1:arguments stdout:stdoutText stderr:stderrText];
 }
 
-static OMToolchainStatus OMLink(NSString *object, NSString *output, NSString *architecture,
-                                NSString **stdoutText, NSString **stderrText) {
-    NSArray<NSString *> *arguments = @[
+/// The exact argv for the acceptance dylib link, so the report can show what
+/// actually ran instead of leaving the reader to infer it.
+static NSArray<NSString *> *OMDylibLinkArguments(NSString *object, NSString *output,
+                                                 NSString *architecture) {
+    return @[
         @"-arch", architecture,
         @"-dylib",
         @"-platform_version", @"ios", @"15.0", @"16.5",
@@ -140,7 +142,12 @@ static OMToolchainStatus OMLink(NSString *object, NSString *output, NSString *ar
         @"-install_name", [NSString stringWithFormat:@"@rpath/om-runtime-%@.dylib", architecture],
         object,
     ];
-    return [OMToolchain runLinker:arguments stdout:stdoutText stderr:stderrText];
+}
+
+static OMToolchainStatus OMLink(NSString *object, NSString *output, NSString *architecture,
+                                NSString **stdoutText, NSString **stderrText) {
+    return [OMToolchain runLinker:OMDylibLinkArguments(object, output, architecture)
+                           stdout:stdoutText stderr:stderrText];
 }
 
 static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus status,
@@ -277,8 +284,77 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
             [steps addObject:OMStep([NSString stringWithFormat:@"link_%@_dylib", architecture],
                                     status, passed, duration, stdoutText, stderrText,
                                     @{@"output_bytes": @(OMFileBytes(dylib)),
+                                      @"arguments": OMDylibLinkArguments(object, dylib, architecture),
                                       @"macho": inspection})];
             [residentSamples addObject:@(OMResidentBytes())];
+        }
+
+        // --- Linker argument ladder -----------------------------------------
+        //
+        // build185 reported every link as "ld64 exited with status 1" and
+        // nothing more, because ld64's own message went to fd 2 and the host
+        // could not read it back. Once that message is captured, the remaining
+        // question is *which* part of the argument set ld64 rejects. Each probe
+        // answers one such question, so a single device report locates the
+        // failing flag instead of one build cycle per guess.
+        //
+        // Fixtures are the same object file compiled above, written into the
+        // same temporary directory, and inspected but never executed. Probes do
+        // not feed `allPassed`: the acceptance criterion stays the real
+        // link_<arch>_dylib step, and link_probe_full_dylib exists precisely to
+        // confirm the ladder reproduces that step's outcome.
+        NSString *probeObject = [[root URLByAppendingPathComponent:@"baseline-arm64.o"] path];
+        if (OMFileBytes(probeObject) > 0) {
+            NSArray<NSDictionary<NSString *, id> *> *probes = @[
+                @{@"name": @"link_probe_minimal_dylib",
+                  @"flags": @[@"-arch", @"arm64", @"-dylib"],
+                  @"filetype": @(MH_DYLIB)},
+                @{@"name": @"link_probe_platform_version",
+                  @"flags": @[@"-arch", @"arm64", @"-dylib",
+                              @"-platform_version", @"ios", @"15.0", @"16.5"],
+                  @"filetype": @(MH_DYLIB)},
+                @{@"name": @"link_probe_install_name",
+                  @"flags": @[@"-arch", @"arm64", @"-dylib",
+                              @"-install_name", @"@rpath/om-probe.dylib"],
+                  @"filetype": @(MH_DYLIB)},
+                @{@"name": @"link_probe_full_dylib",
+                  @"flags": @[@"-arch", @"arm64", @"-dylib",
+                              @"-platform_version", @"ios", @"15.0", @"16.5",
+                              @"-install_name", @"@rpath/om-probe.dylib"],
+                  @"filetype": @(MH_DYLIB)},
+                @{@"name": @"link_probe_executable",
+                  @"flags": @[@"-arch", @"arm64",
+                              @"-platform_version", @"ios", @"15.0", @"16.5"],
+                  @"filetype": @(MH_EXECUTE)},
+            ];
+            for (NSDictionary<NSString *, id> *probe in probes) {
+                NSString *probeName = probe[@"name"];
+                NSString *probeOutput = [[root URLByAppendingPathComponent:
+                    [NSString stringWithFormat:@"%@.out", probeName]] path];
+                NSMutableArray<NSString *> *probeArguments =
+                    [NSMutableArray arrayWithArray:probe[@"flags"]];
+                [probeArguments addObjectsFromArray:@[@"-o", probeOutput, probeObject]];
+                NSString *probeStdout = nil, *probeStderr = nil;
+                NSDate *probeStarted = [NSDate date];
+                OMToolchainStatus probeStatus = [OMToolchain runLinker:probeArguments
+                                                                stdout:&probeStdout
+                                                                stderr:&probeStderr];
+                NSTimeInterval probeDuration = -probeStarted.timeIntervalSinceNow;
+                NSDictionary *probeInspection = OMInspectMachO(probeOutput);
+                unsigned int expectedFiletype = [probe[@"filetype"] unsignedIntValue];
+                BOOL produced = probeStatus == OMToolchainStatusOK &&
+                    OMFileBytes(probeOutput) > 0 &&
+                    [probeInspection[@"valid"] boolValue] &&
+                    [probeInspection[@"architecture"] isEqualToString:@"arm64"] &&
+                    [probeInspection[@"filetype"] unsignedIntValue] == expectedFiletype;
+                [steps addObject:OMStep(probeName, probeStatus, produced, probeDuration,
+                                        probeStdout, probeStderr,
+                                        @{@"arguments": probeArguments,
+                                          @"output_bytes": @(OMFileBytes(probeOutput)),
+                                          @"expected_filetype": @(expectedFiletype),
+                                          @"macho": probeInspection})];
+                [residentSamples addObject:@(OMResidentBytes())];
+            }
         }
 
         NSString *objcObject = [[root URLByAppendingPathComponent:@"objective-c-arm64.o"] path];
