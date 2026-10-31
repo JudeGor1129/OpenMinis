@@ -590,6 +590,22 @@ final class ToolchainSDKImporter: ObservableObject {
         Task { await self.runImport() }
     }
 
+    /// Clears a finished or failed state so the row can offer another attempt.
+    func reset() {
+        if case .copying = phase { return }
+        phase = .idle
+    }
+
+    /// Removes the imported SDK, freeing its space. The row used to tell the
+    /// user to delete the directory without providing any way to; this is it.
+    func removeImported() {
+        guard case .idle = phase else { return }
+        if let path = Self.importedSDKPath() {
+            try? FileManager.default.removeItem(at: path)
+        }
+        installedPath = nil
+    }
+
     private func runImport() async {
         let source = await Task.detached { Self.rootfsSDKPath() }.value
         guard let source else {
@@ -619,6 +635,9 @@ final class ToolchainSDKImporter: ObservableObject {
             if stats.skipped > 0 { summary += "，跳过 \(stats.skipped) 个悬空条目" }
             phase = .finished(summary)
         case .failure(let error):
+            // Leave nothing half-copied behind: the next attempt starts clean.
+            try? FileManager.default.removeItem(
+                at: Self.storeDirectory.appendingPathComponent(source.lastPathComponent))
             phase = .failed(error.localizedDescription)
         }
     }
@@ -641,8 +660,16 @@ final class ToolchainSDKImporter: ObservableObject {
                                     progress: @escaping (Int, Int) -> Void) throws -> ImportStats {
         let fm = FileManager.default
         let destination = storeDirectory.appendingPathComponent(source.lastPathComponent)
-        guard !fm.fileExists(atPath: destination.path) else { throw ImportError.destinationExists }
         try fm.createDirectory(at: storeDirectory, withIntermediateDirectories: true)
+        // A previous attempt can be interrupted -- this copy is 222 MB, and the
+        // app can be suspended while it runs -- so a partial tree is likely.
+        // Refusing to continue would strand the user with nothing to tap: the
+        // message used to say "delete it first" without offering a way to. Only
+        // an SDK that is already usable is left alone.
+        if fm.fileExists(atPath: destination.path) {
+            if isUsable(destination) { throw ImportError.destinationExists }
+            try? fm.removeItem(at: destination)
+        }
 
         var stats = ImportStats()
         guard let enumerator = fm.enumerator(at: source,
@@ -655,9 +682,16 @@ final class ToolchainSDKImporter: ObservableObject {
         while let entry = enumerator.nextObject() as? URL { pending.append(entry) }
         let total = max(pending.count, 1)
 
+        // Compare components of the *resolved* source: NSDirectoryEnumerator
+        // reports /private/var/... for a /var/... URL (iOS keeps /var as a
+        // symlink to /private/var), and a plain string prefix test then fails --
+        // which silently wrote the entire absolute path into the copy.
+        let baseComponents = source.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+
         for url in pending {
             try Task.checkCancellation()
-            let relative = url.path.replacingOccurrences(of: source.path, with: "")
+            let relative = relativePath(of: url, under: source, base: baseComponents)
+            guard let relative else { continue }
             let target = destination.appendingPathComponent(relative)
             guard !fm.fileExists(atPath: target.path) else { continue }
 
@@ -682,6 +716,18 @@ final class ToolchainSDKImporter: ObservableObject {
             progress(stats.files + stats.symlinks + stats.skipped, total)
         }
         return stats
+    }
+
+    /// `url`'s path relative to the resolved `source`, or nil when it is not
+    /// underneath it. Components are compared, not strings: the enumerator
+    /// resolves symlinks (/private/var/...) while the source URL may not (/var),
+    /// and a string prefix test against the wrong form drops the whole path.
+    nonisolated static func relativePath(of url: URL, under source: URL,
+                                        base: [String]) -> String? {
+        let components = url.pathComponents
+        guard components.count > base.count,
+              Array(components.prefix(base.count)) == base else { return nil }
+        return components.dropFirst(base.count).joined(separator: "/")
     }
 
     /// iSH 的符号链接在这个进程看来是一个「内容=目标相对路径」的小文件。
@@ -719,8 +765,16 @@ struct ToolchainSDKImportRow: View {
             switch importer.phase {
             case .idle:
                 if let installed {
-                    Label("已导入 \(installed)", systemImage: "checkmark.circle")
-                        .foregroundStyle(.secondary)
+                    HStack {
+                        Label("已导入 \(installed)", systemImage: "checkmark.circle")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("删除", role: .destructive) {
+                            importer.removeImported()
+                            self.installed = nil
+                        }
+                        .buttonStyle(.borderless)
+                    }
                 } else {
                     Button {
                         importer.start()
@@ -740,8 +794,12 @@ struct ToolchainSDKImportRow: View {
                 Label(summary, systemImage: "checkmark.seal")
                     .font(.footnote).foregroundStyle(.secondary)
             case .failed(let reason):
-                Label(reason, systemImage: "exclamationmark.triangle")
-                    .font(.footnote).foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(reason, systemImage: "exclamationmark.triangle")
+                        .font(.footnote).foregroundStyle(.orange)
+                    Button("重试") { importer.reset() }
+                        .buttonStyle(.borderless)
+                }
             }
         }
         .onAppear {
