@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 #
 # run-tests.sh — build and run the tapi-shim host test against a real SDK stub.
 #
@@ -6,29 +6,33 @@
 # feeds it the actual libSystem.B.tbd from an iPhoneOS SDK rather than a
 # hand-written fixture.
 #
+# POSIX sh on purpose: this runs from iSH, from macOS, and from the source
+# gate, and the workspace file layer does not preserve an execute bit, so it is
+# normally invoked as `sh run-tests.sh`.
+#
 # usage: run-tests.sh [--llvm-config PATH] [--cxx PATH] <libSystem.B.tbd>
 
-set -euo pipefail
+set -eu
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
 LLVM_CONFIG="${LLVM_CONFIG:-llvm-config}"
 CXX="${CXX:-clang++}"
 
-while [[ $# -gt 0 ]]; do
+while [ $# -gt 0 ]; do
   case "$1" in
     --llvm-config) LLVM_CONFIG="$2"; shift 2 ;;
     --cxx) CXX="$2"; shift 2 ;;
-    -h|--help) sed -n '2,10p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
     *) break ;;
   esac
 done
 
-if [[ $# -ne 1 ]]; then
+if [ $# -ne 1 ]; then
   echo "usage: $0 [--llvm-config PATH] <libSystem.B.tbd>" >&2
   exit 2
 fi
 TBD="$1"
-[[ -f "$TBD" ]] || { echo "error: no such stub: $TBD" >&2; exit 2; }
+[ -f "$TBD" ] || { echo "error: no such stub: $TBD" >&2; exit 2; }
 
 if ! command -v "$LLVM_CONFIG" >/dev/null 2>&1; then
   echo "error: $LLVM_CONFIG not found; pass --llvm-config or set LLVM_CONFIG" >&2

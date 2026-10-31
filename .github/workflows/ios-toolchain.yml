@@ -10,6 +10,10 @@ on:
     paths:
       - 'toolchain-build/scripts/**'
       - 'toolchain-build/deps/**'
+      # src/tapi-shim lives here. Without this line a change to the shim would
+      # not rebuild the archive that embeds it, leaving a stale ld64 behind a
+      # green workflow.
+      - 'toolchain-build/src/**'
       - 'toolchain-build/verify-artifacts.sh'
       - '.github/workflows/ios-toolchain.yml'
   workflow_dispatch:
@@ -83,6 +87,19 @@ jobs:
       - name: Verify archives, resource and development headers
         id: verify-kit
         run: bash toolchain-build/verify-artifacts.sh toolchain-build/build/ios
+
+      # ld64 reads .tbd stubs only through the tapi-shim, and a build without it
+      # still succeeds -- it just produces a linker that cannot see the SDK's
+      # stub-based libSystem, which only shows up on device. This checks the
+      # source policy, recompiles the shim for both architectures against this
+      # build tree's headers, and runs its unit test where a host LLVM exists.
+      - name: Check the tapi-shim that lets ld64 read real .tbd stubs
+        run: |
+          export TAPI_SHIM_DEV_HEADERS=toolchain-build/build/ios/dev-headers
+          if [ -x toolchain-build/build/ios/llvm/bin/llvm-config ]; then
+            export LLVM_CONFIG=toolchain-build/build/ios/llvm/bin/llvm-config
+          fi
+          sh scripts/ios15/check-tapi-shim.sh
 
       # Save ONLY after fresh hash/layout and real lipo checks pass. A later
       # bridge failure must not destroy ~100 minutes of successful compilation.

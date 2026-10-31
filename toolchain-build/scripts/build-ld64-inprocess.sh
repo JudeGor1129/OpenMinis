@@ -103,6 +103,22 @@ SOURCES_CXX=(
   "ld/passes/objc_stubs.cpp"
 )
 
+# The libtapi-compatible shim. ld64 reads .tbd stubs only under TAPI_SUPPORT,
+# and that code path calls Apple's libtapi; without it the SDK's libSystem --
+# which is a stub -- is invisible to the linker, so every dynamic link failed
+# on device with "must link with libSystem.dylib". The shim supplies that API
+# on top of the LLVM TextAPI this app already links; see src/tapi-shim.
+SHIM="$ROOT/src/tapi-shim"
+SHIM_SOURCES=(
+  "lib/LinkerInterfaceFile.cpp"
+)
+# The shim is the only translation unit here that needs LLVM headers, which
+# export-dev-headers.sh has already written into the build tree: the common set
+# plus per-architecture generated headers (llvm-config.h). ld64 itself does not
+# need them, which is why they are not in INCLUDES below.
+SHIM_INCLUDES_COMMON="$BUILD/dev-headers/common/include"
+SHIM_INCLUDES_ARCH_DIR="$BUILD/dev-headers"
+
 # Fail loudly on a missing file instead of silently producing a partial archive.
 MISSING=0
 for REL in "${SOURCES_C[@]}" "${SOURCES_CXX[@]}"; do
@@ -111,11 +127,23 @@ for REL in "${SOURCES_C[@]}" "${SOURCES_CXX[@]}"; do
     MISSING=1
   fi
 done
+for REL in "${SHIM_SOURCES[@]}"; do
+  if [ ! -f "$SHIM/$REL" ]; then
+    echo "!! missing source: $SHIM/$REL" >&2
+    MISSING=1
+  fi
+done
+if [ ! -f "$SHIM_INCLUDES_COMMON/llvm/TextAPI/TextAPIReader.h" ]; then
+  echo "!! missing LLVM TextAPI headers under $SHIM_INCLUDES_COMMON" >&2
+  echo "   the shim links against llvm::MachO::TextAPIReader; run export-dev-headers.sh first" >&2
+  MISSING=1
+fi
 if [ "$MISSING" -ne 0 ]; then
   exit 1
 fi
 
-echo "==> ${#SOURCES_CXX[@]} C++ and ${#SOURCES_C[@]} C translation units"
+EXPECTED_OBJECTS=$(( ${#SOURCES_C[@]} + ${#SOURCES_CXX[@]} + ${#SHIM_SOURCES[@]} ))
+echo "==> ${#SOURCES_CXX[@]} C++ and ${#SOURCES_C[@]} C translation units, plus ${#SHIM_SOURCES[@]} tapi-shim unit"
 
 # ---------------------------------------------------------------------------
 # Flags
@@ -147,6 +175,7 @@ INCLUDES=(
   -I"$LDSRC/ld/parsers"
   -I"$LDSRC/ld/passes"
   -I"$LDSRC/mach_o"
+  -I"$SHIM/include"
 )
 
 COMMON=(
@@ -163,6 +192,11 @@ COMMON=(
   -DHAVE_RINDEX=1
   -D__STDC_LIMIT_MACROS
   -D__STDC_CONSTANT_MACROS
+  # The port's configure enables TAPI when tapi/tapi.h links, and the shim
+  # provides it. Without the define textstub_dylib_file.cpp compiles to an
+  # empty object and no .tbd can ever be read -- which is exactly how the SDK's
+  # stub-based libSystem became invisible on device.
+  -DTAPI_SUPPORT
   -DPROGRAM_PREFIX='""'
   -isysroot "$SDKROOT"
   -miphoneos-version-min="$MIN_IOS"
@@ -183,16 +217,20 @@ cat > "$DRIVER" <<'DRIVER_EOF'
 # args: lang arch src dst
 set -euo pipefail
 LANG_KIND="$1"; ARCH="$2"; SRC="$3"; OBJ="$4"
+# Optional per-translation-unit include directories. The tapi-shim needs the
+# LLVM headers generated for THIS architecture, which the shared COMMON_INCLUDES
+# cannot express. Empty for every ld64 source.
+EXTRA_INCLUDES="${5:-}"
 : "${COMMON_INCLUDES:?}"
 : "${COMMON_FLAGS:?}"
 : "${CXX_STD:?}"
 if [ "$LANG_KIND" = "c" ]; then
   # shellcheck disable=SC2086
-  xcrun --sdk iphoneos clang -arch "$ARCH" $COMMON_INCLUDES $COMMON_FLAGS \
+  xcrun --sdk iphoneos clang -arch "$ARCH" $COMMON_INCLUDES $EXTRA_INCLUDES $COMMON_FLAGS \
     -c "$SRC" -o "$OBJ"
 else
   # shellcheck disable=SC2086
-  xcrun --sdk iphoneos clang++ -arch "$ARCH" $COMMON_INCLUDES $COMMON_FLAGS \
+  xcrun --sdk iphoneos clang++ -arch "$ARCH" $COMMON_INCLUDES $EXTRA_INCLUDES $COMMON_FLAGS \
     "$CXX_STD" -c "$SRC" -o "$OBJ"
 fi
 DRIVER_EOF
@@ -223,6 +261,13 @@ for ARCH in $LD64_ARCHS; do
     OBJ="$ARCHOBJ/$(echo "$REL" | tr '/' '_').o"
     printf 'cpp %s %s %s\n' "$ARCH" "$LDSRC/$REL" "$OBJ" >> "$PLAN"
   done
+  # The shim is also C++, but it is the one unit that needs this architecture's
+  # generated LLVM headers, passed as the driver's optional fifth argument.
+  for REL in "${SHIM_SOURCES[@]}"; do
+    OBJ="$ARCHOBJ/tapi_shim_$(basename "$REL").o"
+    printf 'cpp %s %s %s %s\n' "$ARCH" "$SHIM/$REL" "$OBJ" \
+      "-I$SHIM_INCLUDES_COMMON -I$SHIM_INCLUDES_ARCH_DIR/$ARCH/include" >> "$PLAN"
+  done
 
   if ! xargs -P "$JOBS" -L1 bash "$DRIVER" < "$PLAN"; then
     echo "!! at least one ld64 translation unit failed to compile for $ARCH" >&2
@@ -231,10 +276,24 @@ for ARCH in $LD64_ARCHS; do
 
   COUNT="$(find "$ARCHOBJ" -name '*.o' | wc -l | tr -d ' ')"
   echo "    $COUNT objects"
-  if [ "$COUNT" -ne "$(( ${#SOURCES_C[@]} + ${#SOURCES_CXX[@]} ))" ]; then
-    echo "!! expected $(( ${#SOURCES_C[@]} + ${#SOURCES_CXX[@]} )) objects, got $COUNT" >&2
+  if [ "$COUNT" -ne "$EXPECTED_OBJECTS" ]; then
+    echo "!! expected $EXPECTED_OBJECTS objects, got $COUNT" >&2
     exit 1
   fi
+
+  # A build without TAPI_SUPPORT still succeeds: textstub_dylib_file.cpp
+  # compiles to a few hundred bytes of nothing, .tbd parsing disappears, and the
+  # failure only shows up on device as "must link with libSystem.dylib". The
+  # real parser is tens of kilobytes, so this floor catches that regression at
+  # the build that caused it.
+  STUB_OBJ="$ARCHOBJ/ld_parsers_textstub_dylib_file.cpp.o"
+  STUB_BYTES="$(wc -c < "$STUB_OBJ" | tr -d ' ')"
+  if [ "$STUB_BYTES" -lt 8192 ]; then
+    echo "!! text-stub parser object is only $STUB_BYTES bytes for $ARCH;" >&2
+    echo "   TAPI_SUPPORT is not taking effect, so no .tbd can be read" >&2
+    exit 1
+  fi
+  echo "    text-stub parser: $STUB_BYTES bytes"
 
   SLICE="$BUILD/libomld64-$ARCH.a"
   rm -f "$SLICE"
@@ -246,3 +305,13 @@ done
 echo "==> merging arch slices"
 xcrun libtool -static -o "$OUT" "${SLICE_ARCHIVES[@]}"
 echo "==> wrote $OUT ($(du -h "$OUT" | cut -f1))"
+
+# The linker resolves .tbd stubs through these symbols; if they are missing
+# from the archive every dynamic link on device fails on the forced libSystem
+# dependency, which is a long way from here to debug.
+TAPI_SYMBOLS="$(xcrun nm "$OUT" 2>/dev/null | grep -c 'tapi' || true)"
+if [ "${TAPI_SYMBOLS:-0}" -lt 4 ]; then
+  echo "!! the tapi-shim symbols are missing from $OUT (found ${TAPI_SYMBOLS:-0})" >&2
+  exit 1
+fi
+echo "==> tapi-shim symbols in archive: $TAPI_SYMBOLS"
