@@ -532,7 +532,10 @@ final class ToolchainSDKImporter: ObservableObject {
     @Published private(set) var installedPath: String?
 
     /// App 自有的 SDK 库。与 OMToolchain 的解析顺序保持一致。
-    static var storeDirectory: URL {
+    ///
+    /// `nonisolated`：类本身是 @MainActor（要驱动 UI 进度），但查找与拷贝都跑在
+    /// 后台任务里，而这个路径只是由 ContainerLocator 算出来的，不需要主线程。
+    nonisolated static var storeDirectory: URL {
         ContainerLocator.applicationSupportDirectory
             .appendingPathComponent("MinisToolchain/SDKs", isDirectory: true)
     }
