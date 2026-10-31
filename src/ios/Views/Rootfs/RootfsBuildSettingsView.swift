@@ -624,23 +624,48 @@ final class ToolchainSDKImporter: ObservableObject {
             }
         }.value
 
+        let destination = Self.storeDirectory.appendingPathComponent(source.lastPathComponent)
+
         switch result {
         case .success(let (_, stats)):
-            guard let installed = Self.importedSDKPath() else {
-                phase = .failed("拷贝完成但导入的 SDK 不可用（libSystem 库桩缺失）。")
+            if let installed = Self.importedSDKPath() {
+                installedPath = installed.path
+                var summary = "已导入 \(installed.lastPathComponent)：\(stats.files) 个文件，展开 \(stats.symlinks) 个符号链接"
+                if stats.skipped > 0 { summary += "，跳过 \(stats.skipped) 个悬空条目" }
+                phase = .finished(summary)
                 return
             }
-            installedPath = installed.path
-            var summary = "已导入 \(installed.lastPathComponent)：\(stats.files) 个文件，展开 \(stats.symlinks) 个符号链接"
-            if stats.skipped > 0 { summary += "，跳过 \(stats.skipped) 个悬空条目" }
-            phase = .finished(summary)
+            // Copying finished but the result is not a usable SDK. Report what was
+            // actually written rather than a generic "stub missing": the two very
+            // different causes are "nothing was enumerated at all" and "files were
+            // written but the stub is not one of them", and guessing between them
+            // from a device screenshot costs a build cycle each time.
+            let written = stats.files + stats.symlinks
+            let stub = Self.stubBytes(destination)
+            var reason = "拷贝结束但不可用：写入 \(written) 项（\(stats.files) 文件 / \(stats.symlinks) 链接）"
+            if written == 0 {
+                reason += "；没有枚举到任何条目，源目录不可读或为空"
+            } else if stub < 1024 {
+                reason += "；libSystem.B.tbd 为 \(stub) 字节"
+            } else {
+                reason += "；缺少 usr/include"
+            }
+            phase = .failed(reason)
         case .failure(let error):
-            // Leave nothing half-copied behind: the next attempt starts clean.
-            try? FileManager.default.removeItem(
-                at: Self.storeDirectory.appendingPathComponent(source.lastPathComponent))
-            phase = .failed(error.localizedDescription)
+            // Keep the partial tree: it is the evidence, and the next attempt
+            // replaces it automatically.
+            phase = .failed("导入失败：\(error.localizedDescription)（已写入 \(Self.entryCount(destination)) 项）")
         }
     }
+
+    /// Number of entries currently under `url`, for failure reporting only.
+    nonisolated static func entryCount(_ url: URL) -> Int {
+        guard let e = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) else { return 0 }
+        var n = 0
+        while e.nextObject() != nil { n += 1 }
+        return n
+    }
+
 
     struct ImportStats {
         var files = 0
@@ -655,79 +680,66 @@ final class ToolchainSDKImporter: ObservableObject {
         }
     }
 
-    /// 逐项拷贝，按需把符号链接占位文件还原成真正的符号链接。
+    /// Copies the complete SDK tree. The traversal carries relative paths from
+    /// each directory's child names, rather than trying to derive them from
+    /// absolute URLs: Foundation may report /private/var/... for a /var/... URL,
+    /// which made prefix-stripping silently write the source's whole path into
+    /// the destination. A stack also lets us recognize iSH's link placeholders
+    /// before deciding whether to recurse into a directory.
     nonisolated static func copySDK(from source: URL,
                                     progress: @escaping (Int, Int) -> Void) throws -> ImportStats {
         let fm = FileManager.default
         let destination = storeDirectory.appendingPathComponent(source.lastPathComponent)
         try fm.createDirectory(at: storeDirectory, withIntermediateDirectories: true)
-        // A previous attempt can be interrupted -- this copy is 222 MB, and the
-        // app can be suspended while it runs -- so a partial tree is likely.
-        // Refusing to continue would strand the user with nothing to tap: the
-        // message used to say "delete it first" without offering a way to. Only
-        // an SDK that is already usable is left alone.
         if fm.fileExists(atPath: destination.path) {
             if isUsable(destination) { throw ImportError.destinationExists }
             try? fm.removeItem(at: destination)
         }
+        try fm.createDirectory(at: destination, withIntermediateDirectories: true)
 
-        var stats = ImportStats()
-        guard let enumerator = fm.enumerator(at: source,
-                                             includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
-                                             options: []) else {
-            throw CocoaError(.fileReadUnknown)
+        var entries: [(source: URL, relative: String, isDirectory: Bool)] = []
+        var directories: [(url: URL, relative: String)] = [(source, "")]
+        while let current = directories.popLast() {
+            try Task.checkCancellation()
+            let children = try fm.contentsOfDirectory(at: current.url,
+                                                       includingPropertiesForKeys: [.isDirectoryKey],
+                                                       options: [])
+            for child in children {
+                let name = child.lastPathComponent
+                let relative = current.relative.isEmpty ? name : current.relative + "/" + name
+                if symlinkTargetIfPlaceholder(child) != nil {
+                    entries.append((child, relative, false))
+                    continue
+                }
+                let values = try? child.resourceValues(forKeys: [.isDirectoryKey])
+                let isDirectory = values?.isDirectory == true
+                entries.append((child, relative, isDirectory))
+                if isDirectory { directories.append((child, relative)) }
+            }
         }
 
-        var pending: [URL] = []
-        while let entry = enumerator.nextObject() as? URL { pending.append(entry) }
-        let total = max(pending.count, 1)
-
-        // Compare components of the *resolved* source: NSDirectoryEnumerator
-        // reports /private/var/... for a /var/... URL (iOS keeps /var as a
-        // symlink to /private/var), and a plain string prefix test then fails --
-        // which silently wrote the entire absolute path into the copy.
-        let baseComponents = source.resolvingSymlinksInPath().standardizedFileURL.pathComponents
-
-        for url in pending {
+        var stats = ImportStats()
+        let total = max(entries.count, 1)
+        for (index, entry) in entries.enumerated() {
             try Task.checkCancellation()
-            let relative = relativePath(of: url, under: source, base: baseComponents)
-            guard let relative else { continue }
-            let target = destination.appendingPathComponent(relative)
-            guard !fm.fileExists(atPath: target.path) else { continue }
-
-            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
-            if values?.isDirectory == true {
+            let target = destination.appendingPathComponent(entry.relative)
+            if let linkTarget = symlinkTargetIfPlaceholder(entry.source) {
+                // Keep the relative destination exactly as it was in the SDK.
+                // The target may itself be another placeholder link; both links
+                // are recreated, so the native filesystem resolves the chain.
+                try fm.createSymbolicLink(atPath: target.path, withDestinationPath: linkTarget)
+                stats.symlinks += 1
+            } else if entry.isDirectory {
                 try fm.createDirectory(at: target, withIntermediateDirectories: true)
-            } else if let linkTarget = symlinkTargetIfPlaceholder(url) {
-                let resolved = url.deletingLastPathComponent()
-                    .appendingPathComponent(linkTarget).standardizedFileURL
-                if fm.fileExists(atPath: resolved.path) {
-                    try fm.createSymbolicLink(atPath: target.path, withDestinationPath: linkTarget)
-                    stats.symlinks += 1
-                } else {
-                    stats.skipped += 1   // 悬空链接：原样拷过去只会是一个假的文本文件
-                }
             } else {
                 try fm.createDirectory(at: target.deletingLastPathComponent(),
                                        withIntermediateDirectories: true)
-                try fm.copyItem(at: url, to: target)
+                try fm.copyItem(at: entry.source, to: target)
                 stats.files += 1
             }
-            progress(stats.files + stats.symlinks + stats.skipped, total)
+            progress(index + 1, total)
         }
         return stats
-    }
-
-    /// `url`'s path relative to the resolved `source`, or nil when it is not
-    /// underneath it. Components are compared, not strings: the enumerator
-    /// resolves symlinks (/private/var/...) while the source URL may not (/var),
-    /// and a string prefix test against the wrong form drops the whole path.
-    nonisolated static func relativePath(of url: URL, under source: URL,
-                                        base: [String]) -> String? {
-        let components = url.pathComponents
-        guard components.count > base.count,
-              Array(components.prefix(base.count)) == base else { return nil }
-        return components.dropFirst(base.count).joined(separator: "/")
     }
 
     /// iSH 的符号链接在这个进程看来是一个「内容=目标相对路径」的小文件。
