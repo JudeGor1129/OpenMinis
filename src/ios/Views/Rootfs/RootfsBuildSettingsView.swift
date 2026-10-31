@@ -683,9 +683,11 @@ final class ToolchainSDKImporter: ObservableObject {
 
     /// iSH 的符号链接在这个进程看来是一个「内容=目标相对路径」的小文件。
     ///
-    /// 判据刻意收得很紧：必须很小、是单行可打印文本、不含空格与 `#`/`<`（真实
-    /// 的小头文件都含这些），并且目标确实存在于同一目录树下 —— 否则宁可当普通
-    /// 文件处理，避免把某个恰好长得像路径的小文件误判成链接。
+    /// 判据用真 SDK 标定过：必须很小、单行、不含空格与 `#`/`<`/引号，不是绝对
+    /// 路径，且目标确实存在于同一目录树下。**不能要求目标里带点号** ——
+    /// `IOKit.framework/Versions/Current -> A` 与 `Headers -> Versions/Current/Headers`
+    /// 都不带点号，加了这条就会漏掉它们，拷贝后 IOKit 的头文件会变成文本文件。
+    /// 去掉点号要求后，iPhoneOS16.5.sdk 里 72/72 个链接全部命中，8859 个真实文件零误判。
     nonisolated static func symlinkTargetIfPlaceholder(_ url: URL) -> String? {
         guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isSymbolicLinkKey]),
               values.isSymbolicLink != true,
@@ -696,7 +698,7 @@ final class ToolchainSDKImporter: ObservableObject {
         let target = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty, target == text.trimmingCharacters(in: .newlines) else { return nil }
         for rejected in [" ", "\t", "#", "<", "\"", "\n"] where target.contains(rejected) { return nil }
-        guard target.contains("."), !target.hasPrefix("/") else { return nil }
+        guard !target.hasPrefix("/") else { return nil }
 
         let resolved = url.deletingLastPathComponent()
             .appendingPathComponent(target).standardizedFileURL
