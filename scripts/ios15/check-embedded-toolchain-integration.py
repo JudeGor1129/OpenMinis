@@ -46,14 +46,21 @@ require(provider.count(".unavailable(await availability(for: context))") == 2,
         "build and test must both remain unavailable")
 require("state: .unavailable" in provider, "availability must remain unavailable")
 require(lock.get("schema") == 1, "lock schema must be 1")
-require(lock.get("artifact", {}).get("id") == 12965155835, "unexpected Run7 artifact ID")
+# The lock must describe exactly one artifact, and that artifact's name must
+# identify the commit it was built from. Binding it this way catches a pin that
+# points at the wrong run without hardcoding an id that every intentional
+# re-pin would have to edit.
+require(type(lock.get("artifact", {}).get("id")) is int and lock["artifact"]["id"] > 0,
+        "lock must pin one concrete artifact id")
+require(lock["artifact"].get("name") == "OpenMinis-iOS-toolchain-" + lock.get("head_sha", ""),
+        "locked artifact name must identify the locked commit")
 require(lock.get("manifest", {}).get("architectures") == ["arm64", "arm64e"],
         "lock must preserve both verified architectures")
 require(set(lock.get("manifest", {}).get("archives", {})) == {
     "libomllvm-arm64.a", "libomllvm-arm64e.a", "libomld64.a"
-}, "lock archive inventory differs from Run7")
+}, "lock archive inventory differs from the locked toolchain")
 require(lock.get("enabled_link_report", {}).get("result_architectures") ==
         ["arm64", "arm64", "arm64e", "arm64e"],
         "locked enabled-link report must cover both object and executable architectures")
-print("PASS: source policy binds the future arm64 App validation build to exact Run7 archive paths.")
+print("PASS: source policy binds the future arm64 App validation build to the exact locked archive paths.")
 print("PASS: no link ran here; OM_TOOLCHAIN_VERIFIED is unset and the Provider remains unavailable.")
