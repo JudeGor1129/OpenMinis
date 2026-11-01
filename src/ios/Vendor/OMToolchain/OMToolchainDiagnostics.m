@@ -151,14 +151,15 @@ static NSString *OMLibSystemStub(NSString *sysroot) {
     return attributes.fileSize >= 1024 ? stub : nil;
 }
 
-/// True when a link step reported that the linker itself aborted.
+/// True when a link step reported a safely-unwound internal assertion.
 ///
-/// ld64 signals an internal inconsistency with assert(), and the host contains
-/// that with a signal guard. Re-entering a linker whose state was abandoned
-/// mid-write is not something we want eight more times, so the caller stops the
-/// remaining link work and says so.
-static BOOL OMLinkerAborted(NSString *stderrText) {
-    return stderrText != nil && [stderrText containsString:@"linker aborted with signal"];
+/// The adapted linker returns a dedicated status after normal C++ unwinding,
+/// and the host then fences every later link in this process. The diagnostic
+/// suite mirrors that decision instead of recording unrelated follow-on steps.
+static BOOL OMLinkerPoisoned(NSString *stderrText) {
+    return stderrText != nil &&
+        ([stderrText containsString:@"linker disabled after an internal assertion"] ||
+         [stderrText containsString:@"OM_LD64_INTERNAL_ASSERTION"]);
 }
 
 /// The exact argv for the acceptance dylib link, so the report can show what
@@ -286,10 +287,11 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
         NSMutableArray<NSDictionary<NSString *, id> *> *steps = [NSMutableArray array];
         NSMutableArray<NSNumber *> *residentSamples = [NSMutableArray arrayWithObject:@(OMResidentBytes())];
         BOOL allPassed = YES;
-        BOOL linkerAborted = NO;
+        BOOL linkerPoisoned = NO;
         NSFileManager *fm = [NSFileManager defaultManager];
 
         for (NSString *architecture in @[@"arm64", @"arm64e"]) {
+            if (linkerPoisoned) break;
             BOOL needsPAC = [architecture isEqualToString:@"arm64e"];
             NSString *object = [[root URLByAppendingPathComponent:
                 [NSString stringWithFormat:@"baseline-%@.o", architecture]] path];
@@ -330,7 +332,10 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
                                       @"arguments": OMDylibLinkArguments(object, dylib, architecture, libSystemStub),
                                       @"libsystem_stub": libSystemStub ? [libSystemStub lastPathComponent] : @"unavailable",
                                       @"macho": inspection})];
-            if (OMLinkerAborted(stderrText)) linkerAborted = YES;
+            if (OMLinkerPoisoned(stderrText)) {
+                linkerPoisoned = YES;
+                allPassed = NO;
+            }
             [residentSamples addObject:@(OMResidentBytes())];
         }
 
@@ -349,7 +354,7 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
         // link_<arch>_dylib step, and link_probe_full_dylib exists precisely to
         // confirm the ladder reproduces that step's outcome.
         NSString *probeObject = [[root URLByAppendingPathComponent:@"baseline-arm64.o"] path];
-        if (!linkerAborted && OMFileBytes(probeObject) > 0) {
+        if (!linkerPoisoned && OMFileBytes(probeObject) > 0) {
             NSArray<NSDictionary<NSString *, id> *> *probes = @[
                 @{@"name": @"link_probe_minimal_dylib",
                   @"flags": @[@"-arch", @"arm64", @"-dylib"],
@@ -414,14 +419,19 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
                                           @"expected_filetype": @(expectedFiletype),
                                           @"macho": probeInspection})];
                 [residentSamples addObject:@(OMResidentBytes())];
+                if (OMLinkerPoisoned(probeStderr)) {
+                    linkerPoisoned = YES;
+                    allPassed = NO;
+                    break;
+                }
             }
         }
 
-        if (linkerAborted) {
+        if (linkerPoisoned) {
             [steps addObject:OMStep(@"linker_steps_skipped", OMToolchainStatusUnavailable, NO, 0,
                                     @"",
-                                    @"the linker aborted; its state is not reusable, so the argument "
-                                    @"ladder and the repeated rounds were not run",
+                                    @"the linker reported an internal assertion; later link "
+                                    @"probes and repeated rounds were not run",
                                     @{})];
         }
 
@@ -470,9 +480,15 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
         // No libSystem stub here on purpose: this step asserts that a missing
         // input is rejected on its own, so the libSystem check cannot be the
         // reason this link fails.
-        status = OMLink(missingObject, failedDylib, @"arm64", nil, &stdoutText, &stderrText);
+        status = linkerPoisoned
+            ? OMToolchainStatusUnavailable
+            : OMLink(missingObject, failedDylib, @"arm64", nil, &stdoutText, &stderrText);
         duration = -started.timeIntervalSinceNow;
-        passed = status != OMToolchainStatusOK;
+        if (OMLinkerPoisoned(stderrText)) {
+            linkerPoisoned = YES;
+            allPassed = NO;
+        }
+        passed = !linkerPoisoned && status == OMToolchainStatusDiagnostics && stderrText.length > 0;
         allPassed = allPassed && passed;
         [steps addObject:OMStep(@"expected_linker_failure", status, passed, duration,
                                 stdoutText, stderrText,
@@ -480,9 +496,15 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
 
         NSString *recoveryDylib = [[root URLByAppendingPathComponent:@"recovery.dylib"] path];
         stdoutText = nil; stderrText = nil; started = [NSDate date];
-        status = OMLink(recoveryObject, recoveryDylib, @"arm64", libSystemStub,
-                        &stdoutText, &stderrText);
+        status = linkerPoisoned
+            ? OMToolchainStatusUnavailable
+            : OMLink(recoveryObject, recoveryDylib, @"arm64", libSystemStub,
+                     &stdoutText, &stderrText);
         duration = -started.timeIntervalSinceNow;
+        if (OMLinkerPoisoned(stderrText)) {
+            linkerPoisoned = YES;
+            allPassed = NO;
+        }
         inspection = OMInspectMachO(recoveryDylib);
         passed = status == OMToolchainStatusOK &&
             [inspection[@"filetype"] unsignedIntValue] == MH_DYLIB &&
@@ -492,7 +514,7 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
                                 stdoutText, stderrText, @{@"macho": inspection})];
         [residentSamples addObject:@(OMResidentBytes())];
 
-        for (NSUInteger index = 0; !linkerAborted && index < rounds; index++) {
+        for (NSUInteger index = 0; !linkerPoisoned && index < rounds; index++) {
             @autoreleasepool {
                 NSString *object = [[root URLByAppendingPathComponent:
                     [NSString stringWithFormat:@"repeat-%lu.o", (unsigned long)index]] path];
@@ -505,6 +527,10 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
                 OMToolchainStatus linkStatus = compileStatus == OMToolchainStatusOK
                     ? OMLink(object, dylib, @"arm64", libSystemStub, &repeatOut, &repeatErr)
                     : OMToolchainStatusUnavailable;
+                if (OMLinkerPoisoned(repeatErr)) {
+                    linkerPoisoned = YES;
+                    allPassed = NO;
+                }
                 NSDictionary *repeatInspection = OMInspectMachO(dylib);
                 BOOL repeatPassed = compileStatus == OMToolchainStatusOK &&
                     linkStatus == OMToolchainStatusOK &&

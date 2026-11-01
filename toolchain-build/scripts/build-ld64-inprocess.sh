@@ -312,6 +312,14 @@ for ARCH in $LD64_ARCHS; do
   fi
   echo "    text-stub parser: $STUB_BYTES bytes"
 
+  # Inspect the assertion handler in its owning object, before the archive is
+  # merged. This avoids depending on strings' archive-member traversal rules.
+  ASSERT_OBJECT="$ARCHOBJ/ld_ld.cpp.o"
+  if ! xcrun strings "$ASSERT_OBJECT" | grep -Fqx 'OM_LD64_INTERNAL_ASSERTION'; then
+    echo "!! safe assertion marker is missing from $ASSERT_OBJECT" >&2
+    exit 1
+  fi
+
   SLICE="$BUILD/libomld64-$ARCH.a"
   rm -f "$SLICE"
   find "$ARCHOBJ" -name '*.o' -print0 | xargs -0 xcrun libtool -static -o "$SLICE"
@@ -332,3 +340,34 @@ if [ "${TAPI_SYMBOLS:-0}" -lt 4 ]; then
   exit 1
 fi
 echo "==> tapi-shim symbols in archive: $TAPI_SYMBOLS"
+
+# DSOHandleAtom instances are process-lifetime statics in upstream ld64. The
+# reset hook reconstructs all mutable Atom state before a second in-process
+# link; without this symbol the first link can succeed and the next one aborts
+# in Atom::setSectionOffset(). An undefined (U) reference is not enough: require
+# a text definition in every architecture slice.
+INPUT_ATOM_RESET_DEFINITIONS=0
+for ARCH in $LD64_ARCHS; do
+  DEFINED="$(xcrun nm -arch "$ARCH" -gU "$OUT" | awk '
+    $2 == "T" && $3 == "_om_ld64_reset_input_atoms" { count++ }
+    END { print count + 0 }
+  ')"
+  if [ "$DEFINED" -lt 1 ]; then
+    echo "!! static input-atom reset definition is missing from $OUT ($ARCH)" >&2
+    exit 1
+  fi
+  INPUT_ATOM_RESET_DEFINITIONS=$((INPUT_ATOM_RESET_DEFINITIONS + DEFINED))
+done
+echo "==> static input-atom reset definitions in archive: $INPUT_ATOM_RESET_DEFINITIONS"
+
+# The host reserves EX_SOFTWARE (70) for a safely-unwound internal assertion.
+# Its marker must be present in each compiled slice, otherwise a stale ld.cpp
+# could still call abort() even though the reset hook itself is up to date.
+ARCH_COUNT="$(for ARCH in $LD64_ARCHS; do echo "$ARCH"; done | wc -l | tr -d ' ')"
+ASSERTION_MARKERS="$(xcrun strings "$OUT" | grep -c '^OM_LD64_INTERNAL_ASSERTION$' || true)"
+if [ "${ASSERTION_MARKERS:-0}" -lt "$ARCH_COUNT" ]; then
+  echo "!! safe assertion marker missing from one or more slices of $OUT " \
+       "(found ${ASSERTION_MARKERS:-0}, expected at least $ARCH_COUNT)" >&2
+  exit 1
+fi
+echo "==> safe assertion markers in archive: $ASSERTION_MARKERS"

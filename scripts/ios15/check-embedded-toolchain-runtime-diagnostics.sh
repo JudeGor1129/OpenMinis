@@ -12,20 +12,23 @@ CAPTURE_HEADER=src/ios/Vendor/OMToolchain/OMStdioCapture.h
 CAPTURE_UNIT=toolchain-build/scripts/test-stdio-capture.c
 TOOLCHAIN_IMPL=src/ios/Vendor/OMToolchain/OMToolchain.mm
 PROBE_BLOCK_CAPTURE=toolchain-build/scripts/probe-linker-block-capture.mm
+LD64_ADAPTER=toolchain-build/scripts/build-ld64-inprocess.py
 
 for file in "$DIAGNOSTICS" "$HEADER" "$BRIDGE" "$PROVIDER" "$VIEW" \
-            "$CAPTURE_HEADER" "$CAPTURE_UNIT" "$TOOLCHAIN_IMPL" "$PROBE_BLOCK_CAPTURE"; do
+            "$CAPTURE_HEADER" "$CAPTURE_UNIT" "$TOOLCHAIN_IMPL" "$PROBE_BLOCK_CAPTURE" \
+            "$LD64_ADAPTER"; do
   [[ -f "$file" ]] || { echo "error: missing runtime diagnostic source: $file" >&2; exit 1; }
 done
 plutil -lint "$PROJECT"
 
 python3 - "$PROJECT" "$DIAGNOSTICS" "$HEADER" "$BRIDGE" "$PROVIDER" "$VIEW" \
-          "$CAPTURE_HEADER" "$CAPTURE_UNIT" "$TOOLCHAIN_IMPL" "$PROBE_BLOCK_CAPTURE" <<'PY'
+          "$CAPTURE_HEADER" "$CAPTURE_UNIT" "$TOOLCHAIN_IMPL" "$PROBE_BLOCK_CAPTURE" \
+          "$LD64_ADAPTER" <<'PY'
 from pathlib import Path
 import sys
 (project, impl, header, bridge, provider, view,
  capture_header, capture_unit, toolchain_impl,
- probe_block_capture) = [Path(p).read_text(encoding="utf-8") for p in sys.argv[1:]]
+ probe_block_capture, ld64_adapter) = [Path(p).read_text(encoding="utf-8") for p in sys.argv[1:]]
 
 def require(condition, message):
     if not condition:
@@ -60,10 +63,26 @@ require(provider.count(".unavailable(await availability(for: context))") == 2,
 require("state: .unavailable" in provider, "BuildProvider availability must remain unavailable")
 require("OMRunLinkerCapturing" in toolchain_impl and "OMStdioCaptureBegin(&capture" in toolchain_impl,
         "runLinker must capture ld64's stdout/stderr while the call is in flight")
+require(toolchain_impl.count("run.exitStatus = invoke();") == 1,
+        "one runLinker request must invoke ld64 exactly once")
+require("#define OM_LINKER_ASSERTION_STATUS 70" in toolchain_impl and
+        "run.exitStatus == OM_LINKER_ASSERTION_STATUS" in toolchain_impl and
+        "linkerPoisoned = YES;" in toolchain_impl,
+        "an internal assertion must use status 70 and poison later linker calls")
+require("ASSERTION_STATUS = 70" in ld64_adapter and
+        'ASSERTION_MARKER = "OM_LD64_INTERNAL_ASSERTION"' in ld64_adapter and
+        "assert_exit_to_throw" in ld64_adapter,
+        "ld64 assertions must unwind into the host's dedicated status")
+for forbidden_signal_recovery in ("sigsetjmp(", "siglongjmp(", "OMLinkerSignalHandler", "SIGSEGV"):
+    require(forbidden_signal_recovery not in toolchain_impl,
+            "runLinker must not recover across C++ frames with " + forbidden_signal_recovery)
 require("OMStdioCaptureEnd(&capture, NULL, 0, NULL, 0)" in toolchain_impl,
         "the capture must also be released on the linker exception path")
 require("link_probe_minimal_dylib" in impl and "link_probe_full_dylib" in impl,
         "the linker argument ladder is what localises a rejected argument set")
+require("if (linkerPoisoned) break;" in impl and
+        "status == OMToolchainStatusDiagnostics && stderrText.length > 0" in impl,
+        "an internal assertion must stop later links and never satisfy expected failure")
 require("no capture files left behind" in capture_unit,
         "the capture unit test must assert that its temporary files are removed")
 require("argvPointer->argv.data()" in toolchain_impl,

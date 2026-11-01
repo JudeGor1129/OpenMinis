@@ -36,6 +36,10 @@ CCTOOLS = WORK / "cctools-port"
 
 ENTRY_NAME = "om_ld64_main"
 RESET_FN = "om_ld64_reset_state"
+# EX_SOFTWARE: reserved here for an ld64 internal assertion after safe C++
+# unwinding, distinct from ordinary linker diagnostics (status 1).
+ASSERTION_STATUS = 70
+ASSERTION_MARKER = "OM_LD64_INTERNAL_ASSERTION"
 
 # Region markers, located by content — never by line number.
 MARK_PRELUDE = "#include <sys/wait.h>"
@@ -164,15 +168,43 @@ def adapt_ld_cpp(text: str, report: dict) -> str:
             lines[i] = new
     report["main_exit_to_return"] = main_exits
 
-    # __assert_rtn is void and represents an unrecoverable linker assertion.
-    # abort() is the honest translation; returning is not possible.
+    # Preserve a machine-readable distinction between ordinary diagnostics and
+    # an internal assertion. EX_SOFTWARE (70) lets the host fence future calls
+    # even when stderr capture is unavailable.
+    cstart, cend = find_function_extent(lines, "\tcatch (const char* msg)")
+    catch_returns = [i for i in range(cstart, cend) if lines[i].strip() == "return 1;"]
+    if len(catch_returns) != 1:
+        raise AdaptError(
+            f"expected one failure return in const-char catch, found {len(catch_returns)}"
+        )
+    catch_index = catch_returns[0]
+    catch_indent = lines[catch_index][:lines[catch_index].index("return 1;")]
+    lines[catch_index] = (
+        f'{catch_indent}return (strcmp(msg, "{ASSERTION_MARKER}") == 0) '
+        f"? {ASSERTION_STATUS} : 1;\n"
+    )
+    report["assertion_status"] = ASSERTION_STATUS
+
+    # __assert_rtn is void, but exceptions are enabled and om_ld64_main already
+    # catches `const char *`. Throwing lets every C++ automatic object unwind;
+    # siglongjmp/abort would either kill the app or skip destructors with
+    # undefined behaviour. If the optional assertion snapshot lock was taken,
+    # release it before leaving the function.
     astart, aend = find_function_extent(lines, "void __assert_rtn(")
     assert_exits = 0
     for i in range(astart, aend):
         if "exit(1);" in lines[i]:
-            lines[i] = lines[i].replace("exit(1);", "abort();")
+            indent = lines[i][:lines[i].index("exit(1);")]
+            lines[i] = (
+                f"{indent}#ifdef HAVE_EXECINFO_H\n"
+                f"{indent}os_lock_unlock(&sAssertLock);\n"
+                f"{indent}#endif\n"
+                f'{indent}throw "{ASSERTION_MARKER}";\n'
+            )
             assert_exits += 1
-    report["assert_exit_to_abort"] = assert_exits
+    if assert_exits != 1:
+        raise AdaptError(f"expected one __assert_rtn exit, found {assert_exits}")
+    report["assert_exit_to_throw"] = assert_exits
 
     remaining = [i for i, l in enumerate(lines)
                  if re.search(r"\bexit\s*\(", l) and not l.strip().startswith("//")]
@@ -276,9 +308,14 @@ def adapt_ld_cpp(text: str, report: dict) -> str:
     # empty vector is a valid post-reset state; the counters reset with it.
     lines += [
         "\n",
+        # InputFiles.cpp owns process-lifetime synthetic header atoms. A normal
+        # command-line linker uses each once, but an in-process second link must
+        # reconstruct every mutable Atom field before those objects are reused.
+        'extern "C" void om_ld64_reset_input_atoms();\n',
         f'extern "C" void {RESET_FN}() {{\n',
         "\tInternalState::resetState();\n",
         "\tSnapshot::globalSnapshot = nullptr;\n",
+        "\tom_ld64_reset_input_atoms();\n",
         "}\n",
     ]
 
@@ -292,12 +329,27 @@ def adapt_ld_cpp(text: str, report: dict) -> str:
     # comment text.
     if f'extern "C" void {RESET_FN}()' not in final:
         raise AdaptError("reset entry point vanished during adaptation")
-    if "InternalState::resetState();" not in final:
-        raise AdaptError("reset entry point does not call InternalState::resetState")
+    reset_start, reset_end = find_function_extent(lines, f'extern "C" void {RESET_FN}')
+    reset_body = "".join(lines[reset_start:reset_end])
+    if reset_body.count("InternalState::resetState();") != 1:
+        raise AdaptError("reset entry point does not call InternalState::resetState exactly once")
+    if reset_body.count("om_ld64_reset_input_atoms();") != 1:
+        raise AdaptError("reset entry point does not reconstruct InputFiles static atoms exactly once")
     if "FinalSection::resetSegments();" not in final:
         raise AdaptError("InternalState::resetState does not delegate to FinalSection")
     if "static void resetState()" not in final:
         raise AdaptError("InternalState::resetState was not inserted")
+    assertion_start, assertion_end = find_function_extent(lines, "void __assert_rtn(")
+    assertion_body = "".join(lines[assertion_start:assertion_end])
+    if assertion_body.count(f'throw "{ASSERTION_MARKER}";') != 1 or "abort();" in assertion_body:
+        raise AdaptError("__assert_rtn does not use the unique safe-unwind marker")
+    safe_catch_start, safe_catch_end = find_function_extent(lines, "\tcatch (const char* msg)")
+    safe_catch_body = "".join(lines[safe_catch_start:safe_catch_end])
+    expected_status = (
+        f'return (strcmp(msg, "{ASSERTION_MARKER}") == 0) ? {ASSERTION_STATUS} : 1;'
+    )
+    if safe_catch_body.count(expected_status) != 1:
+        raise AdaptError("const-char catch does not map assertions to the dedicated status")
     if re.search(r"^int\s+__cxa_atexit\s*\(", final, re.MULTILINE):
         raise AdaptError("exit-handler override survived adaptation")
 
@@ -349,8 +401,69 @@ def adapt_options(text: str, report: dict) -> str:
 def adapt_input_files_cpp(text: str, report: dict) -> str:
     if "#define HAVE_LIBDISPATCH 1" not in text:
         raise AdaptError("InputFiles.cpp: HAVE_LIBDISPATCH define not found")
+    text = text.replace("#define HAVE_LIBDISPATCH 1", "#define HAVE_LIBDISPATCH 0")
     report["libdispatch_disabled"] = True
-    return text.replace("#define HAVE_LIBDISPATCH 1", "#define HAVE_LIBDISPATCH 0")
+
+    # DSOHandleAtom's eight instances are process-lifetime statics because the
+    # original linker exits after one command. OutputFile::assignAtomAddresses()
+    # changes each Atom from section-offset mode to final-address mode and also
+    # mutates other base fields (live state, symbol index, Mach-O section, ...).
+    # A second in-process link otherwise reuses that dirty object and aborts in
+    # setSectionOffset(). Reconstruct the complete objects before every call;
+    # merely clearing the address mode would leave the other cross-link state.
+    declaration_anchor = (
+        "\tstatic DSOHandleAtom\t\t\t\t\t_s_atomPreloadDSO;\n"
+        "private:\n"
+    )
+    if text.count(declaration_anchor) != 1:
+        raise AdaptError("InputFiles.cpp: DSOHandleAtom declaration anchor changed")
+    text = text.replace(
+        declaration_anchor,
+        "\tstatic DSOHandleAtom\t\t\t\t\t_s_atomPreloadDSO;\n"
+        "\tstatic void resetForInProcessReuse();\n"
+        "private:\n",
+    )
+
+    definition_anchor = (
+        'DSOHandleAtom DSOHandleAtom::_s_atomPreloadDSO("___dso_handle", '
+        "ld::Atom::scopeLinkageUnit, ld::Atom::symbolTableNotIn, _s_section_text);\n"
+    )
+    if text.count(definition_anchor) != 1:
+        raise AdaptError("InputFiles.cpp: DSOHandleAtom definition anchor changed")
+    reset_definition = definition_anchor + r'''
+
+// Added for in-process reuse. Assignment from a freshly constructed instance
+// restores the entire ld::Atom base, not just its address mode.
+void DSOHandleAtom::resetForInProcessReuse()
+{
+    _s_atomAll = DSOHandleAtom("___dso_handle", ld::Atom::scopeLinkageUnit, ld::Atom::symbolTableNotIn);
+    _s_atomExecutable = DSOHandleAtom("__mh_execute_header", ld::Atom::scopeGlobal, ld::Atom::symbolTableInAndNeverStrip);
+    _s_atomDylib = DSOHandleAtom("__mh_dylib_header", ld::Atom::scopeLinkageUnit, ld::Atom::symbolTableNotIn);
+    _s_atomBundle = DSOHandleAtom("__mh_bundle_header", ld::Atom::scopeLinkageUnit, ld::Atom::symbolTableNotIn);
+    _s_atomDyld = DSOHandleAtom("__mh_dylinker_header", ld::Atom::scopeLinkageUnit, ld::Atom::symbolTableNotIn);
+    _s_atomObjectFile = DSOHandleAtom("__mh_object_header", ld::Atom::scopeLinkageUnit, ld::Atom::symbolTableNotIn);
+    _s_atomPreload = DSOHandleAtom("__mh_preload_header", ld::Atom::scopeLinkageUnit, ld::Atom::symbolTableNotIn, _s_section_preload);
+    _s_atomPreloadDSO = DSOHandleAtom("___dso_handle", ld::Atom::scopeLinkageUnit, ld::Atom::symbolTableNotIn, _s_section_text);
+}
+'''
+    text = text.replace(definition_anchor, reset_definition)
+    text += r'''
+
+extern "C" void om_ld64_reset_input_atoms()
+{
+    ld::tool::DSOHandleAtom::resetForInProcessReuse();
+}
+'''
+    atom_names = (
+        "_s_atomAll", "_s_atomExecutable", "_s_atomDylib", "_s_atomBundle",
+        "_s_atomDyld", "_s_atomObjectFile", "_s_atomPreload", "_s_atomPreloadDSO",
+    )
+    for name in atom_names:
+        pattern = rf"^\s*{re.escape(name)}\s*=\s*DSOHandleAtom\("
+        if len(re.findall(pattern, text, re.MULTILINE)) != 1:
+            raise AdaptError(f"InputFiles.cpp: static atom {name} is not reconstructed exactly once")
+    report["input_static_atoms_reconstructed"] = len(atom_names)
+    return text
 
 
 def adapt_input_files_h(text: str, report: dict) -> str:
@@ -452,11 +565,10 @@ def adapt_plain(rel: str, text: str, report: dict) -> str:
 
 
 def write_reset_hooks(ld_dir: pathlib.Path) -> None:
-    """Provide the remaining reset entry points the host calls between builds.
+    """Write declarations for reset hooks emitted in their owning units.
 
-    reset_state() is emitted into ld.cpp (it needs access to ld.cpp's nested
-    class). The other two are no-ops here: the port has threads disabled, and
-    branch-island state is rebuilt per link.
+    The mutable objects have internal or source-local types, so each reset is
+    implemented beside its state and this file documents the complete surface.
     """
     header = (
         "// Generated by scripts/build-ld64-inprocess.py -- see that script for why.\n"
@@ -466,10 +578,12 @@ def write_reset_hooks(ld_dir: pathlib.Path) -> None:
         "// the previous link's pointers must be released between runs -- but those\n"
         "// statics have internal linkage, so their reset functions cannot live in\n"
         "// this file. Each is appended to the very translation unit that owns the\n"
-        "// state: reset_state in ld.cpp, reset_branches in passes/branch_island.cpp,\n"
-        "// reset_threads in passes/thread_starts.cpp, reset_options in Options.cpp.\n"
+        "// state: reset_state in ld.cpp, reset_input_atoms in InputFiles.cpp,\n"
+        "// reset_branches in passes/branch_island.cpp, reset_threads in\n"
+        "// passes/thread_starts.cpp, and reset_options in Options.cpp.\n"
         'extern "C" void om_ld64_reset_options();\n'
         'extern "C" void om_ld64_reset_state();\n'
+        'extern "C" void om_ld64_reset_input_atoms();\n'
         'extern "C" void om_ld64_reset_branches();\n'
         'extern "C" void om_ld64_reset_threads();\n'
     )

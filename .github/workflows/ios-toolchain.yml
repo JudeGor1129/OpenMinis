@@ -81,6 +81,12 @@ jobs:
         if: steps.restore-kit.outputs.cache-hit != 'true'
         run: bash toolchain-build/scripts/fetch-sources.sh
 
+      # The LLVM cross-build takes most of the job. Assert every source rewrite
+      # against the exact pinned ld64 checkout before spending that time.
+      - name: Check the in-process ld64 rewrite contract
+        if: steps.restore-kit.outputs.cache-hit != 'true'
+        run: python3 toolchain-build/scripts/build-ld64-inprocess.py --check
+
       - name: Build arm64 and arm64e archives
         if: steps.restore-kit.outputs.cache-hit != 'true'
         env:
