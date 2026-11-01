@@ -28,6 +28,16 @@
 // compiling it too; with no toolchain linked nothing calls into it.
 #include "OMStdioCapture.h"
 
+// Embedding a command-line linker means its failures can be fatal to us: ld64
+// reports an internal inconsistency with assert(), which calls abort() and takes
+// the whole app down with it. build-ld64-inprocess.py already rewrites the exit()
+// calls inside main(); this guard covers the same problem one layer deeper. It
+// turns a fatal signal from the linker into a reported failure, and because the
+// captured stderr goes to a temporary file rather than a pipe, the assertion text
+// survives the jump and is exactly what the report then shows.
+#include <setjmp.h>
+#include <signal.h>
+
 // Used by the capture helper below, which is compiled in both configurations.
 // With the toolchain disabled nothing calls it, but it still has to compile:
 // that is the shipping default, and it is the only configuration a machine
@@ -42,7 +52,38 @@
 typedef struct {
     int  exitStatus;    ///< value returned by the linker entry point
     BOOL internalError; ///< the entry point unwound instead of returning
+    BOOL aborted;       ///< the linker raised a fatal signal (assert, crash)
+    int  signalNumber;  ///< which signal, when `aborted`
 } OMLinkerRun;
+
+/// Jump target for a fatal signal raised inside the linker.
+static sigjmp_buf OMLinkerSignalJump;
+static volatile sig_atomic_t OMLinkerSignalNumber = 0;
+
+static void OMLinkerSignalHandler(int signalNumber) {
+    OMLinkerSignalNumber = signalNumber;
+    siglongjmp(OMLinkerSignalJump, 1);
+}
+
+typedef struct {
+    struct sigaction previous;
+    int installed;
+} OMSignalGuard;
+
+static void OMSignalGuardInstall(OMSignalGuard *guard, int signalNumber) {
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = OMLinkerSignalHandler;
+    sigemptyset(&action.sa_mask);
+    // Re-arm while the handler runs so a repeated fault cannot escape the guard.
+    action.sa_flags = SA_NODEFER;
+    guard->installed = (sigaction(signalNumber, &action, &guard->previous) == 0);
+}
+
+static void OMSignalGuardRestore(OMSignalGuard *guard, int signalNumber) {
+    if (guard->installed) sigaction(signalNumber, &guard->previous, NULL);
+    guard->installed = 0;
+}
 
 /// Runs `invoke` with fd 1/2 captured and folds the result into the text slots.
 ///
@@ -59,7 +100,7 @@ typedef struct {
 [[maybe_unused]] static inline OMLinkerRun OMRunLinkerCapturing(int (^invoke)(void),
                                                                NSString **outText,
                                                                NSString **errText) {
-    OMLinkerRun run = { 0, NO };
+    OMLinkerRun run = { 0, NO, NO, 0 };
     if (outText) *outText = @"";
     if (errText) *errText = @"";
 
@@ -72,6 +113,61 @@ typedef struct {
     capturedErr[0] = '\0';
     const BOOL capturing = OMStdioCaptureBegin(&capture,
                                                NSTemporaryDirectory().UTF8String) == 1;
+
+    // The linker runs on its own serial queue, so a single jump target is enough.
+    OMSignalGuard abrtGuard, segvGuard, busGuard, illGuard;
+    OMLinkerSignalNumber = 0;
+    if (sigsetjmp(OMLinkerSignalJump, /*savemask=*/1) == 0) {
+        OMSignalGuardInstall(&abrtGuard, SIGABRT);
+        OMSignalGuardInstall(&segvGuard, SIGSEGV);
+        OMSignalGuardInstall(&busGuard, SIGBUS);
+        OMSignalGuardInstall(&illGuard, SIGILL);
+        @try {
+            run.exitStatus = invoke();
+        } @catch (NSException *e) {
+            OMSignalGuardRestore(&illGuard, SIGILL);
+            OMSignalGuardRestore(&busGuard, SIGBUS);
+            OMSignalGuardRestore(&segvGuard, SIGSEGV);
+            OMSignalGuardRestore(&abrtGuard, SIGABRT);
+            OMStdioCaptureEnd(&capture, NULL, 0, NULL, 0);
+            run.internalError = YES;
+            if (errText) {
+                *errText = [NSString stringWithFormat:@"OMToolchain: ObjC exception %@: %@\n", e.name, e.reason];
+            }
+            return run;
+        } @catch (...) {
+            OMSignalGuardRestore(&illGuard, SIGILL);
+            OMSignalGuardRestore(&busGuard, SIGBUS);
+            OMSignalGuardRestore(&segvGuard, SIGSEGV);
+            OMSignalGuardRestore(&abrtGuard, SIGABRT);
+            OMStdioCaptureEnd(&capture, NULL, 0, NULL, 0);
+            run.internalError = YES;
+            if (errText) *errText = @"OMToolchain: unknown exception in linker\n";
+            return run;
+        }
+    } else {
+        run.aborted = YES;
+        run.signalNumber = OMLinkerSignalNumber;
+    }
+    OMSignalGuardRestore(&illGuard, SIGILL);
+    OMSignalGuardRestore(&busGuard, SIGBUS);
+    OMSignalGuardRestore(&segvGuard, SIGSEGV);
+    OMSignalGuardRestore(&abrtGuard, SIGABRT);
+
+    if (run.aborted) {
+        OMStdioCaptureEnd(&capture, capturedOut.data(), capturedOut.size(),
+                          capturedErr.data(), capturedErr.size());
+        if (outText) *outText = [NSString stringWithUTF8String:capturedOut.data()] ?: @"";
+        NSMutableString *reported = [NSMutableString string];
+        [reported appendFormat:@"OMToolchain: linker aborted with signal %d (assertion or crash); "
+                                @"the linker state is no longer reusable, so no further link runs.\n",
+                                run.signalNumber];
+        if (capturedErr[0] != '\0') {
+            [reported appendString:[NSString stringWithUTF8String:capturedErr.data()] ?: @""];
+        }
+        if (errText) *errText = reported;
+        return run;
+    }
 
     @try {
         run.exitStatus = invoke();
@@ -419,7 +515,9 @@ struct ArgvStorage {
 
         outString = capturedOut;
         errString = capturedErr;
-        if (run.internalError) {
+        // An aborted linker is not a successful link: it never wrote a status,
+        // so exitStatus is still 0 and would otherwise read as success.
+        if (run.internalError || run.aborted) {
             status = OMToolchainStatusInternalError;
         } else {
             status = (run.exitStatus == 0) ? OMToolchainStatusOK : OMToolchainStatusDiagnostics;
