@@ -631,6 +631,8 @@ struct ArgvStorage {
         }
         [args addObject:@"-internal-externc-isystem"];
         [args addObject:[sdk stringByAppendingPathComponent:@"usr/include"]];
+        [args addObject:@"-iframework"];
+        [args addObject:[sdk stringByAppendingPathComponent:@"System/Library/Frameworks"]];
     }
     [args addObject:@"-fblocks"];
     [args addObject:@"-fencode-extended-block-signature"];

@@ -61,8 +61,8 @@ require("compile_arm64_foundation_objective_c" in impl and
         'capability[@"sdk"] isEqualToString:@"present"' in impl,
         "Foundation Objective-C fixture must compile against the imported SDK when present")
 for cc1_flag in ("-fdefine-target-os-macros", "-target-cpu",
-                 "-internal-externc-isystem", "-internal-isystem", "-fblocks",
-                 "-fobjc-exceptions", "-fexceptions"):
+                 "-internal-externc-isystem", "-internal-isystem", "-iframework",
+                 "-fblocks", "-fobjc-exceptions", "-fexceptions"):
     require(cc1_flag in toolchain_impl,
             "CC1 must receive clang Driver's SDK/builtin configuration: " + cc1_flag)
 require("Task.detached" in view and "最多重复 3 轮" in view,
