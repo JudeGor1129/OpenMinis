@@ -613,12 +613,30 @@ struct ArgvStorage {
     [args addObject:@"-cc1"];
     [args addObject:@"-triple"];
     [args addObject:[NSString stringWithFormat:@"%@-apple-ios%@", archName, minimumIOS]];
+    [args addObject:@"-fdefine-target-os-macros"];
+    [args addObject:@"-target-cpu"];
+    [args addObject:[archName isEqualToString:@"arm64e"] ? @"apple-a12" : @"apple-a7"];
+    [args addObject:@"-fgnuc-version=4.2.1"];
+    [args addObject:@"-D__GCC_HAVE_DWARF2_CFI_ASM=1"];
     [args addObject:@"-resource-dir"];
     [args addObject:res ?: @""];
     if (sdk) {
         [args addObject:@"-isysroot"];
         [args addObject:sdk];
+        [args addObject:@"-internal-isystem"];
+        [args addObject:[sdk stringByAppendingPathComponent:@"usr/local/include"]];
+        if (res.length > 0) {
+            [args addObject:@"-internal-isystem"];
+            [args addObject:[res stringByAppendingPathComponent:@"include"]];
+        }
+        [args addObject:@"-internal-externc-isystem"];
+        [args addObject:[sdk stringByAppendingPathComponent:@"usr/include"]];
     }
+    [args addObject:@"-fblocks"];
+    [args addObject:@"-fencode-extended-block-signature"];
+    [args addObject:@"-fregister-global-dtors-with-atexit"];
+    [args addObject:@"-fskip-odr-check-in-gmf"];
+    [args addObject:@"-fmax-type-align=16"];
 
     // Language selection follows the extension so ObjC/C++/asm all route here.
     NSString *ext = sourcePath.pathExtension.lowercaseString;
@@ -632,6 +650,8 @@ struct ArgvStorage {
     if (isObjC) {
         [args addObject:@"-fobjc-runtime=ios-14.0"];
         [args addObject:@"-fobjc-arc"];
+        [args addObject:@"-fobjc-exceptions"];
+        [args addObject:@"-fexceptions"];
     }
     [args addObject:@"-emit-obj"];
     [args addObject:@"-o"];

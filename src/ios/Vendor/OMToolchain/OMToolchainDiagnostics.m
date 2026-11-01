@@ -268,12 +268,21 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
              "+ (int)value:(int)x { return x + 1; }\n"
              "@end\n"
              "int om_objc_entry(int x) { return [OMRuntimeProbe value:x]; }\n";
+        NSString *foundationFixture =
+            @"#import <Foundation/Foundation.h>\n"
+             "@interface OMFoundationProbe : NSObject\n"
+             "@end\n"
+             "@implementation OMFoundationProbe\n"
+             "+ (NSUInteger)probeLength { return [@\"runtime\" length]; }\n"
+             "@end\n";
         NSString *badFixture = @"int om_broken( { return 0; }\n";
         NSURL *cSource = [root URLByAppendingPathComponent:@"probe.c"];
         NSURL *objcSource = [root URLByAppendingPathComponent:@"probe.m"];
+        NSURL *foundationSource = [root URLByAppendingPathComponent:@"foundation-probe.m"];
         NSURL *badSource = [root URLByAppendingPathComponent:@"broken.c"];
         BOOL wrote = [cFixture writeToURL:cSource atomically:YES encoding:NSUTF8StringEncoding error:&fileError] &&
             [objcFixture writeToURL:objcSource atomically:YES encoding:NSUTF8StringEncoding error:&fileError] &&
+            [foundationFixture writeToURL:foundationSource atomically:YES encoding:NSUTF8StringEncoding error:&fileError] &&
             [badFixture writeToURL:badSource atomically:YES encoding:NSUTF8StringEncoding error:&fileError];
         if (!wrote) {
             report[@"passed"] = @NO;
@@ -451,6 +460,34 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
                                 stdoutText, stderrText,
                                 @{@"output_bytes": @(OMFileBytes(objcObject)),
                                   @"macho": inspection})];
+
+        NSString *foundationObject = [[root URLByAppendingPathComponent:@"foundation-arm64.o"] path];
+        NSString *foundationStdout = nil, *foundationStderr = nil;
+        started = [NSDate date];
+        if ([capability[@"sdk"] isEqualToString:@"present"]) {
+            status = OMCompile(foundationSource.path, foundationObject, @"arm64", NO,
+                               &foundationStdout, &foundationStderr);
+            duration = -started.timeIntervalSinceNow;
+            inspection = OMInspectMachO(foundationObject);
+            passed = status == OMToolchainStatusOK && OMFileBytes(foundationObject) > 0 &&
+                [inspection[@"valid"] boolValue] &&
+                [inspection[@"filetype"] unsignedIntValue] == MH_OBJECT &&
+                [inspection[@"architecture"] isEqualToString:@"arm64"];
+            allPassed = allPassed && passed;
+            report[@"foundation_sdk_compilation"] = passed ? @"passed" : @"failed";
+            [steps addObject:OMStep(@"compile_arm64_foundation_objective_c", status, passed, duration,
+                                    foundationStdout, foundationStderr,
+                                    @{@"output_bytes": @(OMFileBytes(foundationObject)),
+                                      @"macho": inspection,
+                                      @"sdk": @"present"})];
+        } else {
+            status = OMToolchainStatusUnavailable;
+            duration = 0;
+            report[@"foundation_sdk_compilation"] = @"skipped_sdk_missing";
+            [steps addObject:OMStep(@"compile_arm64_foundation_objective_c", status, YES, duration,
+                                    @"", @"Skipped: no usable bundled iPhoneOS SDK.",
+                                    @{@"sdk": @"missing", @"skipped": @YES})];
+        }
 
         NSString *badObject = [[root URLByAppendingPathComponent:@"broken.o"] path];
         stdoutText = nil; stderrText = nil; started = [NSDate date];
