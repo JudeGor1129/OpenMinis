@@ -73,6 +73,17 @@ class Contracts(unittest.TestCase):
         for p in ROOT.rglob('*.sh'):
             if {'work','build'} & set(p.relative_to(ROOT).parts): continue
             self.assertIsNone(re.search(r'\blipo\s+-verify_arch\b',p.read_text()),str(p))
+    def test_runtime_evidence_matches_pinned_artifact_and_rejects_mutation(self):
+        repo = ROOT.parent
+        validator = repo/'scripts/ios15/verify-embedded-toolchain-runtime-evidence.py'
+        evidence = ROOT/'runtime-validation-evidence.json'
+        lock = ROOT/'verified-toolchain-lock.json'
+        self.assertEqual(subprocess.run(['python3',str(validator),str(evidence),str(lock)],capture_output=True).returncode,0)
+        record=json.loads(evidence.read_text())
+        record['report']['required_steps']['compile_arm64_foundation_objective_c']='failed'
+        mutated=Path(self.tmp.name)/'mutated-runtime-evidence.json'
+        mutated.write_text(json.dumps(record))
+        self.assertNotEqual(subprocess.run(['python3',str(validator),str(mutated),str(lock)],capture_output=True).returncode,0)
     def test_cc1_options_exclude_executable_name(self):
         source=(ROOT.parent/'src/ios/Vendor/OMToolchain/OMToolchain.mm').read_text()
         cc1=source[source.index('+ (OMToolchainStatus)runCC1:'):source.index('#pragma mark - Linker')]
@@ -82,5 +93,5 @@ class Contracts(unittest.TestCase):
         self.assertNotIn('/*prependProgramName=*/true', cc1)
 
 if __name__=='__main__':
-    print('Fixture command-contract tests only; real Xcode compile/link and device tests still required.',flush=True)
+    print('Fixture contracts and locked runtime-evidence policy only; real Xcode compile/link and device tests still required.',flush=True)
     unittest.main(verbosity=2)

@@ -258,7 +258,7 @@ struct ArgvStorage {
                          : !verified ? @"已链接 LLVM/ld64，但尚未通过启用桥接编译与静态链接门禁。"
                          : !headersReady ? @"缺少与 LLVM 版本匹配的 Clang builtin headers。"
                          : !sdkReady ? @"缺少可用的 iOS SDK。"
-                         : @"编译资源已通过配置门禁，仍需运行时编译与链接验证。"};
+                         : @"固定 fixture 运行时验证已通过；BuildProvider 仍需独立的安全执行适配器。"};
 }
 
 #if OM_TOOLCHAIN_ENABLED

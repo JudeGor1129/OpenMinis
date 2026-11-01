@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "evidence_kind": "fixed_runtime_fixtures",
+  "provenance": "user-supplied device report; not cryptographically device-signed",
+  "report_sha256": "8d1c6ebf3a013a973d3e5e1f7dbf702d85a343c11cd7f2dba55af7747a52ecea",
+  "app": {"workflow_run_id": 41303077104, "commit": "27e83ffbd0d15b58ab226ecee9d8600084ea7117", "artifact_id": 13082572842, "artifact_name": "Minis-iOS15-TrollStore-201", "artifact_sha256": "50a759b99c23bb5c265d0d8a93f3216e250b2f4f47327bb9e683b0cc5f254542"},
+  "toolchain": {"workflow_run_id": 41277801812, "commit": "9321c1bfc0e8eff0a8c9cc5cf09004199ddccd15", "artifact_id": 13073843753, "archive_sha256": "cda9435987141fc8aea0a8d4b85e241726354cd74cb544dbeb6c0c0178fc2232", "manifest_sha256": "a37fc15235cccbcd4aac4a60cb8f1ed3795daa766d37bb005a49e8ef49e9a3d5"},
+  "report": {"passed": true, "requested_iterations": 3, "bounded_iterations": 3, "foundation_sdk_compilation": "passed", "temporary_outputs_removed": true, "output_execution_attempted": false, "provider_executable": false, "runtime_verification_gate": "not_granted", "capability_verification": "missing", "required_steps": {"compile_arm64_c":"ok", "link_arm64_dylib":"ok", "compile_arm64e_c":"ok", "link_arm64e_dylib":"ok", "link_probe_full_dylib":"ok", "link_probe_libsystem_dylib":"ok", "compile_arm64_objective_c":"ok", "compile_arm64_foundation_objective_c":"ok", "expected_clang_failure":"diagnostics_expected", "clang_recovery_after_failure":"ok", "expected_linker_failure":"diagnostics_expected", "linker_recovery_after_failure":"ok", "repeat_compile_link_1":"ok", "repeat_compile_link_2":"ok", "repeat_compile_link_3":"ok"}, "expected_negative_probes":["link_probe_minimal_dylib","link_probe_platform_version","link_probe_install_name","link_probe_executable"], "resident_before_bytes":381779968, "resident_after_bytes":435175424, "resident_delta_bytes":53395456, "peak_observed_resident_bytes":435224576},
+  "policy": {"verification_macro_may_be_defined_for_validation_app": true, "provider_must_remain_unavailable": true, "reason": "No constrained in-process BuildProvider execution adapter has been implemented or reviewed."}
+}

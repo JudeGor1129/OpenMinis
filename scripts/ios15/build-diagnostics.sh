@@ -50,9 +50,13 @@ sed -i '' '/"-lfakefs",/a\
                     "Foundation",\
 ' "$PROJECT"
 
-# Disposable CI checkout: use the exact verified Run7 arm64 kit. This links
-# the bridge for App validation only; OM_TOOLCHAIN_VERIFIED remains absent.
+# Disposable CI checkout: use the exact Run15 arm64 kit. The pinned, reviewed
+# fixed-fixture evidence authorizes the verification bit for this validation App
+# only. BuildProvider stays unavailable until its execution adapter is reviewed.
 TOOLCHAIN_ROOT=build/ios15/embedded-toolchain
+EVIDENCE=toolchain-build/runtime-validation-evidence.json
+python3 scripts/ios15/verify-embedded-toolchain-runtime-evidence.py \
+  "$EVIDENCE" toolchain-build/verified-toolchain-lock.json
 [[ -f "$TOOLCHAIN_ROOT/libomllvm-arm64.a" && -f "$TOOLCHAIN_ROOT/libomld64.a" ]] || {
   echo 'error: verified embedded toolchain archives missing' >&2; exit 1;
 }
@@ -67,13 +71,14 @@ sed -i '' '/OTHER_SWIFT_FLAGS = "";/a\
                     OTHER_CPLUSPLUSFLAGS = (\
                         "$(inherited)",\
                         "-DOM_TOOLCHAIN_ENABLED=1",\
+                        "-DOM_TOOLCHAIN_VERIFIED=1",\
                         "-fno-rtti",\
                         "-fexceptions",\
                         "-I$(SRCROOT)/../../build/ios15/embedded-toolchain/dev-headers/arm64/include",\
                         "-I$(SRCROOT)/../../build/ios15/embedded-toolchain/dev-headers/common/include",\
                     );\
 ' "$PROJECT"
-printf '%s\n' 'OM_TOOLCHAIN_ENABLED=1; OM_TOOLCHAIN_VERIFIED intentionally unset; runtime provider remains unavailable.' | tee ci-logs/embedded-link-settings.txt
+printf '%s\n' 'OM_TOOLCHAIN_ENABLED=1; OM_TOOLCHAIN_VERIFIED=1 after pinned fixed-runtime evidence validation; BuildProvider remains unavailable (no execution adapter).' | tee ci-logs/embedded-link-settings.txt
 plutil -lint "$PROJECT"
 rm -rf build/ios15/Minis.xcresult
 xcodebuild -project src/ios/Minis.xcodeproj \
@@ -117,4 +122,4 @@ if grep -q 'NavbarEvalStats' ci-logs/release-symbols.txt; then
   echo 'error: DEBUG-only chat profiling code survived Release compilation' >&2
   exit 1
 fi
-printf 'PASS: optimized arm64 Release App links locked LLVM/ld64; runtime verification remains disabled.\n'
+printf 'PASS: optimized arm64 Release App links the locked LLVM/ld64; fixed-fixture verification is enabled for this validation App only, and BuildProvider execution remains unavailable.\n'

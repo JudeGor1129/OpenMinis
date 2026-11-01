@@ -209,6 +209,7 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
         @autoreleasepool {
         NSUInteger rounds = MAX((NSUInteger)1, MIN(iterations, (NSUInteger)3));
         NSDictionary<NSString *, NSString *> *capability = [OMToolchain capabilityStatus];
+        BOOL runtimeEvidenceAuthorized = [capability[@"verification"] isEqualToString:@"passed"];
         NSMutableDictionary<NSString *, id> *report = [@{
             @"schema": @1,
             @"suite": @"fixed in-process Clang/ld64 runtime diagnostics",
@@ -216,13 +217,13 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
             @"bounded_iterations": @(rounds),
             @"capability": capability,
             @"provider_executable": @NO,
-            @"runtime_verification_gate": @"not_granted",
+            @"runtime_verification_gate": runtimeEvidenceAuthorized ? @"fixed_fixture_evidence_verified" : @"not_granted",
             @"output_execution_attempted": @NO,
             @"limitations": @[
-                @"Only fixed built-in freestanding C/Objective-C fixtures are accepted.",
+                @"Only fixed built-in freestanding C/Objective-C and optional Foundation fixtures are accepted.",
                 @"Generated Mach-O files are inspected but never loaded or executed.",
-                @"A passing report does not define OM_TOOLCHAIN_VERIFIED or unlock BuildProvider.",
-                @"Foundation/SDK compilation is not covered when no bundled iPhoneOS SDK is present.",
+                @"OM_TOOLCHAIN_VERIFIED authorizes fixed-fixture validation only; BuildProvider remains unavailable without a reviewed execution adapter.",
+                @"Foundation/SDK compilation is reported as skipped when no bundled iPhoneOS SDK is present.",
             ],
         } mutableCopy];
         BOOL linked = [capability[@"compiler_linked"] isEqualToString:@"yes"];

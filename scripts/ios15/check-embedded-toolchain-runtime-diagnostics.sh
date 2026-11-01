@@ -45,8 +45,11 @@ require("runSuiteWithIterations:(NSUInteger)iterations" in header,
         "public surface must accept only a bounded iteration count")
 require("MIN(iterations, (NSUInteger)3)" in impl, "diagnostic iteration count must be capped at three")
 require("output_execution_attempted\": @NO" in impl, "report must state generated output is never executed")
-require("runtime_verification_gate\": @\"not_granted\"" in impl,
-        "diagnostic report must not claim the runtime gate")
+require("runtimeEvidenceAuthorized ? @\"fixed_fixture_evidence_verified\" : @\"not_granted\"" in impl,
+        "runtime report must distinguish evidence-authorized validation from unverified builds")
+require("provider_executable\": @NO" in impl and
+        "without a reviewed execution adapter" in impl,
+        "verification evidence must not authorize Provider execution")
 for forbidden in ("dlopen(", "NSBundle bundleWithPath", "system(", "popen(", "posix_spawn("):
     require(forbidden not in impl, "diagnostic implementation must not execute code or spawn processes: " + forbidden)
 require("-fptrauth-returns" in impl and "b_key_return_signing" in impl,

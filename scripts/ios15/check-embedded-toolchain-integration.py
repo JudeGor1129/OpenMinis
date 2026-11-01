@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Source-policy gate for the linked-but-runtime-disabled toolchain build."""
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,7 +19,17 @@ package = text("scripts/ios15/package-trollstore.sh")
 prepare = text("scripts/ios15/prepare-embedded-toolchain.sh")
 provider = text("src/ios/Agent/Build/EmbeddedToolchainBuildProvider.swift")
 project = text("src/ios/Minis.xcodeproj/project.pbxproj")
-lock = json.loads(text("toolchain-build/verified-toolchain-lock.json"))
+lock_path = ROOT / "toolchain-build/verified-toolchain-lock.json"
+evidence_path = ROOT / "toolchain-build/runtime-validation-evidence.json"
+lock = json.loads(lock_path.read_text(encoding="utf-8"))
+require(evidence_path.is_file(), "reviewed fixed-runtime evidence record is missing")
+verification = subprocess.run(
+    [sys.executable, str(ROOT / "scripts/ios15/verify-embedded-toolchain-runtime-evidence.py"),
+     str(evidence_path), str(lock_path)],
+    capture_output=True, text=True, check=False)
+require(verification.returncode == 0,
+        "fixed-runtime evidence does not match the pinned toolchain: " +
+        (verification.stderr or verification.stdout).strip())
 require(project.count('LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../deps/libs";') == 2,
         "expected exactly two main-App library search path anchors")
 require(project.count('"-lfakefs",') == 2,
@@ -29,8 +41,12 @@ for value in ('embedded-toolchain/libomllvm-arm64.a', 'embedded-toolchain/liboml
               "dev-headers/arm64/include", "ARCHS=arm64"):
     require(value in build, f"missing App build setting: {value}")
 require("libomllvm-arm64e.a" not in build, "arm64 App must not link the arm64e LLVM archive")
-require("-DOM_TOOLCHAIN_VERIFIED" not in build, "runtime verification macro must remain unset")
-require("OM_TOOLCHAIN_VERIFIED" not in project, "committed Xcode settings must not define runtime verification")
+require("OM_TOOLCHAIN_VERIFIED=1" in build, "evidence-validated App must expose the runtime-verification bit")
+require("verify-embedded-toolchain-runtime-evidence.py" in build and
+        "runtime-validation-evidence.json" in build,
+        "verification bit must be bound to the reviewed runtime evidence record")
+require("OM_TOOLCHAIN_VERIFIED" not in project,
+        "committed Xcode project must not globally enable runtime verification")
 require("mapfile" not in prepare, "prepare script must remain compatible with macOS Bash 3.2")
 require("--metadata" in prepare, "GitHub artifact metadata must be checked before download")
 require("verify-bundled-clang-resource.py" in build,
@@ -62,5 +78,5 @@ require(set(lock.get("manifest", {}).get("archives", {})) == {
 require(lock.get("enabled_link_report", {}).get("result_architectures") ==
         ["arm64", "arm64", "arm64e", "arm64e"],
         "locked enabled-link report must cover both object and executable architectures")
-print("PASS: source policy binds the future arm64 App validation build to the exact locked archive paths.")
-print("PASS: no link ran here; OM_TOOLCHAIN_VERIFIED is unset and the Provider remains unavailable.")
+print("PASS: policy binds the disposable arm64 validation App to the locked kit and fixed-runtime evidence.")
+print("PASS: OM_TOOLCHAIN_VERIFIED is validation-only; committed Xcode target and BuildProvider remain locked.")
