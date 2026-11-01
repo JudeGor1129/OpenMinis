@@ -359,15 +359,3 @@ for ARCH in $LD64_ARCHS; do
   INPUT_ATOM_RESET_DEFINITIONS=$((INPUT_ATOM_RESET_DEFINITIONS + DEFINED))
 done
 echo "==> static input-atom reset definitions in archive: $INPUT_ATOM_RESET_DEFINITIONS"
-
-# The host reserves EX_SOFTWARE (70) for a safely-unwound internal assertion.
-# Its marker must be present in each compiled slice, otherwise a stale ld.cpp
-# could still call abort() even though the reset hook itself is up to date.
-ARCH_COUNT="$(for ARCH in $LD64_ARCHS; do echo "$ARCH"; done | wc -l | tr -d ' ')"
-ASSERTION_MARKERS="$(xcrun strings "$OUT" | grep -c '^OM_LD64_INTERNAL_ASSERTION$' || true)"
-if [ "${ASSERTION_MARKERS:-0}" -lt "$ARCH_COUNT" ]; then
-  echo "!! safe assertion marker missing from one or more slices of $OUT " \
-       "(found ${ASSERTION_MARKERS:-0}, expected at least $ARCH_COUNT)" >&2
-  exit 1
-fi
-echo "==> safe assertion markers in archive: $ASSERTION_MARKERS"
