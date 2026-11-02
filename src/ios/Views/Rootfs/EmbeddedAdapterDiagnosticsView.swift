@@ -97,7 +97,7 @@ struct EmbeddedAdapterDiagnosticsView: View {
             } header: {
                 Text("固定操作流程")
             } footer: {
-                Text("含成功请求、故意编译/链接失败、恢复和预取消测试。每个 App 进程最多 3 次适配器链接；RSS 达 384 MiB 或累计增加 64 MiB 即停止。请重新启动 App 后运行一次，不要先重复旧诊断。取消不会强行中断 LLVM/ld64。")
+                Text("仅限本页固定夹具；不编译用户工程或头文件，不发布产物。含成功请求、故意编译/链接失败、恢复和预取消测试。每个 App 进程最多 3 次适配器链接；RSS 达 384 MiB 或累计增加 64 MiB 即停止。请重新启动 App 后运行一次，不要先重复旧诊断。取消不会强行中断 LLVM/ld64；完成后请彻底退出并重启 App，清除本次 LLVM/ld64 常驻状态。")
             }
             if !reportText.isEmpty {
                 Section("适配器诊断 JSON") {
