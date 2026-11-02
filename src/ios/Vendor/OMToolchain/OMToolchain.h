@@ -54,11 +54,12 @@ typedef NS_ENUM(NSInteger, OMOutputArch) {
 ///        performed, matching how the toolchain driver already invokes cc1.
 /// @param outText Receives clang stdout (usually empty).
 /// @param errText Receives diagnostics. Non-empty on status Diagnostics.
-// Explicit Swift names avoid Darwin stdio macros rewriting stdout/stderr
-// selector tokens into __stdoutp/__stderrp in the Objective-C importer.
+// Literal Swift attributes avoid Darwin stdio macro expansion, including
+// NS_SWIFT_NAME's delegation to CF_SWIFT_NAME (which expands the tokens once).
+// The Objective-C selectors are unchanged; only Swift import spelling is fixed.
 + (OMToolchainStatus)runCC1:(NSArray<NSString *> *)cc1Arguments
                      stdout:(NSString *_Nullable *_Nullable)outText
-                     stderr:(NSString *_Nullable *_Nullable)errText NS_SWIFT_NAME(runCC1(_:stdout:stderr:));
+                     stderr:(NSString *_Nullable *_Nullable)errText __attribute__((swift_name("runCC1(_:stdout:stderr:)")));
 
 /// Runs the in-process Mach-O linker.
 ///
@@ -79,7 +80,7 @@ typedef NS_ENUM(NSInteger, OMOutputArch) {
 ///        excluding argv[0].
 + (OMToolchainStatus)runLinker:(NSArray<NSString *> *)ld64Arguments
                         stdout:(NSString *_Nullable *_Nullable)outText
-                        stderr:(NSString *_Nullable *_Nullable)errText NS_SWIFT_NAME(runLinker(_:stdout:stderr:));
+                        stderr:(NSString *_Nullable *_Nullable)errText __attribute__((swift_name("runLinker(_:stdout:stderr:)")));
 
 /// Infers the architecture of a Mach-O produced by the calls above.
 /// Reads cputype/cpusubtype only; it does not validate code signatures.

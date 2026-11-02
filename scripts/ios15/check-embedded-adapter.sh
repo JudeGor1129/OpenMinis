@@ -70,9 +70,9 @@ require('"1ab02266a39491a8bd5a91ba36d5c8c8c6ac6efb92099e1091a1fd2370fc53e3"' in 
         'native libSystem content pin must not be replaced with a fake-fixture hash')
 require('O_NOFOLLOW' in adapter, 'native/generated input must reject symlinks')
 header = Path('src/ios/Vendor/OMToolchain/OMToolchain.h').read_text(encoding='utf-8')
-require('NS_SWIFT_NAME(runCC1(_:stdout:stderr:))' in header and
-        'NS_SWIFT_NAME(runLinker(_:stdout:stderr:))' in header,
-        'bridge needs explicit Swift names immune to Darwin stdio selector macros')
+require('swift_name("runCC1(_:stdout:stderr:)")' in header and
+        'swift_name("runLinker(_:stdout:stderr:)")' in header,
+        'bridge needs literal Swift names immune to nested Darwin stdio macro expansion')
 project = Path('src/ios/Minis.xcodeproj/project.pbxproj').read_text(encoding='utf-8')
 view = Path('src/ios/Views/Rootfs/EmbeddedAdapterDiagnosticsView.swift').read_text(encoding='utf-8')
 settings = Path('src/ios/Views/Rootfs/RootfsBuildSettingsView.swift').read_text(encoding='utf-8')
