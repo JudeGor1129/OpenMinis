@@ -10,6 +10,10 @@ struct EmbeddedAdapterValidationOutcome: Codable, Sendable {
 }
 
 struct EmbeddedAdapterValidationReport: Codable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case schema, suite, providerExecutable, outputExecutionAttempted, outputFilesPublished
+        case outcomes, cancelled, passed
+    }
     let schema = 1
     let suite = "restricted_operation_adapter_validation"
     let providerExecutable = false

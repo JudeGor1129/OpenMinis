@@ -1,6 +1,6 @@
 # EmbeddedToolchainBuildProvider safety design
 
-Status: validation-only execution seam implemented. Generic `EmbeddedToolchainBuildProvider.build/test` remains unavailable; no user-project detector, external input or artifact publication is connected. The new adapter still requires Swift contracts, a full App build, review and its own device validation.
+Status: validation-only execution seam implemented. Generic `EmbeddedToolchainBuildProvider.build/test` remains unavailable; no user-project detector, external input or artifact publication is connected. Run209 passed actual Swift contracts and the real Objective-C header importer; a full App build and the adapter's own device validation are still required.
 
 ## Why the current fixed-fixture gate is insufficient
 
@@ -143,3 +143,23 @@ project outputs, and existing build history/artifact-verifier integration.
 Generic Provider availability, build and test remain unavailable throughout
 this phase. Existing Run203 fixed-runtime evidence and the pinned Run15 kit are
 not reclassified as adapter evidence.
+
+### Swift validation checkpoint
+
+Run209 (`41384770606`, commit `66accae`) completed successfully. Its logs confirm:
+
+- actual `OMToolchain.h` importer and actual adapter typecheck;
+- the actual Swift adapter compiled and executed 529 fake-bridge assertions;
+- source policy and existing iOS15 navigation/runtime guards passed.
+
+This is not native adapter device evidence. The first importer runs exposed
+Darwin `stdout`/`stderr` selector macro expansion, including the nested
+NS_SWIFT_NAME -> CF_SWIFT_NAME expansion. Literal `swift_name` string attributes
+preserve the existing Objective-C selectors while giving Swift stable labels.
+Run208 then exposed a test-only directory URL equality mismatch; comparing
+canonical path strings retained confinement checks and resolved the false
+failure. The native adapter's process state is now shared across all native
+instances, not merely the UI singleton. Its final cancellation/RSS check occurs
+after inspection/hash/cleanup. Mach-O policy admits the pinned ld64's bounded
+SOURCE_VERSION and iOS15 EXPORTS_TRIE/CHAINED_FIXUPS metadata forms, while
+rejecting unknown commands and range violations.
