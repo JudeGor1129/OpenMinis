@@ -237,6 +237,13 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
             seen.insert(relative)
             try validatePath(relative)
             let fileURL = try safeFileURL(relative, root: canonical)
+            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            let extensionName = fileURL.pathExtension
+            let limit = extensionName == "h" ? maxHeaderBytes : maxSourceBytes
+            guard values?.isRegularFile == true, let size = values?.fileSize,
+                  size > 0, size <= limit else {
+                throw EmbeddedToolchainProjectSnapshotError.fileTooLarge(relative)
+            }
             let data: Data
             do { data = try Data(contentsOf: fileURL, options: [.mappedIfSafe]) }
             catch { throw EmbeddedToolchainProjectSnapshotError.fileReadFailed(relative) }
