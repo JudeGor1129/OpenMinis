@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B1000000000000000000000C /* EmbeddedToolchainProjectMaterializer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000C /* EmbeddedToolchainProjectMaterializer.swift */; };
 		B1000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift */; };
 		B10000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift */; };
 		B1000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift */; };
@@ -676,6 +677,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B2000000000000000000000C /* EmbeddedToolchainProjectMaterializer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainProjectMaterializer.swift; sourceTree = "<group>"; };
 		B2000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainProjectSnapshot.swift; sourceTree = "<group>"; };
 		B20000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainExecutionAdapter.swift; sourceTree = "<group>"; };
 		B2000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedAdapterDiagnosticsView.swift; sourceTree = "<group>"; };
@@ -2222,6 +2224,7 @@
 				B20000000000000000000008 /* EmbeddedToolchainBuildProvider.swift */,
 				B20000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift */,
 				B2000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift */,
+				B2000000000000000000000C /* EmbeddedToolchainProjectMaterializer.swift */,
 			);
 			path = Build;
 			sourceTree = "<group>";
@@ -3020,6 +3023,7 @@
 				B10000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift in Sources */,
 				B1000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift in Sources */,
 				B1000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift in Sources */,
+				B1000000000000000000000C /* EmbeddedToolchainProjectMaterializer.swift in Sources */,
 
 				E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */,
 				E5VMB0001 /* AIChatViewModel+Compaction.swift in Sources */,

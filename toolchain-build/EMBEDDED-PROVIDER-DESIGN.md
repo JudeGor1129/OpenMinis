@@ -241,3 +241,19 @@ This is still disconnected from the adapter and Provider. The next gate must
 prove a filesystem-backed snapshot against a disposable multi-file fixture and
 then add a virtual include materialization step; no real user project is read or
 compiled by this phase.
+
+## Third phase: pure-memory snapshot materialization
+
+`EmbeddedToolchainProjectMaterializer` now converts a validated snapshot into
+one materialized ASCII source per entry source and a typed operation list:
+compile each materialized source to an object, then link those objects into one
+safe `@rpath/<name>.dylib`. Local headers are emitted in dependency order and
+only once per entry source; include directives are removed from the materialized
+text. Each materialized source gets a SHA-256, and the plan remains bound to the
+original snapshot fingerprint.
+
+This is still a plan-only phase. The materializer does not read disk, create
+argv, call CC1/ld64, publish outputs, or make the generic Provider available.
+The next decision is whether this flattening model is sufficient for the first
+restricted C/Objective-C projects; macro-free headers only are supported, and
+projects requiring preprocessing semantics remain rejected.
