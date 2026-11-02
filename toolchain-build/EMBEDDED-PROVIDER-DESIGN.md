@@ -226,3 +226,18 @@ it has no `swiftc`. XCTest coverage is registered separately. This phase is
 intentionally disconnected from `EmbeddedToolchainExecutionAdapter.execute` and
 `EmbeddedToolchainBuildProvider`; no filesystem reader, virtual include path,
 operation conversion, artifact publication or user-project execution is enabled.
+
+### Read-only project root loader
+
+The snapshot builder now has a bounded `load(root:entrySources:)` seam. It
+accepts only a canonical directory that is not a symlink and is not inside
+system/app bundle tiers. It reads only the entry-source/local-header closure,
+rejects symlink components and non-regular files, and then passes the immutable
+contents through the same path, size, ASCII, directive, dependency, hash and
+fingerprint builder. It never creates compiler arguments, invokes a process or
+returns an output path.
+
+This is still disconnected from the adapter and Provider. The next gate must
+prove a filesystem-backed snapshot against a disposable multi-file fixture and
+then add a virtual include materialization step; no real user project is read or
+compiled by this phase.

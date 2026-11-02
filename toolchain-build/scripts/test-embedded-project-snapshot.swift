@@ -12,6 +12,15 @@ struct SnapshotContracts {
         checks += 1
         if !condition() { throw Failure(description: message) }
     }
+    static func rejectsRoot(_ root: URL, _ message: String) throws {
+        do {
+            _ = try EmbeddedToolchainProjectSnapshotBuilder.load(root: root, entrySources: ["src/main.c"])
+            throw Failure(description: "accepted unsafe root: \(message)")
+        } catch let error as EmbeddedToolchainProjectSnapshotError {
+            checks += 1
+            guard error.errorDescription != nil else { throw Failure(description: "missing root error text: \(message)") }
+        }
+    }
     static func rejects(_ files: [String: String], _ message: String) throws {
         do {
             _ = try EmbeddedToolchainProjectSnapshotBuilder.build(files: files)
@@ -57,7 +66,20 @@ struct SnapshotContracts {
         try rejects(deep, "dependency depth")
         try rejects(["main.c": "#define VALUE 1\nint x;"], "macro")
         try rejects(["main.c": "#pragma once\nint x;"], "pragma")
-        try require(checks >= 21, "coverage count")
-        print("PASS: \(checks) project snapshot, path, directive, dependency, cycle/depth and fingerprint contracts")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("snapshot-root-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("src"), withIntermediateDirectories: true)
+        try Data("#include \"value.h\"\n#include \"alias.h\"\nint x;\n".utf8).write(to: root.appendingPathComponent("src/main.c"))
+        try Data("int value;\n".utf8).write(to: root.appendingPathComponent("src/value.h"))
+        defer { try? FileManager.default.removeItem(at: root) }
+        let loaded = try EmbeddedToolchainProjectSnapshotBuilder.load(root: root, entrySources: ["src/main.c"])
+        try require(loaded.files.count == 2 && loaded.dependencies["src/main.c"] == ["src/value.h"], "filesystem closure")
+        let link = root.deletingLastPathComponent().appendingPathComponent("snapshot-link-" + UUID().uuidString)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: root)
+        defer { try? FileManager.default.removeItem(at: link) }
+        try rejectsRoot(link, "symlink root")
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("src/alias.h"), withDestinationURL: root.appendingPathComponent("src/value.h"))
+        try rejectsRoot(root, "symlink dependency")
+        try require(checks >= 24, "coverage count")
+        print("PASS: \(checks) project snapshot, path, directive, dependency, cycle/depth, fingerprint and filesystem contracts")
     }
 }

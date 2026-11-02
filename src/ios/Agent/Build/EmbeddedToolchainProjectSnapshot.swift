@@ -57,6 +57,11 @@ enum EmbeddedToolchainProjectSnapshotError: Error, Equatable, LocalizedError, Se
     case dependencyDepthExceeded(String)
     case dependencyCountExceeded
     case dependencyCycle(String)
+    case rootUnavailable
+    case rootSymlink
+    case unsafeRoot
+    case fileReadFailed(String)
+    case fileSymlink(String)
 
     var errorDescription: String? {
         switch self {
@@ -75,6 +80,11 @@ enum EmbeddedToolchainProjectSnapshotError: Error, Equatable, LocalizedError, Se
         case .dependencyDepthExceeded(let path): return "local header dependency depth exceeded at \(path)"
         case .dependencyCountExceeded: return "local header dependency edge budget exceeded"
         case .dependencyCycle(let path): return "local header dependency cycle at \(path)"
+        case .rootUnavailable: return "project root is unavailable or not a directory"
+        case .rootSymlink: return "project root must not be a symlink"
+        case .unsafeRoot: return "project root is inside an app bundle or system directory"
+        case .fileReadFailed(let path): return "project file could not be read: \(path)"
+        case .fileSymlink(let path): return "project file or directory component is a symlink: \(path)"
         }
     }
 }
@@ -200,6 +210,69 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
 
     static func materializedFiles(_ snapshot: EmbeddedToolchainProjectSnapshot) -> [String: String] {
         Dictionary(uniqueKeysWithValues: snapshot.files.map { ($0.path, $0.contents) })
+    }
+
+    /// Reads only the bounded C/Objective-C/header closure from a real project
+    /// directory. The returned snapshot is the only value allowed to cross into
+    /// a future adapter; this method does not create operations or invoke tools.
+    static func load(root: URL, entrySources: [String]) throws -> EmbeddedToolchainProjectSnapshot {
+        let fm = FileManager.default
+        let requested = root.standardizedFileURL
+        guard fm.fileExists(atPath: requested.path) else { throw EmbeddedToolchainProjectSnapshotError.rootUnavailable }
+        guard (try? requested.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+            throw EmbeddedToolchainProjectSnapshotError.rootUnavailable
+        }
+        guard (try? requested.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else {
+            throw EmbeddedToolchainProjectSnapshotError.rootSymlink
+        }
+        let canonical = requested.resolvingSymlinksInPath()
+        guard canonical.path == requested.path, isSafeRoot(canonical) else {
+            throw canonical.path == requested.path ? EmbeddedToolchainProjectSnapshotError.unsafeRoot : .rootSymlink
+        }
+        var files: [String: String] = [:]
+        var pending = entrySources
+        var seen: Set<String> = []
+        while let relative = pending.popLast() {
+            guard !seen.contains(relative) else { continue }
+            seen.insert(relative)
+            try validatePath(relative)
+            let fileURL = try safeFileURL(relative, root: canonical)
+            let data: Data
+            do { data = try Data(contentsOf: fileURL, options: [.mappedIfSafe]) }
+            catch { throw EmbeddedToolchainProjectSnapshotError.fileReadFailed(relative) }
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw EmbeddedToolchainProjectSnapshotError.nonASCII(relative)
+            }
+            files[relative] = text
+            for include in try directIncludes(in: text, from: relative) {
+                if files[include] == nil { pending.append(include) }
+            }
+        }
+        return try build(files: files, entrySources: entrySources)
+    }
+
+    private static func isSafeRoot(_ root: URL) -> Bool {
+        let path = root.path
+        let forbidden = ["/System/", "/usr/", "/bin/", "/sbin/", "/private/etc/", ".app/", ".framework/"]
+        return !forbidden.contains(where: { path.contains($0) })
+    }
+
+    private static func safeFileURL(_ relative: String, root: URL) throws -> URL {
+        var cursor = root
+        for component in relative.split(separator: "/") {
+            cursor.appendPathComponent(String(component), isDirectory: false)
+            if (try? cursor.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
+                throw EmbeddedToolchainProjectSnapshotError.fileSymlink(relative)
+            }
+        }
+        let parent = cursor.deletingLastPathComponent()
+        guard parent.resolvingSymlinksInPath().path == parent.path else {
+            throw EmbeddedToolchainProjectSnapshotError.fileSymlink(relative)
+        }
+        guard (try? cursor.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+            throw EmbeddedToolchainProjectSnapshotError.fileReadFailed(relative)
+        }
+        return cursor
     }
 
     private static func validatePath(_ path: String) throws {
