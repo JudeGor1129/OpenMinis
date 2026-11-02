@@ -39,10 +39,16 @@ def main():
     pairs=((kit.get("workflow_run_id"),l.get("workflow_run_id"),"toolchain run"),(kit.get("commit"),l.get("head_sha"),"toolchain commit"),(kit.get("artifact_id"),art.get("id"),"toolchain artifact ID"),(kit.get("archive_sha256"),art.get("archive_sha256"),"toolchain ZIP hash"),(kit.get("manifest_sha256"),mf.get("sha256"),"toolchain manifest hash"))
     for actual,expected,label in pairs:
         if actual!=expected: fail(f"evidence does not match locked {label}")
-    if type(app.get("workflow_run_id")) is not int or type(app.get("artifact_id")) is not int: fail("App run/artifact IDs missing")
-    if re.fullmatch(r"[0-9a-f]{40}",app.get("commit","")) is None: fail("invalid App commit")
-    require_sha(app.get("artifact_sha256"),"App artifact")
-    r=e.get("report",{}); expected={"passed":True,"requested_iterations":3,"bounded_iterations":3,"foundation_sdk_compilation":"passed","temporary_outputs_removed":True,"output_execution_attempted":False,"provider_executable":False,"runtime_verification_gate":"not_granted","capability_verification":"missing"}
+    app_identity = {
+        "workflow_run_id": 41317254345,
+        "commit": "334e77fc4f834874c84e63cabeb2bf0646221d04",
+        "artifact_id": 13088901236,
+        "artifact_name": "Minis-iOS15-TrollStore-203",
+        "artifact_sha256": "d68def45819582f8083381b2ece22c2477c579eedf631989e8919e0a26b647d1",
+    }
+    for key, expected_value in app_identity.items():
+        if app.get(key) != expected_value: fail(f"runtime evidence is not bound to approved App {key}")
+    r=e.get("report",{}); expected={"passed":True,"requested_iterations":3,"bounded_iterations":3,"foundation_sdk_compilation":"passed","temporary_outputs_removed":True,"output_execution_attempted":False,"provider_executable":False,"runtime_verification_gate":"fixed_fixture_evidence_verified","capability_verification":"passed"}
     for key,value in expected.items():
         if r.get(key)!=value: fail(f"report {key} must be {value!r}")
     steps=r.get("required_steps",{})
