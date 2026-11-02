@@ -112,7 +112,11 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         var symbolCount: UInt64?
         var symbolRanges: [(UInt64, UInt64)] = []
         let objectCommands: Set<UInt32> = [0x19, 0x2, 0xb, 0x32, 0x25, 0x29]
-        let dylibCommands = objectCommands.union([0xc, 0xd, 0x1b, 0x80000022, 0x26, 0x1d])
+        // Pinned ld64 HeaderAndLoadCommands.hpp emits SOURCE_VERSION and, for
+        // iOS15 dylibs, EXPORTS_TRIE/CHAINED_FIXUPS by default. Only bounded
+        // metadata forms are admitted; no caller selects these load commands.
+        let dylibCommands = objectCommands.union([0xc, 0xd, 0x1b, 0x80000022, 0x26, 0x1d,
+                                                  0x2a, 0x80000033, 0x80000034])
         func inFile(_ offset: UInt64, _ bytes: UInt64) -> Bool {
             offset <= UInt64(data.count) && bytes <= UInt64(data.count) - offset
         }
@@ -173,7 +177,7 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             } else if command == 0x32 {
                 guard size >= 24, Int(word(cursor + 20)) <= (size - 24) / 8,
                       size == 24 + Int(word(cursor + 20)) * 8 else { throw invalid() }
-            } else if command == 0x25 {
+            } else if command == 0x25 || command == 0x2a {
                 guard size == 16 else { throw invalid() }
             } else if command == 0x1b {
                 guard size == 24 else { throw invalid() }
@@ -208,6 +212,12 @@ struct EmbeddedAdapterStep: Codable, Sendable {
 }
 
 struct EmbeddedAdapterResult: Codable, Sendable {
+    // Constants are intentionally encoded but never restored as executable
+    // capability from decoded JSON. Explicit keys document that contract.
+    private enum CodingKeys: String, CodingKey {
+        case state, reason, steps, artifacts, residentSamplesBytes, processLinkCount
+        case temporaryOutputsRemoved, providerExecutable, outputExecutionAttempted
+    }
     var state = "rejected"
     var reason = ""
     var steps: [EmbeddedAdapterStep] = []

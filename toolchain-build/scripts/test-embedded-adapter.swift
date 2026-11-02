@@ -218,6 +218,12 @@ private struct AdapterContracts {
         let badVersion = MachOFixture.adding(badVersionCommand, to: object)
         let unknown = MachOFixture.adding(MachOFixture.u32(0xdeadbeef) + MachOFixture.u32(8), to: object)
         let dylib = MachOFixture.image(filetype: 6, installName: "@rpath/bad.dylib")
+        var modern = MachOFixture.adding(MachOFixture.u32(0x2a) + MachOFixture.u32(16) + MachOFixture.u64(0), to: dylib)
+        for command in [UInt32(0x80000033), 0x80000034] {
+            modern = MachOFixture.adding(MachOFixture.u32(command) + MachOFixture.u32(16) + MachOFixture.u64(0), to: modern)
+        }
+        _ = try EmbeddedAdapterArtifact.inspect(modern, name: "bad.dylib", filetype: 6)
+        checks += 1
         let badLinkedit = MachOFixture.adding(MachOFixture.u32(0x26) + MachOFixture.u32(16) +
                                             MachOFixture.u32(.max) + MachOFixture.u32(.max), to: dylib)
         for (data, type) in [(MachOFixture.invalidRelocations(filetype: 1), UInt32(1)),
@@ -249,9 +255,11 @@ private struct AdapterContracts {
         let cc = snapshot.calls[0], ld = snapshot.calls[1]
         let compileOutput = cc[cc.firstIndex(of: "-o")! + 1]
         let linkOutput = ld[ld.firstIndex(of: "-o")! + 1]
-        try require(URL(fileURLWithPath: compileOutput).deletingLastPathComponent() == root &&
-                    URL(fileURLWithPath: linkOutput).deletingLastPathComponent() == root &&
-                    URL(fileURLWithPath: compileOutput).lastPathComponent.hasPrefix("partial-"), "outputs must be private partial paths")
+        try require(URL(fileURLWithPath: compileOutput).deletingLastPathComponent().path == root.path &&
+                    URL(fileURLWithPath: linkOutput).deletingLastPathComponent().path == root.path &&
+                    URL(fileURLWithPath: compileOutput).lastPathComponent.hasPrefix("partial-") &&
+                    URL(fileURLWithPath: linkOutput).lastPathComponent.hasPrefix("partial-") && compileOutput != linkOutput,
+                    "outputs must be distinct private partial paths")
         try require(cc == ["-triple", "arm64-apple-ios15.0", "-target-cpu", "apple-a7", "-emit-obj", "-ffreestanding",
                            "-std=c11", "-O1", "-nostdsysteminc", "-nobuiltininc", "-ferror-limit", "16",
                            "-o", compileOutput, "-x", "c", root.appendingPathComponent("answer.c").path], "compile argv was not the fixed reviewed argv")
