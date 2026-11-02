@@ -190,4 +190,57 @@ final class ProgrammingBuildToolsTests: XCTestCase {
         XCTAssertEqual(result.architectures, ["arm64"])
         XCTAssertEqual(result.archiveEntryCount, 2)
     }
+
+    func testEmbeddedProjectSnapshotBuildsDeterministicallyAndScansLocalHeaders() throws {
+        let files = [
+            "src/main.c": "#include \"value.h\"\nint main_value(void) { return 7; }\n",
+            "src/value.h": "#include \"nested.h\"\nint value(void);\n",
+            "src/nested.h": "int nested(void);\n"
+        ]
+        let snapshot = try EmbeddedToolchainProjectSnapshotBuilder.build(files: files, entrySources: ["src/main.c"])
+        XCTAssertEqual(snapshot.schema, 1)
+        XCTAssertEqual(snapshot.entrySources, ["src/main.c"])
+        XCTAssertEqual(snapshot.dependencies["src/main.c"], ["src/value.h"])
+        XCTAssertEqual(snapshot.dependencies["src/value.h"], ["src/nested.h"])
+        XCTAssertEqual(snapshot.files.map(\.path), ["src/main.c", "src/nested.h", "src/value.h"])
+        XCTAssertEqual(snapshot.totalBytes, files.values.reduce(0) { $0 + $1.utf8.count })
+        XCTAssertEqual(EmbeddedToolchainProjectSnapshotBuilder.materializedFiles(snapshot), files)
+        let reversed = try EmbeddedToolchainProjectSnapshotBuilder.build(
+            files: Dictionary(uniqueKeysWithValues: files.reversed()), entrySources: ["src/main.c"])
+        XCTAssertEqual(snapshot, reversed)
+        XCTAssertEqual(snapshot.fingerprint, reversed.fingerprint)
+    }
+
+    func testEmbeddedProjectSnapshotRejectsUnsafeOrUnsupportedInputs() throws {
+        let valid = ["main.c": "#include \"value.h\"\nint main_value(void) { return 1; }\n",
+                     "value.h": "int value(void);\n"]
+        for (name, files) in [
+            ("absolute", ["/main.c": "int x;" ]),
+            ("traversal", ["../main.c": "int x;" ]),
+            ("symlink-like", ["dir//main.c": "int x;" ]),
+            ("uppercase-extension", ["main.C": "int x;" ]),
+            ("unsupported-extension", ["main.cpp": "int x;" ]),
+            ("non-ASCII", ["main.c": "int café;" ]),
+            ("escaped-include", ["main.c": "#include \"../value.h\"\nint x;", "value.h": "int x;" ]),
+            ("system-include", ["main.c": "#include <stdio.h>\nint x;" ]),
+            ("conditional", ["main.c": "#ifdef X\nint x;\n#endif\n"]),
+            ("assembly", ["main.c": "__asm__(\"nop\");" ]),
+            ("missing-header", ["main.c": "#include \"missing.h\"\nint x;" ])
+        ] {
+            XCTAssertThrowsError(try EmbeddedToolchainProjectSnapshotBuilder.build(files: files), name)
+        }
+        XCTAssertNoThrow(try EmbeddedToolchainProjectSnapshotBuilder.build(files: valid))
+        XCTAssertThrowsError(try EmbeddedToolchainProjectSnapshotBuilder.build(files: valid, entrySources: ["value.h"]))
+    }
+
+    func testEmbeddedProjectSnapshotRejectsCyclesAndDepth() throws {
+        let cycle = ["main.c": "#include \"a.h\"\nint x;", "a.h": "#include \"b.h\"\n", "b.h": "#include \"a.h\"\n"]
+        XCTAssertThrowsError(try EmbeddedToolchainProjectSnapshotBuilder.build(files: cycle))
+        var deep: [String: String] = ["main.c": "#include \"d0.h\"\nint x;"]
+        for index in 0...EmbeddedToolchainProjectSnapshotBuilder.maxDependencyDepth {
+            deep["d\(index).h"] = index == EmbeddedToolchainProjectSnapshotBuilder.maxDependencyDepth
+                ? "int leaf;" : "#include \"d\(index + 1).h\"\n"
+        }
+        XCTAssertThrowsError(try EmbeddedToolchainProjectSnapshotBuilder.build(files: deep))
+    }
 }

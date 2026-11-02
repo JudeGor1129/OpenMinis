@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B1000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift */; };
 		B10000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift */; };
 		B1000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift */; };
 		D0A173000000000000000001 /* OMToolchain.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0A173000000000000000011 /* OMToolchain.mm */; };
@@ -675,6 +676,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B2000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainProjectSnapshot.swift; sourceTree = "<group>"; };
 		B20000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainExecutionAdapter.swift; sourceTree = "<group>"; };
 		B2000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedAdapterDiagnosticsView.swift; sourceTree = "<group>"; };
 		D0A173000000000000000010 /* OMToolchain.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OMToolchain.h; sourceTree = "<group>"; };
@@ -2219,6 +2221,7 @@
 				B20000000000000000000006 /* ProgrammingBuildTools.swift */,
 				B20000000000000000000008 /* EmbeddedToolchainBuildProvider.swift */,
 				B20000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift */,
+				B2000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift */,
 			);
 			path = Build;
 			sourceTree = "<group>";
@@ -3016,6 +3019,7 @@
 				B10000000000000000000008 /* EmbeddedToolchainBuildProvider.swift in Sources */,
 				B10000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift in Sources */,
 				B1000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift in Sources */,
+				B1000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift in Sources */,
 
 				E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */,
 				E5VMB0001 /* AIChatViewModel+Compaction.swift in Sources */,

@@ -202,3 +202,27 @@ fixture is verified locally by SHA-256 and decompression, then is inspected by
 the production Swift parser only in macOS CI. The adapter's malformed-output
 reason now includes a rule/check-line and the unknown-command reason includes
 its numeric command and offset, so a future device rejection is actionable.
+
+## Second phase: immutable project snapshot gate (not execution)
+
+The first engineering-project gate is now implemented as
+`EmbeddedToolchainProjectSnapshotBuilder`. It accepts only caller-created
+in-memory UTF-8 ASCII maps of up to 20 flat/nested `.c`, `.m`, and `.h` files,
+with up to 4 entry sources, per-file and total byte budgets, deterministic
+SHA-256 records, and a stable snapshot fingerprint. It does not read a path,
+follow a symlink, invoke a toolchain, create argv, or publish an output.
+
+Only quoted local `#include "..."` directives are recognized. Angle-bracket
+includes, macros, conditionals, imports, pragmas, continuations, assembly,
+attributes, malformed directives, traversal/absolute/duplicate paths, missing
+headers, cycles, excessive dependency depth and excessive dependency edges are
+rejected. The snapshot is not Decodable, so serialized JSON cannot bypass the
+builder's validation or forge content hashes.
+
+The actual App target includes the model, while the macOS quick gate compiles the
+actual Swift file with a fake-free executable harness. `check-embedded-project-
+snapshot.sh --require-swift` is a behavior gate; iSH may only report SKIP because
+it has no `swiftc`. XCTest coverage is registered separately. This phase is
+intentionally disconnected from `EmbeddedToolchainExecutionAdapter.execute` and
+`EmbeddedToolchainBuildProvider`; no filesystem reader, virtual include path,
+operation conversion, artifact publication or user-project execution is enabled.
