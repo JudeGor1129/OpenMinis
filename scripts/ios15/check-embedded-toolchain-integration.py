@@ -61,6 +61,15 @@ require("OM_TOOLCHAIN_VERIFIED remains intentionally unset" in prepare,
 require(provider.count(".unavailable(await availability(for: context))") == 2,
         "build and test must both remain unavailable")
 require("state: .unavailable" in provider, "availability must remain unavailable")
+require("enum EmbeddedToolchainOperation" in provider and
+        "func validationError(root: URL) -> String?" in provider,
+        "structured embedded operations must have a path/argument validation seam")
+require("isArm64Object(at:" in provider and "containsSymlinkComponent" in provider and
+        "maxObjectCount" in provider and "maxTotalObjectBytes" in provider and
+        "typeRegular" in provider and "@rpath/" in provider,
+        "structured adapter policy must check Mach-O, symlinks, bounds and install names")
+require("context.executor" not in provider,
+        "embedded provider must not invoke the shell executor")
 require(lock.get("schema") == 1, "lock schema must be 1")
 # The lock must describe exactly one artifact, and that artifact's name must
 # identify the commit it was built from. Binding it this way catches a pin that

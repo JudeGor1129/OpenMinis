@@ -76,6 +76,52 @@ final class ProgrammingBuildToolsTests: XCTestCase {
         XCTAssertEqual(shellCalls.value, 0)
     }
 
+    func testEmbeddedOperationRejectsUnsafeInputs() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("int probe(void) { return 1; }\n".utf8).write(to: root.appendingPathComponent("probe.c"))
+        var objectHeader = [UInt8](repeating: 0, count: 104)
+        objectHeader[0] = 0xcf; objectHeader[1] = 0xfa; objectHeader[2] = 0xed; objectHeader[3] = 0xfe
+        objectHeader[4] = 0x0c; objectHeader[7] = 0x01; objectHeader[12] = 0x01
+        objectHeader[16] = 0x01; objectHeader[20] = 0x48
+        objectHeader[32] = 0x19; objectHeader[36] = 0x48
+        try Data(objectHeader).write(to: root.appendingPathComponent("probe.o"))
+
+        let compile = EmbeddedToolchainOperation.compile(source: "probe.c", output: "out.o", language: .c)
+        XCTAssertNil(compile.validationError(root: root))
+        let linkedRoot = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: linkedRoot) }
+        try FileManager.default.createSymbolicLink(at: linkedRoot, withDestinationURL: root)
+        XCTAssertNotNil(compile.validationError(root: linkedRoot))
+        XCTAssertNotNil(EmbeddedToolchainOperation.compile(source: "../escape.c", output: "out.o", language: .c).validationError(root: root))
+        XCTAssertNotNil(EmbeddedToolchainOperation.compile(source: "probe\0.c", output: "out.o", language: .c).validationError(root: root))
+        XCTAssertNotNil(EmbeddedToolchainOperation.compile(source: "probe.c", output: "out.dylib", language: .c).validationError(root: root))
+        XCTAssertNotNil(EmbeddedToolchainOperation.compile(source: "probe.c", output: "out.o", language: .objectiveC).validationError(root: root))
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("directory.c"), withIntermediateDirectories: false)
+        XCTAssertNotNil(EmbeddedToolchainOperation.compile(source: "directory.c", output: "dir.o", language: .c).validationError(root: root))
+
+        let link = EmbeddedToolchainOperation.link(objects: ["probe.o"], output: "out.dylib", installName: "@rpath/out.dylib")
+        XCTAssertNil(link.validationError(root: root))
+        var malformedHeader = [UInt8](repeating: 0, count: 32)
+        malformedHeader[0] = 0xcf; malformedHeader[1] = 0xfa; malformedHeader[2] = 0xed; malformedHeader[3] = 0xfe
+        malformedHeader[4] = 0x0c; malformedHeader[7] = 0x01; malformedHeader[12] = 0x01
+        malformedHeader[16] = 0x01; malformedHeader[20] = 0x48
+        try Data(malformedHeader).write(to: root.appendingPathComponent("malformed.o"))
+        XCTAssertNotNil(EmbeddedToolchainOperation.link(objects: ["malformed.o"], output: "bad.dylib", installName: "@rpath/bad.dylib").validationError(root: root))
+        XCTAssertNotNil(EmbeddedToolchainOperation.link(objects: ["probe.o"], output: "out.dylib", installName: "/tmp/out.dylib").validationError(root: root))
+        XCTAssertNotNil(EmbeddedToolchainOperation.link(objects: ["probe.o"], output: "out.dylib", installName: "@rpath/sub/out.dylib").validationError(root: root))
+        XCTAssertNotNil(EmbeddedToolchainOperation.link(objects: Array(repeating: "probe.o", count: 33), output: "out.dylib", installName: "@rpath/out.dylib").validationError(root: root))
+        XCTAssertNotNil(EmbeddedToolchainOperation.link(objects: ["missing.o"], output: "out.dylib", installName: "@rpath/out.dylib").validationError(root: root))
+
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("link.c"), withDestinationURL: root.appendingPathComponent("probe.c"))
+        XCTAssertNotNil(EmbeddedToolchainOperation.compile(source: "link.c", output: "out.o", language: .c).validationError(root: root))
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked-dir"), withDestinationURL: root)
+        XCTAssertNotNil(EmbeddedToolchainOperation.compile(source: "linked-dir/probe.c", output: "nested.o", language: .c).validationError(root: root))
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("out.o"), withDestinationURL: root.appendingPathComponent("probe.o"))
+        XCTAssertNotNil(EmbeddedToolchainOperation.compile(source: "probe.c", output: "out.o", language: .c).validationError(root: root))
+    }
+
     func testBuildRunMigrationIsIdempotent() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let url = directory.appendingPathComponent("build.sqlite3")
