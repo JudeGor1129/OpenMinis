@@ -1,6 +1,6 @@
 # EmbeddedToolchainBuildProvider safety design
 
-Status: design only. `EmbeddedToolchainBuildProvider` remains unavailable until this design is implemented, tested, and reviewed.
+Status: validation-only execution seam implemented. Generic `EmbeddedToolchainBuildProvider.build/test` remains unavailable; no user-project detector, external input or artifact publication is connected. The new adapter still requires Swift contracts, a full App build, review and its own device validation.
 
 ## Why the current fixed-fixture gate is insufficient
 
@@ -96,3 +96,50 @@ The adapter implementation must add:
   cancellation without an app crash;
 - a release gate proving BuildProvider still cannot execute arbitrary project
   commands.
+
+## Implemented first phase (validation only)
+
+`EmbeddedToolchainExecutionAdapter.execute(sources:operations:cancellation:)`
+accepts immutable in-memory text and typed operations, not a caller filesystem
+root. Inputs and outputs use fresh flat allowlisted names in a private 0700
+per-request directory. Link inputs must have been compiled and hashed earlier
+in that same request. No external `.o`, user path or generic command is accepted.
+
+- At most 4 ASCII sources of 128 KiB each, 6 operations, one link per request.
+- C and Objective-C front ends only, target arm64/iOS15, freestanding C11; no
+  project/SDK headers. Preprocessing spellings, backslash continuations,
+  trigraphs/digraphs, inline assembly, pragmas and module imports are rejected.
+  This deliberately restrictive subset is **not a sandbox for arbitrary C**.
+- Library input is a bounded snapshot of SDK16.5 `libSystem.B.tbd`, checked
+  against SHA-256 `1ab02266a39491a8bd5a91ba36d5c8c8c6ac6efb92099e1091a1fd2370fc53e3`.
+- Production uses one lifetime singleton. At most 3 adapter link attempts;
+  admissions stop at sampled RSS >=384 MiB or cumulative growth >=64 MiB.
+  Sampling cannot interrupt or enforce an in-flight LLVM/ld64 allocation limit.
+- Cancellation is cooperative between operations (including Swift Task
+  cancellation); no signals, longjmp or skipped destructors.
+- Internal/unknown bridge status, unsafe/missing/malformed output, unexpected
+  I/O and failed cleanup poison the adapter. Ordinary diagnostics can recover.
+- Outputs undergo thin-arm64 Mach-O type/range/dependency checks and SHA-256.
+  Only inspection metadata is returned: all run files are removed, no output
+  is published, loaded, executed, signed or installed. Failures/cancellation
+  discard even intermediate artifact metadata.
+
+The separate settings entry `运行受限适配器验证` runs a successful two-source
+compile/link, expected compiler and unresolved-symbol linker failures, recovery,
+and pre-cancellation. It consumes the three-link process budget; restart the App
+and run once, without running the old fixture suite first. Its JSON is new
+adapter evidence, not an authorization to open generic project builds.
+
+`check-embedded-adapter.sh --require-swift` compiles the actual Swift adapter and
+model with a fake bridge and runs behavioural contracts before costly App
+dependencies. A machine without `swiftc` may run source policy, but reports the
+behavioural tests as SKIP; CI treats missing Swift as failure. The stub cannot
+prove real Objective-C importer wiring or native LLVM operation: a full App
+build and the new device report remain necessary.
+
+Next phases still need a reviewed project/dependency detector, safe immutable
+header snapshots/virtual filesystem, guarded atomic publication into approved
+project outputs, and existing build history/artifact-verifier integration.
+Generic Provider availability, build and test remain unavailable throughout
+this phase. Existing Run203 fixed-runtime evidence and the pinned Run15 kit are
+not reclassified as adapter evidence.

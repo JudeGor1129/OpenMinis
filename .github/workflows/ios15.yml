@@ -58,6 +58,7 @@ jobs:
           bash scripts/ios15/check-privileged-helper.sh 2>&1 | tee ci-logs/system-access.txt
           python3 scripts/ios15/check-embedded-toolchain-integration.py 2>&1 | tee ci-logs/embedded-toolchain-source-gate.txt
           bash scripts/ios15/check-embedded-toolchain-runtime-diagnostics.sh 2>&1 | tee ci-logs/embedded-toolchain-runtime-source-gate.txt
+          bash scripts/ios15/check-embedded-adapter.sh --require-swift 2>&1 | tee ci-logs/embedded-adapter-contract.txt
           bash scripts/ios15/check-programming-build-tools.sh 2>&1 | tee ci-logs/programming-build-tools.txt
           bash scripts/ios15/check-programming-tools.sh 2>&1 | tee ci-logs/programming-tools.txt
           bash scripts/ios15/check-navigation.sh 2>&1 | tee ci-logs/navigation.txt
@@ -97,6 +98,11 @@ jobs:
           set -euo pipefail
           mkdir -p ci-logs
           bash scripts/ios15/select-xcode.sh 2>&1 | tee ci-logs/xcode-selection.txt
+      - name: Test restricted adapter before native dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ios15/check-embedded-adapter.sh --require-swift 2>&1 | tee ci-logs/embedded-adapter-contract.txt
       - uses: actions/setup-go@v5
         with:
           go-version-file: deps/rclone-mobile/go.mod

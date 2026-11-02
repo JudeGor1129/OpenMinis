@@ -48,6 +48,12 @@ struct RootfsBuildSettingsView: View {
                 }
                 .disabled(embeddedStatus["compiler_linked"] != "yes" ||
                           embeddedStatus["resource_headers"] != "present")
+                NavigationLink {
+                    EmbeddedAdapterDiagnosticsView()
+                } label: {
+                    Label("运行受限适配器验证", systemImage: "checkmark.shield")
+                }
+                .disabled(embeddedStatus["verification"] != "passed" || embeddedStatus["sdk"] != "present")
                 Text(embeddedStatus["reason"] ?? "正在检查内置资源。")
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B10000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift */; };
+		B1000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift */; };
 		D0A173000000000000000001 /* OMToolchain.mm in Sources */ = {isa = PBXBuildFile; fileRef = D0A173000000000000000011 /* OMToolchain.mm */; };
 		D0A173000000000000000003 /* OMToolchainDiagnostics.m in Sources */ = {isa = PBXBuildFile; fileRef = D0A173000000000000000014 /* OMToolchainDiagnostics.m */; };
 		D0A173000000000000000002 /* clang-resource in Resources */ = {isa = PBXBuildFile; fileRef = D0A173000000000000000012 /* clang-resource */; };
@@ -673,6 +675,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B20000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainExecutionAdapter.swift; sourceTree = "<group>"; };
+		B2000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedAdapterDiagnosticsView.swift; sourceTree = "<group>"; };
 		D0A173000000000000000010 /* OMToolchain.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OMToolchain.h; sourceTree = "<group>"; };
 		D0A173000000000000000011 /* OMToolchain.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = OMToolchain.mm; sourceTree = "<group>"; };
 		D0A173000000000000000013 /* OMToolchainDiagnostics.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OMToolchainDiagnostics.h; sourceTree = "<group>"; };
@@ -2214,6 +2218,7 @@
 				B20000000000000000000005 /* BuildRunStore.swift */,
 				B20000000000000000000006 /* ProgrammingBuildTools.swift */,
 				B20000000000000000000008 /* EmbeddedToolchainBuildProvider.swift */,
+				B20000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift */,
 			);
 			path = Build;
 			sourceTree = "<group>";
@@ -2510,6 +2515,7 @@
 				AA0838BE2F3B941A00049557 /* RootfsManagementView.swift */,
 				AA0838C92F3B941A0004955A /* ToolchainStatusView.swift */,
 				E5RF0002 /* RootfsBuildSettingsView.swift */,
+				B2000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift */,
 				AA0838BF2F3B941A00049557 /* RootfsResetButton.swift */,
 			);
 			path = Rootfs;
@@ -3008,6 +3014,8 @@
 				B10000000000000000000006 /* ProgrammingBuildTools.swift in Sources */,
 				B10000000000000000000007 /* AIChatViewModel+BuildTools.swift in Sources */,
 				B10000000000000000000008 /* EmbeddedToolchainBuildProvider.swift in Sources */,
+				B10000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift in Sources */,
+				B1000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift in Sources */,
 
 				E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */,
 				E5VMB0001 /* AIChatViewModel+Compaction.swift in Sources */,
