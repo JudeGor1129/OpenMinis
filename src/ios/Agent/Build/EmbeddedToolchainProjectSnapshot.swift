@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Darwin
 
 /// An immutable, in-memory project view for the first restricted project gate.
 /// It never reads a filesystem and never creates compiler/linker arguments.
@@ -191,7 +192,8 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
         let sortedRecords = records.sorted { $0.path < $1.path }
         let sortedEntries = entries.sorted()
         let sortedDependencies = dependencies.keys.sorted().map { key in
-            key + "\0" + (dependencies[key] ?? []).sorted().joined(separator: "\0") + "\0"
+            let values = dependencies[key] ?? []
+            return key + "\0" + values.count.description + "\0" + values.joined(separator: "\0") + "\0"
         }.joined()
         // Length-prefixed records avoid ambiguity if future path/name rules grow.
         let fingerprintInput = "schema=1\0files=\(sortedRecords.count)\0" +
@@ -202,7 +204,7 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
             schema: 1,
             files: sortedRecords,
             entrySources: sortedEntries,
-            dependencies: dependencies.mapValues { $0.sorted() },
+            dependencies: dependencies,
             totalBytes: totalBytes,
             fingerprint: digest(Data(fingerprintInput.utf8))
         )
@@ -236,17 +238,9 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
             guard !seen.contains(relative) else { continue }
             seen.insert(relative)
             try validatePath(relative)
-            let fileURL = try safeFileURL(relative, root: canonical)
-            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-            let extensionName = fileURL.pathExtension
+            let extensionName = URL(fileURLWithPath: relative).pathExtension
             let limit = extensionName == "h" ? maxHeaderBytes : maxSourceBytes
-            guard values?.isRegularFile == true, let size = values?.fileSize,
-                  size > 0, size <= limit else {
-                throw EmbeddedToolchainProjectSnapshotError.fileTooLarge(relative)
-            }
-            let data: Data
-            do { data = try Data(contentsOf: fileURL, options: [.mappedIfSafe]) }
-            catch { throw EmbeddedToolchainProjectSnapshotError.fileReadFailed(relative) }
+            let data = try readBoundedFile(relative: relative, root: canonical, limit: limit)
             guard let text = String(data: data, encoding: .utf8) else {
                 throw EmbeddedToolchainProjectSnapshotError.nonASCII(relative)
             }
@@ -259,27 +253,77 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
     }
 
     private static func isSafeRoot(_ root: URL) -> Bool {
-        let path = root.path
-        let forbidden = ["/System/", "/usr/", "/bin/", "/sbin/", "/private/etc/", ".app/", ".framework/"]
-        return !forbidden.contains(where: { path.contains($0) })
+        let components = root.path.split(separator: "/").map(String.init)
+        guard !components.isEmpty else { return false }
+        let forbidden = Set(["System", "usr", "bin", "sbin", "etc"])
+        return !components.contains { component in
+            forbidden.contains(component) || component.hasSuffix(".app") || component.hasSuffix(".framework")
+        }
     }
 
-    private static func safeFileURL(_ relative: String, root: URL) throws -> URL {
-        var cursor = root
-        for component in relative.split(separator: "/") {
-            cursor.appendPathComponent(String(component), isDirectory: false)
-            if (try? cursor.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
-                throw EmbeddedToolchainProjectSnapshotError.fileSymlink(relative)
-            }
-        }
-        let parent = cursor.deletingLastPathComponent()
-        guard parent.resolvingSymlinksInPath().path == parent.path else {
-            throw EmbeddedToolchainProjectSnapshotError.fileSymlink(relative)
-        }
-        guard (try? cursor.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+    private static func readBoundedFile(relative: String, root: URL, limit: Int) throws -> Data {
+        let rootFD = try openDirectoryDescriptor(root)
+        var directoryFD = rootFD
+        defer { close(directoryFD) }
+        let components = relative.split(separator: "/").map(String.init)
+        guard let filename = components.last else {
             throw EmbeddedToolchainProjectSnapshotError.fileReadFailed(relative)
         }
-        return cursor
+        for component in components.dropLast() {
+            let next = component.withCString { pointer in
+                openat(directoryFD, pointer, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+            }
+            guard next >= 0 else {
+                if errno == ELOOP { throw EmbeddedToolchainProjectSnapshotError.fileSymlink(relative) }
+                throw EmbeddedToolchainProjectSnapshotError.fileReadFailed(relative)
+            }
+            close(directoryFD)
+            directoryFD = next
+        }
+        let descriptor = filename.withCString { pointer in
+            openat(directoryFD, pointer, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        }
+        guard descriptor >= 0 else {
+            if errno == ELOOP { throw EmbeddedToolchainProjectSnapshotError.fileSymlink(relative) }
+            throw EmbeddedToolchainProjectSnapshotError.fileReadFailed(relative)
+        }
+        defer { close(descriptor) }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+              info.st_size > 0, info.st_size <= off_t(limit) else {
+            throw EmbeddedToolchainProjectSnapshotError.fileTooLarge(relative)
+        }
+        var data = Data()
+        data.reserveCapacity(Int(info.st_size))
+        var buffer = [UInt8](repeating: 0, count: 16 * 1024)
+        while true {
+            let count = buffer.withUnsafeMutableBytes { bytes in
+                Darwin.read(descriptor, bytes.baseAddress, bytes.count)
+            }
+            if count < 0 { throw EmbeddedToolchainProjectSnapshotError.fileReadFailed(relative) }
+            if count == 0 { break }
+            data.append(contentsOf: buffer[0..<count])
+            guard data.count <= limit else { throw EmbeddedToolchainProjectSnapshotError.fileTooLarge(relative) }
+        }
+        return data
+    }
+
+    private static func openDirectoryDescriptor(_ root: URL) throws -> Int32 {
+        var descriptor = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+        guard descriptor >= 0 else { throw EmbeddedToolchainProjectSnapshotError.rootUnavailable }
+        for component in root.path.split(separator: "/") {
+            let next = String(component).withCString { pointer in
+                openat(descriptor, pointer, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+            }
+            guard next >= 0 else {
+                close(descriptor)
+                if errno == ELOOP { throw EmbeddedToolchainProjectSnapshotError.rootSymlink }
+                throw EmbeddedToolchainProjectSnapshotError.rootUnavailable
+            }
+            close(descriptor)
+            descriptor = next
+        }
+        return descriptor
     }
 
     private static func validatePath(_ path: String) throws {
@@ -304,7 +348,7 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
         let forbiddenTokens = ["#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif",
                                "#define", "#undef", "#error", "#warning", "#pragma", "#import",
                                "_Pragma", "@import"]
-        let forbiddenSourceTokens = ["__asm__", "__attribute__", "asm(", "asm "]
+        let forbiddenSourceTokens = ["__asm__", "__attribute__", "asm(", "asm ", "/*", "//"]
         for token in forbiddenTokens where contents.contains(token) {
             throw EmbeddedToolchainProjectSnapshotError.invalidDirective(source)
         }
@@ -328,7 +372,7 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
             }
             includes.append(try resolve(value, from: source))
         }
-        return Array(Set(includes)).sorted()
+        return includes
     }
 
     private static func resolve(_ include: String, from source: String) throws -> String {

@@ -6,7 +6,7 @@ import Foundation
 /// OM_TOOLCHAIN_ENABLED=1 and OM_TOOLCHAIN_VERIFIED=1 are necessary readiness
 /// gates, but are not sufficient: build/test remain unavailable until a reviewed
 /// structured-operation execution adapter exists.
-enum EmbeddedToolchainLanguage: String, Sendable {
+enum EmbeddedToolchainLanguage: String, Equatable, Sendable {
     case c
     case objectiveC = "objective-c"
 }

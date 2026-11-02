@@ -27,11 +27,35 @@ struct MaterializerContracts {
             throw Failure(description: "first operation is not compile")
         }
         try require(firstSource == "src_main.c" && firstObject == "src_main.o" && firstLanguage == .c, "compile operation")
-        guard case .link(let objects, let output, let installName) = plan.operations.last else {
+        guard let last = plan.operations.last else {
+            throw Failure(description: "last operation is missing")
+        }
+        guard case .link(let objects, let output, let installName) = last else {
             throw Failure(description: "last operation is not link")
         }
         try require(objects == ["src_main.o"] && output == "project.dylib" && installName == "@rpath/project.dylib", "link operation")
         try require(plan.sourceFingerprints["src_main.c"]?.count == 64, "materialized digest")
+        let orderedFiles = [
+            "src/main.c": "#include \"first.h\"\n#include \"second.h\"\nint order(void) { return first() + second(); }",
+            "src/first.h": "int first(void) { return 1; }",
+            "src/second.h": "int second(void) { return 2; }"
+        ]
+        let orderedSnapshot = try EmbeddedToolchainProjectSnapshotBuilder.build(files: orderedFiles)
+        let orderedPlan = try EmbeddedToolchainProjectMaterializer.plan(snapshot: orderedSnapshot)
+        let orderedText = orderedPlan.sources["src_main.c"] ?? ""
+        try require(orderedText.range(of: "int first")!.lowerBound < orderedText.range(of: "int second")!.lowerBound,
+                    "include order must match the source")
+        let diamondFiles = [
+            "src/main.c": "#include \"left.h\"\n#include \"right.h\"\nint run(void);",
+            "src/left.h": "#include \"common.h\"\nint left(void);",
+            "src/right.h": "#include \"common.h\"\nint right(void);",
+            "src/common.h": "int common(void);"
+        ]
+        let diamond = try EmbeddedToolchainProjectSnapshotBuilder.build(files: diamondFiles)
+        let diamondPlan = try EmbeddedToolchainProjectMaterializer.plan(snapshot: diamond)
+        let diamondText = diamondPlan.sources["src_main.c"] ?? ""
+        try require(diamondText.components(separatedBy: "int common").count - 1 == 2,
+                    "unguarded repeated includes must retain C semantics")
         let repeated = try EmbeddedToolchainProjectMaterializer.plan(snapshot: snapshot, outputName: "project.dylib")
         try require(plan == repeated, "deterministic materialized plan")
         do {

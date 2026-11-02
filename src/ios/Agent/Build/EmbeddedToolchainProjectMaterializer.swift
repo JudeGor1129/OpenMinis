@@ -52,10 +52,10 @@ enum EmbeddedToolchainProjectMaterializer {
             guard files[entry] != nil else {
                 throw EmbeddedToolchainProjectMaterializerError.missingEntry(entry)
             }
-            var emitted: Set<String> = []
             var parts: [String] = []
+            var materializedBytes = 0
             try append(path: entry, files: files, dependencies: snapshot.dependencies,
-                       emitted: &emitted, parts: &parts)
+                       parts: &parts, materializedBytes: &materializedBytes)
             let text = parts.joined(separator: "\n")
             guard let data = text.data(using: .ascii), data.count <= maxMaterializedSourceBytes else {
                 throw EmbeddedToolchainProjectMaterializerError.materializedSourceTooLarge(entry)
@@ -90,21 +90,22 @@ enum EmbeddedToolchainProjectMaterializer {
     }
 
     private static func append(path: String, files: [String: String],
-                               dependencies: [String: [String]], emitted: inout Set<String>,
-                               parts: inout [String]) throws {
+                               dependencies: [String: [String]], parts: inout [String],
+                               materializedBytes: inout Int) throws {
         guard let contents = files[path] else {
             throw EmbeddedToolchainProjectMaterializerError.missingDependency(path)
         }
-        let isHeader = path.hasSuffix(".h")
-        if isHeader && emitted.contains(path) { return }
-        if isHeader { emitted.insert(path) }
         for dependency in dependencies[path] ?? [] {
             try append(path: dependency, files: files, dependencies: dependencies,
-                       emitted: &emitted, parts: &parts)
+                       parts: &parts, materializedBytes: &materializedBytes)
         }
         for line in contents.split(separator: "\n", omittingEmptySubsequences: false) {
             let text = String(line)
             if text.trimmingCharacters(in: .whitespaces).hasPrefix("#include \"") { continue }
+            materializedBytes += text.utf8.count + 1
+            guard materializedBytes <= maxMaterializedSourceBytes else {
+                throw EmbeddedToolchainProjectMaterializerError.materializedSourceTooLarge(path)
+            }
             parts.append(text)
         }
     }
