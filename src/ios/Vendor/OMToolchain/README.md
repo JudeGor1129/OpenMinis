@@ -39,3 +39,18 @@ Enabling `OM_TOOLCHAIN_ENABLED=1` additionally requires matching LLVM/Clang stat
 Do not add `OMVerifyToolchain.mm` to the production target; it is a standalone validation harness.
 
 `EmbeddedToolchainBuildProvider` is registered as a read-only readiness provider. It always reports unavailable until both `OM_TOOLCHAIN_ENABLED=1` and `OM_TOOLCHAIN_VERIFIED=1` are supplied by a build that has passed the enabled compile/link gate. It does not spawn a command, execute the standalone harness, or fall back to iSH. The verification macro is intentionally separate from the compiler macro so a linked-but-unverified archive cannot be selected accidentally.
+
+
+### Validation-only adapter Mach-O inspection
+
+The pinned iOS15 `ld64` emits `LC_ENCRYPTION_INFO_64` on an iOS dylib even
+when it is not encrypted: its default `cryptid` is zero. The restricted adapter
+therefore accepts only the bounded 64-bit load-command form (`cmdsize == 24`,
+`cryptid == 0`, zero reserved pad, and a range wholly contained by `__TEXT`).
+It rejects non-zero cryptid, malformed/duplicate commands and out-of-range
+payloads, poisons the current adapter instance, removes the private run directory
+and returns no artifact metadata. This is inspection of a zero-cryptid marker,
+not support for encrypted outputs, and does not make the generic BuildProvider
+available. The macOS contract gate also inspects a hash-pinned, real Clang/LLD
+Mach-O byte fixture as parser regression coverage; LLD output is not represented
+as evidence for the pinned native ld64 or an iOS device.
