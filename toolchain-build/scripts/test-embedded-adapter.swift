@@ -452,7 +452,7 @@ private struct AdapterContracts {
         }
         // Current policy is strict: reaching (not just exceeding) either cap
         // exhausts the adapter; test both the boundary and an over-budget value.
-        for samples in [[384 * mib], [385 * mib], [128 * mib, 192 * mib], [128 * mib, 193 * mib]] {
+        for samples in [[448 * mib], [449 * mib], [128 * mib, 192 * mib], [128 * mib, 193 * mib]] {
             let fake = FakeBridge(memory: samples), adapter = EmbeddedToolchainExecutionAdapter(bridge: fake)
             let exceeded = await run(adapter)
             try require(exceeded.state == "budget_exceeded" && exceeded.processLinkCount == 0, "RSS cap must stop without linking")

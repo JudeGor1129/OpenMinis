@@ -276,7 +276,10 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
     private var links: Int { get { process.links } set { process.links = newValue } }
     private var exhausted: Bool { get { process.exhausted } set { process.exhausted = newValue } }
     private var initialResident: UInt64? { get { process.initialResident } set { process.initialResident = newValue } }
-    private let maxResident: UInt64 = 384 * 1024 * 1024
+    // The host app itself is already near 384 MiB before the first link.
+    // Keep a hard admission ceiling, but leave enough headroom for one bounded
+    // ld64 link; the independent lifetime-growth cap remains 64 MiB.
+    private let maxResident: UInt64 = 448 * 1024 * 1024
     private let maxLifetimeGrowth: UInt64 = 64 * 1024 * 1024
 
     init(bridge: any EmbeddedAdapterBridge) {

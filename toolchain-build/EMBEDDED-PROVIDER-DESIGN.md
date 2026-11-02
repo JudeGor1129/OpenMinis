@@ -113,7 +113,7 @@ in that same request. No external `.o`, user path or generic command is accepted
 - Library input is a bounded snapshot of SDK16.5 `libSystem.B.tbd`, checked
   against SHA-256 `1ab02266a39491a8bd5a91ba36d5c8c8c6ac6efb92099e1091a1fd2370fc53e3`.
 - Production uses one lifetime singleton. At most 3 adapter link attempts;
-  admissions stop at sampled RSS >=384 MiB or cumulative growth >=64 MiB.
+  admissions stop at sampled RSS >=448 MiB or cumulative growth >=64 MiB.
   Sampling cannot interrupt or enforce an in-flight LLVM/ld64 allocation limit.
 - Cancellation is cooperative between operations (including Swift Task
   cancellation); no signals, longjmp or skipped destructors.
