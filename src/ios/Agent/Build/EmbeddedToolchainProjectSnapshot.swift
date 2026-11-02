@@ -309,19 +309,12 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
     }
 
     private static func openDirectoryDescriptor(_ root: URL) throws -> Int32 {
-        var descriptor = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
-        guard descriptor >= 0 else { throw EmbeddedToolchainProjectSnapshotError.rootUnavailable }
-        for component in root.path.split(separator: "/") {
-            let next = String(component).withCString { pointer in
-                openat(descriptor, pointer, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
-            }
-            guard next >= 0 else {
-                close(descriptor)
-                if errno == ELOOP { throw EmbeddedToolchainProjectSnapshotError.rootSymlink }
-                throw EmbeddedToolchainProjectSnapshotError.rootUnavailable
-            }
-            close(descriptor)
-            descriptor = next
+        let descriptor = root.path.withCString { pointer in
+            open(pointer, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+        }
+        guard descriptor >= 0 else {
+            if errno == ELOOP { throw EmbeddedToolchainProjectSnapshotError.rootSymlink }
+            throw EmbeddedToolchainProjectSnapshotError.rootUnavailable
         }
         return descriptor
     }
