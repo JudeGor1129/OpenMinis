@@ -16,6 +16,7 @@ struct EmbeddedToolchainMaterializedPlan: Equatable, Sendable {
     let operations: [EmbeddedToolchainOperation]
     let sourceFingerprints: [String: String]
     let snapshotFingerprint: String
+    let outputName: String
 }
 
 enum EmbeddedToolchainProjectMaterializerError: Error, Equatable, LocalizedError, Sendable {
@@ -85,7 +86,8 @@ enum EmbeddedToolchainProjectMaterializer {
             sources: materialized,
             operations: operations,
             sourceFingerprints: fingerprints,
-            snapshotFingerprint: snapshot.fingerprint
+            snapshotFingerprint: snapshot.fingerprint,
+            outputName: outputName
         )
     }
 

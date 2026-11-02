@@ -61,6 +61,7 @@ jobs:
           bash scripts/ios15/check-embedded-adapter.sh --require-swift 2>&1 | tee ci-logs/embedded-adapter-contract.txt
           bash scripts/ios15/check-embedded-project-snapshot.sh --require-swift 2>&1 | tee ci-logs/embedded-project-snapshot-contract.txt
           bash scripts/ios15/check-embedded-project-materializer.sh --require-swift 2>&1 | tee ci-logs/embedded-project-materializer-contract.txt
+          bash scripts/ios15/check-embedded-restricted-request.sh --require-swift 2>&1 | tee ci-logs/embedded-restricted-request-contract.txt
           bash scripts/ios15/check-programming-build-tools.sh 2>&1 | tee ci-logs/programming-build-tools.txt
           bash scripts/ios15/check-programming-tools.sh 2>&1 | tee ci-logs/programming-tools.txt
           bash scripts/ios15/check-navigation.sh 2>&1 | tee ci-logs/navigation.txt
