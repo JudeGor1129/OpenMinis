@@ -5,6 +5,7 @@ private struct Failure: Error, CustomStringConvertible {
 }
 
 @main
+@MainActor
 struct SnapshotContracts {
     static var checks = 0
     static func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
