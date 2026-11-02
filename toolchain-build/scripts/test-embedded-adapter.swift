@@ -318,7 +318,8 @@ private struct AdapterContracts {
         for (data, type, rule) in [(encrypted, UInt32(6), "encrypted_output_cryptid_nonzero"),
             (padded, 6, "encryption_reserved_padding_nonzero"), (badOffset, 6, "encryption_range_outside_payload"),
             (badSize, 6, "encryption_range_outside_payload"), (inHeader, 6, "encryption_range_outside_payload"),
-            (short, 6, "structure"), (long, 6, "encryption_command_size_or_duplicate"),
+            (short, 6, "encryption_command_size_or_duplicate"),
+            (long, 6, "encryption_command_size_or_duplicate"),
             (beyondText, 6, "encryption_range_outside_text_segment"), (duplicate, 6, "encryption_command_size_or_duplicate"),
             (inObject, 1, "unsupported_load_command=0x2c")] {
             do {
