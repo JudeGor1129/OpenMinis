@@ -22,16 +22,59 @@ private enum MachOFixture {
     static func patch(_ data: inout Data, _ offset: Int, _ value: UInt32) {
         data.replaceSubrange(offset..<(offset + 4), with: u32(value))
     }
+    static func encryptionCommand(offset: UInt32, bytes: UInt32, cryptid: UInt32 = 0, pad: UInt32 = 0) -> Data {
+        [UInt32(0x2c), 24, offset, bytes, cryptid, pad].reduce(into: Data()) { $0.append(u32($1)) }
+    }
+    static func commandOffset(_ command: UInt32, in data: Data) -> Int {
+        func read(_ offset: Int) -> UInt32 {
+            UInt32(data[offset]) | UInt32(data[offset + 1]) << 8 | UInt32(data[offset + 2]) << 16 | UInt32(data[offset + 3]) << 24
+        }
+        var cursor = 32
+        for _ in 0..<read(16) {
+            if read(cursor) == command { return cursor }
+            cursor += Int(read(cursor + 4))
+        }
+        preconditionFailure("fixture command is missing")
+    }
     static func adding(_ command: Data, to original: Data) -> Data {
         var data = original
         func read(_ offset: Int) -> UInt32 {
             UInt32(data[offset]) | UInt32(data[offset + 1]) << 8 | UInt32(data[offset + 2]) << 16 | UInt32(data[offset + 3]) << 24
         }
         let count = read(16), bytes = read(20), payload = Int(bytes) + 32
+        var cursor = 32
+        for _ in 0..<count {
+            let commandID = read(cursor), commandSize = Int(read(cursor + 4))
+            if commandID == 0x19 {
+                let sectionCount = Int(read(cursor + 64))
+                let fileOffset = Int(read(cursor + 40))
+                let fileSize = Int(read(cursor + 48))
+                if fileOffset >= payload {
+                    patch(&data, cursor + 40, UInt32(fileOffset + command.count))
+                } else if fileSize > 0 && fileSize <= data.count - payload {
+                    patch(&data, cursor + 48, UInt32(fileSize + command.count))
+                }
+                for field in [8, 16] {
+                    let segmentField = cursor + field
+                    let start = Int(read(segmentField))
+                    let length = Int(read(segmentField + 4))
+                    if start >= payload && length > 0 && start <= data.count && length <= data.count - start {
+                        patch(&data, segmentField, UInt32(start + command.count))
+                    }
+                }
+                for index in 0..<sectionCount {
+                    let section = cursor + 72 + index * 80
+                    let sectionOffset = Int(read(section + 48))
+                    if sectionOffset >= payload { patch(&data, section + 48, UInt32(sectionOffset + command.count)) }
+                }
+            } else if commandID == 0x2c {
+                let encryptedOffset = Int(read(cursor + 8))
+                if encryptedOffset >= payload { patch(&data, cursor + 8, UInt32(encryptedOffset + command.count)) }
+            }
+            cursor += commandSize
+        }
         data.insert(contentsOf: command, at: payload)
         patch(&data, 16, count + 1); patch(&data, 20, bytes + UInt32(command.count))
-        patch(&data, 72, UInt32(payload + command.count)) // segment fileoff (low word)
-        patch(&data, 152, UInt32(payload + command.count)) // section file offset
         return data
     }
     static func invalidRelocations(filetype: UInt32, installName: String = "") -> Data {
@@ -51,7 +94,9 @@ private enum MachOFixture {
         let payload = Data([0xc0, 0x03, 0x5f, 0xd6, 0x1f, 0x20, 0x03, 0xd5])
         let extra = filetype == 6
             ? dylibCommand(0xc, "/usr/lib/libSystem.B.dylib") + dylibCommand(0xd, installName) : Data()
-        let commandBytes = 152 + extra.count
+        // Mirror the pinned iOS ld64: include cryptid=0 metadata even though
+        // no file encryption is performed. Build210's fake omitted this.
+        let commandBytes = 152 + extra.count + (filetype == 6 ? 24 : 0)
         let offset = UInt32(32 + commandBytes)
         var segment = u32(0x19) + u32(152) + name(filetype == 1 ? "" : "__TEXT")
         segment.append(u64(0)); segment.append(u64(UInt64(payload.count)))
@@ -61,13 +106,15 @@ private enum MachOFixture {
         for value in [offset, 2, 0, 0, 0x80000400, 0, 0, 0] { section.append(u32(value)) }
         segment.append(section)
         var data = Data()
-        for value in [0xfeedfacf, 0x0100000c, 0, filetype, filetype == 6 ? 3 : 1,
+        for value in [0xfeedfacf, 0x0100000c, 0, filetype, filetype == 6 ? 4 : 1,
                               UInt32(commandBytes), filetype == 6 ? 0x85 : 0, 0] { data.append(u32(value)) }
-        data.append(segment); data.append(extra); data.append(payload); return data
+        data.append(segment); data.append(extra)
+        if filetype == 6 { data.append(encryptionCommand(offset: offset, bytes: UInt32(payload.count))) }
+        data.append(payload); return data
     }
 }
 
-private enum Outcome: Equatable, Sendable { case ok, diagnostics, internalError, malformed, symlink, assertion, invalidRelocations }
+private enum Outcome: Equatable, Sendable { case ok, diagnostics, internalError, malformed, symlink, assertion, invalidRelocations, encrypted }
 private struct BridgeSnapshot: Sendable {
     let calls: [[String]]
     let kinds: [String]
@@ -144,6 +191,12 @@ private final class FakeBridge: EmbeddedAdapterBridge, @unchecked Sendable {
                 lock.lock(); copiedStub = data; lock.unlock()
             }
             switch outcome {
+            case .encrypted:
+                let install = arguments.firstIndex(of: "-install_name").map { arguments[$0 + 1] } ?? ""
+                var data = MachOFixture.image(filetype: 6, installName: install)
+                let command = MachOFixture.commandOffset(0x2c, in: data)
+                MachOFixture.patch(&data, command + 16, 1)
+                try data.write(to: output)
             case .invalidRelocations:
                 let install = arguments.firstIndex(of: "-install_name").map { arguments[$0 + 1] } ?? ""
                 try MachOFixture.invalidRelocations(filetype: linking ? 6 : 1, installName: install).write(to: output)
@@ -191,12 +244,19 @@ private struct AdapterContracts {
     }
     static func main() async throws {
         let before = try tempRoots()
+        guard ProcessInfo.processInfo.arguments.count == 2 else { throw ContractFailure(description: "real-linker fixture path required") }
+        let real = try Data(contentsOf: URL(fileURLWithPath: ProcessInfo.processInfo.arguments[1]))
+        try require(real.count == 49336 && EmbeddedAdapterArtifact.digest(real) == "f7858c08290826dd443b3981e85bb7d908a2318f53a9c61530de12b9fbc33d4a", "real-linker fixture changed")
+        _ = try EmbeddedAdapterArtifact.inspect(real, name: "probe.dylib", filetype: 6)
+        checks += 1
+        print("PASS: actual Clang/LLD-linked iOS dylib bytes inspected by production Swift (not native ld64/device evidence)")
         let nativeA = EmbeddedToolchainExecutionAdapter(bridge: EmbeddedNativeAdapterBridge())
         let nativeB = EmbeddedToolchainExecutionAdapter(bridge: EmbeddedNativeAdapterBridge())
         try require(nativeA.processScopeID == nativeB.processScopeID &&
                     nativeA.processScopeID == EmbeddedToolchainExecutionAdapter.shared.processScopeID,
                     "new native adapters must share the entire process queue/budget/poison state")
         try malformedMachO(); print("PASS: Mach-O relocation, command and linkedit range mutations")
+        try await encryptionPolicy(); print("PASS: unencrypted metadata accepted; encrypted/unsafe output rejected and poisoned")
         try await successAndArguments(); print("PASS: success, metadata, cleanup and fixed argv")
         try await cancellation(); print("PASS: pre-cancel and cancellation during compile")
         try await diagnosticsRecovery(); print("PASS: compile/link diagnostics recover on the same instance")
@@ -211,7 +271,7 @@ private struct AdapterContracts {
     private static func malformedMachO() throws {
         let object = MachOFixture.image(filetype: 1)
         var outsideSegment = object
-        MachOFixture.patch(&outsideSegment, 72, 0)
+        MachOFixture.patch(&outsideSegment, 152, 0) // __text section offset must belong to its segment
         let badDysym = MachOFixture.adding(MachOFixture.u32(0xb) + MachOFixture.u32(8), to: object)
         var badVersionCommand = MachOFixture.u32(0x32) + MachOFixture.u32(24)
         for value in [UInt32(2), 0x000f0000, 0x00100000, UInt32.max] { badVersionCommand.append(MachOFixture.u32(value)) }
@@ -233,6 +293,51 @@ private struct AdapterContracts {
                 throw ContractFailure(description: "malformed Mach-O variant was accepted")
             } catch EmbeddedAdapterError.poisoned(_) { checks += 1 }
         }
+    }
+    private static func encryptionPolicy() async throws {
+        let image = MachOFixture.image(filetype: 6, installName: "@rpath/probe.dylib")
+        let encryption = MachOFixture.commandOffset(0x2c, in: image)
+        _ = try EmbeddedAdapterArtifact.inspect(image, name: "probe.dylib", filetype: 6)
+        checks += 1
+        var encrypted = image; MachOFixture.patch(&encrypted, encryption + 16, 1)
+        var padded = image; MachOFixture.patch(&padded, encryption + 20, 1)
+        var badOffset = image; MachOFixture.patch(&badOffset, encryption + 8, .max)
+        var badSize = image; MachOFixture.patch(&badSize, encryption + 12, .max)
+        var inHeader = image; MachOFixture.patch(&inHeader, encryption + 8, 0)
+        var short = image; MachOFixture.patch(&short, encryption + 4, 16)
+        var long = image; MachOFixture.patch(&long, encryption + 4, 32)
+        var beyondText = image
+        beyondText.append(Data(repeating: 0, count: 8)) // still inside file, outside the __TEXT file range
+        MachOFixture.patch(&beyondText, encryption + 12, 16) // extends beyond __TEXT, still within file
+        let originalEncryptionOffset = UInt32(image[encryption + 8]) |
+            UInt32(image[encryption + 9]) << 8 | UInt32(image[encryption + 10]) << 16 |
+            UInt32(image[encryption + 11]) << 24
+        let duplicate = MachOFixture.adding(
+            MachOFixture.encryptionCommand(offset: originalEncryptionOffset + 24, bytes: 8), to: image)
+        let inObject = MachOFixture.adding(MachOFixture.encryptionCommand(offset: 208, bytes: 8), to: MachOFixture.image(filetype: 1))
+        for (data, type, rule) in [(encrypted, UInt32(6), "encrypted_output_cryptid_nonzero"),
+            (padded, 6, "encryption_reserved_padding_nonzero"), (badOffset, 6, "encryption_range_outside_payload"),
+            (badSize, 6, "encryption_range_outside_payload"), (inHeader, 6, "encryption_range_outside_payload"),
+            (short, 6, "structure"), (long, 6, "encryption_command_size_or_duplicate"),
+            (beyondText, 6, "encryption_range_outside_text_segment"), (duplicate, 6, "encryption_command_size_or_duplicate"),
+            (inObject, 1, "unsupported_load_command=0x2c")] {
+            do {
+                _ = try EmbeddedAdapterArtifact.inspect(data, name: "probe.dylib", filetype: type)
+                throw ContractFailure(description: "encryption metadata mutation accepted: \(rule)")
+            } catch EmbeddedAdapterError.poisoned(let reason) {
+                try require(reason.contains(rule) && reason.contains("check_line="), "wrong encryption rejection rule: \(reason)")
+            }
+        }
+        let fake = FakeBridge(link: [.encrypted])
+        let adapter = EmbeddedToolchainExecutionAdapter(bridge: fake)
+        let failed = await run(adapter)
+        try require(failed.state == "poisoned" && failed.reason.contains("encrypted_output_cryptid_nonzero"),
+                    "encrypted linker output must poison rather than become a successful artifact")
+        try cleanup(failed, fake)
+        let calls = fake.snapshot().calls.count
+        let retry = await run(adapter)
+        try require(retry.state == "poisoned" && fake.snapshot().calls.count == calls,
+                    "encrypted-output poison must persist across requests")
     }
     private static func successAndArguments() async throws {
         let fake = FakeBridge(), adapter = EmbeddedToolchainExecutionAdapter(bridge: fake)

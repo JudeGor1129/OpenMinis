@@ -93,8 +93,11 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
     /// Thin arm64 only. Validate command/segment bounds before reporting an
     /// artifact. Never mmap, load, sign or execute generated code.
     static func inspect(_ data: Data, name: String, filetype: UInt32) throws -> Self {
-        func invalid() -> EmbeddedAdapterError { .poisoned("malformed or unexpected Mach-O output") }
-        guard [UInt32(1), 6].contains(filetype), data.count >= 32, data.count <= 16 * 1024 * 1024 else { throw invalid() }
+        func invalid(_ rule: String = "structure", line: Int = #line) -> EmbeddedAdapterError {
+            .poisoned("Mach-O output rejected: \(rule) (check_line=\(line))")
+        }
+        guard [UInt32(1), 6].contains(filetype) else { throw invalid("unexpected_filetype=\(filetype)") }
+        guard data.count >= 32, data.count <= 16 * 1024 * 1024 else { throw invalid("output_size_out_of_bounds") }
         func word(_ offset: Int) -> UInt32 {
             UInt32(data[offset]) | UInt32(data[offset + 1]) << 8 |
                 UInt32(data[offset + 2]) << 16 | UInt32(data[offset + 3]) << 24
@@ -111,27 +114,35 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         var installNames: [String] = []
         var symbolCount: UInt64?
         var symbolRanges: [(UInt64, UInt64)] = []
+        var textFileRanges: [(UInt64, UInt64)] = []
+        var encryptionRange: (UInt64, UInt64)?
         let objectCommands: Set<UInt32> = [0x19, 0x2, 0xb, 0x32, 0x25, 0x29]
-        // Pinned ld64 HeaderAndLoadCommands.hpp emits SOURCE_VERSION and, for
-        // iOS15 dylibs, EXPORTS_TRIE/CHAINED_FIXUPS by default. Only bounded
-        // metadata forms are admitted; no caller selects these load commands.
+        // Pinned ld64 also emits LC_ENCRYPTION_INFO_64 for iOS dylibs by
+        // default, with cryptid=0. This is metadata, not encrypted content.
+        // Admit only its bounded, unencrypted form; never bypass inspection.
         let dylibCommands = objectCommands.union([0xc, 0xd, 0x1b, 0x80000022, 0x26, 0x1d,
-                                                  0x2a, 0x80000033, 0x80000034])
+                                                  0x2a, 0x80000033, 0x80000034, 0x2c])
         func inFile(_ offset: UInt64, _ bytes: UInt64) -> Bool {
             offset <= UInt64(data.count) && bytes <= UInt64(data.count) - offset
         }
         for _ in 0..<count {
             guard cursor + 8 <= end else { throw invalid() }
             let command = word(cursor), size = Int(word(cursor + 4))
+            if command == 0x2c && size != 24 { throw invalid("encryption_command_size_or_duplicate") }
             guard size >= 8, size % 8 == 0, size <= end - cursor else { throw invalid() }
             // Unknown/unsupported commands are rejected, not silently skipped.
-            guard (filetype == 1 ? objectCommands : dylibCommands).contains(command) else { throw invalid() }
+            guard (filetype == 1 ? objectCommands : dylibCommands).contains(command) else {
+                throw invalid("unsupported_load_command=0x\(String(command, radix: 16)),offset=\(cursor)")
+            }
             if command == 0x19 {
                 guard size >= 72 else { throw invalid() }
                 let sectionCount = Int(word(cursor + 64))
                 guard sectionCount <= (size - 72) / 80, size == 72 + sectionCount * 80 else { throw invalid() }
                 let offset = wide(cursor + 40), bytes = wide(cursor + 48)
                 guard inFile(offset, bytes) else { throw invalid() }
+                if data[(cursor + 8)..<(cursor + 24)].elementsEqual(Array("__TEXT".utf8) + Array(repeating: UInt8(0), count: 10)) {
+                    textFileRanges.append((offset, bytes))
+                }
                 hasSegment = true
                 for index in 0..<sectionCount {
                     let section = cursor + 72 + index * 80
@@ -177,6 +188,15 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             } else if command == 0x32 {
                 guard size >= 24, Int(word(cursor + 20)) <= (size - 24) / 8,
                       size == 24 + Int(word(cursor + 20)) * 8 else { throw invalid() }
+            } else if command == 0x2c { // LC_ENCRYPTION_INFO_64 (not 32-bit)
+                guard size == 24, encryptionRange == nil else {
+                    throw invalid("encryption_command_size_or_duplicate")
+                }
+                guard word(cursor + 16) == 0 else { throw invalid("encrypted_output_cryptid_nonzero") }
+                guard word(cursor + 20) == 0 else { throw invalid("encryption_reserved_padding_nonzero") }
+                let offset = UInt64(word(cursor + 8)), bytes = UInt64(word(cursor + 12))
+                guard inFile(offset, bytes), offset >= UInt64(end) else { throw invalid("encryption_range_outside_payload") }
+                encryptionRange = (offset, bytes)
             } else if command == 0x25 || command == 0x2a {
                 guard size == 16 else { throw invalid() }
             } else if command == 0x1b {
@@ -195,8 +215,15 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         for (start, count) in symbolRanges {
             guard let total = symbolCount, start <= total, count <= total - start else { throw invalid() }
         }
+        if let (offset, bytes) = encryptionRange {
+            guard textFileRanges.count == 1, textFileRanges.contains(where: { start, length in
+                offset >= start && offset - start <= length && bytes <= length - (offset - start)
+            }) else { throw invalid("encryption_range_outside_text_segment") }
+        }
         if filetype == 6 {
-            guard dependencies == ["/usr/lib/libSystem.B.dylib"], installNames == ["@rpath/" + name] else { throw invalid() }
+            guard dependencies == ["/usr/lib/libSystem.B.dylib"], installNames == ["@rpath/" + name] else {
+                throw invalid("dependency_or_install_name_mismatch")
+            }
         } else {
             guard dependencies.isEmpty, installNames.isEmpty else { throw invalid() }
         }

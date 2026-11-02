@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "kind": "nonexecuted_real_linker_fixture",
+  "producer": "Alpine Clang/LLD 19.1.4 (not pinned ld64)",
+  "source_c": "extern int objc_probe(void); int probe(void) { return objc_probe() + 1; }",
+  "source_objc": "@interface AdapterProbe @end\nint objc_probe(void) { return 7; }",
+  "target": "arm64-apple-ios15.0",
+  "install_name": "@rpath/probe.dylib",
+  "bytes": 49336,
+  "sha256": "f7858c08290826dd443b3981e85bb7d908a2318f53a9c61530de12b9fbc33d4a",
+  "compression": "zlib+base64",
+  "data": "eNrt0s9PE0EUwPG3263RKFICJqgcevJHYmgVDh4XLYnEBo2UhNvA0lVLgDZtSWy49OLdAwc9etP/wItx/Qu4GY/+Ax68mmCc6QzpssDBi3r4fpKX6Zu+nXkzu/s/v/+6IOKJdkbHRR1ffZGXUjBTclnHax1K1eZXanJc/+Q878Jz00p14xfdYdmx9UI7TKVyP71ucHSnYV+Vudqcuv9ocal2pJ8w05/Lcy5MX4XB881oY101ttaexY3tp83T1jt72nkzTF8PButWFxYfzlcWDs+Y2OGDnJx7qbsyZvVOBVdX1sOMy8s6vyH2biZ1rCb2PK/c/HkdjzM9+S48+XO33D6D+wuH8yNi+5rM1Ift1lr3eanVbkbxdL232Yjs/FVXW61W9peXb1fe/pgaezMy/vGOnivK4bse1R9NYdBnYMIbF/1tyt3UPrn69bw5SWmn0y7p1U0s9TrdeGv6Xnq/a+79riT23d10+WoiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPBfOtj99D4Q2ZNAxg52P79LcurLN+k/MSO3AwAAAAAAAAAAAAAAAAAAAAAAAAAAAADA3xNyBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/HNFHWUXhpf6L5ct9pTkxW+1m1EsV5rRxrqyv4uB9PueBLLXN8/r3xOm3NcxaiZC+/g5l0+4/JLdzxv24tZTqbXrvc266nR3IhU1tutxW9f9BjOibjE="
+}

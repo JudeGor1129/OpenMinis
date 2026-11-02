@@ -68,6 +68,16 @@ require('EmbeddedAdapterArtifact.digest(data) == Self.libSystemSHA256' in adapte
         'native libSystem SHA-256 comparison must remain enforced')
 require('"1ab02266a39491a8bd5a91ba36d5c8c8c6ac6efb92099e1091a1fd2370fc53e3"' in adapter,
         'native libSystem content pin must not be replaced with a fake-fixture hash')
+require('0x2c' in adapter and 'cryptid=0' in adapter,
+        'pinned iOS dylib encryption metadata must be structurally supported, not blanket-disabled')
+for rule in ('encrypted_output_cryptid_nonzero', 'encryption_reserved_padding_nonzero',
+             'encryption_range_outside_payload', 'encryption_range_outside_text_segment',
+             'encryption_command_size_or_duplicate'):
+    require(rule in adapter, 'unsafe LC_ENCRYPTION_INFO_64 rejection missing: ' + rule)
+require('MachOFixture.image(filetype: 6' in harness and 'try await encryptionPolicy()' in harness,
+        'zero-cryptid positive and unsafe encryption metadata mutation tests are required')
+require('f7858c08290826dd443b3981e85bb7d908a2318f53a9c61530de12b9fbc33d4a' in harness,
+        'actual-linker parser fixture hash binding is missing')
 require('O_NOFOLLOW' in adapter, 'native/generated input must reject symlinks')
 header = Path('src/ios/Vendor/OMToolchain/OMToolchain.h').read_text(encoding='utf-8')
 require('swift_name("runCC1(_:stdout:stderr:)")' in header and
@@ -91,6 +101,22 @@ print('PASS: source policy; real enum extraction; generic provider remains unava
 print('PASS: validation-only UI wiring and process-lifetime native state are bound.')
 PY
 
+# A real Clang/LLD-linked Mach-O exercises load commands absent from early
+# synthetic fakes. It is bytes for inspection only, never executed or loaded.
+python3 - "$TMP/real-linker.dylib" <<'PY'
+from pathlib import Path
+import base64, hashlib, json, sys, zlib
+fixture = json.loads(Path('toolchain-build/fixtures/adapter-ios15-lld-dylib.json').read_text())
+assert fixture['bytes'] == 49336 and fixture['sha256'] == 'f7858c08290826dd443b3981e85bb7d908a2318f53a9c61530de12b9fbc33d4a'
+compressed = base64.b64decode(fixture['data'], validate=True)
+assert len(compressed) <= 4096
+inflater = zlib.decompressobj()
+data = inflater.decompress(compressed, fixture['bytes'] + 1)
+assert inflater.eof and not inflater.unused_data and not inflater.unconsumed_tail
+assert len(data) == fixture['bytes'] and hashlib.sha256(data).hexdigest() == fixture['sha256']
+Path(sys.argv[1]).write_bytes(data)
+print('PASS: nonexecuted real Clang/LLD fixture hash and decompression (not pinned native ld64 evidence).')
+PY
 if ! command -v swiftc >/dev/null 2>&1; then
   echo 'SKIP: Swift fake-bridge execution (swiftc not found); source policy alone is NOT a behaviour test.'
   if [[ "$require_swift" -eq 1 ]]; then
@@ -111,6 +137,6 @@ echo 'PASS: actual OMToolchain.h importer and adapter typecheck.'
 # No source rewriting, compiler-error suppression, App, SDK or LLVM linkage.
 swiftc -swift-version 6 -strict-concurrency=complete -parse-as-library \
   "$TMP/Models.swift" "$ADAPTER" "$HARNESS" -o "$TMP/embedded-adapter-contract"
-"$TMP/embedded-adapter-contract"
+"$TMP/embedded-adapter-contract" "$TMP/real-linker.dylib"
 echo 'PASS: actual Swift adapter compiled and fake-bridge contracts executed.'
 echo 'NOTE: native SHA-256/evidence checks were not changed; real LLVM, signing, loading and device RSS remain separate gates.'

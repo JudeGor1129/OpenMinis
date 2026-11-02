@@ -163,3 +163,42 @@ instances, not merely the UI singleton. Its final cancellation/RSS check occurs
 after inspection/hash/cleanup. Mach-O policy admits the pinned ld64's bounded
 SOURCE_VERSION and iOS15 EXPORTS_TRIE/CHAINED_FIXUPS metadata forms, while
 rejecting unknown commands and range violations.
+
+### Build210 device failure and correction
+
+The first Build210 device report reached both real CC1 compilations and the real
+ld64 dylib link (`status: 0`), then safely poisoned during output inspection:
+`process_link_count=1`, no artifact metadata was exposed, and all temporary files
+were removed. The cause is now established from the pinned ld64 source rather
+than guessed from the report: `Options.cpp` initializes `fEncryptable=true`; its
+iOS15 dynamic-library defaults keep it enabled, and
+`HeaderAndLoadCommands.hpp` emits `LC_ENCRYPTION_INFO_64` with `cryptid=0`.
+That command describes an unencrypted text range; it does not mean the output
+is encrypted. The adapter's original command allowlist omitted `0x2c`, so it
+classified a valid locked-ld64 output as malformed.
+
+The correction admits only the exact 24-byte 64-bit command with zero `cryptid`,
+zero reserved padding, a bounded range inside exactly one `__TEXT` file range,
+and no duplicate. Nonzero cryptid, bad offsets/sizes, malformed command length,
+duplicates, and a 32-bit/unknown command remain poisoning errors. Detailed
+rule names are included in the rejection reason. Swift contracts now include a
+positive zero-cryptid fixture, all mutation negatives, an encrypted bridge output
+that must poison and persist, and a real nonexecuted Clang/LLD-linked arm64
+fixture (49,336 bytes, SHA-256
+`f7858c08290826dd443b3981e85bb7d908a2318f53a9c61530de12b9fbc33d4a`) inspected
+by the production parser. LLD is explicitly not used as evidence for the pinned
+native ld64; it only catches structural parser drift.
+
+The device report remains valid evidence that compile/link and cleanup worked and
+that inspection stopped unsafe publication. It does not count as adapter pass.
+Do not rerun Build210 after the fix; a new full App build and a fresh, single
+adapter validation run are required before changing provider scope.
+
+
+The iSH host used for this repair has no `swiftc`: source-policy checks pass, but
+the `--require-swift` contract gate correctly exits 1 and explicitly reports
+SKIP. Do not treat local policy as a passing Swift behavior test. The real Mach-O
+fixture is verified locally by SHA-256 and decompression, then is inspected by
+the production Swift parser only in macOS CI. The adapter's malformed-output
+reason now includes a rule/check-line and the unknown-command reason includes
+its numeric command and offset, so a future device rejection is actionable.
