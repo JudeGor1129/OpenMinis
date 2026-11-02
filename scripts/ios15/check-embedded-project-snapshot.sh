@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Source policy and macOS Swift contracts for the immutable project snapshot gate.
+# Gate revision: Swift 6 MainActor-isolated contract harness.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 SNAPSHOT=src/ios/Agent/Build/EmbeddedToolchainProjectSnapshot.swift
