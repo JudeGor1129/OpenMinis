@@ -68,8 +68,10 @@ require('EmbeddedAdapterArtifact.digest(data) == Self.libSystemSHA256' in adapte
         'native libSystem SHA-256 comparison must remain enforced')
 require('"1ab02266a39491a8bd5a91ba36d5c8c8c6ac6efb92099e1091a1fd2370fc53e3"' in adapter,
         'native libSystem content pin must not be replaced with a fake-fixture hash')
-require('0x2c' in adapter and 'cryptid=0' in adapter,
-        'pinned iOS dylib encryption metadata must be structurally supported, not blanket-disabled')
+require('0x2c' in adapter and 'cryptid=0' in adapter and
+        'command == 0x2c' in adapter and 'word(cursor + 16) == 0' in adapter and
+        'word(cursor + 20) == 0' in adapter and '0x21]' not in adapter,
+        'pinned iOS dylib must admit only bounded LC_ENCRYPTION_INFO_64 with cryptid=0')
 for rule in ('encrypted_output_cryptid_nonzero', 'encryption_reserved_padding_nonzero',
              'encryption_range_outside_payload', 'encryption_range_outside_text_segment',
              'encryption_command_size_or_duplicate'):
