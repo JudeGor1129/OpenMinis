@@ -110,8 +110,14 @@ enum MachOFixture {
         segment.append(u64(0)); segment.append(u64(8))
         segment.append(u64(UInt64(textOffset))); segment.append(u64(UInt64(8 + hint.count)))
         segment.append(u32(7)); segment.append(u32(7)); segment.append(u32(1)); segment.append(u32(0))
-        let textSection = name("__text") + name("__TEXT") + u64(0) + u64(8) +
-            u32(textOffset) + u32(2) + u32(0) + u32(0) + u32(0x80000400) + u32(0) + u32(0) + u32(0)
+        var textSection = name("__text")
+        textSection.append(name("__TEXT"))
+        textSection.append(u64(0))
+        textSection.append(u64(8))
+        textSection.append(u32(textOffset))
+        for value: UInt32 in [2, 0, 0, 0x80000400, 0, 0, 0] {
+            textSection.append(u32(value))
+        }
         segment.append(textSection)
         var data = Data()
         for value in [UInt32(0xfeedfacf), 0x0100000c, 0, 1, UInt32(1 + hintCommandCount), UInt32(commandBytes), 0, 0] {
