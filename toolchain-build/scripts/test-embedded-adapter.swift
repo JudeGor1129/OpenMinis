@@ -23,6 +23,9 @@ enum MachOFixture {
     static func patch(_ data: inout Data, _ offset: Int, _ value: UInt32) {
         data.replaceSubrange(offset..<(offset + 4), with: u32(value))
     }
+    static func read32(_ data: Data, _ offset: Int) -> UInt32 {
+        UInt32(data[offset]) | UInt32(data[offset + 1]) << 8 | UInt32(data[offset + 2]) << 16 | UInt32(data[offset + 3]) << 24
+    }
     static func encryptionCommand(offset: UInt32, bytes: UInt32, cryptid: UInt32 = 0, pad: UInt32 = 0) -> Data {
         [UInt32(0x2c), 24, offset, bytes, cryptid, pad].reduce(into: Data()) { $0.append(u32($1)) }
     }
@@ -93,10 +96,12 @@ enum MachOFixture {
         var data = image(filetype: 6, installName: installName)
         let hint = Data(repeating: 0x5a, count: 8)
         data.append(hint)
-        data = adding(linkeditSegment(offset: UInt32(data.count - hint.count), bytes: UInt32(hint.count)), to: data)
-        let hintOffset = UInt32(data.count - hint.count + 16)
-        data = adding(optimizationHintCommand(offset: hintOffset, bytes: UInt32(hint.count)), to: data)
-        return data
+        // The fixture inserter shifts command data offsets along with the
+        // appended bytes when inserting this 88-byte block before the payload.
+        let preInsertionHintOffset = UInt32(data.count - hint.count)
+        let block = linkeditSegment(offset: preInsertionHintOffset, bytes: UInt32(hint.count)) +
+            optimizationHintCommand(offset: preInsertionHintOffset, bytes: UInt32(hint.count))
+        return adding(block, to: data)
     }
     static func invalidRelocations(filetype: UInt32, installName: String = "") -> Data {
         var data = image(filetype: filetype, installName: installName)
@@ -373,9 +378,10 @@ private struct AdapterContracts {
         var badHintRange = hint
         MachOFixture.patch(&badHintRange, hintCommand + 8, .max)
         var outsideLinkedit = hint
-        MachOFixture.patch(&outsideLinkedit, hintCommand + 8, 32)
+        let textPayloadOffset = UInt32(32 + MachOFixture.read32(hint, 20))
+        MachOFixture.patch(&outsideLinkedit, hintCommand + 8, textPayloadOffset)
         let duplicateHint = MachOFixture.adding(
-            MachOFixture.optimizationHintCommand(offset: UInt32(hint.count), bytes: 8), to: hint)
+            MachOFixture.optimizationHintCommand(offset: MachOFixture.read32(hint, hintCommand + 8), bytes: 8), to: hint)
         for (data, rule) in [(badHintSize, "optimization_hint_command_size_or_duplicate"),
                              (badHintRange, "optimization_hint_range_outside_payload"),
                              (outsideLinkedit, "optimization_hint_outside_linkedit"),
