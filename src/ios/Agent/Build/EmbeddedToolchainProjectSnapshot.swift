@@ -314,18 +314,32 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
         return try build(files: files, entrySources: entrySources)
     }
 
-    private static func validatedRoot(_ root: URL) throws -> URL {
+    static func validatedRoot(_ root: URL) throws -> URL {
         guard root.isFileURL else { throw EmbeddedToolchainProjectSnapshotError.rootUnavailable }
         let requested = root
-        guard FileManager.default.fileExists(atPath: requested.path),
-              (try? requested.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+        guard (try? requested.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
             throw EmbeddedToolchainProjectSnapshotError.rootUnavailable
         }
         guard (try? requested.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else {
             throw EmbeddedToolchainProjectSnapshotError.rootSymlink
         }
-        let canonical = requested.resolvingSymlinksInPath()
-        guard canonical.path == requested.path else { throw EmbeddedToolchainProjectSnapshotError.rootSymlink }
+        var rootInfo = stat()
+        let rootIsLink = requested.path.withCString { lstat($0, &rootInfo) == 0 && rootInfo.st_mode & S_IFMT == S_IFLNK }
+        guard !rootIsLink else { throw EmbeddedToolchainProjectSnapshotError.rootSymlink }
+        // Resolve harmless ancestor aliases such as Darwin's /var -> /private/var;
+        // then open the physical path component-by-component with O_NOFOLLOW.
+        guard let resolved = requested.path.withCString({ realpath($0, nil) }) else {
+            throw EmbeddedToolchainProjectSnapshotError.rootUnavailable
+        }
+        defer { free(resolved) }
+        let physicalPath = String(cString: resolved)
+        let originalPath = requested.path
+        let permittedDarwinAlias = (originalPath.hasPrefix("/var/") || originalPath.hasPrefix("/tmp/")) &&
+            physicalPath == "/private" + originalPath
+        guard physicalPath == originalPath || permittedDarwinAlias else {
+            throw EmbeddedToolchainProjectSnapshotError.rootSymlink
+        }
+        let canonical = URL(fileURLWithPath: physicalPath, isDirectory: true)
         guard isSafeRoot(canonical) else { throw EmbeddedToolchainProjectSnapshotError.unsafeRoot }
         return canonical
     }

@@ -54,14 +54,11 @@ enum EmbeddedToolchainProjectPublisher {
         guard !data.isEmpty, data.count <= maxDylibBytes else { throw EmbeddedToolchainProjectPublisherError.outputTooLarge }
         do { _ = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: 6) }
         catch { throw EmbeddedToolchainProjectPublisherError.invalidMachO }
-        // Foundation standardization can shorten a physical /private/var
-        // path back to the /var symlink on Darwin. Keep the original physical
-        // URL and require it to equal its resolved path instead.
-        let root = projectRoot
-        guard root.isFileURL, root.path.hasPrefix("/"),
-              root.resolvingSymlinksInPath().path == root.path,
-              isSafeRoot(root), isDirectory(root) else {
-            throw EmbeddedToolchainProjectPublisherError.invalidRoot("path/metadata policy: requested=\(root.path), resolved=\(root.resolvingSymlinksInPath().path)")
+        let root: URL
+        do { root = try EmbeddedToolchainProjectSnapshotBuilder.validatedRoot(projectRoot) }
+        catch { throw EmbeddedToolchainProjectPublisherError.invalidRoot("project selection: \(error.localizedDescription)") }
+        guard isSafeRoot(root), isDirectory(root) else {
+            throw EmbeddedToolchainProjectPublisherError.invalidRoot("unsafe/non-directory physical root \(root.path)")
         }
         let rootFD = try openCanonicalDirectory(root)
         defer { close(rootFD) }
