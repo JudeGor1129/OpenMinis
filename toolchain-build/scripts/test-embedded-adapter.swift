@@ -389,8 +389,11 @@ private struct AdapterContracts {
         var outsideLinkedit = hint
         let textPayloadOffset = UInt32(32 + MachOFixture.read32(hint, 20))
         MachOFixture.patch(&outsideLinkedit, hintCommand + 8, textPayloadOffset)
+        // The helper inserts the second command before payload bytes, so point
+        // it at the existing valid hint after that 16-byte shift.
+        let duplicateHintOffset = MachOFixture.read32(hint, hintCommand + 8) + 16
         let duplicateHint = MachOFixture.adding(
-            MachOFixture.optimizationHintCommand(offset: MachOFixture.read32(hint, hintCommand + 8), bytes: 8), to: hint)
+            MachOFixture.optimizationHintCommand(offset: duplicateHintOffset, bytes: 8), to: hint)
         for (data, rule) in [(badHintSize, "optimization_hint_command_size_or_duplicate"),
                              (badHintRange, "optimization_hint_range_outside_payload"),
                              (outsideLinkedit, "optimization_hint_outside_linkedit"),
@@ -399,7 +402,7 @@ private struct AdapterContracts {
                 _ = try EmbeddedAdapterArtifact.inspect(data, name: "bad.dylib", filetype: 6)
                 throw ContractFailure(description: "unsafe optimization hint accepted")
             } catch EmbeddedAdapterError.poisoned(let reason) {
-                try require(reason.contains(rule), "wrong optimization hint rejection: \\(reason)")
+                try require(reason.contains(rule), "wrong optimization hint rejection: \(reason)")
             }
         }
         for (data, type) in [(MachOFixture.invalidRelocations(filetype: 1), UInt32(1)),
