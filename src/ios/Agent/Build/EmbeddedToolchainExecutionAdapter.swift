@@ -179,8 +179,8 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
                               sectionOffset - offset <= bytes, sectionBytes <= bytes - (sectionOffset - offset) else { throw invalid() }
                     }
                     if filetype == 1,
-                       data[(section + 16)..<(section + 32)].elementsEqual(Array("__opt_hints".utf8) + Array(repeating: UInt8(0), count: 5)),
-                       data[(section + 32)..<(section + 48)].elementsEqual(Array("__LINKEDIT".utf8) + Array(repeating: UInt8(0), count: 6)) {
+                       data[section..<(section + 16)].elementsEqual(Array("__opt_hints".utf8) + Array(repeating: UInt8(0), count: 5)),
+                       data[(section + 16)..<(section + 32)].elementsEqual(Array("__LINKEDIT".utf8) + Array(repeating: UInt8(0), count: 6)) {
                         optimizationHintSectionRanges.append((sectionOffset, sectionBytes))
                     }
                     let relocations = UInt64(word(section + 56)), relocationCount = UInt64(word(section + 60))
