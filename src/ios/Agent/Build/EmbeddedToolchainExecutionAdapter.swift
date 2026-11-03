@@ -267,10 +267,15 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         }
         if let (offset, bytes) = optimizationHintRange {
             if filetype == 1 {
+                // MH_OBJECT has one anonymous segment and the linker-hint blob is
+                // hidden from its visible section table. Bound it to the file,
+                // after load commands, and disjoint from all known object data.
                 let overlapsKnownData = occupiedObjectRanges.contains { start, length in
                     offset < start + length && start < offset + bytes
                 }
-                guard !overlapsKnownData else { throw invalid("optimization_hint_overlaps_object_data") }
+                guard offset >= UInt64(end), !overlapsKnownData else {
+                    throw invalid("optimization_hint_overlaps_object_data")
+                }
             } else {
                 let inLinkedit = linkeditFileRanges.count == 1 && linkeditFileRanges.contains { start, length in
                     offset >= start && offset - start <= length && bytes <= length - (offset - start)
