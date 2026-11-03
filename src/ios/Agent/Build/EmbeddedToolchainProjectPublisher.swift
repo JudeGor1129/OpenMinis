@@ -13,8 +13,7 @@ struct EmbeddedToolchainPublishedArtifact: Codable, Equatable, Sendable {
 }
 
 enum EmbeddedToolchainProjectPublisherError: Error, Equatable, LocalizedError, Sendable {
-    case invalidRoot
-    case unsafeName
+    case invalidRoot(String)    case unsafeName
     case outputTooLarge
     case invalidMachO
     case directoryCreateFailed(Int32)
@@ -25,7 +24,7 @@ enum EmbeddedToolchainProjectPublisherError: Error, Equatable, LocalizedError, S
 
     var errorDescription: String? {
         switch self {
-        case .invalidRoot: return "selected project root is not a safe canonical directory"
+        case .invalidRoot(let reason): return "selected project root rejected: " + reason
         case .unsafeName: return "output name is not a safe dylib filename"
         case .outputTooLarge: return "verified dylib exceeds the publication byte budget"
         case .invalidMachO: return "refusing to publish a dylib that fails Mach-O inspection"
@@ -54,11 +53,14 @@ enum EmbeddedToolchainProjectPublisher {
         guard !data.isEmpty, data.count <= maxDylibBytes else { throw EmbeddedToolchainProjectPublisherError.outputTooLarge }
         do { _ = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: 6) }
         catch { throw EmbeddedToolchainProjectPublisherError.invalidMachO }
-        let root = projectRoot.standardizedFileURL
+        // Foundation standardization can shorten a physical /private/var
+        // path back to the /var symlink on Darwin. Keep the original physical
+        // URL and require it to equal its resolved path instead.
+        let root = projectRoot
         guard root.isFileURL, root.path.hasPrefix("/"),
               root.resolvingSymlinksInPath().path == root.path,
               isSafeRoot(root), isDirectory(root) else {
-            throw EmbeddedToolchainProjectPublisherError.invalidRoot
+            throw EmbeddedToolchainProjectPublisherError.invalidRoot("path/metadata policy: requested=\(root.path), resolved=\(root.resolvingSymlinksInPath().path)")
         }
         let rootFD = try openCanonicalDirectory(root)
         defer { close(rootFD) }
@@ -110,18 +112,21 @@ enum EmbeddedToolchainProjectPublisher {
 
     private static func openCanonicalDirectory(_ root: URL) throws -> Int32 {
         var descriptor = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
-        guard descriptor >= 0 else { throw EmbeddedToolchainProjectPublisherError.invalidRoot }
+        guard descriptor >= 0 else { throw EmbeddedToolchainProjectPublisherError.invalidRoot("open filesystem root (errno \(errno))") }
         for component in root.path.split(separator: "/") {
             let next = String(component).withCString {
                 openat(descriptor, $0, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
             }
+            let failureCode = errno
             close(descriptor)
-            guard next >= 0 else { throw EmbeddedToolchainProjectPublisherError.invalidRoot }
+            guard next >= 0 else {
+                throw EmbeddedToolchainProjectPublisherError.invalidRoot("open ancestor \(component) (errno \(failureCode))")
+            }
             descriptor = next
         }
         var info = stat()
         guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else {
-            close(descriptor); throw EmbeddedToolchainProjectPublisherError.invalidRoot
+            close(descriptor); throw EmbeddedToolchainProjectPublisherError.invalidRoot("descriptor is not a directory")
         }
         return descriptor
     }

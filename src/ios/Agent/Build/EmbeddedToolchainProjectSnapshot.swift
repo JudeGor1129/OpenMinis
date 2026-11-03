@@ -316,7 +316,7 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
 
     private static func validatedRoot(_ root: URL) throws -> URL {
         guard root.isFileURL else { throw EmbeddedToolchainProjectSnapshotError.rootUnavailable }
-        let requested = root.standardizedFileURL
+        let requested = root
         guard FileManager.default.fileExists(atPath: requested.path),
               (try? requested.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
             throw EmbeddedToolchainProjectSnapshotError.rootUnavailable
