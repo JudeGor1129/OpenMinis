@@ -68,14 +68,34 @@ enum MachOFixture {
                     let sectionOffset = Int(read(section + 48))
                     if sectionOffset >= payload { patch(&data, section + 48, UInt32(sectionOffset + command.count)) }
                 }
-            } else if commandID == 0x2c {
-                let encryptedOffset = Int(read(cursor + 8))
-                if encryptedOffset >= payload { patch(&data, cursor + 8, UInt32(encryptedOffset + command.count)) }
+            } else if commandID == 0x2c || commandID == 0x2e || commandID == 0x26 ||
+                        commandID == 0x80000033 || commandID == 0x80000034 {
+                let dataOffset = Int(read(cursor + 8))
+                if dataOffset >= payload { patch(&data, cursor + 8, UInt32(dataOffset + command.count)) }
             }
             cursor += commandSize
         }
         data.insert(contentsOf: command, at: payload)
         patch(&data, 16, count + 1); patch(&data, 20, bytes + UInt32(command.count))
+        return data
+    }
+    static func optimizationHintCommand(offset: UInt32, bytes: UInt32) -> Data {
+        [UInt32(0x2e), 16, offset, bytes].reduce(into: Data()) { $0.append(u32($1)) }
+    }
+    static func linkeditSegment(offset: UInt32, bytes: UInt32) -> Data {
+        var data = u32(0x19) + u32(72) + name("__LINKEDIT")
+        data.append(u64(0)); data.append(u64(UInt64(bytes)))
+        data.append(u64(UInt64(offset))); data.append(u64(UInt64(bytes)))
+        data.append(u32(1)); data.append(u32(1)); data.append(u32(0)); data.append(u32(0))
+        return data
+    }
+    static func imageWithOptimizationHint(installName: String) -> Data {
+        var data = image(filetype: 6, installName: installName)
+        let hint = Data(repeating: 0x5a, count: 8)
+        data.append(hint)
+        data = adding(linkeditSegment(offset: UInt32(data.count - hint.count), bytes: UInt32(hint.count)), to: data)
+        let hintOffset = UInt32(data.count - hint.count + 16)
+        data = adding(optimizationHintCommand(offset: hintOffset, bytes: UInt32(hint.count)), to: data)
         return data
     }
     static func invalidRelocations(filetype: UInt32, installName: String = "") -> Data {
@@ -344,6 +364,29 @@ private struct AdapterContracts {
         checks += 1
         let badLinkedit = MachOFixture.adding(MachOFixture.u32(0x26) + MachOFixture.u32(16) +
                                             MachOFixture.u32(.max) + MachOFixture.u32(.max), to: dylib)
+        let hint = MachOFixture.imageWithOptimizationHint(installName: "@rpath/bad.dylib")
+        _ = try EmbeddedAdapterArtifact.inspect(hint, name: "bad.dylib", filetype: 6)
+        checks += 1
+        let hintCommand = MachOFixture.commandOffset(0x2e, in: hint)
+        var badHintSize = hint
+        MachOFixture.patch(&badHintSize, hintCommand + 4, 24)
+        var badHintRange = hint
+        MachOFixture.patch(&badHintRange, hintCommand + 8, .max)
+        var outsideLinkedit = hint
+        MachOFixture.patch(&outsideLinkedit, hintCommand + 8, 32)
+        let duplicateHint = MachOFixture.adding(
+            MachOFixture.optimizationHintCommand(offset: UInt32(hint.count), bytes: 8), to: hint)
+        for (data, rule) in [(badHintSize, "optimization_hint_command_size_or_duplicate"),
+                             (badHintRange, "optimization_hint_range_outside_payload"),
+                             (outsideLinkedit, "optimization_hint_outside_linkedit"),
+                             (duplicateHint, "optimization_hint_command_size_or_duplicate")] {
+            do {
+                _ = try EmbeddedAdapterArtifact.inspect(data, name: "bad.dylib", filetype: 6)
+                throw ContractFailure(description: "unsafe optimization hint accepted")
+            } catch EmbeddedAdapterError.poisoned(let reason) {
+                try require(reason.contains(rule), "wrong optimization hint rejection: \\(reason)")
+            }
+        }
         for (data, type) in [(MachOFixture.invalidRelocations(filetype: 1), UInt32(1)),
                              (outsideSegment, 1), (badDysym, 1), (badVersion, 1), (unknown, 1), (badLinkedit, 6)] {
             do {

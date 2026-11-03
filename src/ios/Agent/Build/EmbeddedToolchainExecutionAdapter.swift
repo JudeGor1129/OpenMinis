@@ -133,13 +133,15 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         var installNames: [String] = []
         var symbolCount: UInt64?
         var symbolRanges: [(UInt64, UInt64)] = []
+        var optimizationHintRange: (UInt64, UInt64)?
+        var linkeditFileRanges: [(UInt64, UInt64)] = []
         var textFileRanges: [(UInt64, UInt64)] = []
         var encryptionRange: (UInt64, UInt64)?
         let objectCommands: Set<UInt32> = [0x19, 0x2, 0xb, 0x32, 0x25, 0x29]
         // Pinned ld64 also emits LC_ENCRYPTION_INFO_64 for iOS dylibs by
         // default, with cryptid=0. This is metadata, not encrypted content.
         // Admit only its bounded, unencrypted form; never bypass inspection.
-        let dylibCommands = objectCommands.union([0xc, 0xd, 0x1b, 0x80000022, 0x26, 0x1d,
+        let dylibCommands = objectCommands.union([0xc, 0xd, 0x1b, 0x2e, 0x80000022, 0x26, 0x1d,
                                                   0x2a, 0x80000033, 0x80000034, 0x2c])
         func inFile(_ offset: UInt64, _ bytes: UInt64) -> Bool {
             offset <= UInt64(data.count) && bytes <= UInt64(data.count) - offset
@@ -159,8 +161,11 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
                 guard sectionCount <= (size - 72) / 80, size == 72 + sectionCount * 80 else { throw invalid() }
                 let offset = wide(cursor + 40), bytes = wide(cursor + 48)
                 guard inFile(offset, bytes) else { throw invalid() }
-                if data[(cursor + 8)..<(cursor + 24)].elementsEqual(Array("__TEXT".utf8) + Array(repeating: UInt8(0), count: 10)) {
+                let segmentName = data[(cursor + 8)..<(cursor + 24)]
+                if segmentName.elementsEqual(Array("__TEXT".utf8) + Array(repeating: UInt8(0), count: 10)) {
                     textFileRanges.append((offset, bytes))
+                } else if segmentName.elementsEqual(Array("__LINKEDIT".utf8) + Array(repeating: UInt8(0), count: 6)) {
+                    linkeditFileRanges.append((offset, bytes))
                 }
                 hasSegment = true
                 for index in 0..<sectionCount {
@@ -220,6 +225,15 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
                 guard size == 16 else { throw invalid() }
             } else if command == 0x1b {
                 guard size == 24 else { throw invalid() }
+            } else if command == 0x2e {
+                guard size == 16, optimizationHintRange == nil else {
+                    throw invalid("optimization_hint_command_size_or_duplicate")
+                }
+                let offset = UInt64(word(cursor + 8)), bytes = UInt64(word(cursor + 12))
+                guard bytes > 0, inFile(offset, bytes), offset >= UInt64(end) else {
+                    throw invalid("optimization_hint_range_outside_payload")
+                }
+                optimizationHintRange = (offset, bytes)
             } else if command == 0x80000022 {
                 guard size == 48 else { throw invalid() }
                 for field in stride(from: 8, through: 40, by: 8) {
@@ -238,6 +252,11 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             guard textFileRanges.count == 1, textFileRanges.contains(where: { start, length in
                 offset >= start && offset - start <= length && bytes <= length - (offset - start)
             }) else { throw invalid("encryption_range_outside_text_segment") }
+        }
+        if let (offset, bytes) = optimizationHintRange {
+            guard linkeditFileRanges.count == 1, linkeditFileRanges.contains(where: { start, length in
+                offset >= start && offset - start <= length && bytes <= length - (offset - start)
+            }) else { throw invalid("optimization_hint_outside_linkedit") }
         }
         if filetype == 6 {
             let allowedDependencies = ["/usr/lib/libSystem.B.dylib"]
