@@ -137,7 +137,8 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         var linkeditFileRanges: [(UInt64, UInt64)] = []
         var textFileRanges: [(UInt64, UInt64)] = []
         var encryptionRange: (UInt64, UInt64)?
-        let objectCommands: Set<UInt32> = [0x19, 0x2, 0xb, 0x32, 0x25, 0x29]
+        // ld64 may emit LC_LINKER_OPTIMIZATION_HINT on both MH_OBJECT and dylib outputs.
+        let objectCommands: Set<UInt32> = [0x19, 0x2, 0xb, 0x32, 0x25, 0x29, 0x2e]
         // Pinned ld64 also emits LC_ENCRYPTION_INFO_64 for iOS dylibs by
         // default, with cryptid=0. This is metadata, not encrypted content.
         // Admit only its bounded, unencrypted form; never bypass inspection.

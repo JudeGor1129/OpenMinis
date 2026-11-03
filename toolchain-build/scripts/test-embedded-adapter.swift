@@ -101,8 +101,9 @@ enum MachOFixture {
         data.append(u32(1)); data.append(u32(1)); data.append(u32(0)); data.append(u32(0))
         return data
     }
-    static func imageWithOptimizationHint(installName: String, duplicates: Bool = false) -> Data {
-        var data = image(filetype: 6, installName: installName)
+    static func imageWithOptimizationHint(filetype: UInt32 = 6, installName: String = "",
+                                          duplicates: Bool = false) -> Data {
+        var data = image(filetype: filetype, installName: installName)
         let hint = Data(repeating: 0x5a, count: 8)
         data.append(hint)
         let commandCount = duplicates ? 2 : 1
@@ -381,6 +382,9 @@ private struct AdapterContracts {
         checks += 1
         let badLinkedit = MachOFixture.adding(MachOFixture.u32(0x26) + MachOFixture.u32(16) +
                                             MachOFixture.u32(.max) + MachOFixture.u32(.max), to: dylib)
+        let objectHint = MachOFixture.imageWithOptimizationHint(filetype: 1)
+        _ = try EmbeddedAdapterArtifact.inspect(objectHint, name: "unit.o", filetype: 1)
+        checks += 1
         let hint = MachOFixture.imageWithOptimizationHint(installName: "@rpath/bad.dylib")
         _ = try EmbeddedAdapterArtifact.inspect(hint, name: "bad.dylib", filetype: 6)
         checks += 1
