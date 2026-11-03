@@ -135,7 +135,7 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         var symbolRanges: [(UInt64, UInt64)] = []
         var optimizationHintRange: (UInt64, UInt64)?
         var linkeditFileRanges: [(UInt64, UInt64)] = []
-        var optimizationHintSectionRanges: [(UInt64, UInt64)] = []
+        var occupiedObjectRanges: [(UInt64, UInt64)] = []
         var textFileRanges: [(UInt64, UInt64)] = []
         var encryptionRange: (UInt64, UInt64)?
         // ld64 may emit LC_LINKER_OPTIMIZATION_HINT on both MH_OBJECT and dylib outputs.
@@ -177,14 +177,11 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
                     if flags != 1 && flags != 0xc && flags != 0x12 { // zerofill has no file bytes
                         guard inFile(sectionOffset, sectionBytes), sectionOffset >= offset,
                               sectionOffset - offset <= bytes, sectionBytes <= bytes - (sectionOffset - offset) else { throw invalid() }
-                    }
-                    if filetype == 1,
-                       data[section..<(section + 16)].elementsEqual(Array("__opt_hints".utf8) + Array(repeating: UInt8(0), count: 5)),
-                       data[(section + 16)..<(section + 32)].elementsEqual(Array("__LINKEDIT".utf8) + Array(repeating: UInt8(0), count: 6)) {
-                        optimizationHintSectionRanges.append((sectionOffset, sectionBytes))
+                        if filetype == 1 && sectionBytes > 0 { occupiedObjectRanges.append((sectionOffset, sectionBytes)) }
                     }
                     let relocations = UInt64(word(section + 56)), relocationCount = UInt64(word(section + 60))
                     guard inFile(relocations, relocationCount * 8) else { throw invalid() }
+                    if relocationCount > 0 { occupiedObjectRanges.append((relocations, relocationCount * 8)) }
                     if flags == 1 || flags == 0xc || flags == 0x12 {
                         guard relocationCount == 0 else { throw invalid() }
                     }
@@ -203,6 +200,10 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
                 let strings = UInt64(word(cursor + 16)), length = UInt64(word(cursor + 20))
                 guard inFile(symbols, count * 16), inFile(strings, length),
                       count == 0 || length > 0 else { throw invalid() }
+                if filetype == 1 {
+                    if count > 0 { occupiedObjectRanges.append((symbols, count * 16)) }
+                    if length > 0 { occupiedObjectRanges.append((strings, length)) }
+                }
                 if length > 0 { guard data[Int(strings + length - 1)] == 0 else { throw invalid() } }
                 for index in 0..<Int(count) {
                     guard UInt64(word(Int(symbols) + index * 16)) < length else { throw invalid() }
@@ -211,10 +212,14 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             } else if command == 0xb {
                 guard size == 80, symbolRanges.isEmpty else { throw invalid() }
                 for field in [8, 16, 24] {
-                    symbolRanges.append((UInt64(word(cursor + field)), UInt64(word(cursor + field + 4))))
+                    let start = UInt64(word(cursor + field)), itemCount = UInt64(word(cursor + field + 4))
+                    symbolRanges.append((start, itemCount))
                 }
                 for (field, stride) in [(32, 8), (40, 56), (48, 4), (56, 4), (64, 8), (72, 8)] {
-                    guard inFile(UInt64(word(cursor + field)), UInt64(word(cursor + field + 4)) * UInt64(stride)) else { throw invalid() }
+                    let start = UInt64(word(cursor + field)), itemCount = UInt64(word(cursor + field + 4))
+                    let (byteCount, overflow) = itemCount.multipliedReportingOverflow(by: UInt64(stride))
+                    guard !overflow, inFile(start, byteCount) else { throw invalid() }
+                    if filetype == 1 && byteCount > 0 { occupiedObjectRanges.append((start, byteCount)) }
                 }
             } else if command == 0x32 {
                 guard size >= 24, Int(word(cursor + 20)) <= (size - 24) / 8,
@@ -261,17 +266,17 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             }) else { throw invalid("encryption_range_outside_text_segment") }
         }
         if let (offset, bytes) = optimizationHintRange {
-            let inLinkedit: Bool
             if filetype == 1 {
-                inLinkedit = optimizationHintSectionRanges.contains { start, length in
-                    offset >= start && offset - start <= length && bytes <= length - (offset - start)
+                let overlapsKnownData = occupiedObjectRanges.contains { start, length in
+                    offset < start + length && start < offset + bytes
                 }
+                guard !overlapsKnownData else { throw invalid("optimization_hint_overlaps_object_data") }
             } else {
-                inLinkedit = linkeditFileRanges.count == 1 && linkeditFileRanges.contains { start, length in
+                let inLinkedit = linkeditFileRanges.count == 1 && linkeditFileRanges.contains { start, length in
                     offset >= start && offset - start <= length && bytes <= length - (offset - start)
                 }
+                guard inLinkedit else { throw invalid("optimization_hint_outside_linkedit") }
             }
-            guard inLinkedit else { throw invalid("optimization_hint_outside_linkedit") }
         }
         if filetype == 6 {
             let allowedDependencies = ["/usr/lib/libSystem.B.dylib"]

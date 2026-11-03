@@ -101,31 +101,24 @@ enum MachOFixture {
     }
     static func objectWithOptimizationHint(duplicates: Bool = false) -> Data {
         let hint = Data(repeating: 0x5a, count: 8)
-        let payloadBytes = 16
-        let segmentCommandBytes = 72 + 2 * 80
+        let segmentCommandBytes = 72 + 80 // ld64 object output: one anonymous segment, one visible section
         let hintCommandCount = duplicates ? 2 : 1
         let commandBytes = segmentCommandBytes + hintCommandCount * 16
-        let payloadOffset = UInt32(32 + commandBytes)
-        let hintOffset = payloadOffset + 8
-
+        let textOffset = UInt32(32 + commandBytes)
+        let hintOffset = textOffset + 8
         var segment = u32(0x19) + u32(UInt32(segmentCommandBytes)) + name("")
-        segment.append(u64(0)); segment.append(u64(UInt64(payloadBytes)))
-        segment.append(u64(UInt64(payloadOffset))); segment.append(u64(UInt64(payloadBytes)))
-        segment.append(u32(7)); segment.append(u32(7)); segment.append(u32(2)); segment.append(u32(0))
-
-        var textSection = name("__text") + name("__TEXT") + u64(0) + u64(8)
-        for value in [payloadOffset, UInt32(2), 0, 0, 0x80000400, 0, 0, 0] { textSection.append(u32(value)) }
-        var hintSection = name("__opt_hints") + name("__LINKEDIT") + u64(8) + u64(8)
-        for value in [hintOffset, UInt32(0), 0, 0, 0, 0, 0, 0] { hintSection.append(u32(value)) }
-        segment.append(textSection); segment.append(hintSection)
-
+        segment.append(u64(0)); segment.append(u64(8))
+        segment.append(u64(UInt64(textOffset))); segment.append(u64(UInt64(8 + hint.count)))
+        segment.append(u32(7)); segment.append(u32(7)); segment.append(u32(1)); segment.append(u32(0))
+        let textSection = name("__text") + name("__TEXT") + u64(0) + u64(8) +
+            u32(textOffset) + u32(2) + u32(0) + u32(0) + u32(0x80000400) + u32(0) + u32(0) + u32(0)
+        segment.append(textSection)
         var data = Data()
-        for value in [UInt32(0xfeedfacf), 0x0100000c, 0, 1, UInt32(1 + hintCommandCount),
-                      UInt32(commandBytes), 0, 0] { data.append(u32(value)) }
-        data.append(segment)
-        for _ in 0..<hintCommandCount {
-            data.append(optimizationHintCommand(offset: hintOffset, bytes: 8))
+        for value in [UInt32(0xfeedfacf), 0x0100000c, 0, 1, UInt32(1 + hintCommandCount), UInt32(commandBytes), 0, 0] {
+            data.append(u32(value))
         }
+        data.append(segment)
+        for _ in 0..<hintCommandCount { data.append(optimizationHintCommand(offset: hintOffset, bytes: UInt32(hint.count))) }
         data.append(Data([0xc0, 0x03, 0x5f, 0xd6, 0x1f, 0x20, 0x03, 0xd5]))
         data.append(hint)
         return data
@@ -422,7 +415,7 @@ private struct AdapterContracts {
             _ = try EmbeddedAdapterArtifact.inspect(objectHintOutsideSection, name: "unit.o", filetype: 1)
             throw ContractFailure(description: "object optimization hint outside __opt_hints was accepted")
         } catch EmbeddedAdapterError.poisoned(let reason) {
-            try require(reason.contains("optimization_hint_outside_linkedit"), "wrong object hint range rejection: \(reason)")
+            try require(reason.contains("optimization_hint_overlaps_object_data"), "wrong object hint range rejection: \(reason)")
         }
         let hint = MachOFixture.imageWithOptimizationHint(installName: "@rpath/bad.dylib")
         _ = try EmbeddedAdapterArtifact.inspect(hint, name: "bad.dylib", filetype: 6)
