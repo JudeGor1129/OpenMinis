@@ -107,7 +107,7 @@ require('MachOFixture.image(filetype: 6' in harness and 'try await encryptionPol
         'zero-cryptid positive and unsafe encryption metadata mutation tests are required')
 require('objectCommands: Set<UInt32> = [0x19, 0x2, 0xb, 0x32, 0x25, 0x29, 0x2e]' in adapter and
         'command == 0x2e' in adapter and 'optimization_hint_outside_linkedit' in adapter and
-        'imageWithOptimizationHint(filetype: 1)' in harness and 'imageWithOptimizationHint' in harness and 'duplicateHint' in harness,
+        'objectWithOptimizationHint' in harness and 'imageWithOptimizationHint' in harness and 'duplicateHint' in harness,
         'LC_LINKER_OPTIMIZATION_HINT needs __LINKEDIT containment and mutation contracts')
 require('f7858c08290826dd443b3981e85bb7d908a2318f53a9c61530de12b9fbc33d4a' in harness,
         'actual-linker parser fixture hash binding is missing')

@@ -135,6 +135,7 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         var symbolRanges: [(UInt64, UInt64)] = []
         var optimizationHintRange: (UInt64, UInt64)?
         var linkeditFileRanges: [(UInt64, UInt64)] = []
+        var optimizationHintSectionRanges: [(UInt64, UInt64)] = []
         var textFileRanges: [(UInt64, UInt64)] = []
         var encryptionRange: (UInt64, UInt64)?
         // ld64 may emit LC_LINKER_OPTIMIZATION_HINT on both MH_OBJECT and dylib outputs.
@@ -172,10 +173,15 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
                 for index in 0..<sectionCount {
                     let section = cursor + 72 + index * 80
                     let flags = word(section + 64) & 0xff
+                    let sectionOffset = UInt64(word(section + 48)), sectionBytes = wide(section + 40)
                     if flags != 1 && flags != 0xc && flags != 0x12 { // zerofill has no file bytes
-                        let sectionOffset = UInt64(word(section + 48)), sectionBytes = wide(section + 40)
                         guard inFile(sectionOffset, sectionBytes), sectionOffset >= offset,
                               sectionOffset - offset <= bytes, sectionBytes <= bytes - (sectionOffset - offset) else { throw invalid() }
+                    }
+                    if filetype == 1,
+                       data[(section + 16)..<(section + 32)].elementsEqual(Array("__opt_hints".utf8) + Array(repeating: UInt8(0), count: 5)),
+                       data[(section + 32)..<(section + 48)].elementsEqual(Array("__LINKEDIT".utf8) + Array(repeating: UInt8(0), count: 6)) {
+                        optimizationHintSectionRanges.append((sectionOffset, sectionBytes))
                     }
                     let relocations = UInt64(word(section + 56)), relocationCount = UInt64(word(section + 60))
                     guard inFile(relocations, relocationCount * 8) else { throw invalid() }
@@ -255,9 +261,17 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             }) else { throw invalid("encryption_range_outside_text_segment") }
         }
         if let (offset, bytes) = optimizationHintRange {
-            guard linkeditFileRanges.count == 1, linkeditFileRanges.contains(where: { start, length in
-                offset >= start && offset - start <= length && bytes <= length - (offset - start)
-            }) else { throw invalid("optimization_hint_outside_linkedit") }
+            let inLinkedit: Bool
+            if filetype == 1 {
+                inLinkedit = optimizationHintSectionRanges.contains { start, length in
+                    offset >= start && offset - start <= length && bytes <= length - (offset - start)
+                }
+            } else {
+                inLinkedit = linkeditFileRanges.count == 1 && linkeditFileRanges.contains { start, length in
+                    offset >= start && offset - start <= length && bytes <= length - (offset - start)
+                }
+            }
+            guard inLinkedit else { throw invalid("optimization_hint_outside_linkedit") }
         }
         if filetype == 6 {
             let allowedDependencies = ["/usr/lib/libSystem.B.dylib"]

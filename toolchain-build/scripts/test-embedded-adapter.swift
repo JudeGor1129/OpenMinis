@@ -101,8 +101,41 @@ enum MachOFixture {
         data.append(u32(1)); data.append(u32(1)); data.append(u32(0)); data.append(u32(0))
         return data
     }
+    static func objectWithOptimizationHint(duplicates: Bool = false) -> Data {
+        let hint = Data(repeating: 0x5a, count: 8)
+        let payloadBytes = 16
+        let segmentCommandBytes = 72 + 2 * 80
+        let hintCommandCount = duplicates ? 2 : 1
+        let commandBytes = segmentCommandBytes + hintCommandCount * 16
+        let payloadOffset = UInt32(32 + commandBytes)
+        let hintOffset = payloadOffset + 8
+
+        var segment = u32(0x19) + u32(UInt32(segmentCommandBytes)) + name("")
+        segment.append(u64(0)); segment.append(u64(UInt64(payloadBytes)))
+        segment.append(u64(UInt64(payloadOffset))); segment.append(u64(UInt64(payloadBytes)))
+        segment.append(u32(7)); segment.append(u32(7)); segment.append(u32(2)); segment.append(u32(0))
+
+        var textSection = name("__text") + name("__TEXT") + u64(0) + u64(8)
+        for value in [payloadOffset, UInt32(2), 0, 0, 0x80000400, 0, 0, 0] { textSection.append(u32(value)) }
+        var hintSection = name("__opt_hints") + name("__LINKEDIT") + u64(8) + u64(8)
+        for value in [hintOffset, UInt32(0), 0, 0, 0, 0, 0, 0] { hintSection.append(u32(value)) }
+        segment.append(textSection); segment.append(hintSection)
+
+        var data = Data()
+        for value in [UInt32(0xfeedfacf), 0x0100000c, 0, 1, UInt32(1 + hintCommandCount),
+                      UInt32(commandBytes), 0, 0] { data.append(u32(value)) }
+        data.append(segment)
+        for _ in 0..<hintCommandCount {
+            data.append(optimizationHintCommand(offset: hintOffset, bytes: 8))
+        }
+        data.append(Data([0xc0, 0x03, 0x5f, 0xd6, 0x1f, 0x20, 0x03, 0xd5]))
+        data.append(hint)
+        return data
+    }
+
     static func imageWithOptimizationHint(filetype: UInt32 = 6, installName: String = "",
                                           duplicates: Bool = false) -> Data {
+        if filetype == 1 { return objectWithOptimizationHint(duplicates: duplicates) }
         var data = image(filetype: filetype, installName: installName)
         let hint = Data(repeating: 0x5a, count: 8)
         data.append(hint)
@@ -111,9 +144,7 @@ enum MachOFixture {
         let finalHintOffset = UInt32(data.count - hint.count + commandBlockBytes)
         var block = linkeditSegment(offset: finalHintOffset, bytes: UInt32(hint.count))
         block.append(optimizationHintCommand(offset: finalHintOffset, bytes: UInt32(hint.count)))
-        if duplicates {
-            block.append(optimizationHintCommand(offset: finalHintOffset, bytes: UInt32(hint.count)))
-        }
+        if duplicates { block.append(optimizationHintCommand(offset: finalHintOffset, bytes: UInt32(hint.count))) }
         return adding(block, to: data)
     }
     static func invalidRelocations(filetype: UInt32, installName: String = "") -> Data {
@@ -382,9 +413,19 @@ private struct AdapterContracts {
         checks += 1
         let badLinkedit = MachOFixture.adding(MachOFixture.u32(0x26) + MachOFixture.u32(16) +
                                             MachOFixture.u32(.max) + MachOFixture.u32(.max), to: dylib)
-        let objectHint = MachOFixture.imageWithOptimizationHint(filetype: 1)
+        let objectHint = MachOFixture.objectWithOptimizationHint()
         _ = try EmbeddedAdapterArtifact.inspect(objectHint, name: "unit.o", filetype: 1)
         checks += 1
+        let objectHintCommand = MachOFixture.commandOffset(0x2e, in: objectHint)
+        var objectHintOutsideSection = objectHint
+        let objectTextSectionFileOffset = MachOFixture.read32(objectHint, 104 + 48)
+        MachOFixture.patch(&objectHintOutsideSection, objectHintCommand + 8, objectTextSectionFileOffset)
+        do {
+            _ = try EmbeddedAdapterArtifact.inspect(objectHintOutsideSection, name: "unit.o", filetype: 1)
+            throw ContractFailure(description: "object optimization hint outside __opt_hints was accepted")
+        } catch EmbeddedAdapterError.poisoned(let reason) {
+            try require(reason.contains("optimization_hint_outside_linkedit"), "wrong object hint range rejection: \(reason)")
+        }
         let hint = MachOFixture.imageWithOptimizationHint(installName: "@rpath/bad.dylib")
         _ = try EmbeddedAdapterArtifact.inspect(hint, name: "bad.dylib", filetype: 6)
         checks += 1
