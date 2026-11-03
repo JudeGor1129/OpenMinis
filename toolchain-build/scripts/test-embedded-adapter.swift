@@ -55,8 +55,6 @@ enum MachOFixture {
                 let fileSize = Int(read(cursor + 48))
                 if fileOffset >= payload {
                     patch(&data, cursor + 40, UInt32(fileOffset + command.count))
-                } else if fileSize > 0 && fileSize <= data.count - payload {
-                    patch(&data, cursor + 48, UInt32(fileSize + command.count))
                 }
                 for field in [8, 16] {
                     let segmentField = cursor + field
@@ -140,11 +138,10 @@ enum MachOFixture {
         let hint = Data(repeating: 0x5a, count: 8)
         data.append(hint)
         let commandCount = duplicates ? 2 : 1
-        let commandBlockBytes = 72 + commandCount * 16
-        let finalHintOffset = UInt32(data.count - hint.count + commandBlockBytes)
-        var block = linkeditSegment(offset: finalHintOffset, bytes: UInt32(hint.count))
-        block.append(optimizationHintCommand(offset: finalHintOffset, bytes: UInt32(hint.count)))
-        if duplicates { block.append(optimizationHintCommand(offset: finalHintOffset, bytes: UInt32(hint.count))) }
+        let preInsertionHintOffset = UInt32(data.count - hint.count)
+        var block = linkeditSegment(offset: preInsertionHintOffset, bytes: UInt32(hint.count))
+        block.append(optimizationHintCommand(offset: preInsertionHintOffset, bytes: UInt32(hint.count)))
+        if duplicates { block.append(optimizationHintCommand(offset: preInsertionHintOffset, bytes: UInt32(hint.count))) }
         return adding(block, to: data)
     }
     static func invalidRelocations(filetype: UInt32, installName: String = "") -> Data {
