@@ -7,6 +7,7 @@ on:
     paths:
       - 'src/ios/**'
       - 'scripts/ios15/**'
+      - 'toolchain-build/scripts/**'
       - 'toolchain-build/verified-toolchain-lock.json'
       - 'toolchain-build/verify-artifacts.sh'
       - 'toolchain-build/scripts/verify-toolchain-manifest.py'
