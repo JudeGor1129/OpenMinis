@@ -79,7 +79,16 @@ enum MachOFixture {
             cursor += commandSize
         }
         data.insert(contentsOf: command, at: payload)
-        patch(&data, 16, count + 1); patch(&data, 20, bytes + UInt32(command.count))
+        var newCommandCursor = payload
+        var newCommandCount: UInt32 = 0
+        while newCommandCursor < payload + command.count {
+            let size = Int(read(newCommandCursor + 4))
+            precondition(size >= 8 && size <= payload + command.count - newCommandCursor)
+            newCommandCursor += size
+            newCommandCount += 1
+        }
+        patch(&data, 16, count + newCommandCount)
+        patch(&data, 20, bytes + UInt32(command.count))
         return data
     }
     static func optimizationHintCommand(offset: UInt32, bytes: UInt32) -> Data {
@@ -96,11 +105,11 @@ enum MachOFixture {
         var data = image(filetype: 6, installName: installName)
         let hint = Data(repeating: 0x5a, count: 8)
         data.append(hint)
-        // The fixture inserter shifts command data offsets along with the
-        // appended bytes when inserting this 88-byte block before the payload.
-        let preInsertionHintOffset = UInt32(data.count - hint.count)
-        let block = linkeditSegment(offset: preInsertionHintOffset, bytes: UInt32(hint.count)) +
-            optimizationHintCommand(offset: preInsertionHintOffset, bytes: UInt32(hint.count))
+        // Both new commands are inserted before the original payload, so the
+        // appended hint bytes move by the complete 88-byte command block.
+        let finalHintOffset = UInt32(data.count - hint.count + 88)
+        let block = linkeditSegment(offset: finalHintOffset, bytes: UInt32(hint.count)) +
+            optimizationHintCommand(offset: finalHintOffset, bytes: UInt32(hint.count))
         return adding(block, to: data)
     }
     static func invalidRelocations(filetype: UInt32, installName: String = "") -> Data {
