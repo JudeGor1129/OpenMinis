@@ -114,25 +114,46 @@ check_prerequisites() {
 fetch_ffmpeg_source() {
     local version="6.1.2"
     local tarball="ffmpeg-${version}.tar.xz"
-    local url="https://ffmpeg.org/releases/${tarball}"
-    local tmp
+    local release_url="https://ffmpeg.org/releases/${tarball}"
+    local mirror_url="https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n${version}.tar.gz"
+    local tmp source_dir
     tmp="$(mktemp -d)"
 
-    log_info "FFmpeg source not present — downloading ${version}..."
-    if ! curl -fL# "$url" -o "$tmp/$tarball"; then
-        rm -rf "$tmp"
-        log_error "Failed to download $url — check your network, or place the source at $FFMPEG_DIR manually."
+    log_info "FFmpeg source not present — downloading pinned ${version} release..."
+    if curl --connect-timeout 15 --max-time 180 -fL "$release_url" -o "$tmp/$tarball"; then
+        log_info "Extracting official FFmpeg release archive..."
+        if ! tar -xf "$tmp/$tarball" -C "$tmp"; then
+            rm -rf "$tmp"
+            log_error "Failed to extract official archive $tarball"
+        fi
+        source_dir="$tmp/ffmpeg-${version}"
+    else
+        log_warning "ffmpeg.org unavailable; falling back to official FFmpeg GitHub tag n${version}."
+        rm -f "$tmp/$tarball"
+        if ! curl --connect-timeout 15 --max-time 180 -fL "$mirror_url" -o "$tmp/ffmpeg-source.tar.gz"; then
+            rm -rf "$tmp"
+            log_error "Both official FFmpeg release and GitHub tag archive downloads failed."
+        fi
+        if ! tar -xzf "$tmp/ffmpeg-source.tar.gz" -C "$tmp"; then
+            rm -rf "$tmp"
+            log_error "Failed to extract pinned GitHub FFmpeg tag archive"
+        fi
+        source_dir="$tmp/FFmpeg-n${version}"
     fi
-
-    log_info "Extracting..."
-    if ! tar -xf "$tmp/$tarball" -C "$tmp"; then
+    [[ -f "$source_dir/configure" && -f "$source_dir/RELEASE" ]] || {
         rm -rf "$tmp"
-        log_error "Failed to extract $tarball"
-    fi
+        log_error "Downloaded FFmpeg source archive has an unexpected layout."
+    }
+    local actual_version
+    actual_version="$(tr -d '\r\n' < "$source_dir/RELEASE")"
+    [[ "$actual_version" == "$version" ]] || {
+        rm -rf "$tmp"
+        log_error "FFmpeg source version mismatch: expected $version, got $actual_version"
+    }
 
-    mv "$tmp/ffmpeg-${version}" "$FFMPEG_DIR"
+    mv "$source_dir" "$FFMPEG_DIR"
     rm -rf "$tmp"
-    log_success "FFmpeg ${version} source ready at $FFMPEG_DIR"
+    log_success "Verified FFmpeg ${version} source ready at $FFMPEG_DIR"
 }
 
 # ============================================================================
