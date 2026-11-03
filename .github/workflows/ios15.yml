@@ -11,6 +11,8 @@ on:
       - 'toolchain-build/verify-artifacts.sh'
       - 'toolchain-build/scripts/verify-toolchain-manifest.py'
       - 'deps/build_rclone_ios.sh'
+      - 'deps/build_ish.sh'
+      - 'deps/prepare_alpine_rootfs.sh'
       - '.github/workflows/ios15.yml'
   workflow_dispatch:
     inputs:
