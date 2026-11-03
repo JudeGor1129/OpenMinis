@@ -138,7 +138,6 @@ enum MachOFixture {
         let hint = Data(repeating: 0x5a, count: 8)
         data.append(hint)
         let commandCount = duplicates ? 2 : 1
-        let commandCount = duplicates ? 2 : 1
         let commandBlockBytes = 72 + commandCount * 16
         let finalHintOffset = UInt32(data.count - hint.count + commandBlockBytes)
         var block = linkeditSegment(offset: finalHintOffset, bytes: UInt32(hint.count))
