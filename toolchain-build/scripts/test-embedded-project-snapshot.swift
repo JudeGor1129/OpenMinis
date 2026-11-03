@@ -74,6 +74,11 @@ struct SnapshotContracts {
         defer { try? FileManager.default.removeItem(at: root) }
         let loaded = try EmbeddedToolchainProjectSnapshotBuilder.load(root: root, entrySources: ["src/main.c"])
         try require(loaded.files.count == 3 && loaded.dependencies["src/main.c"] == ["src/value.h", "src/alias.h"], "filesystem closure and source include order")
+        if root.path.hasPrefix("/private/var/") {
+            let varAlias = URL(fileURLWithPath: "/var/" + root.path.dropFirst("/private/var/".count), isDirectory: true)
+            let aliasLoaded = try EmbeddedToolchainProjectSnapshotBuilder.load(root: varAlias, entrySources: ["src/main.c"])
+            try require(aliasLoaded == loaded, "Darwin /var alias resolves to same physical project")
+        }
         try Data("int objc_value(void) { return 42; }\n".utf8).write(to: root.appendingPathComponent("src/second.m"))
         try FileManager.default.createDirectory(at: root.appendingPathComponent("build"), withIntermediateDirectories: false)
         try Data("#include <ignored.h>\n".utf8).write(to: root.appendingPathComponent("build/ignored.c"))

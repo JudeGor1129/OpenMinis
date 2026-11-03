@@ -320,12 +320,12 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
         guard (try? requested.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
             throw EmbeddedToolchainProjectSnapshotError.rootUnavailable
         }
-        guard (try? requested.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else {
-            throw EmbeddedToolchainProjectSnapshotError.rootSymlink
-        }
         var rootInfo = stat()
-        let rootIsLink = requested.path.withCString { lstat($0, &rootInfo) == 0 && rootInfo.st_mode & S_IFMT == S_IFLNK }
-        guard !rootIsLink else { throw EmbeddedToolchainProjectSnapshotError.rootSymlink }
+        if requested.path.withCString({ lstat($0, &rootInfo) == 0 }) {
+            guard rootInfo.st_mode & S_IFMT == S_IFDIR else {
+                throw EmbeddedToolchainProjectSnapshotError.rootSymlink
+            }
+        }
         // Resolve harmless ancestor aliases such as Darwin's /var -> /private/var;
         // then open the physical path component-by-component with O_NOFOLLOW.
         guard let resolved = requested.path.withCString({ realpath($0, nil) }) else {
