@@ -66,17 +66,33 @@ struct SnapshotContracts {
         try rejects(deep, "dependency depth")
         try rejects(["main.c": "#define VALUE 1\nint x;"], "macro")
         try rejects(["main.c": "#pragma once\nint x;"], "pragma")
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("snapshot-root-" + UUID().uuidString, isDirectory: true)
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("snapshot-root-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("src"), withIntermediateDirectories: true)
         try Data("#include \"value.h\"\n#include \"alias.h\"\nint x;\n".utf8).write(to: root.appendingPathComponent("src/main.c"))
         try Data("int value;\n".utf8).write(to: root.appendingPathComponent("src/value.h"))
+        try Data("int alias;\n".utf8).write(to: root.appendingPathComponent("src/alias.h"))
         defer { try? FileManager.default.removeItem(at: root) }
         let loaded = try EmbeddedToolchainProjectSnapshotBuilder.load(root: root, entrySources: ["src/main.c"])
-        try require(loaded.files.count == 2 && loaded.dependencies["src/main.c"] == ["src/value.h"], "filesystem closure")
+        try require(loaded.files.count == 3 && loaded.dependencies["src/main.c"] == ["src/value.h", "src/alias.h"], "filesystem closure and source include order")
+        try Data("int objc_value(void) { return 42; }\n".utf8).write(to: root.appendingPathComponent("src/second.m"))
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("build"), withIntermediateDirectories: false)
+        try Data("#include <ignored.h>\n".utf8).write(to: root.appendingPathComponent("build/ignored.c"))
+        let scanned = try EmbeddedToolchainProjectSnapshotBuilder.loadProject(root: root)
+        try require(scanned.entrySources == ["src/main.c", "src/second.m"] && scanned.files.count == 4,
+                    "directory scan finds both languages and skips previous build outputs")
+        let comments = try EmbeddedToolchainProjectSnapshotBuilder.build(files: [
+            "main.c": "// #include \"missing.h\"\n/* #define BAD */\n/* leading */ #include \"value.h\" // trailing\nint x;",
+            "value.h": "int value;"
+        ])
+        try require(comments.dependencies["main.c"] == ["value.h"], "comment lexer recognizes only visible includes")
+        try rejects(["main.c": "/* unclosed\nint x;"], "unterminated comment")
+        try rejects(["main.c": "%:include <stdio.h>\n"], "digraph preprocessing")
+        try rejects(["main.c": "??=include <stdio.h>\n"], "trigraph preprocessing")
         let link = root.deletingLastPathComponent().appendingPathComponent("snapshot-link-" + UUID().uuidString)
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: root)
         defer { try? FileManager.default.removeItem(at: link) }
         try rejectsRoot(link, "symlink root")
+        try FileManager.default.removeItem(at: root.appendingPathComponent("src/alias.h"))
         try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("src/alias.h"), withDestinationURL: root.appendingPathComponent("src/value.h"))
         try rejectsRoot(root, "symlink dependency")
         try require(checks >= 24, "coverage count")

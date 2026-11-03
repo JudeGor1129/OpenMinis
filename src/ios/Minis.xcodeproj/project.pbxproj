@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B10000000000000000000010 /* EmbeddedProjectBuildView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000010 /* EmbeddedProjectBuildView.swift */; };
+		B1000000000000000000000F /* EmbeddedToolchainProjectPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000F /* EmbeddedToolchainProjectPublisher.swift */; };
+		B1000000000000000000000E /* EmbeddedToolchainRestrictedExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000E /* EmbeddedToolchainRestrictedExecution.swift */; };
 		B1000000000000000000000D /* EmbeddedToolchainRestrictedRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000D /* EmbeddedToolchainRestrictedRequest.swift */; };
 		B1000000000000000000000C /* EmbeddedToolchainProjectMaterializer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000C /* EmbeddedToolchainProjectMaterializer.swift */; };
 		B1000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift */; };
@@ -678,6 +681,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B20000000000000000000010 /* EmbeddedProjectBuildView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedProjectBuildView.swift; sourceTree = "<group>"; };
+		B2000000000000000000000F /* EmbeddedToolchainProjectPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainProjectPublisher.swift; sourceTree = "<group>"; };
+		B2000000000000000000000E /* EmbeddedToolchainRestrictedExecution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainRestrictedExecution.swift; sourceTree = "<group>"; };
 		B2000000000000000000000D /* EmbeddedToolchainRestrictedRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainRestrictedRequest.swift; sourceTree = "<group>"; };
 		B2000000000000000000000C /* EmbeddedToolchainProjectMaterializer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainProjectMaterializer.swift; sourceTree = "<group>"; };
 		B2000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainProjectSnapshot.swift; sourceTree = "<group>"; };
@@ -2228,6 +2234,8 @@
 				B2000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift */,
 				B2000000000000000000000C /* EmbeddedToolchainProjectMaterializer.swift */,
 				B2000000000000000000000D /* EmbeddedToolchainRestrictedRequest.swift */,
+				B2000000000000000000000E /* EmbeddedToolchainRestrictedExecution.swift */,
+				B2000000000000000000000F /* EmbeddedToolchainProjectPublisher.swift */,
 			);
 			path = Build;
 			sourceTree = "<group>";
@@ -2524,6 +2532,7 @@
 				AA0838BE2F3B941A00049557 /* RootfsManagementView.swift */,
 				AA0838C92F3B941A0004955A /* ToolchainStatusView.swift */,
 				E5RF0002 /* RootfsBuildSettingsView.swift */,
+				B20000000000000000000010 /* EmbeddedProjectBuildView.swift */,
 				B2000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift */,
 				AA0838BF2F3B941A00049557 /* RootfsResetButton.swift */,
 			);
@@ -3028,6 +3037,9 @@
 				B1000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift in Sources */,
 				B1000000000000000000000C /* EmbeddedToolchainProjectMaterializer.swift in Sources */,
 				B1000000000000000000000D /* EmbeddedToolchainRestrictedRequest.swift in Sources */,
+				B10000000000000000000010 /* EmbeddedProjectBuildView.swift in Sources */,
+				B1000000000000000000000E /* EmbeddedToolchainRestrictedExecution.swift in Sources */,
+				B1000000000000000000000F /* EmbeddedToolchainProjectPublisher.swift in Sources */,
 
 				E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */,
 				E5VMB0001 /* AIChatViewModel+Compaction.swift in Sources */,

@@ -4,7 +4,7 @@ import CryptoKit
 /// Converts a validated immutable project snapshot into the adapter's first
 /// operation shape. It never reads files, invokes a toolchain, or creates a
 /// caller-visible output path. Header text is materialized into each entry
-/// source in include order, with each header emitted once per entry.
+/// source in include order, preserving every unguarded repeated include.
 struct EmbeddedToolchainMaterializedSource: Equatable, Sendable {
     let sourcePath: String
     let contents: String
@@ -45,23 +45,23 @@ enum EmbeddedToolchainProjectMaterializer {
     static func plan(snapshot: EmbeddedToolchainProjectSnapshot,
                      outputName: String = "project.dylib") throws -> EmbeddedToolchainMaterializedPlan {
         guard !snapshot.entrySources.isEmpty else { throw EmbeddedToolchainProjectMaterializerError.noOperations }
-        let files = EmbeddedToolchainProjectSnapshotBuilder.materializedFiles(snapshot)
+        let files = Dictionary(uniqueKeysWithValues: snapshot.files.map { ($0.path, $0) })
         var materialized: [String: String] = [:]
         var fingerprints: [String: String] = [:]
 
-        for entry in snapshot.entrySources.sorted() {
-            guard files[entry] != nil else {
+        for (index, entry) in snapshot.entrySources.sorted().enumerated() {
+            guard let entryFile = files[entry] else {
                 throw EmbeddedToolchainProjectMaterializerError.missingEntry(entry)
             }
             var parts: [String] = []
             var materializedBytes = 0
-            try append(path: entry, files: files, dependencies: snapshot.dependencies,
-                       parts: &parts, materializedBytes: &materializedBytes)
+            try append(file: entryFile, files: files, parts: &parts,
+                       materializedBytes: &materializedBytes)
             let text = parts.joined(separator: "\n")
             guard let data = text.data(using: .ascii), data.count <= maxMaterializedSourceBytes else {
                 throw EmbeddedToolchainProjectMaterializerError.materializedSourceTooLarge(entry)
             }
-            let output = materializedName(entry)
+            let output = "unit\(index)" + (entry.hasSuffix(".m") ? ".m" : ".c")
             guard materialized[output] == nil else {
                 throw EmbeddedToolchainProjectMaterializerError.sourceNameCollision(output)
             }
@@ -91,24 +91,24 @@ enum EmbeddedToolchainProjectMaterializer {
         )
     }
 
-    private static func append(path: String, files: [String: String],
-                               dependencies: [String: [String]], parts: inout [String],
-                               materializedBytes: inout Int) throws {
-        guard let contents = files[path] else {
-            throw EmbeddedToolchainProjectMaterializerError.missingDependency(path)
-        }
-        for dependency in dependencies[path] ?? [] {
-            try append(path: dependency, files: files, dependencies: dependencies,
-                       parts: &parts, materializedBytes: &materializedBytes)
-        }
-        for line in contents.split(separator: "\n", omittingEmptySubsequences: false) {
-            let text = String(line)
-            if text.trimmingCharacters(in: .whitespaces).hasPrefix("#include \"") { continue }
-            materializedBytes += text.utf8.count + 1
-            guard materializedBytes <= maxMaterializedSourceBytes else {
-                throw EmbeddedToolchainProjectMaterializerError.materializedSourceTooLarge(path)
+    private static func append(file: EmbeddedToolchainProjectFile,
+                               files: [String: EmbeddedToolchainProjectFile],
+                               parts: inout [String], materializedBytes: inout Int) throws {
+        for token in file.tokens {
+            switch token {
+            case .include(let dependency):
+                guard let includedFile = files[dependency] else {
+                    throw EmbeddedToolchainProjectMaterializerError.missingDependency(dependency)
+                }
+                try append(file: includedFile, files: files, parts: &parts,
+                           materializedBytes: &materializedBytes)
+            case .code(let text):
+                materializedBytes += text.utf8.count + 1
+                guard materializedBytes <= maxMaterializedSourceBytes else {
+                    throw EmbeddedToolchainProjectMaterializerError.materializedSourceTooLarge(file.path)
+                }
+                parts.append(text)
             }
-            parts.append(text)
         }
     }
 

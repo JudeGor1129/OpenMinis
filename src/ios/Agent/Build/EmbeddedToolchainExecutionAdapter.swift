@@ -14,12 +14,14 @@ protocol EmbeddedAdapterBridge: Sendable {
     func capability() -> [String: String]
     func residentBytes() -> UInt64
     func verifiedLibSystemStub() throws -> Data
+    func verifiedObjCRuntimeStub() throws -> Data
     func compile(_ arguments: [String]) -> EmbeddedAdapterCall
     func link(_ arguments: [String]) -> EmbeddedAdapterCall
 }
 
 struct EmbeddedNativeAdapterBridge: EmbeddedAdapterBridge {
     static let libSystemSHA256 = "1ab02266a39491a8bd5a91ba36d5c8c8c6ac6efb92099e1091a1fd2370fc53e3"
+    static let objcRuntimeSHA256 = "fac08e4c47fe8500b8cdf15205819c3f73166d71350a1fc0fe1741d01f6500da"
     func capability() -> [String: String] { OMToolchain.capabilityStatus() }
 
     func residentBytes() -> UInt64 {
@@ -34,25 +36,12 @@ struct EmbeddedNativeAdapterBridge: EmbeddedAdapterBridge {
     }
 
     func verifiedLibSystemStub() throws -> Data {
-        guard let sdk = capability()["sysroot"], sdk.hasSuffix("/iPhoneOS16.5.sdk") else {
-            throw EmbeddedAdapterError.rejected("adapter validation requires the pinned SDK16.5 libSystem stub")
-        }
-        let path = URL(fileURLWithPath: sdk).appendingPathComponent("usr/lib/libSystem.B.tbd").path
-        let descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
-        guard descriptor >= 0 else { throw EmbeddedAdapterError.rejected("libSystem stub is missing or a symlink") }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        defer { try? handle.close() }
-        var attributes = stat()
-        guard fstat(descriptor, &attributes) == 0, attributes.st_mode & S_IFMT == S_IFREG,
-              attributes.st_size >= 1024, attributes.st_size <= 2 * 1024 * 1024 else {
-            throw EmbeddedAdapterError.rejected("libSystem stub is not a bounded regular file")
-        }
-        let data = try handle.read(upToCount: 2 * 1024 * 1024 + 1) ?? Data()
-        guard data.count >= 1024, data.count <= 2 * 1024 * 1024,
-              EmbeddedAdapterArtifact.digest(data) == Self.libSystemSHA256 else {
-            throw EmbeddedAdapterError.rejected("libSystem stub differs from the pinned SDK16.5 content")
-        }
-        return data
+        try verifiedRuntimeStub(at: "usr/lib/libSystem.B.tbd", expectedHash: Self.libSystemSHA256, description: "libSystem")
+    }
+
+
+    func verifiedObjCRuntimeStub() throws -> Data {
+        try verifiedRuntimeStub(at: "usr/lib/libobjc.A.tbd", expectedHash: Self.objcRuntimeSHA256, description: "libobjc")
     }
 
     func compile(_ arguments: [String]) -> EmbeddedAdapterCall {
@@ -65,6 +54,28 @@ struct EmbeddedNativeAdapterBridge: EmbeddedAdapterBridge {
         let status = OMToolchain.runLinker(arguments, stdout: &out, stderr: &err)
         return EmbeddedAdapterCall(status: status.rawValue, stdout: out as String? ?? "", stderr: err as String? ?? "")
     }
+
+    private func verifiedRuntimeStub(at relativePath: String, expectedHash: String, description: String) throws -> Data {
+        guard let sdk = capability()["sysroot"], sdk.hasSuffix("/iPhoneOS16.5.sdk") else {
+            throw EmbeddedAdapterError.rejected("\(description) requires the pinned SDK16.5 runtime stub")
+        }
+        let path = URL(fileURLWithPath: sdk).appendingPathComponent(relativePath).path
+        let descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        guard descriptor >= 0 else { throw EmbeddedAdapterError.rejected("\(description) stub is missing or unsafe") }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+              info.st_size >= 1024, info.st_size <= 2 * 1024 * 1024 else {
+            throw EmbeddedAdapterError.rejected("\(description) stub is not a bounded regular file")
+        }
+        let data = try handle.read(upToCount: 2 * 1024 * 1024 + 1) ?? Data()
+        guard data.count >= 1024, data.count <= 2 * 1024 * 1024,
+              EmbeddedAdapterArtifact.digest(data) == expectedHash else {
+            throw EmbeddedAdapterError.rejected("\(description) stub differs from the pinned SDK16.5 content")
+        }
+        return data
+    }
 }
 
 final class EmbeddedAdapterCancellation: @unchecked Sendable {
@@ -72,6 +83,14 @@ final class EmbeddedAdapterCancellation: @unchecked Sendable {
     private var value = false
     func cancel() { lock.lock(); value = true; lock.unlock() }
     var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return value }
+
+    /// Linearize cancellation against publication's rename. Cancellation before
+    /// this critical section prevents publication; after it, the commit won.
+    func commitIfNotCancelled<T>(_ body: () throws -> T) throws -> T {
+        lock.lock(); defer { lock.unlock() }
+        guard !value else { throw CancellationError() }
+        return try body()
+    }
 }
 
 enum EmbeddedAdapterError: Error {
@@ -221,7 +240,10 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             }) else { throw invalid("encryption_range_outside_text_segment") }
         }
         if filetype == 6 {
-            guard dependencies == ["/usr/lib/libSystem.B.dylib"], installNames == ["@rpath/" + name] else {
+            let allowedDependencies = ["/usr/lib/libSystem.B.dylib"]
+            let objcDependencies = ["/usr/lib/libSystem.B.dylib", "/usr/lib/libobjc.A.dylib"]
+            guard (dependencies == allowedDependencies || dependencies == objcDependencies),
+                  installNames == ["@rpath/" + name] else {
                 throw invalid("dependency_or_install_name_mismatch")
             }
         } else {
@@ -252,9 +274,41 @@ struct EmbeddedAdapterResult: Codable, Sendable {
     var residentSamplesBytes: [UInt64] = []
     var processLinkCount = 0
     var temporaryOutputsRemoved = true
+    /// Ephemeral verified output for an explicit user-selected export flow.
+    /// Intentionally omitted from Codable diagnostics and never executed.
+    var capturedDylibData: Data? = nil
     let providerExecutable = false
     let outputExecutionAttempted = false
     var passed: Bool { state == "success" && temporaryOutputsRemoved }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        state = try values.decode(String.self, forKey: .state)
+        reason = try values.decode(String.self, forKey: .reason)
+        steps = try values.decode([EmbeddedAdapterStep].self, forKey: .steps)
+        artifacts = try values.decode([EmbeddedAdapterArtifact].self, forKey: .artifacts)
+        residentSamplesBytes = try values.decode([UInt64].self, forKey: .residentSamplesBytes)
+        processLinkCount = try values.decode(Int.self, forKey: .processLinkCount)
+        temporaryOutputsRemoved = try values.decode(Bool.self, forKey: .temporaryOutputsRemoved)
+        // Serialized diagnostics cannot restore runtime capability or binary output bytes.
+        capturedDylibData = nil
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(state, forKey: .state)
+        try values.encode(reason, forKey: .reason)
+        try values.encode(steps, forKey: .steps)
+        try values.encode(artifacts, forKey: .artifacts)
+        try values.encode(residentSamplesBytes, forKey: .residentSamplesBytes)
+        try values.encode(processLinkCount, forKey: .processLinkCount)
+        try values.encode(temporaryOutputsRemoved, forKey: .temporaryOutputsRemoved)
+        try values.encode(false, forKey: .providerExecutable)
+        try values.encode(false, forKey: .outputExecutionAttempted)
+        // capturedDylibData is deliberately never serialized into UI JSON.
+    }
 }
 
 private final class EmbeddedAdapterProcessState: @unchecked Sendable {
@@ -292,11 +346,14 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
     /// Owned input bytes only; no caller-controlled filesystem root. The link
     /// list can refer only to objects compiled and hashed in this same request.
     func execute(sources: [String: String], operations: [EmbeddedToolchainOperation],
+                 captureDylib: Bool = false,
                  cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) async -> EmbeddedAdapterResult {
         await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 queue.async {
-                    continuation.resume(returning: self.run(sources: sources, operations: operations, cancellation: cancellation))
+                    continuation.resume(returning: self.run(sources: sources, operations: operations,
+                                                           captureDylib: captureDylib,
+                                                           cancellation: cancellation))
                 }
             }
         } onCancel: {
@@ -305,6 +362,7 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
     }
 
     private func run(sources: [String: String], operations: [EmbeddedToolchainOperation],
+                     captureDylib: Bool,
                      cancellation: EmbeddedAdapterCancellation) -> EmbeddedAdapterResult {
         var result = EmbeddedAdapterResult()
         func finish() -> EmbeddedAdapterResult {
@@ -325,7 +383,8 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
             result.state = "unavailable"; result.reason = "fixed-runtime toolchain gates are not ready"; return finish()
         }
         guard !sources.isEmpty, sources.count <= 4, !operations.isEmpty, operations.count <= 6,
-              operations.filter({ if case .link = $0 { return true }; return false }).count <= 1 else {
+              operations.filter({ if case .link = $0 { return true }; return false }).count <= 1,
+              !captureDylib || operations.contains(where: { if case .link = $0 { return true }; return false }) else {
             result.reason = "bounded request requires 1-4 sources, 1-6 operations and at most one link"; return finish()
         }
         let fm = FileManager.default
@@ -399,12 +458,26 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
                     }
                     let stubURL = root.appendingPathComponent("libSystem.B.tbd")
                     try stub.write(to: stubURL, options: .withoutOverwriting)
+                    let hasObjectiveC = operations.contains { operation in
+                        if case let .compile(_, _, language) = operation { return language == .objectiveC }
+                        return false
+                    }
+                    var runtimeInputs = [stubURL.path]
+                    if hasObjectiveC {
+                        let objcStub = try bridge.verifiedObjCRuntimeStub()
+                        guard objcStub.count >= 1024, objcStub.count <= 2 * 1024 * 1024 else {
+                            throw EmbeddedAdapterError.rejected("verified Objective-C runtime stub is outside the byte budget")
+                        }
+                        let objcURL = root.appendingPathComponent("libobjc.A.tbd")
+                        try objcStub.write(to: objcURL, options: .withoutOverwriting)
+                        runtimeInputs.append(objcURL.path)
+                    }
                     guard !cancellation.isCancelled else { result.state = "cancelled"; break operationLoop }
                     // Reserve the lifetime link budget before invoking ld64.
                     links += 1
                     call = bridge.link(["-arch", "arm64", "-dylib", "-platform_version", "ios", "15.0", "16.5",
                                         "-install_name", installName, "-o", partial.path] +
-                                       objects.map { root.appendingPathComponent($0).path } + [stubURL.path])
+                                       objects.map { root.appendingPathComponent($0).path } + runtimeInputs)
                 }
                 if result.state == "cancelled" { break }
                 result.steps.append(EmbeddedAdapterStep(operation: name, status: call.status,
@@ -421,6 +494,7 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
                 }
                 let data = try boundedRead(partial)
                 let artifact = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: type)
+                if captureDylib && type == 6 { result.capturedDylibData = data }
                 try fm.moveItem(at: partial, to: root.appendingPathComponent(name))
                 produced[name] = artifact.sha256
                 result.artifacts.append(artifact)
@@ -453,7 +527,10 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
         }
         // Metadata is inspection evidence, not an available output artifact.
         // Failed/cancelled batches never expose even partial-success metadata.
-        if result.state != "success" { result.artifacts.removeAll() }
+        if result.state != "success" {
+            result.artifacts.removeAll()
+            result.capturedDylibData = nil
+        }
         return finish()
     }
 

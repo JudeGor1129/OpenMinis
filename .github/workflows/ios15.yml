@@ -33,7 +33,8 @@ concurrency:
 
 jobs:
   navigation-check:
-    runs-on: macos-15
+    # Avoid the hosted arm64 capacity failure confirmed in check-run annotations.
+    runs-on: macos-15-intel
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

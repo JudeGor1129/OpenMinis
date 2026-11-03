@@ -3,6 +3,13 @@
 # Gate revision: Swift 6 MainActor-isolated contract harness.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+require_swift=0
+case "${1:-}" in
+  "") ;;
+  --require-swift) require_swift=1; shift ;;
+  *) echo "FAIL: unknown argument: $1" >&2; exit 2 ;;
+esac
+[[ $# -eq 0 ]] || { echo "FAIL: unexpected arguments" >&2; exit 2; }
 SNAPSHOT=src/ios/Agent/Build/EmbeddedToolchainProjectSnapshot.swift
 HARNESS=toolchain-build/scripts/test-embedded-project-snapshot.swift
 PROJECT=src/ios/Minis.xcodeproj/project.pbxproj
@@ -35,6 +42,7 @@ print('PASS: immutable project snapshot source policy, PBX wiring and test cover
 PY
 if ! command -v swiftc >/dev/null 2>&1; then
  echo 'SKIP: Swift project-snapshot contracts (swiftc not found); policy is not a behavior test.'
+ [[ "$require_swift" -eq 0 ]] || { echo "FAIL: --require-swift requires actual Swift contracts" >&2; exit 1; }
  exit 0
 fi
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/om-project-snapshot.XXXXXX")"

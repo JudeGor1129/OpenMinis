@@ -15,7 +15,7 @@ enum OMToolchain {
     }
 }
 
-private enum MachOFixture {
+enum MachOFixture {
     static func u32(_ value: UInt32) -> Data { Data((0..<4).map { UInt8(truncatingIfNeeded: value >> ($0 * 8)) }) }
     static func u64(_ value: UInt64) -> Data { Data((0..<8).map { UInt8(truncatingIfNeeded: value >> ($0 * 8)) }) }
     static func name(_ value: String) -> Data { var d = Data(value.utf8); d.append(Data(repeating: 0, count: 16 - d.count)); return d }
@@ -90,10 +90,13 @@ private enum MachOFixture {
     }
     // Thin arm64, actual bounded LC_SEGMENT_64 + section_64 + ARM64 payload.
     // Dylibs also have the sole libSystem dependency and matching @rpath ID.
-    static func image(filetype: UInt32, installName: String = "") -> Data {
+    static func image(filetype: UInt32, installName: String = "", includesObjC: Bool = false) -> Data {
         let payload = Data([0xc0, 0x03, 0x5f, 0xd6, 0x1f, 0x20, 0x03, 0xd5])
-        let extra = filetype == 6
-            ? dylibCommand(0xc, "/usr/lib/libSystem.B.dylib") + dylibCommand(0xd, installName) : Data()
+        let extra: Data
+        if filetype == 6 {
+            let objc = includesObjC ? dylibCommand(0xc, "/usr/lib/libobjc.A.dylib") : Data()
+            extra = dylibCommand(0xc, "/usr/lib/libSystem.B.dylib") + objc + dylibCommand(0xd, installName)
+        } else { extra = Data() }
         // Mirror the pinned iOS ld64: include cryptid=0 metadata even though
         // no file encryption is performed. Build210's fake omitted this.
         let commandBytes = 152 + extra.count + (filetype == 6 ? 24 : 0)
@@ -106,7 +109,7 @@ private enum MachOFixture {
         for value in [offset, 2, 0, 0, 0x80000400, 0, 0, 0] { section.append(u32(value)) }
         segment.append(section)
         var data = Data()
-        for value in [0xfeedfacf, 0x0100000c, 0, filetype, filetype == 6 ? 4 : 1,
+        for value in [0xfeedfacf, 0x0100000c, 0, filetype, filetype == 6 ? (includesObjC ? 5 : 4) : 1,
                               UInt32(commandBytes), filetype == 6 ? 0x85 : 0, 0] { data.append(u32(value)) }
         data.append(segment); data.append(extra)
         if filetype == 6 { data.append(encryptionCommand(offset: offset, bytes: UInt32(payload.count))) }
@@ -114,17 +117,18 @@ private enum MachOFixture {
     }
 }
 
-private enum Outcome: Equatable, Sendable { case ok, diagnostics, internalError, malformed, symlink, assertion, invalidRelocations, encrypted }
-private struct BridgeSnapshot: Sendable {
+enum Outcome: Equatable, Sendable { case ok, diagnostics, internalError, malformed, symlink, assertion, invalidRelocations, encrypted }
+struct BridgeSnapshot: Sendable {
     let calls: [[String]]
     let kinds: [String]
     let roots: [String]
     let capabilities: Int
     let samples: Int
     let stubs: Int
+    let objcStubs: Int
     let copiedStub: Data?
 }
-private final class FakeBridge: EmbeddedAdapterBridge, @unchecked Sendable {
+final class FakeBridge: EmbeddedAdapterBridge, @unchecked Sendable {
     private let lock = NSLock()
     private var compileOutcomes: [Outcome]
     private var linkOutcomes: [Outcome]
@@ -135,11 +139,13 @@ private final class FakeBridge: EmbeddedAdapterBridge, @unchecked Sendable {
     private var roots: [String] = []
     private var capabilityCalls = 0
     private var stubCalls = 0
+    private var objcStubCalls = 0
     private var copiedStub: Data?
     private let cancelAfterCompile: EmbeddedAdapterCancellation?
     private let cancelAtSample: (Int, EmbeddedAdapterCancellation)?
     static let mib: UInt64 = 1024 * 1024
     static let stub = Data(repeating: 0x41, count: 1024)
+    static let objcStub = Data(repeating: 0x42, count: 1024)
     init(compile: [Outcome] = [], link: [Outcome] = [], memory: [UInt64] = [128 * FakeBridge.mib],
          cancelAfterCompile: EmbeddedAdapterCancellation? = nil,
          cancelAtSample: (Int, EmbeddedAdapterCancellation)? = nil) {
@@ -159,10 +165,11 @@ private final class FakeBridge: EmbeddedAdapterBridge, @unchecked Sendable {
     }
     func resetMemory(_ values: [UInt64]) { lock.lock(); memory = values; sampleIndex = 0; lock.unlock() }
     func verifiedLibSystemStub() throws -> Data { lock.lock(); stubCalls += 1; lock.unlock(); return Self.stub }
+    func verifiedObjCRuntimeStub() throws -> Data { lock.lock(); objcStubCalls += 1; lock.unlock(); return Self.objcStub }
     func snapshot() -> BridgeSnapshot {
         lock.lock(); defer { lock.unlock() }
         return BridgeSnapshot(calls: calls, kinds: kinds, roots: roots, capabilities: capabilityCalls,
-                              samples: sampleIndex, stubs: stubCalls, copiedStub: copiedStub)
+                              samples: sampleIndex, stubs: stubCalls, objcStubs: objcStubCalls, copiedStub: copiedStub)
     }
     func compile(_ arguments: [String]) -> EmbeddedAdapterCall {
         let result = invoke(arguments, linking: false); cancelAfterCompile?.cancel(); return result
@@ -204,7 +211,8 @@ private final class FakeBridge: EmbeddedAdapterBridge, @unchecked Sendable {
             case .symlink: try FileManager.default.createSymbolicLink(at: output, withDestinationURL: URL(fileURLWithPath: "/dev/null"))
             default:
                 let install = arguments.firstIndex(of: "-install_name").map { arguments[$0 + 1] } ?? ""
-                try MachOFixture.image(filetype: linking ? 6 : 1, installName: install).write(to: output)
+                let hasObjC = linking && arguments.contains { $0.hasSuffix("/libobjc.A.tbd") }
+                try MachOFixture.image(filetype: linking ? 6 : 1, installName: install, includesObjC: hasObjC).write(to: output)
             }
             return EmbeddedAdapterCall(status: 0, stdout: "fake output", stderr: "")
         } catch { return EmbeddedAdapterCall(status: 3, stdout: "", stderr: "fake fixture I/O: \(error)") }
@@ -264,10 +272,51 @@ private struct AdapterContracts {
         try await memoryBudgets(); print("PASS: unknown RSS and absolute/lifetime RSS limits")
         try await lifetimeLinks(); print("PASS: three-link lifetime budget across requests")
         try await rejectedInputs(); print("PASS: source, filename, language and operation rejection matrix")
+        try await projectSnapshotToPublishedDylib(); print("PASS: multi-file project request, verified execution, atomic project publication, cleanup and no output execution")
+        checks += try await RestrictedExecutionContracts.run()
+        checks += try ProjectPublisherContracts.run()
         let after = try tempRoots()
         try require(after == before, "a request leaked an unrecorded private run directory")
         print("PASS: \(checks) real Swift adapter contract assertions; fake bridge only, no native LLVM or output execution.")
     }
+    private static func projectSnapshotToPublishedDylib() async throws {
+        let files = [
+            "src/main.c": "#include \"value.h\"\nint main_value(void) { return value(); }\n",
+            "src/value.h": "int value(void) { return 7; }\n"
+        ]
+        let snapshot = try EmbeddedToolchainProjectSnapshotBuilder.build(files: files, entrySources: ["src/main.c"])
+        let plan = try EmbeddedToolchainProjectMaterializer.plan(snapshot: snapshot, outputName: "project.dylib")
+        let request = try EmbeddedToolchainRestrictedRequestBuilder.make(snapshot: snapshot, plan: plan)
+        let fake = FakeBridge()
+        let executor = EmbeddedToolchainRestrictedExecutor(adapter: EmbeddedToolchainExecutionAdapter(bridge: fake))
+        let report = await executor.execute(request, captureVerifiedDylib: true)
+        try require(report.passed && !report.outputFilesPublished && !report.outputExecutionAttempted &&
+                    !report.providerExecutable, "verified execution report flags")
+        guard let bytes = report.dylibData, let inspected = report.verifiedArtifact else {
+            throw ContractFailure(description: "capturing executor must return inspected dylib bytes and metadata")
+        }
+        try require(inspected.name == request.outputName && inspected.bytes == bytes.count &&
+                    inspected.sha256 == EmbeddedAdapterArtifact.digest(bytes), "captured dylib metadata binding")
+        try cleanup(report.adapter, fake)
+
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("minis-project-publish-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let published = try EmbeddedToolchainProjectPublisher.publishVerifiedDylib(
+            bytes, named: request.outputName, projectRoot: root)
+        let output = root.appendingPathComponent(published.relativePath)
+        let onDisk = try Data(contentsOf: output)
+        try require(onDisk == bytes && published.bytes == bytes.count &&
+                    published.sha256 == inspected.sha256 && published.filetype == 6 &&
+                    published.relativePath == "build/minis-embedded/project.dylib",
+                    "atomic user-selected project publication metadata")
+        try require(!report.outputFilesPublished, "execution report remains pre-publication evidence only")
+        let diagnostic = try JSONEncoder().encode(report.adapter)
+        let diagnosticText = String(data: diagnostic, encoding: .utf8) ?? ""
+        try require(!diagnosticText.contains("capturedDylibData"), "binary output must not be serialized into diagnostics")
+    }
+
     private static func malformedMachO() throws {
         let object = MachOFixture.image(filetype: 1)
         var outsideSegment = object
@@ -376,12 +425,17 @@ private struct AdapterContracts {
         try require(snapshot.stubs == 1 && snapshot.copiedStub == FakeBridge.stub, "verified stub must be copied into the private run")
         try cleanup(result, fake)
         let objcFake = FakeBridge()
-        let objc = await EmbeddedToolchainExecutionAdapter(bridge: objcFake).execute(
+        let objcAdapter = EmbeddedToolchainExecutionAdapter(bridge: objcFake)
+        let objcResult = await objcAdapter.execute(
             sources: ["answer.m": "int answer(void) { return 42; }\n"],
-            operations: [.compile(source: "answer.m", output: "answer.o", language: .objectiveC)])
-        try require(objc.passed && objcFake.snapshot().calls[0].contains("objective-c") &&
-                    objcFake.snapshot().calls[0].contains("-fobjc-arc"), "Objective-C structured language was not translated")
-        try cleanup(objc, objcFake)
+            operations: [.compile(source: "answer.m", output: "answer.o", language: .objectiveC),
+                         .link(objects: ["answer.o"], output: "libanswer.dylib", installName: "@rpath/libanswer.dylib")])
+        let objcSnapshot = objcFake.snapshot()
+        try require(objcResult.passed && objcSnapshot.calls[0].contains("objective-c") &&
+                    objcSnapshot.calls[0].contains("-fobjc-arc"), "Objective-C structured language was not translated")
+        try require(objcSnapshot.objcStubs == 1 && objcSnapshot.calls[1].last?.hasSuffix("libobjc.A.tbd") == true,
+                    "Objective-C project must add the pinned libobjc runtime stub to its link")
+        try cleanup(objcResult, objcFake)
     }
     private static func cancellation() async throws {
         let token = EmbeddedAdapterCancellation(); token.cancel()

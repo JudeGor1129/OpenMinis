@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+require_swift=0
+case "${1:-}" in
+  "") ;;
+  --require-swift) require_swift=1; shift ;;
+  *) echo "FAIL: unknown argument: $1" >&2; exit 2 ;;
+esac
+[[ $# -eq 0 ]] || { echo "FAIL: unexpected arguments" >&2; exit 2; }
 REQUEST=src/ios/Agent/Build/EmbeddedToolchainRestrictedRequest.swift
 PROVIDER=src/ios/Agent/Build/EmbeddedToolchainBuildProvider.swift
 SNAPSHOT=src/ios/Agent/Build/EmbeddedToolchainProjectSnapshot.swift
 MATERIALIZER=src/ios/Agent/Build/EmbeddedToolchainProjectMaterializer.swift
 HARNESS=toolchain-build/scripts/test-embedded-restricted-request.swift
 for f in "$REQUEST" "$PROVIDER" "$SNAPSHOT" "$MATERIALIZER" "$HARNESS"; do [[ -f "$f" ]] || { echo "FAIL: missing $f" >&2; exit 1; }; done
-python3 - "$PROVIDER" <<'PY'
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/om-restricted-request.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+python3 - "$PROVIDER" "$TMP/Models.swift" <<'PY'
 from pathlib import Path
 import sys
 provider=Path(sys.argv[1]).read_text()
 start=provider.index('enum EmbeddedToolchainLanguage:')
 end=provider.index('@MainActor', start)
-Path('/tmp/EmbeddedToolchainOperationModels.swift').write_text('import Foundation\n\n'+provider[start:end])
+Path(sys.argv[2]).write_text('import Foundation\n\n'+provider[start:end])
 request=Path('src/ios/Agent/Build/EmbeddedToolchainRestrictedRequest.swift').read_text()
 materializer=Path('src/ios/Agent/Build/EmbeddedToolchainProjectMaterializer.swift').read_text()
 harness=Path('toolchain-build/scripts/test-embedded-restricted-request.swift').read_text()
@@ -30,12 +39,11 @@ print('PASS: pure-memory restricted request source policy and mutation boundarie
 PY
 if ! command -v swiftc >/dev/null 2>&1; then
  echo 'SKIP: Swift restricted-request contracts (swiftc not found); policy is not behavior evidence.'
+ [[ "$require_swift" -eq 0 ]] || { echo "FAIL: --require-swift requires actual Swift contracts" >&2; exit 1; }
  exit 0
 fi
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/om-restricted-request.XXXXXX")"
-trap 'rm -rf "$TMP"' EXIT
 swiftc --version
 swiftc -swift-version 6 -strict-concurrency=complete -parse-as-library \
-  /tmp/EmbeddedToolchainOperationModels.swift "$SNAPSHOT" "$MATERIALIZER" "$REQUEST" "$HARNESS" -o "$TMP/restricted-request-contract"
+  "$TMP/Models.swift" "$SNAPSHOT" "$MATERIALIZER" "$REQUEST" "$HARNESS" -o "$TMP/restricted-request-contract"
 "$TMP/restricted-request-contract"
 echo 'PASS: actual Swift restricted-request contracts executed.'

@@ -6,6 +6,11 @@ import Darwin
 /// It never reads a filesystem and never creates compiler/linker arguments.
 /// A future filesystem reader must establish the path/symlink policy before
 /// constructing this value.
+enum EmbeddedToolchainSourceToken: Equatable, Sendable {
+    case code(String)
+    case include(String)
+}
+
 struct EmbeddedToolchainProjectFile: Equatable, Sendable {
     enum Kind: String, Sendable {
         case cSource = "c"
@@ -16,11 +21,13 @@ struct EmbeddedToolchainProjectFile: Equatable, Sendable {
     let path: String
     let kind: Kind
     let contents: String
+    let tokens: [EmbeddedToolchainSourceToken]
     let byteCount: Int
     let sha256: String
 
-    fileprivate init(path: String, kind: Kind, contents: String, byteCount: Int, sha256: String) {
-        self.path = path; self.kind = kind; self.contents = contents
+    fileprivate init(path: String, kind: Kind, contents: String, tokens: [EmbeddedToolchainSourceToken],
+                     byteCount: Int, sha256: String) {
+        self.path = path; self.kind = kind; self.contents = contents; self.tokens = tokens
         self.byteCount = byteCount; self.sha256 = sha256
     }
 }
@@ -150,6 +157,7 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
                 path: path,
                 kind: kind,
                 contents: contents,
+                tokens: try sourceTokens(in: contents, from: path),
                 byteCount: data.count,
                 sha256: digest(data)
             ))
@@ -170,11 +178,11 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
         var dependencies: [String: [String]] = [:]
         var edgeCount = 0
         for path in sourcePaths.sorted() {
-            dependencies[path] = try directIncludes(in: files[path] ?? "", from: path)
+            dependencies[path] = try includePaths(in: files[path] ?? "", from: path)
             edgeCount += dependencies[path]?.count ?? 0
         }
         for path in headerPaths.sorted() {
-            dependencies[path] = try directIncludes(in: files[path] ?? "", from: path)
+            dependencies[path] = try includePaths(in: files[path] ?? "", from: path)
             edgeCount += dependencies[path]?.count ?? 0
         }
         guard edgeCount <= maxDependencyEdges else {
@@ -217,47 +225,118 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
     /// Reads only the bounded C/Objective-C/header closure from a real project
     /// directory. The returned snapshot is the only value allowed to cross into
     /// a future adapter; this method does not create operations or invoke tools.
+    static func loadProject(root: URL) throws -> EmbeddedToolchainProjectSnapshot {
+        let canonical = try validatedRoot(root)
+        var enumerationFailed = false
+        let enumerator = FileManager.default.enumerator(at: canonical,
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { _, _ in
+                enumerationFailed = true
+                return false
+            })
+        guard let enumerator else { throw EmbeddedToolchainProjectSnapshotError.rootUnavailable }
+        var entries: [String] = []
+        var eligibleCount = 0
+        var scannedEntries = 0
+        while let item = enumerator.nextObject() as? URL {
+            scannedEntries += 1
+            guard scannedEntries <= 512 else { throw EmbeddedToolchainProjectSnapshotError.tooManyFiles }
+            let values = try? item.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey])
+            let prefix = canonical.path.hasSuffix("/") ? canonical.path : canonical.path + "/"
+            guard item.path.hasPrefix(prefix) else { throw EmbeddedToolchainProjectSnapshotError.unsupportedPath(item.path) }
+            let relative = String(item.path.dropFirst(prefix.count))
+            if values?.isSymbolicLink == true { throw EmbeddedToolchainProjectSnapshotError.fileSymlink(relative) }
+            if values?.isDirectory == true {
+                guard relative.split(separator: "/").count <= 8 else {
+                    throw EmbeddedToolchainProjectSnapshotError.unsupportedPath(relative)
+                }
+                if relative == "build" || relative.hasSuffix("/.git") || relative == ".git" {
+                    enumerator.skipDescendants(); continue
+                }
+                continue
+            }
+            let ext = item.pathExtension
+            guard ["c", "m", "h"].contains(ext) else { continue }
+            try validatePath(relative)
+            guard values?.isRegularFile == true else { throw EmbeddedToolchainProjectSnapshotError.fileReadFailed(relative) }
+            eligibleCount += 1
+            guard eligibleCount <= maxFiles else { throw EmbeddedToolchainProjectSnapshotError.tooManyFiles }
+            if ext == "c" || ext == "m" {
+                entries.append(relative)
+                guard entries.count <= maxSources else { throw EmbeddedToolchainProjectSnapshotError.tooManySources }
+            }
+        }
+        guard !enumerationFailed else { throw EmbeddedToolchainProjectSnapshotError.rootUnavailable }
+        guard !entries.isEmpty else { throw EmbeddedToolchainProjectSnapshotError.emptyProject }
+        guard entries.count <= maxSources else { throw EmbeddedToolchainProjectSnapshotError.tooManySources }
+        guard eligibleCount <= maxFiles else { throw EmbeddedToolchainProjectSnapshotError.tooManyFiles }
+        return try load(root: root, entrySources: entries.sorted())
+    }
+
     static func load(root: URL, entrySources: [String]) throws -> EmbeddedToolchainProjectSnapshot {
-        let fm = FileManager.default
+        guard !entrySources.isEmpty, entrySources.count <= maxSources,
+              Set(entrySources).count == entrySources.count else {
+            throw EmbeddedToolchainProjectSnapshotError.tooManySources
+        }
+        let canonical = try validatedRoot(root)
+        var files: [String: String] = [:]
+        var pending = entrySources
+        var seen: Set<String> = []
+        var totalBytes = 0
+        var edges = 0
+        while let relative = pending.popLast() {
+            guard !seen.contains(relative) else { continue }
+            seen.insert(relative)
+            guard seen.count <= maxFiles else { throw EmbeddedToolchainProjectSnapshotError.tooManyFiles }
+            try validatePath(relative)
+            let extensionName = URL(fileURLWithPath: relative).pathExtension
+            guard ["c", "m", "h"].contains(extensionName) else {
+                throw EmbeddedToolchainProjectSnapshotError.unsupportedExtension(relative)
+            }
+            let limit = extensionName == "h" ? maxHeaderBytes : maxSourceBytes
+            let data = try readBoundedFile(relative: relative, root: canonical, limit: limit)
+            guard data.count > 0, data.count <= limit else {
+                throw EmbeddedToolchainProjectSnapshotError.fileTooLarge(relative)
+            }
+            totalBytes += data.count
+            guard totalBytes <= maxTotalBytes else { throw EmbeddedToolchainProjectSnapshotError.totalSizeExceeded }
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw EmbeddedToolchainProjectSnapshotError.nonASCII(relative)
+            }
+            files[relative] = text
+            let includes = try includePaths(in: text, from: relative)
+            edges += includes.count
+            guard edges <= maxDependencyEdges else {
+                throw EmbeddedToolchainProjectSnapshotError.dependencyCountExceeded
+            }
+            pending.append(contentsOf: includes)
+        }
+        return try build(files: files, entrySources: entrySources)
+    }
+
+    private static func validatedRoot(_ root: URL) throws -> URL {
+        guard root.isFileURL else { throw EmbeddedToolchainProjectSnapshotError.rootUnavailable }
         let requested = root.standardizedFileURL
-        guard fm.fileExists(atPath: requested.path) else { throw EmbeddedToolchainProjectSnapshotError.rootUnavailable }
-        guard (try? requested.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+        guard FileManager.default.fileExists(atPath: requested.path),
+              (try? requested.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
             throw EmbeddedToolchainProjectSnapshotError.rootUnavailable
         }
         guard (try? requested.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else {
             throw EmbeddedToolchainProjectSnapshotError.rootSymlink
         }
         let canonical = requested.resolvingSymlinksInPath()
-        guard canonical.path == requested.path, isSafeRoot(canonical) else {
-            throw canonical.path == requested.path ? EmbeddedToolchainProjectSnapshotError.unsafeRoot : .rootSymlink
-        }
-        var files: [String: String] = [:]
-        var pending = entrySources
-        var seen: Set<String> = []
-        while let relative = pending.popLast() {
-            guard !seen.contains(relative) else { continue }
-            seen.insert(relative)
-            try validatePath(relative)
-            let extensionName = URL(fileURLWithPath: relative).pathExtension
-            let limit = extensionName == "h" ? maxHeaderBytes : maxSourceBytes
-            let data = try readBoundedFile(relative: relative, root: canonical, limit: limit)
-            guard let text = String(data: data, encoding: .utf8) else {
-                throw EmbeddedToolchainProjectSnapshotError.nonASCII(relative)
-            }
-            files[relative] = text
-            for include in try directIncludes(in: text, from: relative) {
-                if files[include] == nil { pending.append(include) }
-            }
-        }
-        return try build(files: files, entrySources: entrySources)
+        guard canonical.path == requested.path else { throw EmbeddedToolchainProjectSnapshotError.rootSymlink }
+        guard isSafeRoot(canonical) else { throw EmbeddedToolchainProjectSnapshotError.unsafeRoot }
+        return canonical
     }
 
     private static func isSafeRoot(_ root: URL) -> Bool {
         let components = root.path.split(separator: "/").map(String.init)
         guard !components.isEmpty else { return false }
-        let forbidden = Set(["System", "usr", "bin", "sbin", "etc"])
+        let forbidden = Set(["system", "usr", "bin", "sbin", "etc", "jb", "preboot"])
         return !components.contains { component in
-            forbidden.contains(component) || component.hasSuffix(".app") || component.hasSuffix(".framework")
+            let lowered = component.lowercased()
+            return forbidden.contains(lowered) || lowered.hasSuffix(".app") || lowered.hasSuffix(".framework")
         }
     }
 
@@ -300,6 +379,7 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
             let count = buffer.withUnsafeMutableBytes { bytes in
                 Darwin.read(descriptor, bytes.baseAddress, bytes.count)
             }
+            if count < 0 && errno == EINTR { continue }
             if count < 0 { throw EmbeddedToolchainProjectSnapshotError.fileReadFailed(relative) }
             if count == 0 { break }
             data.append(contentsOf: buffer[0..<count])
@@ -309,12 +389,17 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
     }
 
     private static func openDirectoryDescriptor(_ root: URL) throws -> Int32 {
-        let descriptor = root.path.withCString { pointer in
-            open(pointer, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
-        }
-        guard descriptor >= 0 else {
-            if errno == ELOOP { throw EmbeddedToolchainProjectSnapshotError.rootSymlink }
-            throw EmbeddedToolchainProjectSnapshotError.rootUnavailable
+        var descriptor = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+        guard descriptor >= 0 else { throw EmbeddedToolchainProjectSnapshotError.rootUnavailable }
+        for component in root.path.split(separator: "/") {
+            let next = String(component).withCString {
+                openat(descriptor, $0, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+            }
+            close(descriptor)
+            guard next >= 0 else {
+                throw EmbeddedToolchainProjectSnapshotError.rootUnavailable
+            }
+            descriptor = next
         }
         return descriptor
     }
@@ -334,38 +419,93 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
         }
     }
 
-    private static func directIncludes(in contents: String, from source: String) throws -> [String] {
-        guard !contents.contains("\\"), !contents.contains("\r") else {
+    private static func sourceTokens(in contents: String, from source: String) throws -> [EmbeddedToolchainSourceToken] {
+        guard !contents.contains("\\"), !contents.contains("\r"),
+              !contents.contains("%:"), !contents.contains("??") else {
             throw EmbeddedToolchainProjectSnapshotError.invalidDirective(source)
         }
+        let lines = try preprocessorLines(contents, from: source)
         let forbiddenTokens = ["#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif",
                                "#define", "#undef", "#error", "#warning", "#pragma", "#import",
                                "_Pragma", "@import"]
-        let forbiddenSourceTokens = ["__asm__", "__attribute__", "asm(", "asm ", "/*", "//"]
-        for token in forbiddenTokens where contents.contains(token) {
+        let forbiddenSourceTokens = ["__asm__", "__attribute__", "asm(", "asm "]
+        let visible = lines.joined(separator: "\n")
+        guard !forbiddenTokens.contains(where: visible.contains),
+              !forbiddenSourceTokens.contains(where: visible.contains) else {
             throw EmbeddedToolchainProjectSnapshotError.invalidDirective(source)
         }
-        for token in forbiddenSourceTokens where contents.contains(token) {
-            throw EmbeddedToolchainProjectSnapshotError.invalidDirective(source)
-        }
-        var includes: [String] = []
-        for rawLine in contents.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = String(rawLine).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !line.isEmpty else { continue }
-            guard line.hasPrefix("#") else { continue }
-            guard line.hasPrefix("#include \"") && line.last == "\"" else {
+        var result: [EmbeddedToolchainSourceToken] = []
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { result.append(.code(line)); continue }
+            if !trimmed.hasPrefix("#") { result.append(.code(line)); continue }
+            guard trimmed.hasPrefix("#include \"") && trimmed.last == "\"" else {
                 throw EmbeddedToolchainProjectSnapshotError.invalidDirective(source)
             }
-            let value = String(line.dropFirst(10).dropLast())
-            guard !value.isEmpty, value.utf8.count <= 192, !value.hasPrefix("/"),
-                  !value.contains("\\"), !value.split(separator: "/").contains(".."),
-                  !value.contains("//"),
-                  value.range(of: "^[A-Za-z0-9_-][A-Za-z0-9._/-]{0,191}$", options: .regularExpression) != nil else {
-                throw EmbeddedToolchainProjectSnapshotError.includePathEscapes(value)
+            let include = String(trimmed.dropFirst(10).dropLast())
+            guard !include.isEmpty, include.utf8.count <= 192, !include.hasPrefix("/"),
+                  !include.contains("\\"), !include.split(separator: "/").contains(".."),
+                  !include.contains("//"),
+                  include.range(of: "^[A-Za-z0-9_-][A-Za-z0-9._/-]{0,191}$", options: .regularExpression) != nil else {
+                throw EmbeddedToolchainProjectSnapshotError.includePathEscapes(include)
             }
-            includes.append(try resolve(value, from: source))
+            result.append(.include(try resolve(include, from: source)))
         }
-        return includes
+        return result
+    }
+
+    static func materializedLines(in contents: String, from source: String) throws -> [String] {
+        try sourceTokens(in: contents, from: source).compactMap { token in
+            if case .code(let line) = token { return line }
+            return nil
+        }
+    }
+
+    private static func includePaths(in contents: String, from source: String) throws -> [String] {
+        try sourceTokens(in: contents, from: source).compactMap { token in
+            if case .include(let path) = token { return path }
+            return nil
+        }
+    }
+
+    /// Strip comments without losing line boundaries. This still recognizes a
+    /// preprocessing directive after a leading comment, but cannot treat text
+    /// inside a comment as an include. String and character literals are kept;
+    /// backslash escapes are rejected by the caller.
+    private static func preprocessorLines(_ text: String, from source: String) throws -> [String] {
+        enum State: Equatable { case normal, lineComment, blockComment, string, character }
+        let chars = Array(text)
+        var output = Array(repeating: Character(" "), count: chars.count)
+        var state = State.normal
+        var index = 0
+        while index < chars.count {
+            let current = chars[index]
+            let next: Character = index + 1 < chars.count ? chars[index + 1] : "\0"
+            switch state {
+            case .normal:
+                if current == "/" && next == "/" { state = .lineComment; index += 1 }
+                else if current == "/" && next == "*" { state = .blockComment; index += 1 }
+                else if current == "\"" { state = .string; output[index] = current }
+                else if current == "'" { state = .character; output[index] = current }
+                else { output[index] = current }
+            case .lineComment:
+                if current == "\n" { output[index] = current; state = .normal }
+            case .blockComment:
+                if current == "*" && next == "/" { index += 1; state = .normal }
+                else if current == "\n" { output[index] = current }
+            case .string:
+                output[index] = current
+                if current == "\"" { state = .normal }
+            case .character:
+                output[index] = current
+                if current == "'" { state = .normal }
+            }
+            index += 1
+        }
+        guard state != .blockComment && state != .string && state != .character else {
+            throw EmbeddedToolchainProjectSnapshotError.invalidDirective(source)
+        }
+        return String(output).components(separatedBy: "\n")
     }
 
     private static func resolve(_ include: String, from source: String) throws -> String {

@@ -247,9 +247,10 @@ compiled by this phase.
 `EmbeddedToolchainProjectMaterializer` now converts a validated snapshot into
 one materialized ASCII source per entry source and a typed operation list:
 compile each materialized source to an object, then link those objects into one
-safe `@rpath/<name>.dylib`. Local headers are emitted in dependency order and
-only once per entry source; include directives are removed from the materialized
-text. Each materialized source gets a SHA-256, and the plan remains bound to the
+safe `@rpath/<name>.dylib`. Local headers are emitted in source include order,
+retaining every unguarded repeated include (including diamond dependencies);
+include directives are removed from the materialized text. Expansion is
+incrementally bounded per translation unit. Each materialized source gets a SHA-256, and the plan remains bound to the
 original snapshot fingerprint.
 
 This is still a plan-only phase. The materializer does not read disk, create
@@ -257,3 +258,39 @@ argv, call CC1/ld64, publish outputs, or make the generic Provider available.
 The next decision is whether this flattening model is sufficient for the first
 restricted C/Objective-C projects; macro-free headers only are supported, and
 projects requiring preprocessing semantics remain rejected.
+
+## Restricted project product flow (implementation, acceptance pending)
+
+The separate `EmbeddedProjectBuildView` selects a Files folder and explicitly
+builds a restricted project. `loadProject` discovers at most four C/Objective-C
+entries and twenty eligible inputs (512 directory entries, bounded depth), skips
+previous `build` output, and reads the bounded entry/header closure. Paths,
+symlinks, regular-file types, directives, cycles and byte budgets fail closed.
+Root descriptors are opened component-by-component with `O_NOFOLLOW`; runtime
+stub hashes stay bound to SDK16.5. No system headers, macros, arbitrary commands,
+external objects, generated-code loading, signing or installation are enabled.
+
+Request creation now takes the validated snapshot as well as the materialized
+plan and recomputes the plan to reject self-signed/foreign content. The executor
+accepts only that immutable typed request. It can explicitly retain inspected
+dylib bytes in memory after cleanup; these bytes are omitted from Codable
+reports and cannot be reconstructed from decoded diagnostics. Objective-C
+requests link both pinned libSystem and libobjc.A stubs; plain C requests still
+link only libSystem. The native process shares its three-link and RSS budgets.
+
+After successful execution, the explicit UI build action calls the publisher.
+It re-inspects the dylib, opens only safe selected-project/build/minis-embedded
+descriptors, writes and fsyncs a private temporary file, then renames atomically.
+The cancellation-token lock linearizes cancellation against rename: cancellation
+before commit preserves any old output; a completed commit is not relabeled as
+cancelled. A directory-fsync failure after rename is reported as committed but
+with unconfirmed directory durability, never as a false no-output failure.
+Security-scoped access remains open until scanning/build/publication finishes.
+
+The generic `EmbeddedToolchainBuildProvider` remains unavailable and disconnected.
+The integrated adapter gate compiles the actual snapshot/materializer/request/
+executor/publisher and runs shared fake-bridge and valid Mach-O contracts. It
+also typechecks the actual new screen against the iOS15 SwiftUI/UIKit SDK before
+full App compilation. Empty scripts and `--require-swift` SKIP are failures.
+These are not native user-project acceptance: a full App build and one final
+real folder-build report are still required before calling the product delivered.
