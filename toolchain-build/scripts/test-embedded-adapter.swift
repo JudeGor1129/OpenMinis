@@ -101,15 +101,18 @@ enum MachOFixture {
         data.append(u32(1)); data.append(u32(1)); data.append(u32(0)); data.append(u32(0))
         return data
     }
-    static func imageWithOptimizationHint(installName: String) -> Data {
+    static func imageWithOptimizationHint(installName: String, duplicates: Bool = false) -> Data {
         var data = image(filetype: 6, installName: installName)
         let hint = Data(repeating: 0x5a, count: 8)
         data.append(hint)
-        // Both new commands are inserted before the original payload, so the
-        // appended hint bytes move by the complete 88-byte command block.
-        let finalHintOffset = UInt32(data.count - hint.count + 88)
-        let block = linkeditSegment(offset: finalHintOffset, bytes: UInt32(hint.count)) +
-            optimizationHintCommand(offset: finalHintOffset, bytes: UInt32(hint.count))
+        let commandCount = duplicates ? 2 : 1
+        let commandBlockBytes = 72 + commandCount * 16
+        let finalHintOffset = UInt32(data.count - hint.count + commandBlockBytes)
+        var block = linkeditSegment(offset: finalHintOffset, bytes: UInt32(hint.count))
+        block.append(optimizationHintCommand(offset: finalHintOffset, bytes: UInt32(hint.count)))
+        if duplicates {
+            block.append(optimizationHintCommand(offset: finalHintOffset, bytes: UInt32(hint.count)))
+        }
         return adding(block, to: data)
     }
     static func invalidRelocations(filetype: UInt32, installName: String = "") -> Data {
@@ -387,11 +390,7 @@ private struct AdapterContracts {
         var outsideLinkedit = hint
         let textPayloadOffset = UInt32(32 + MachOFixture.read32(hint, 20))
         MachOFixture.patch(&outsideLinkedit, hintCommand + 8, textPayloadOffset)
-        // The helper inserts the second command before payload bytes, so point
-        // it at the existing valid hint after that 16-byte shift.
-        let duplicateHintOffset = MachOFixture.read32(hint, hintCommand + 8) + 16
-        let duplicateHint = MachOFixture.adding(
-            MachOFixture.optimizationHintCommand(offset: duplicateHintOffset, bytes: 8), to: hint)
+        let duplicateHint = MachOFixture.imageWithOptimizationHint(installName: "@rpath/bad.dylib", duplicates: true)
         for (data, rule) in [(badHintRange, "optimization_hint_range_outside_payload"),
                              (outsideLinkedit, "optimization_hint_outside_linkedit"),
                              (duplicateHint, "optimization_hint_command_size_or_duplicate")] {
