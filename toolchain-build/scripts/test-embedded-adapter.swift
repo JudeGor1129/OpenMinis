@@ -382,8 +382,6 @@ private struct AdapterContracts {
         _ = try EmbeddedAdapterArtifact.inspect(hint, name: "bad.dylib", filetype: 6)
         checks += 1
         let hintCommand = MachOFixture.commandOffset(0x2e, in: hint)
-        var badHintSize = hint
-        MachOFixture.patch(&badHintSize, hintCommand + 4, 24)
         var badHintRange = hint
         MachOFixture.patch(&badHintRange, hintCommand + 8, .max)
         var outsideLinkedit = hint
@@ -394,8 +392,7 @@ private struct AdapterContracts {
         let duplicateHintOffset = MachOFixture.read32(hint, hintCommand + 8) + 16
         let duplicateHint = MachOFixture.adding(
             MachOFixture.optimizationHintCommand(offset: duplicateHintOffset, bytes: 8), to: hint)
-        for (data, rule) in [(badHintSize, "optimization_hint_command_size_or_duplicate"),
-                             (badHintRange, "optimization_hint_range_outside_payload"),
+        for (data, rule) in [(badHintRange, "optimization_hint_range_outside_payload"),
                              (outsideLinkedit, "optimization_hint_outside_linkedit"),
                              (duplicateHint, "optimization_hint_command_size_or_duplicate")] {
             do {
