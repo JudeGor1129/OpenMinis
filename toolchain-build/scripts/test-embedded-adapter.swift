@@ -2,6 +2,7 @@
 // OMToolchain below is a compile-only native stub; FakeBridge is the injected
 // seam. Neither implements an adapter, compiles C, links LLVM or runs output.
 import Foundation
+import Darwin
 
 // Match the Objective-C import's Int rawValue and nullable NSString out params.
 enum OMToolchainStatus: Int { case ok = 0, badArguments, diagnostics, internalError, unavailable }
@@ -250,7 +251,15 @@ private struct AdapterContracts {
         Set(try FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path)
             .filter { $0.hasPrefix("minis-adapter-") })
     }
-    static func main() async throws {
+    static func main() async {
+        do { try await runContracts() }
+        catch {
+            FileHandle.standardError.write(Data("FAIL: actual Swift project contracts: \(error)\n".utf8))
+            exit(1)
+        }
+    }
+
+    private static func runContracts() async throws {
         let before = try tempRoots()
         guard ProcessInfo.processInfo.arguments.count == 2 else { throw ContractFailure(description: "real-linker fixture path required") }
         let real = try Data(contentsOf: URL(fileURLWithPath: ProcessInfo.processInfo.arguments[1]))

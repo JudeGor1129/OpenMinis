@@ -13,7 +13,8 @@ struct EmbeddedToolchainPublishedArtifact: Codable, Equatable, Sendable {
 }
 
 enum EmbeddedToolchainProjectPublisherError: Error, Equatable, LocalizedError, Sendable {
-    case invalidRoot(String)    case unsafeName
+    case invalidRoot(String)
+    case unsafeName
     case outputTooLarge
     case invalidMachO
     case directoryCreateFailed(Int32)

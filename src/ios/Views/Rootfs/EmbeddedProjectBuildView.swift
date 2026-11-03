@@ -6,7 +6,7 @@ import UIKit
 struct EmbeddedProjectBuildReport: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case schema, suite, projectFingerprint, entrySources, compiledSourceCount
-        case expectedOutputPath, outputBytes, outputSHA256, operations
+        case expectedOutputPath, outputBytes, outputSHA256, operations, directorySynced
         case residentSamplesBytes, processLinkCount, temporaryOutputsRemoved
         case outputPublished, outputExecutionAttempted, providerExecutable, passed
     }
@@ -18,6 +18,7 @@ struct EmbeddedProjectBuildReport: Codable, Sendable {
     let expectedOutputPath: String
     let outputBytes: Int
     let outputSHA256: String
+    let directorySynced: Bool
     let operations: [EmbeddedAdapterStep]
     let residentSamplesBytes: [UInt64]
     let processLinkCount: Int
@@ -171,6 +172,7 @@ struct EmbeddedProjectBuildView: View {
                     expectedOutputPath: published.relativePath,
                     outputBytes: published.bytes,
                     outputSHA256: published.sha256,
+                    directorySynced: published.directorySynced,
                     operations: execution.adapter.steps,
                     residentSamplesBytes: execution.adapter.residentSamplesBytes,
                     processLinkCount: execution.adapter.processLinkCount,
