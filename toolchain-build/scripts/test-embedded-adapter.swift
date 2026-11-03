@@ -138,10 +138,12 @@ enum MachOFixture {
         let hint = Data(repeating: 0x5a, count: 8)
         data.append(hint)
         let commandCount = duplicates ? 2 : 1
-        let preInsertionHintOffset = UInt32(data.count - hint.count)
-        var block = linkeditSegment(offset: preInsertionHintOffset, bytes: UInt32(hint.count))
-        block.append(optimizationHintCommand(offset: preInsertionHintOffset, bytes: UInt32(hint.count)))
-        if duplicates { block.append(optimizationHintCommand(offset: preInsertionHintOffset, bytes: UInt32(hint.count))) }
+        let commandCount = duplicates ? 2 : 1
+        let commandBlockBytes = 72 + commandCount * 16
+        let finalHintOffset = UInt32(data.count - hint.count + commandBlockBytes)
+        var block = linkeditSegment(offset: finalHintOffset, bytes: UInt32(hint.count))
+        block.append(optimizationHintCommand(offset: finalHintOffset, bytes: UInt32(hint.count)))
+        if duplicates { block.append(optimizationHintCommand(offset: finalHintOffset, bytes: UInt32(hint.count))) }
         return adding(block, to: data)
     }
     static func invalidRelocations(filetype: UInt32, installName: String = "") -> Data {
