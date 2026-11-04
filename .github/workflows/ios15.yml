@@ -1,7 +1,7 @@
 name: iOS 15 port diagnostics
 
-# Rebuild request (updated 2026-10-23b, [ios15-full-build]): regenerate the
-# deleted build 50 IPA without changing app source.
+# Rebuild request (updated 2026-11-04c, [ios15-full-build]): retry the
+# queued macOS diagnostics after runner-side cancellation, without changing app source.
 on:
   push:
     paths:
