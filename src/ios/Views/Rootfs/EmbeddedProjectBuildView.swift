@@ -95,7 +95,7 @@ struct EmbeddedProjectBuildView: View {
                     Label(isChoosing ? "正在读取工程…" : "选择工程文件夹", systemImage: "folder")
                 }.disabled(isChoosing || isBuilding)
             }
-            Section("交付架构") {
+            Section {
                 Toggle(isOn: $buildUniversal) {
                     Label("编译 arm64 + arm64e 并导出 rootless DEB", systemImage: "shippingbox")
                 }
@@ -116,7 +116,7 @@ struct EmbeddedProjectBuildView: View {
                         .autocorrectionDisabled(true)
                     TextField("包描述", text: $packageDescription)
                 }
-            } footer: {
+            } header: { Text("交付架构") } footer: {
                 Text(buildUniversal
                      ? "双架构链路会分别编译、链接并检查 arm64 与 arm64e，随后把 FAT dylib 放入 rootless DEB；最终只原子发布完整 DEB，不签名、不安装、不执行。"
                      : "单架构兼容模式只生成 arm64 dylib；它不满足双架构 rootless DEB 交付验收。")
