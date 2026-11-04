@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B10000000000000000000012 /* EmbeddedToolchainDebPackage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000012 /* EmbeddedToolchainDebPackage.swift */; };
+		B10000000000000000000011 /* EmbeddedToolchainUniversalArtifact.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000011 /* EmbeddedToolchainUniversalArtifact.swift */; };
 		B10000000000000000000010 /* EmbeddedProjectBuildView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000010 /* EmbeddedProjectBuildView.swift */; };
 		B1000000000000000000000F /* EmbeddedToolchainProjectPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000F /* EmbeddedToolchainProjectPublisher.swift */; };
 		B1000000000000000000000E /* EmbeddedToolchainRestrictedExecution.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2000000000000000000000E /* EmbeddedToolchainRestrictedExecution.swift */; };
@@ -681,6 +683,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B20000000000000000000012 /* EmbeddedToolchainDebPackage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainDebPackage.swift; sourceTree = "<group>"; };
+		B20000000000000000000011 /* EmbeddedToolchainUniversalArtifact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainUniversalArtifact.swift; sourceTree = "<group>"; };
 		B20000000000000000000010 /* EmbeddedProjectBuildView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedProjectBuildView.swift; sourceTree = "<group>"; };
 		B2000000000000000000000F /* EmbeddedToolchainProjectPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainProjectPublisher.swift; sourceTree = "<group>"; };
 		B2000000000000000000000E /* EmbeddedToolchainRestrictedExecution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainRestrictedExecution.swift; sourceTree = "<group>"; };
@@ -2236,6 +2240,8 @@
 				B2000000000000000000000D /* EmbeddedToolchainRestrictedRequest.swift */,
 				B2000000000000000000000E /* EmbeddedToolchainRestrictedExecution.swift */,
 				B2000000000000000000000F /* EmbeddedToolchainProjectPublisher.swift */,
+				B20000000000000000000012 /* EmbeddedToolchainDebPackage.swift */,
+				B20000000000000000000011 /* EmbeddedToolchainUniversalArtifact.swift */,
 			);
 			path = Build;
 			sourceTree = "<group>";
@@ -3040,6 +3046,8 @@
 				B10000000000000000000010 /* EmbeddedProjectBuildView.swift in Sources */,
 				B1000000000000000000000E /* EmbeddedToolchainRestrictedExecution.swift in Sources */,
 				B1000000000000000000000F /* EmbeddedToolchainProjectPublisher.swift in Sources */,
+				B10000000000000000000012 /* EmbeddedToolchainDebPackage.swift in Sources */,
+				B10000000000000000000011 /* EmbeddedToolchainUniversalArtifact.swift in Sources */,
 
 				E5VMA0008 /* AIChatViewModel+ToolPreflight.swift in Sources */,
 				E5VMB0001 /* AIChatViewModel+Compaction.swift in Sources */,

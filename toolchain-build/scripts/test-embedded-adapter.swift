@@ -188,7 +188,7 @@ enum MachOFixture {
     }
 }
 
-enum Outcome: Equatable, Sendable { case ok, diagnostics, internalError, malformed, symlink, assertion, invalidRelocations, encrypted }
+enum Outcome: Equatable, Sendable { case ok, diagnostics, internalError, malformed, symlink, assertion, invalidRelocations, encrypted, downgraded }
 struct BridgeSnapshot: Sendable {
     let calls: [[String]]
     let kinds: [String]
@@ -283,7 +283,12 @@ final class FakeBridge: EmbeddedAdapterBridge, @unchecked Sendable {
             default:
                 let install = arguments.firstIndex(of: "-install_name").map { arguments[$0 + 1] } ?? ""
                 let hasObjC = linking && arguments.contains { $0.hasSuffix("/libobjc.A.tbd") }
-                try MachOFixture.image(filetype: linking ? 6 : 1, installName: install, includesObjC: hasObjC).write(to: output)
+                var data = MachOFixture.image(filetype: linking ? 6 : 1, installName: install, includesObjC: hasObjC)
+                // Synthetic test fixtures only: the production adapter must
+                // actually compile/link each architecture, never patch headers.
+                let isArm64e = linking ? arguments.contains("arm64e") : arguments.contains("arm64e-apple-ios15.0")
+                if isArm64e && outcome != .downgraded { MachOFixture.patch(&data, 8, 0x80000002) }
+                try data.write(to: output)
             }
             return EmbeddedAdapterCall(status: 0, stdout: "fake output", stderr: "")
         } catch { return EmbeddedAdapterCall(status: 3, stdout: "", stderr: "fake fixture I/O: \(error)") }
@@ -331,7 +336,7 @@ private struct AdapterContracts {
 
     private static func runContracts() async throws {
         let before = try tempRoots()
-        guard ProcessInfo.processInfo.arguments.count == 2 else { throw ContractFailure(description: "real-linker fixture path required") }
+        guard ProcessInfo.processInfo.arguments.count == 3 else { throw ContractFailure(description: "real-linker fixture path and contract output directory required") }
         let real = try Data(contentsOf: URL(fileURLWithPath: ProcessInfo.processInfo.arguments[1]))
         try require(real.count == 49336 && EmbeddedAdapterArtifact.digest(real) == "f7858c08290826dd443b3981e85bb7d908a2318f53a9c61530de12b9fbc33d4a", "real-linker fixture changed")
         _ = try EmbeddedAdapterArtifact.inspect(real, name: "probe.dylib", filetype: 6)
@@ -354,6 +359,7 @@ private struct AdapterContracts {
         try await projectSnapshotToPublishedDylib(); print("PASS: multi-file project request, verified execution, atomic project publication, cleanup and no output execution")
         checks += try await RestrictedExecutionContracts.run()
         checks += try ProjectPublisherContracts.run()
+        checks += try await PackageContracts.run(outputDirectory: ProcessInfo.processInfo.arguments[2])
         let after = try tempRoots()
         try require(after == before, "a request leaked an unrecorded private run directory")
         print("PASS: \(checks) real Swift adapter contract assertions; fake bridge only, no native LLVM or output execution.")

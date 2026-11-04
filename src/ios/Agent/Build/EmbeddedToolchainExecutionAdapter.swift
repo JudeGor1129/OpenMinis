@@ -109,9 +109,10 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Thin arm64 only. Validate command/segment bounds before reporting an
-    /// artifact. Never mmap, load, sign or execute generated code.
-    static func inspect(_ data: Data, name: String, filetype: UInt32) throws -> Self {
+    /// Inspect one thin target slice. Never rewrite headers to claim a target.
+    /// Validate command/segment bounds; never load or execute generated code.
+    static func inspect(_ data: Data, name: String, filetype: UInt32,
+                        architecture: EmbeddedToolchainArchitecture = .arm64) throws -> Self {
         func invalid(_ rule: String = "structure", line: Int = #line) -> EmbeddedAdapterError {
             .poisoned("Mach-O output rejected: \(rule) (check_line=\(line))")
         }
@@ -123,7 +124,9 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         }
         func wide(_ offset: Int) -> UInt64 { UInt64(word(offset)) | UInt64(word(offset + 4)) << 32 }
         guard word(0) == 0xfeedfacf, word(4) == 0x0100000c,
-              word(8) & 0x00ffffff == 0, word(12) == filetype else { throw invalid() }
+              architecture.accepts(subtype: word(8)), word(12) == filetype else {
+            throw invalid("target_architecture_or_filetype_mismatch=\(architecture.rawValue)")
+        }
         let count = Int(word(16)), length = Int(word(20))
         guard count > 0, count <= 4096, length >= count * 8, length <= data.count - 32 else { throw invalid() }
         var cursor = 32
@@ -293,7 +296,7 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         } else {
             guard dependencies.isEmpty, installNames.isEmpty else { throw invalid() }
         }
-        return Self(name: name, bytes: data.count, sha256: digest(data), architecture: "arm64", filetype: filetype)
+        return Self(name: name, bytes: data.count, sha256: digest(data), architecture: architecture.rawValue, filetype: filetype)
     }
 }
 
@@ -390,12 +393,14 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
     /// Owned input bytes only; no caller-controlled filesystem root. The link
     /// list can refer only to objects compiled and hashed in this same request.
     func execute(sources: [String: String], operations: [EmbeddedToolchainOperation],
+                 architecture: EmbeddedToolchainArchitecture = .arm64,
                  captureDylib: Bool = false,
                  cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) async -> EmbeddedAdapterResult {
         await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 queue.async {
                     continuation.resume(returning: self.run(sources: sources, operations: operations,
+                                                           architecture: architecture,
                                                            captureDylib: captureDylib,
                                                            cancellation: cancellation))
                 }
@@ -405,7 +410,73 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
         }
     }
 
+    /// A dual build is one queue transaction: another request cannot consume
+    /// link/RSS budget between slices. Reserve admission for two links up front.
+    func executeUniversal(sources: [String: String], operations: [EmbeddedToolchainOperation],
+                          cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) async
+        -> EmbeddedUniversalExecutionResult {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                queue.async {
+                    continuation.resume(returning: self.runUniversal(sources: sources,
+                        operations: operations, cancellation: cancellation))
+                }
+            }
+        } onCancel: { cancellation.cancel() }
+    }
+
+    private func runUniversal(sources: [String: String], operations: [EmbeddedToolchainOperation],
+                              cancellation: EmbeddedAdapterCancellation) -> EmbeddedUniversalExecutionResult {
+        var reports: [EmbeddedAdapterResult] = []
+        func failed(_ reason: String) -> EmbeddedUniversalExecutionResult {
+            let diagnostics = reports.map { report in
+                var value = report
+                value.capturedDylibData = nil
+                value.artifacts.removeAll()
+                return value
+            }
+            return EmbeddedUniversalExecutionResult(reports: diagnostics, artifact: nil, data: nil, reason: reason)
+        }
+        guard !cancellation.isCancelled else { return failed("cancelled") }
+        guard poisonReason == nil else { return failed(poisonReason ?? "native state poisoned") }
+        guard !exhausted, links <= 1 else {
+            return failed("dual build needs two remaining native links; restart the app")
+        }
+        guard let last = operations.last, case let .link(_, outputName, _) = last,
+              operations.filter({ if case .link = $0 { return true }; return false }).count == 1 else {
+            return failed("dual build requires one final structured link per target")
+        }
+        for target in [EmbeddedToolchainArchitecture.arm64, .arm64e] {
+            let report = run(sources: sources, operations: operations, architecture: target,
+                             captureDylib: true, cancellation: cancellation)
+            reports.append(report)
+            guard report.passed, report.capturedDylibData != nil else {
+                return failed(target.rawValue + ": " + (report.reason.isEmpty ? report.state : report.reason))
+            }
+        }
+        do {
+            guard let arm64 = reports[0].capturedDylibData, let arm64e = reports[1].capturedDylibData else {
+                return failed("missing inspected target output")
+            }
+            let fat = try EmbeddedToolchainUniversalBinary.merge(arm64: arm64, arm64e: arm64e,
+                name: outputName, cancellation: cancellation)
+            let artifact = try EmbeddedToolchainUniversalBinary.inspect(fat, name: outputName)
+            // Include fat allocation/inspection in native lifetime RSS admission.
+            var final = reports[1]
+            guard sampleMemory(into: &final) else {
+                reports[1] = final
+                return failed(final.reason)
+            }
+            reports[1] = final
+            guard !cancellation.isCancelled else { return failed("cancelled") }
+            // Aggregate output owns the sole export capability; reports keep no thin bytes.
+            for index in reports.indices { reports[index].capturedDylibData = nil }
+            return EmbeddedUniversalExecutionResult(reports: reports, artifact: artifact, data: fat, reason: "")
+        } catch { return failed(String(describing: error)) }
+    }
+
     private func run(sources: [String: String], operations: [EmbeddedToolchainOperation],
+                     architecture: EmbeddedToolchainArchitecture,
                      captureDylib: Bool,
                      cancellation: EmbeddedAdapterCancellation) -> EmbeddedAdapterResult {
         var result = EmbeddedAdapterResult()
@@ -481,10 +552,11 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
                 switch operation {
                 case let .compile(source, output, language):
                     name = output; type = 1
-                    var arguments = ["-triple", "arm64-apple-ios15.0", "-target-cpu", "apple-a7",
+                    var arguments = ["-triple", architecture.rawValue + "-apple-ios15.0", "-target-cpu", architecture.cpu,
                                      "-emit-obj", "-ffreestanding", "-std=c11", "-O1",
                                      "-nostdsysteminc", "-nobuiltininc", "-ferror-limit", "16",
                                      "-o", partial.path, "-x", language.rawValue]
+                    if architecture == .arm64e { arguments += ["-fptrauth-returns"] }
                     if language == .objectiveC { arguments += ["-fobjc-runtime=ios-15.0", "-fobjc-arc"] }
                     arguments.append(root.appendingPathComponent(source).path)
                     call = bridge.compile(arguments)
@@ -519,7 +591,7 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
                     guard !cancellation.isCancelled else { result.state = "cancelled"; break operationLoop }
                     // Reserve the lifetime link budget before invoking ld64.
                     links += 1
-                    call = bridge.link(["-arch", "arm64", "-dylib", "-platform_version", "ios", "15.0", "16.5",
+                    call = bridge.link(["-arch", architecture.rawValue, "-dylib", "-platform_version", "ios", "15.0", "16.5",
                                         "-install_name", installName, "-o", partial.path] +
                                        objects.map { root.appendingPathComponent($0).path } + runtimeInputs)
                 }
@@ -537,7 +609,7 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
                     result.reason = "compiler/linker rejected the bounded input"; break
                 }
                 let data = try boundedRead(partial)
-                let artifact = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: type)
+                let artifact = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: type, architecture: architecture)
                 if captureDylib && type == 6 { result.capturedDylibData = data }
                 try fm.moveItem(at: partial, to: root.appendingPathComponent(name))
                 produced[name] = artifact.sha256

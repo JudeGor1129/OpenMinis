@@ -23,7 +23,10 @@ PROVIDER=src/ios/Agent/Build/EmbeddedToolchainBuildProvider.swift
 HARNESS=toolchain-build/scripts/test-embedded-adapter.swift
 EXECUTION_HARNESS=toolchain-build/scripts/test-embedded-restricted-execution.swift
 PUBLISHER_HARNESS=toolchain-build/scripts/test-embedded-project-publisher.swift
-for file in "$ADAPTER" "$SNAPSHOT" "$MATERIALIZER" "$REQUEST" "$RESTRICTED_EXECUTION" "$PUBLISHER" "$PROVIDER" "$HARNESS" "$EXECUTION_HARNESS" "$PUBLISHER_HARNESS"; do
+UNIVERSAL=src/ios/Agent/Build/EmbeddedToolchainUniversalArtifact.swift
+DEB_PACKAGE=src/ios/Agent/Build/EmbeddedToolchainDebPackage.swift
+PACKAGE_HARNESS=toolchain-build/scripts/test-embedded-package.swift
+for file in "$ADAPTER" "$SNAPSHOT" "$MATERIALIZER" "$REQUEST" "$RESTRICTED_EXECUTION" "$PUBLISHER" "$UNIVERSAL" "$DEB_PACKAGE" "$PROVIDER" "$HARNESS" "$EXECUTION_HARNESS" "$PUBLISHER_HARNESS" "$UNIVERSAL" "$DEB_PACKAGE" "$PACKAGE_HARNESS"; do
   [[ -s "$file" ]] || { echo "FAIL: missing or empty $file" >&2; exit 1; }
 done
 command -v python3 >/dev/null 2>&1 || { echo 'FAIL: source policy requires python3' >&2; exit 1; }
@@ -39,7 +42,7 @@ def require(ok, message):
         raise SystemExit('FAIL: embedded-adapter source policy: ' + message)
 
 # Slice the real enums AND their validation helpers; do not reproduce models.
-start = provider.index('enum EmbeddedToolchainLanguage:')
+start = provider.index('enum EmbeddedToolchainArchitecture:')
 end = provider.index('@MainActor', start)
 models = provider[start:end]
 require('enum EmbeddedToolchainOperation:' in models, 'operation enum missing')
@@ -120,8 +123,18 @@ project = Path('src/ios/Minis.xcodeproj/project.pbxproj').read_text(encoding='ut
 view = Path('src/ios/Views/Rootfs/EmbeddedAdapterDiagnosticsView.swift').read_text(encoding='utf-8')
 settings = Path('src/ios/Views/Rootfs/RootfsBuildSettingsView.swift').read_text(encoding='utf-8')
 workflow = Path('.github/workflows/ios15.yml').read_text(encoding='utf-8')
-for filename in ('EmbeddedToolchainExecutionAdapter.swift', 'EmbeddedAdapterDiagnosticsView.swift'):
+for filename in ('EmbeddedToolchainExecutionAdapter.swift', 'EmbeddedAdapterDiagnosticsView.swift',
+                 'EmbeddedToolchainUniversalArtifact.swift', 'EmbeddedToolchainDebPackage.swift'):
     require(project.count(filename + ' in Sources') == 2, filename + ' must be compiled by the main App')
+require('executeUniversal' in adapter and 'links <= 1' in adapter and 'architecture.accepts(subtype:' in adapter,
+        'per-target validation and two-link transaction admission are required')
+package_harness = Path('toolchain-build/scripts/test-embedded-package.swift').read_text()
+require('PackageContracts.run(' in harness and '.downgraded' in package_harness and 'second target failure' in package_harness,
+        'actual dual-target and downgrade/failure contracts must execute')
+for module in ('EmbeddedToolchainUniversalArtifact.swift', 'EmbeddedToolchainDebPackage.swift'):
+    body = Path('src/ios/Agent/Build/' + module).read_text()
+    for pattern in (r'\b(?:Process|system|popen|posix_spawn|execve|dlopen)\s*\(', r'context\.executor'):
+        require(not re.search(pattern, body), 'packaging module must stay pure memory: ' + module)
 require('EmbeddedAdapterDiagnosticsView()' in settings and 'EmbeddedToolchainExecutionAdapter.shared' in view,
         'fixed validation UI must use the lifetime shared adapter')
 require('TextEditor' not in view and 'TextField' not in view, 'validation UI must not accept arbitrary source/argv')
@@ -164,7 +177,7 @@ swiftc --version
 # NS_ENUM import contracts. Typecheck actual production code without LLVM link.
 swiftc -swift-version 6 -strict-concurrency=complete -typecheck \
   -import-objc-header src/ios/Vendor/OMToolchain/OMToolchain.h \
-  "$TMP/Models.swift" "$SNAPSHOT" "$MATERIALIZER" "$ADAPTER" "$REQUEST" "$RESTRICTED_EXECUTION" "$PUBLISHER"
+  "$TMP/Models.swift" "$SNAPSHOT" "$MATERIALIZER" "$ADAPTER" "$REQUEST" "$RESTRICTED_EXECUTION" "$PUBLISHER" "$UNIVERSAL" "$DEB_PACKAGE"
 echo 'PASS: actual OMToolchain.h importer and project integration sources typecheck.'
 # The product screen must also typecheck against the real iOS 15 SwiftUI/UIKit
 # SDK before a costly full App build. No view stubs or source rewriting.
@@ -172,13 +185,17 @@ IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 swiftc -swift-version 6 -strict-concurrency=complete -typecheck \
   -sdk "$IOS_SDK" -target arm64-apple-ios15.0 \
   -import-objc-header src/ios/Vendor/OMToolchain/OMToolchain.h \
-  "$TMP/Models.swift" "$SNAPSHOT" "$MATERIALIZER" "$ADAPTER" "$REQUEST" "$RESTRICTED_EXECUTION" "$PUBLISHER" \
+  "$TMP/Models.swift" "$SNAPSHOT" "$MATERIALIZER" "$ADAPTER" "$REQUEST" "$RESTRICTED_EXECUTION" "$PUBLISHER" "$UNIVERSAL" "$DEB_PACKAGE" \
   src/ios/Views/Rootfs/EmbeddedProjectBuildView.swift
 echo 'PASS: actual restricted project screen typechecked with iOS 15 SwiftUI/UIKit SDK.'
 # Strict Swift 6 checks compile the actual snapshot/materializer/request,
 # executor, publisher, adapter and fake-bridge integration contracts.
 swiftc -swift-version 6 -strict-concurrency=complete -parse-as-library \
-  "$TMP/Models.swift" "$SNAPSHOT" "$MATERIALIZER" "$ADAPTER" "$REQUEST" "$RESTRICTED_EXECUTION" "$PUBLISHER" "$HARNESS" "$EXECUTION_HARNESS" "$PUBLISHER_HARNESS" -o "$TMP/embedded-adapter-contract"
-"$TMP/embedded-adapter-contract" "$TMP/real-linker.dylib"
+  "$TMP/Models.swift" "$SNAPSHOT" "$MATERIALIZER" "$ADAPTER" "$REQUEST" "$RESTRICTED_EXECUTION" "$PUBLISHER" "$UNIVERSAL" "$DEB_PACKAGE" "$HARNESS" "$EXECUTION_HARNESS" "$PUBLISHER_HARNESS" "$PACKAGE_HARNESS" -o "$TMP/embedded-adapter-contract"
+"$TMP/embedded-adapter-contract" "$TMP/real-linker.dylib" "$TMP"
+python3 scripts/ios15/verify-embedded-package-contract.py "$TMP"
+ar -t "$TMP/contract.deb"
+xcrun lipo -verify_arch arm64 arm64e "$TMP/contract-fat.dylib"
+echo 'PASS: independent ar/ustar/plist readers and real lipo verified Swift-generated containers.'
 echo 'PASS: actual Swift adapter compiled and fake-bridge contracts executed.'
 echo 'NOTE: native SHA-256/evidence checks were not changed; real LLVM, signing, loading and device RSS remain separate gates.'

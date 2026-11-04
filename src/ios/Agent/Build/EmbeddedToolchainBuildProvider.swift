@@ -6,6 +6,16 @@ import Foundation
 /// OM_TOOLCHAIN_ENABLED=1 and OM_TOOLCHAIN_VERIFIED=1 are necessary readiness
 /// gates, but are not sufficient: build/test remain unavailable until a reviewed
 /// structured-operation execution adapter exists.
+/// Target architecture, independent of the arm64 host process. ABI version 0
+/// arm64e subtypes are admitted; unknown capability/ABI versions fail closed.
+enum EmbeddedToolchainArchitecture: String, Codable, CaseIterable, Sendable {
+    case arm64, arm64e
+    var cpu: String { self == .arm64e ? "apple-a12" : "apple-a7" }
+    func accepts(subtype: UInt32) -> Bool {
+        self == .arm64 ? subtype == 0 : (subtype == 2 || subtype == 0x80000002)
+    }
+}
+
 enum EmbeddedToolchainLanguage: String, Equatable, Sendable {
     case c
     case objectiveC = "objective-c"
