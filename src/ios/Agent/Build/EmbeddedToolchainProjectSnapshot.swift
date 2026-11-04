@@ -274,7 +274,7 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
     }
 
     static func readBoundedProjectFile(_ relative: String, root: URL, limit: Int) throws -> Data {
-        guard limit > 0, limit <= EmbeddedToolchainTweakManifest.maxBytes else {
+        guard limit > 0, limit <= 16 * 1024 else {
             throw EmbeddedToolchainProjectSnapshotError.fileTooLarge(relative)
         }
         try validatePath(relative)
