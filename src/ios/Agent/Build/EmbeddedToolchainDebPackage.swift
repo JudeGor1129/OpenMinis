@@ -30,6 +30,10 @@ struct EmbeddedDebMetadata: Codable, Equatable, Sendable {
               bundleIDs.allSatisfy({ matches($0, "^[A-Za-z0-9][A-Za-z0-9.-]{0,254}$") }) else {
             throw EmbeddedAdapterError.rejected("invalid or unbounded rootless package metadata/filter")
         }
+        let filenameBytes = (packageID + "_" + version + "_iphoneos-arm64.deb").utf8.count
+        guard filenameBytes <= 255 else {
+            throw EmbeddedAdapterError.rejected("rootless package filename exceeds the filesystem component limit")
+        }
     }
     var dylibName: String { tweakName + ".dylib" }
     var filename: String { packageID + "_" + version + "_iphoneos-arm64.deb" }

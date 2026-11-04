@@ -67,11 +67,22 @@ settings=Path('src/ios/Views/Rootfs/RootfsBuildSettingsView.swift').read_text()
 for token, body in [('static func loadProject(root: URL)', snapshot), ('openat(', snapshot), ('O_NOFOLLOW', snapshot),
                     ('static func plan(snapshot:', materializer), ('operations.append(.link', materializer),
                     ('struct EmbeddedToolchainRestrictedRequest', request), ('sourceFingerprints', request),
-                    ('captureDylib: captureVerifiedDylib', restricted), ('verifiedArtifact:', restricted),
-                    ('publishVerifiedDylib', publisher), ('renameat(', publisher),
-                    ('EmbeddedProjectBuildView()', settings), ('loadProject(root: url)', view),
-                    ('captureVerifiedDylib: true', view)]:
+                    ('targetArchitectures', request), ('captureDylib: captureVerifiedDylib', restricted),
+                    ('executeUniversal(_ request:', restricted), ('EmbeddedToolchainDebPackage.build', restricted),
+                    ('verifiedArtifact:', restricted), ('publishVerifiedDylib', publisher),
+                    ('publishRootlessDeb', publisher), ('renameat(', publisher),
+                    ('targetArchitectures: architectures', view), ('publishRootlessDeb(', view),
+                    ('universalDylibSHA256', view), ('EmbeddedProjectBuildView()', settings),
+                    ('loadProject(root: url)', view)]:
     require(token in body, 'deliverable project-build phase wiring missing: ' + token)
+require('request.targetArchitectures == [.arm64, .arm64e]' in restricted and
+        'request.targetArchitectures == [.arm64]' in restricted,
+        'single and universal executors must reject mismatched request architecture metadata')
+require('universalData == nil && secondFailure.debData == nil' in Path('toolchain-build/scripts/test-embedded-restricted-execution.swift').read_text(),
+        'dual execution failure must not expose partial FAT or DEB bytes')
+require('publishVerifiedUniversalDylib' in Path('toolchain-build/scripts/test-embedded-project-publisher.swift').read_text() and
+        'publishRootlessDeb' in Path('toolchain-build/scripts/test-embedded-project-publisher.swift').read_text(),
+        'atomic publisher contracts must cover FAT and rootless DEB artifacts')
 require('publishVerifiedDylib' not in provider and 'EmbeddedToolchainRestrictedExecutor' not in provider,
         'generic Provider must remain disconnected from verification executor and publication')
 require('context.executor' not in provider and provider.count('.unavailable(await availability(for: context))') == 2,

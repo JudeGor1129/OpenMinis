@@ -19,6 +19,19 @@ struct RestrictedRequestContracts {
         try require(request.snapshotFingerprint == snapshot.fingerprint, "snapshot fingerprint binding")
         try require(request.sources == plan.sources && request.operations == plan.operations, "request plan copy")
         try require(request.outputName == "project.dylib", "output binding")
+        try require(request.targetArchitectures == [.arm64], "explicit single-architecture request metadata")
+        let universalRequest = try EmbeddedToolchainRestrictedRequestBuilder.make(
+            snapshot: snapshot, plan: plan, targetArchitectures: [.arm64, .arm64e])
+        try require(universalRequest.targetArchitectures == [.arm64, .arm64e], "canonical universal architecture metadata")
+        do {
+            _ = try EmbeddedToolchainRestrictedRequestBuilder.make(
+                snapshot: snapshot, plan: plan, targetArchitectures: [.arm64e, .arm64])
+            throw Failure(description: "noncanonical architecture order was accepted")
+        } catch EmbeddedToolchainRestrictedRequestError.invalidTargetArchitectures { checks += 1 }
+        do {
+            _ = try EmbeddedToolchainRestrictedRequestBuilder.make(snapshot: snapshot, plan: plan, targetArchitectures: [])
+            throw Failure(description: "empty architecture selection was accepted")
+        } catch EmbeddedToolchainRestrictedRequestError.invalidTargetArchitectures { checks += 1 }
         do {
             var mutated = plan.sources
             mutated["main.c"] = "int changed;\n"

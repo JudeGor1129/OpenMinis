@@ -20,7 +20,7 @@ python3 - "$PROVIDER" "$TMP/Models.swift" <<'PY'
 from pathlib import Path
 import sys
 provider=Path(sys.argv[1]).read_text()
-start=provider.index('enum EmbeddedToolchainLanguage:')
+start=provider.index('enum EmbeddedToolchainArchitecture:')
 end=provider.index('@MainActor', start)
 Path(sys.argv[2]).write_text('import Foundation\n\n'+provider[start:end])
 request=Path('src/ios/Agent/Build/EmbeddedToolchainRestrictedRequest.swift').read_text()

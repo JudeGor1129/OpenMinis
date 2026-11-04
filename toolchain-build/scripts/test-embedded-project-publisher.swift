@@ -93,7 +93,40 @@ enum ProjectPublisherContracts {
         try fm.createSymbolicLink(at: output, withDestinationURL: outsideFile)
         _ = try EmbeddedToolchainProjectPublisher.publishVerifiedDylib(bytes, named: "project.dylib", projectRoot: root)
         try require(try Data(contentsOf: outsideFile) == sentinel && Data(contentsOf: output) == bytes, "final symlink replaced without following target")
-        print("PASS: \(checks) atomic publication/replacement/cancellation/path contracts (no signing or execution)")
+
+        let metadata = EmbeddedDebMetadata(packageID: "com.minis.publisher", name: "Publisher contract",
+            version: "1.0", maintainer: "Contract", description: "Synthetic rootless package",
+            tweakName: "project", bundleIDs: ["com.example.target"])
+        var arm64e = MachOFixture.image(filetype: 6, installName: "@rpath/project.dylib")
+        MachOFixture.patch(&arm64e, 8, 0x80000002)
+        let fat = try EmbeddedToolchainUniversalBinary.merge(
+            arm64: bytes, arm64e: arm64e, name: metadata.dylibName)
+        let fatPublished = try EmbeddedToolchainProjectPublisher.publishVerifiedUniversalDylib(
+            fat, named: metadata.dylibName, projectRoot: root)
+        let fatOnDisk = try Data(contentsOf: root.appendingPathComponent(fatPublished.relativePath))
+        try require(fatPublished.artifactKind == "universal_dylib" &&
+                    fatPublished.architecture == "arm64+arm64e" && fatOnDisk == fat,
+                    "FAT dylib publication preserves both inspected slices")
+        let deb = try EmbeddedToolchainDebPackage.build(dylib: fat, metadata: metadata)
+        let debPublished = try EmbeddedToolchainProjectPublisher.publishRootlessDeb(
+            deb, metadata: metadata, projectRoot: root)
+        let debOnDisk = try Data(contentsOf: root.appendingPathComponent(debPublished.relativePath))
+        let debInspection = try EmbeddedToolchainDebPackage.inspect(debOnDisk, metadata: metadata)
+        try require(debPublished.artifactKind == "rootless_deb" &&
+                    debPublished.architecture == "iphoneos-arm64" && debPublished.filetype == 0 &&
+                    debPublished.relativePath == "build/minis-embedded/" + metadata.filename,
+                    "rootless DEB publication metadata and path")
+        try require(debOnDisk == deb && debInspection.universal.architectures == ["arm64", "arm64e"] &&
+                    debPublished.sha256 == EmbeddedAdapterArtifact.digest(deb),
+                    "published DEB contains the exact verified FAT payload")
+        var corruptDeb = deb; corruptDeb[corruptDeb.count / 2] ^= 0xff
+        try reject("corrupt DEB must not replace package") {
+            _ = try EmbeddedToolchainProjectPublisher.publishRootlessDeb(
+                corruptDeb, metadata: metadata, projectRoot: root)
+        }
+        try require(try Data(contentsOf: root.appendingPathComponent(debPublished.relativePath)) == deb,
+                    "invalid DEB preserves the previous complete package")
+        print("PASS: \(checks) atomic publication/replacement/cancellation/path/FAT/DEB contracts (no signing or execution)")
         return checks
     }
 }

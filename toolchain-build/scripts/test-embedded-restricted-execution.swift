@@ -40,6 +40,42 @@ enum RestrictedExecutionContracts {
         let uncaptured = await executor.execute(request)
         try require(uncaptured.passed && uncaptured.dylibData == nil && uncaptured.verifiedArtifact == nil, "capture is explicit opt-in")
 
+        let universalRequest = try EmbeddedToolchainRestrictedRequestBuilder.make(
+            snapshot: snapshot, plan: plan, targetArchitectures: [.arm64, .arm64e])
+        let metadata = EmbeddedDebMetadata(packageID: "com.minis.test", name: "Test tweak",
+            version: "1.0", maintainer: "Contract", description: "Synthetic dual-target contract",
+            tweakName: "project", bundleIDs: ["com.example.target"])
+        let universalFake = FakeBridge()
+        let universalExecutor = EmbeddedToolchainRestrictedExecutor(
+            adapter: EmbeddedToolchainExecutionAdapter(bridge: universalFake))
+        let universal = await universalExecutor.executeUniversal(universalRequest, metadata: metadata)
+        try require(universal.passed && universal.requestFingerprint == snapshot.fingerprint,
+                    "validated dual-target request reaches FAT and DEB packaging")
+        try require(universalFake.snapshot().kinds == ["compile", "compile", "link", "compile", "compile", "link"],
+                    "both targets independently compile all inputs and link once")
+        try require(universal.universalArtifact?.architectures == ["arm64", "arm64e"] &&
+                    universal.debArtifact?.universal.architectures == ["arm64", "arm64e"],
+                    "FAT dylib and rootless DEB both verify exact architecture slices")
+        try require(universal.debArtifact?.filename == metadata.filename &&
+                    universal.debData != nil && !universal.outputFilesPublished &&
+                    !universal.outputExecutionAttempted && !universal.providerExecutable,
+                    "verified package is in-memory only before explicit publication")
+        try require(universal.adapterReports.map(\.processLinkCount) == [1, 2] &&
+                    universal.adapterReports.allSatisfy(\.temporaryOutputsRemoved),
+                    "two-link budget and per-target cleanup evidence")
+        let secondFailureFake = FakeBridge(link: [.ok, .diagnostics])
+        let secondFailure = await EmbeddedToolchainRestrictedExecutor(
+            adapter: EmbeddedToolchainExecutionAdapter(bridge: secondFailureFake))
+            .executeUniversal(universalRequest, metadata: metadata)
+        try require(!secondFailure.passed && secondFailure.universalData == nil && secondFailure.debData == nil,
+                    "second-target failure does not expose first slice or a partial package")
+        let singleRequestFake = FakeBridge()
+        let singleAsUniversal = await EmbeddedToolchainRestrictedExecutor(
+            adapter: EmbeddedToolchainExecutionAdapter(bridge: singleRequestFake))
+            .executeUniversal(request, metadata: metadata)
+        try require(!singleAsUniversal.passed && singleRequestFake.snapshot().calls.isEmpty,
+                    "single-architecture request cannot enter the universal transaction")
+
         let preToken = EmbeddedAdapterCancellation(); preToken.cancel()
         let preFake = FakeBridge()
         let pre = await EmbeddedToolchainRestrictedExecutor(adapter: EmbeddedToolchainExecutionAdapter(bridge: preFake))

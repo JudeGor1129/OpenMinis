@@ -8,6 +8,7 @@ struct EmbeddedToolchainPublishedArtifact: Codable, Equatable, Sendable {
     let sha256: String
     let architecture: String
     let filetype: UInt32
+    let artifactKind: String
     /// A rename has committed even if the following directory fsync fails.
     let directorySynced: Bool
 }
@@ -17,6 +18,7 @@ enum EmbeddedToolchainProjectPublisherError: Error, Equatable, LocalizedError, S
     case unsafeName
     case outputTooLarge
     case invalidMachO
+    case invalidPackage
     case directoryCreateFailed(Int32)
     case fileCreateFailed(Int32)
     case writeFailed(Int32)
@@ -26,9 +28,10 @@ enum EmbeddedToolchainProjectPublisherError: Error, Equatable, LocalizedError, S
     var errorDescription: String? {
         switch self {
         case .invalidRoot(let reason): return "selected project root rejected: " + reason
-        case .unsafeName: return "output name is not a safe dylib filename"
-        case .outputTooLarge: return "verified dylib exceeds the publication byte budget"
+        case .unsafeName: return "output name is not a safe or filesystem-bounded filename"
+        case .outputTooLarge: return "verified artifact exceeds the publication byte budget"
         case .invalidMachO: return "refusing to publish a dylib that fails Mach-O inspection"
+        case .invalidPackage: return "refusing to publish a DEB that fails package inspection"
         case .directoryCreateFailed(let code): return "cannot create project build directory (errno \(code))"
         case .fileCreateFailed(let code): return "cannot create temporary build output (errno \(code))"
         case .writeFailed(let code): return "cannot write verified output (errno \(code))"
@@ -49,11 +52,50 @@ enum EmbeddedToolchainProjectPublisher {
     static func publishVerifiedDylib(_ data: Data, named name: String,
                                      projectRoot: URL,
                                      cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) throws -> EmbeddedToolchainPublishedArtifact {
+        guard safeDylibFilename(name) else { throw EmbeddedToolchainProjectPublisherError.unsafeName }
+        guard data.count <= maxDylibBytes else { throw EmbeddedToolchainProjectPublisherError.outputTooLarge }
         guard !cancellation.isCancelled else { throw CancellationError() }
-        guard safeFilename(name) else { throw EmbeddedToolchainProjectPublisherError.unsafeName }
-        guard !data.isEmpty, data.count <= maxDylibBytes else { throw EmbeddedToolchainProjectPublisherError.outputTooLarge }
         do { _ = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: 6) }
         catch { throw EmbeddedToolchainProjectPublisherError.invalidMachO }
+        return try publishVerifiedBytes(data, named: name, architecture: "arm64", filetype: 6,
+            kind: "dylib", maximumBytes: maxDylibBytes, projectRoot: projectRoot,
+            cancellation: cancellation)
+    }
+
+    static func publishVerifiedUniversalDylib(_ data: Data, named name: String,
+                                              projectRoot: URL,
+                                              cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) throws -> EmbeddedToolchainPublishedArtifact {
+        guard safeDylibFilename(name) else { throw EmbeddedToolchainProjectPublisherError.unsafeName }
+        guard data.count <= EmbeddedToolchainUniversalBinary.maxBytes else { throw EmbeddedToolchainProjectPublisherError.outputTooLarge }
+        guard !cancellation.isCancelled else { throw CancellationError() }
+        do { _ = try EmbeddedToolchainUniversalBinary.inspect(data, name: name) }
+        catch { throw EmbeddedToolchainProjectPublisherError.invalidMachO }
+        return try publishVerifiedBytes(data, named: name, architecture: "arm64+arm64e", filetype: 6,
+            kind: "universal_dylib", maximumBytes: EmbeddedToolchainUniversalBinary.maxBytes,
+            projectRoot: projectRoot, cancellation: cancellation)
+    }
+
+    static func publishRootlessDeb(_ data: Data, metadata: EmbeddedDebMetadata,
+                                   projectRoot: URL,
+                                   cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) throws -> EmbeddedToolchainPublishedArtifact {
+        let name = metadata.filename
+        guard safeDebFilename(name) else { throw EmbeddedToolchainProjectPublisherError.unsafeName }
+        guard data.count <= EmbeddedToolchainDebPackage.maxBytes else { throw EmbeddedToolchainProjectPublisherError.outputTooLarge }
+        guard !cancellation.isCancelled else { throw CancellationError() }
+        do { _ = try EmbeddedToolchainDebPackage.inspect(data, metadata: metadata) }
+        catch { throw EmbeddedToolchainProjectPublisherError.invalidPackage }
+        return try publishVerifiedBytes(data, named: name, architecture: "iphoneos-arm64", filetype: 0,
+            kind: "rootless_deb", maximumBytes: EmbeddedToolchainDebPackage.maxBytes,
+            projectRoot: projectRoot, cancellation: cancellation)
+    }
+
+    private static func publishVerifiedBytes(_ data: Data, named name: String,
+                                             architecture: String, filetype: UInt32, kind: String,
+                                             maximumBytes: Int, projectRoot: URL,
+                                             cancellation: EmbeddedAdapterCancellation) throws -> EmbeddedToolchainPublishedArtifact {
+        guard !cancellation.isCancelled else { throw CancellationError() }
+        guard safeOutputFilename(name) else { throw EmbeddedToolchainProjectPublisherError.unsafeName }
+        guard !data.isEmpty, data.count <= maximumBytes else { throw EmbeddedToolchainProjectPublisherError.outputTooLarge }
         let root: URL
         do { root = try EmbeddedToolchainProjectSnapshotBuilder.validatedRoot(projectRoot) }
         catch { throw EmbeddedToolchainProjectPublisherError.invalidRoot("project selection: \(error.localizedDescription)") }
@@ -67,7 +109,7 @@ enum EmbeddedToolchainProjectPublisher {
         let outputFD = try openOrCreateDirectory("minis-embedded", under: buildFD)
         defer { close(outputFD) }
 
-        let temporary = ".\(name).\(UUID().uuidString).tmp"
+        let temporary = ".minis-\(UUID().uuidString).tmp"
         let tempFD = temporary.withCString {
             openat(outputFD, $0, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode_t(0o600))
         }
@@ -79,8 +121,6 @@ enum EmbeddedToolchainProjectPublisher {
         }
         try writeAll(data, to: tempFD)
         guard fsync(tempFD) == 0 else { throw EmbeddedToolchainProjectPublisherError.syncFailed(errno) }
-        // No cancellation or error after this commit may claim that nothing
-        // was published. The token's lock chooses cancellation versus rename.
         try cancellation.commitIfNotCancelled {
             let renamed = temporary.withCString { source in
                 name.withCString { destination in renameat(outputFD, source, outputFD, destination) }
@@ -91,8 +131,8 @@ enum EmbeddedToolchainProjectPublisher {
         let directorySynced = fsync(outputFD) == 0
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         return EmbeddedToolchainPublishedArtifact(relativePath: "\(outputDirectory)/\(name)",
-            bytes: data.count, sha256: hash, architecture: "arm64", filetype: 6,
-            directorySynced: directorySynced)
+            bytes: data.count, sha256: hash, architecture: architecture, filetype: filetype,
+            artifactKind: kind, directorySynced: directorySynced)
     }
 
     private static func writeAll(_ data: Data, to descriptor: Int32) throws {
@@ -156,8 +196,17 @@ enum EmbeddedToolchainProjectPublisher {
         }
     }
 
-    private static func safeFilename(_ name: String) -> Bool {
+    private static func safeDylibFilename(_ name: String) -> Bool {
         guard let range = name.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.dylib$", options: .regularExpression) else { return false }
         return range == (name.startIndex..<name.endIndex)
+    }
+
+    private static func safeDebFilename(_ name: String) -> Bool {
+        guard let range = name.range(of: "^[A-Za-z0-9][A-Za-z0-9+._~-]{1,254}\\.deb$", options: .regularExpression) else { return false }
+        return range == (name.startIndex..<name.endIndex)
+    }
+
+    private static func safeOutputFilename(_ name: String) -> Bool {
+        safeDylibFilename(name) || safeDebFilename(name)
     }
 }

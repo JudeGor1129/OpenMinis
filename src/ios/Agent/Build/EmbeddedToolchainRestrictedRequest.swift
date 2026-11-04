@@ -9,15 +9,19 @@ struct EmbeddedToolchainRestrictedRequest: Equatable, Sendable {
     let operations: [EmbeddedToolchainOperation]
     let sourceFingerprints: [String: String]
     let outputName: String
+    /// Immutable target metadata bound to the validated project plan. The
+    /// dual-target order is canonical: arm64 first, then arm64e.
+    let targetArchitectures: [EmbeddedToolchainArchitecture]
 
     fileprivate init(snapshotFingerprint: String, sources: [String: String],
                      operations: [EmbeddedToolchainOperation], sourceFingerprints: [String: String],
-                     outputName: String) {
+                     outputName: String, targetArchitectures: [EmbeddedToolchainArchitecture]) {
         self.snapshotFingerprint = snapshotFingerprint
         self.sources = sources
         self.operations = operations
         self.sourceFingerprints = sourceFingerprints
         self.outputName = outputName
+        self.targetArchitectures = targetArchitectures
     }
 }
 
@@ -30,6 +34,7 @@ enum EmbeddedToolchainRestrictedRequestError: Error, Equatable, LocalizedError, 
     case duplicateOutput(String)
     case invalidOperation(String)
     case invalidOutputName
+    case invalidTargetArchitectures
     case linkMustBeLast
     case linkObjectMismatch
 
@@ -43,6 +48,7 @@ enum EmbeddedToolchainRestrictedRequestError: Error, Equatable, LocalizedError, 
         case .duplicateOutput(let name): return "restricted request reuses an output name: \(name)"
         case .invalidOperation(let detail): return "invalid restricted operation: \(detail)"
         case .invalidOutputName: return "restricted request output name is unsafe"
+        case .invalidTargetArchitectures: return "restricted request target architectures are not canonical"
         case .linkMustBeLast: return "link operation must be the final operation"
         case .linkObjectMismatch: return "link objects do not match preceding compile outputs"
         }
@@ -54,8 +60,9 @@ enum EmbeddedToolchainRestrictedRequestBuilder {
     static let maxOperations = 6
 
     static func make(snapshot: EmbeddedToolchainProjectSnapshot,
-                     plan: EmbeddedToolchainMaterializedPlan) throws -> EmbeddedToolchainRestrictedRequest {
-        let request = try validate(plan)
+                     plan: EmbeddedToolchainMaterializedPlan,
+                     targetArchitectures: [EmbeddedToolchainArchitecture] = [.arm64]) throws -> EmbeddedToolchainRestrictedRequest {
+        let request = try validate(plan, targetArchitectures: targetArchitectures)
         guard try EmbeddedToolchainProjectMaterializer.plan(snapshot: snapshot, outputName: plan.outputName) == plan else {
             throw EmbeddedToolchainRestrictedRequestError.snapshotMismatch
         }
@@ -64,7 +71,11 @@ enum EmbeddedToolchainRestrictedRequestBuilder {
 
     /// Only make(snapshot:plan:) may create a request. A self-signed plan or
     /// decoded diagnostic cannot replace the validated immutable snapshot.
-    private static func validate(_ plan: EmbeddedToolchainMaterializedPlan) throws -> EmbeddedToolchainRestrictedRequest {
+    private static func validate(_ plan: EmbeddedToolchainMaterializedPlan,
+                                 targetArchitectures: [EmbeddedToolchainArchitecture]) throws -> EmbeddedToolchainRestrictedRequest {
+        guard targetArchitectures == [.arm64] || targetArchitectures == [.arm64, .arm64e] else {
+            throw EmbeddedToolchainRestrictedRequestError.invalidTargetArchitectures
+        }
         let sources = plan.sources
         guard !sources.isEmpty else { throw EmbeddedToolchainRestrictedRequestError.emptySources }
         guard sources.count <= maxSources else { throw EmbeddedToolchainRestrictedRequestError.sourceCountExceeded }
@@ -122,7 +133,8 @@ enum EmbeddedToolchainRestrictedRequestBuilder {
             sources: sources,
             operations: plan.operations,
             sourceFingerprints: plan.sourceFingerprints,
-            outputName: plan.outputName
+            outputName: plan.outputName,
+            targetArchitectures: targetArchitectures
         )
     }
 
