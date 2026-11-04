@@ -58,9 +58,11 @@ require("verify-artifacts.sh" in prepare, "prepare script must rerun manifest an
 require("-verify_arch arm64 arm64e" in prepare, "universal ld64 slices must be rechecked")
 require("OM_TOOLCHAIN_VERIFIED remains intentionally unset" in prepare,
         "prepare script must state that runtime verification is absent")
-require(provider.count(".unavailable(await availability(for: context))") == 2,
-        "build and test must both remain unavailable")
-require("state: .unavailable" in provider, "availability must remain unavailable")
+require("EmbeddedToolchainTweakManifest" in provider and
+        "completedWithArtifacts" in provider and
+        "publishRootlessDeb" in provider,
+        "embedded provider must be manifest-gated and return verified DEB evidence")
+require("state: .unavailable" in provider, "unready native capability must remain unavailable")
 require("enum EmbeddedToolchainOperation" in provider and
         "func validationError(root: URL) -> String?" in provider,
         "structured embedded operations must have a path/argument validation seam")

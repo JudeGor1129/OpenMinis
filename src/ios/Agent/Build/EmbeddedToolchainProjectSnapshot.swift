@@ -273,6 +273,15 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
         return try load(root: root, entrySources: entries.sorted())
     }
 
+    static func readBoundedProjectFile(_ relative: String, root: URL, limit: Int) throws -> Data {
+        guard limit > 0, limit <= EmbeddedToolchainTweakManifest.maxBytes else {
+            throw EmbeddedToolchainProjectSnapshotError.fileTooLarge(relative)
+        }
+        try validatePath(relative)
+        let canonical = try validatedRoot(root)
+        return try readBoundedFile(relative: relative, root: canonical, limit: limit)
+    }
+
     static func load(root: URL, entrySources: [String]) throws -> EmbeddedToolchainProjectSnapshot {
         guard !entrySources.isEmpty, entrySources.count <= maxSources,
               Set(entrySources).count == entrySources.count else {

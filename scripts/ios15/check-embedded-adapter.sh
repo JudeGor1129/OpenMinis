@@ -49,14 +49,15 @@ require('enum EmbeddedToolchainOperation:' in models, 'operation enum missing')
 require('struct EmbeddedToolchainBuildProvider:' not in models, 'provider leaked into standalone compilation')
 Path(sys.argv[4]).write_text('import Foundation\n\n' + models, encoding='utf-8')
 
-# Generic shell-oriented provider stays unavailable. Separate reviewed UI
-# wiring is a later gate, intentionally not a temporary source-policy needle.
+# Native embedded provider is structured and shell-free. Generic command
+# providers remain separate; the embedded path consumes only a session URL.
 provider_body = provider[end:]
-require('state: .unavailable' in provider_body, 'generic provider availability must remain unavailable')
-require(provider_body.count('.unavailable(await availability(for: context))') == 2,
-        'generic build and test must remain unavailable')
-require('context.executor' not in provider_body and '.execute(' not in provider_body,
-        'generic provider must not execute an adapter or shell')
+require('EmbeddedToolchainTweakManifest' in provider and 'executeUniversal' in provider,
+        'native provider must consume the fixed manifest and universal adapter')
+require('completedWithArtifacts' in provider and 'publishRootlessDeb' in provider,
+        'native provider must return verified DEB artifact evidence')
+require('context.executor' not in provider_body and 'Process(' not in provider_body,
+        'native provider must not invoke shell or subprocess')
 snapshot=Path('src/ios/Agent/Build/EmbeddedToolchainProjectSnapshot.swift').read_text()
 materializer=Path('src/ios/Agent/Build/EmbeddedToolchainProjectMaterializer.swift').read_text()
 request=Path('src/ios/Agent/Build/EmbeddedToolchainRestrictedRequest.swift').read_text()
@@ -83,9 +84,9 @@ require('universalData == nil && secondFailure.debData == nil' in Path('toolchai
 require('publishVerifiedUniversalDylib' in Path('toolchain-build/scripts/test-embedded-project-publisher.swift').read_text() and
         'publishRootlessDeb' in Path('toolchain-build/scripts/test-embedded-project-publisher.swift').read_text(),
         'atomic publisher contracts must cover FAT and rootless DEB artifacts')
-require('publishVerifiedDylib' not in provider and 'EmbeddedToolchainRestrictedExecutor' not in provider,
-        'generic Provider must remain disconnected from verification executor and publication')
-require('context.executor' not in provider and provider.count('.unavailable(await availability(for: context))') == 2,
+require('publishRootlessDeb' in provider and 'EmbeddedToolchainRestrictedExecutor' in provider,
+        'native Provider must use the reviewed restricted executor and DEB publisher')
+require('context.executor' not in provider and 'completedWithArtifacts' in provider,
         'generic build/test Provider must remain unavailable and shell-free')
 require('EmbeddedAdapterBridge' in adapter and 'EmbeddedAdapterCall' in adapter,
         'injectable bridge seam missing')

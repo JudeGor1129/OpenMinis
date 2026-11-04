@@ -38,8 +38,8 @@ struct RootfsBuildSettingsView: View {
                 HStack {
                     Text("BuildProvider")
                     Spacer()
-                    Text("保持禁用")
-                        .foregroundStyle(.orange)
+                    Text("仅会话 workspace 原生可用")
+                        .foregroundStyle(.green)
                 }
                 NavigationLink {
                     EmbeddedToolchainDiagnosticsView()
@@ -63,7 +63,7 @@ struct RootfsBuildSettingsView: View {
                 Text(embeddedStatus["reason"] ?? "正在检查内置资源。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text("诊断只使用固定 C/Objective-C 夹具，最多重复 3 轮；产物不会执行，通过也不会开放 BuildProvider。")
+                Text("诊断仍使用固定夹具；会话 workspace 的 MinisTweak.json 工程可通过聊天 build_project 走原生双架构 DEB 链路，产物不会自动执行、安装或签名。")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

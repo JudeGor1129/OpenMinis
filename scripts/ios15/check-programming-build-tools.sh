@@ -29,9 +29,10 @@ grep -q 'struct EmbeddedToolchainBuildProvider: BuildProvider' "$build/EmbeddedT
 grep -q 'EmbeddedToolchainBuildProvider()' "$build/BuildProviders.swift" || { echo 'FAIL: embedded toolchain provider not registered'; exit 1; }
 grep -q 'case embeddedToolchain = "embedded_toolchain"' "$build/BuildModels.swift" || { echo 'FAIL: embedded provider ID missing'; exit 1; }
 grep -q 'OM_TOOLCHAIN_VERIFIED' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: embedded provider verification gate missing'; exit 1; }
-grep -q 'state: .unavailable' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: embedded provider must remain non-executable'; exit 1; }
-grep -q '\.unavailable(await availability(for: context))' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: embedded build/test must stay non-executable'; exit 1; }
-if grep -q 'context.executor' "$build/EmbeddedToolchainBuildProvider.swift"; then echo 'FAIL: embedded readiness provider must not run shell commands'; exit 1; fi
+grep -q 'EmbeddedToolchainTweakManifest' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: native provider manifest gate missing'; exit 1; }
+grep -q 'completedWithArtifacts' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: native provider artifact result missing'; exit 1; }
+grep -q 'publishRootlessDeb' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: native provider DEB publication missing'; exit 1; }
+if grep -q 'context.executor' "$build/EmbeddedToolchainBuildProvider.swift"; then echo 'FAIL: native provider must not run shell commands'; exit 1; fi
 grep -q '"verification": verified ? @"passed" : @"missing"' src/ios/Vendor/OMToolchain/OMToolchain.mm || { echo 'FAIL: bridge verification status missing'; exit 1; }
 grep -q 'linked && verified && headersReady && sdkReady' src/ios/Vendor/OMToolchain/OMToolchain.mm || { echo 'FAIL: bridge readiness does not require verification gate'; exit 1; }
 grep -q '^protocol BuildProvider' "$build/BuildProviders.swift" || { echo 'FAIL: BuildProvider seam missing'; exit 1; }

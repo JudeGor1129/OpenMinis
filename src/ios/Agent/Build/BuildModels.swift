@@ -29,6 +29,7 @@ enum ProjectBuildKind: String, Codable, Sendable {
     case xcode
     case swiftPackage = "swift_package"
     case theos
+    case embeddedTweak = "embedded_tweak"
     case gradle
     case cargo
     case cmake
@@ -248,10 +249,22 @@ struct BuildProviderContext {
     let inspection: BuildProjectInspection
     let request: BuildRequest
     let executor: BuildShellExecutor
+    /// An App Group URL resolved from the active session workspace. It is never
+    /// derived by the provider from an arbitrary guest path.
+    let nativeWorkspaceRoot: URL?
+
+    init(inspection: BuildProjectInspection, request: BuildRequest,
+         executor: @escaping BuildShellExecutor, nativeWorkspaceRoot: URL? = nil) {
+        self.inspection = inspection
+        self.request = request
+        self.executor = executor
+        self.nativeWorkspaceRoot = nativeWorkspaceRoot
+    }
 }
 
 enum BuildProviderExecution {
     case completed(BuildCommandExecution)
+    case completedWithArtifacts(BuildCommandExecution, [ArtifactVerificationResult])
     case unavailable(BuildProviderAvailability)
 }
 

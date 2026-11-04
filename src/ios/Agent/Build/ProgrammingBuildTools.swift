@@ -7,17 +7,31 @@ final class ProgrammingBuildTools {
 
     private init() {}
 
-    func build(request: BuildRequest, executor: @escaping BuildShellExecutor) async throws -> BuildToolResult {
+    func build(request: BuildRequest, executor: @escaping BuildShellExecutor,
+               nativeWorkspaceRoot: URL? = nil) async throws -> BuildToolResult {
         guard (1...5).contains(request.maxAttempts) else {
             throw BuildToolError.invalidArguments("max_attempts must be between 1 and 5.")
         }
         guard (1...request.maxAttempts).contains(request.attempt) else {
             throw BuildToolError.invalidArguments("attempt must be between 1 and max_attempts; the workflow stops after its configured repair budget.")
         }
-        let inspection = try await BuildProjectDetector.inspect(path: request.projectPath, executor: executor)
-        let baseContext = BuildProviderContext(inspection: inspection, request: request, executor: executor)
+        let isEmbedded = request.provider == .embeddedToolchain
+        let inspection: BuildProjectInspection
+        if isEmbedded {
+            inspection = BuildProjectInspection(canonicalPath: request.projectPath, kind: .embeddedTweak,
+                manifests: ["./MinisTweak.json"], languageStack: ["C", "Objective-C"],
+                gitBranch: nil, gitCommit: nil, gitIsDirty: true, gitRemote: nil,
+                suggestedProviders: [.embeddedToolchain], suggestedCommands: [])
+        } else {
+            inspection = try await BuildProjectDetector.inspect(path: request.projectPath, executor: executor)
+        }
+        let baseContext = BuildProviderContext(inspection: inspection, request: request, executor: executor,
+                                               nativeWorkspaceRoot: isEmbedded ? nativeWorkspaceRoot : nil)
         var availability: [BuildProviderAvailability] = []
-        for provider in BuildProviderRegistry.providers {
+        let providersToProbe = isEmbedded
+            ? BuildProviderRegistry.providers.filter { $0.id == .embeddedToolchain }
+            : BuildProviderRegistry.providers
+        for provider in providersToProbe {
             availability.append(await provider.availability(for: baseContext))
         }
         let selectedID = selectProvider(requested: request.provider, inspection: inspection, availability: availability)
@@ -74,7 +88,8 @@ final class ProgrammingBuildTools {
             : request.toolchain
         let cacheFingerprint = fingerprint(inspection: inspection, configuration: request.configuration, toolchain: toolchain)
 
-        if request.cachePolicy == .use,
+        if !isEmbedded,
+           request.cachePolicy == .use,
            inspection.gitCommit != nil,
            !inspection.gitIsDirty,
            let cached = try? await BuildRunStore.shared.cachedSuccess(fingerprint: cacheFingerprint, provider: selectedID) {
@@ -105,18 +120,22 @@ final class ProgrammingBuildTools {
             }
         }
 
-        let context = BuildProviderContext(inspection: inspection, request: request, executor: executor)
+        let context = BuildProviderContext(inspection: inspection, request: request, executor: executor,
+                                           nativeWorkspaceRoot: isEmbedded ? nativeWorkspaceRoot : nil)
         let buildExecution: BuildCommandExecution?
         let buildState: BuildState
+        var providerArtifacts: [ArtifactVerificationResult] = []
         switch await provider.build(context: context, runID: runID) {
         case .unavailable:
             buildExecution = nil
             buildState = .unavailable
         case .completed(let execution):
             buildExecution = execution
-            // This is the sole build-success gate. Text such as "BUILD SUCCEEDED"
-            // never overrides a non-zero/missing process status.
             buildState = execution.exitCode == 0 ? .success : .failed
+        case .completedWithArtifacts(let execution, let artifacts):
+            buildExecution = execution
+            providerArtifacts = artifacts
+            buildState = execution.exitCode == 0 && artifacts.allSatisfy({ $0.state == .available }) ? .success : .failed
         }
 
         let analysisText = [
@@ -134,13 +153,15 @@ final class ProgrammingBuildTools {
                 testsState = .unavailable
             case .completed(let execution):
                 testExecution = execution
-                // This is the sole test-pass gate.
+                testsState = execution.exitCode == 0 ? .passed : .failed
+            case .completedWithArtifacts(let execution, _):
+                testExecution = execution
                 testsState = execution.exitCode == 0 ? .passed : .failed
             }
         }
 
-        var artifacts: [ArtifactVerificationResult] = []
-        if buildState == .success {
+        var artifacts: [ArtifactVerificationResult] = providerArtifacts
+        if buildState == .success && !isEmbedded {
             for path in request.artifactPaths {
                 artifacts.append(await ArtifactVerifier.verify(path: path, requestedKind: nil, executor: executor))
             }
@@ -167,9 +188,20 @@ final class ProgrammingBuildTools {
         return await persist(result, configuration: request.configuration, toolchain: toolchain)
     }
 
-    func runTests(request: BuildRequest, executor: @escaping BuildShellExecutor) async throws -> RunTestsResult {
-        let inspection = try await BuildProjectDetector.inspect(path: request.projectPath, executor: executor)
-        let context = BuildProviderContext(inspection: inspection, request: request, executor: executor)
+    func runTests(request: BuildRequest, executor: @escaping BuildShellExecutor,
+                  nativeWorkspaceRoot: URL? = nil) async throws -> RunTestsResult {
+        let isEmbedded = request.provider == .embeddedToolchain
+        let inspection: BuildProjectInspection
+        if isEmbedded {
+            inspection = BuildProjectInspection(canonicalPath: request.projectPath, kind: .embeddedTweak,
+                manifests: [".\/MinisTweak.json"], languageStack: ["C", "Objective-C"],
+                gitBranch: nil, gitCommit: nil, gitIsDirty: true, gitRemote: nil,
+                suggestedProviders: [.embeddedToolchain], suggestedCommands: [])
+        } else {
+            inspection = try await BuildProjectDetector.inspect(path: request.projectPath, executor: executor)
+        }
+        let context = BuildProviderContext(inspection: inspection, request: request, executor: executor,
+                                           nativeWorkspaceRoot: isEmbedded ? nativeWorkspaceRoot : nil)
         let requestedID = request.provider ?? inspection.suggestedCommands.first(where: { $0.purpose == "test" })?.provider ?? .localISH
         guard let provider = BuildProviderRegistry.provider(requestedID) else {
             throw BuildToolError.invalidArguments("Unknown build provider.")
@@ -183,6 +215,9 @@ final class ProgrammingBuildTools {
         case .unavailable(let unavailable):
             return RunTestsResult(runID: runID, project: inspection, providerAvailability: unavailable, state: .unavailable, execution: nil, diagnostics: BuildLogAnalyzer.analyze(""), createdAt: Date())
         case .completed(let execution):
+            let diagnostics = BuildLogAnalyzer.analyze([execution.diagnosticExcerpt, execution.stderrSummary, execution.stdoutSummary].joined(separator: "\n"))
+            return RunTestsResult(runID: runID, project: inspection, providerAvailability: availability, state: execution.exitCode == 0 ? .passed : .failed, execution: execution, diagnostics: diagnostics, createdAt: Date())
+        case .completedWithArtifacts(let execution, _):
             let diagnostics = BuildLogAnalyzer.analyze([execution.diagnosticExcerpt, execution.stderrSummary, execution.stdoutSummary].joined(separator: "\n"))
             return RunTestsResult(runID: runID, project: inspection, providerAvailability: availability, state: execution.exitCode == 0 ? .passed : .failed, execution: execution, diagnostics: diagnostics, createdAt: Date())
         }

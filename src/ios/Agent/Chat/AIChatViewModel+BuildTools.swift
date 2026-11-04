@@ -6,11 +6,11 @@ extension AIChatViewModel {
         return [
             AgentToolDefinition(
                 name: "build_project",
-                description: "Inspect a project, select or validate a real BuildProvider, execute a build, parse diagnostics, optionally run tests, verify requested artifacts, and persist the build run. Providers: local_ish, theos, remote_github_actions, mac_ssh. Unconfigured providers return structured unavailable status. Build success requires exit code 0; tests passed requires test exit code 0; artifacts are available only after verification. Repair workflows are capped at 3-5 attempts.",
+                description: "Build a project through a real provider and persist the run. embedded_toolchain is a no-shell native path for the active session workspace only: it requires MinisTweak.json, builds arm64+arm64e, and atomically exports a verified rootless DEB. It rejects arbitrary commands, installs, signing, and execution. Other providers retain their configured command workflows.",
                 parameters: [
                     "tool_title": title,
-                    "project_path": AgentToolParam(type: .string, description: "Absolute iSH/Linux project directory."),
-                    "provider": AgentToolParam(type: .string, description: "Optional provider. Omit to probe and select from project suggestions.", enumValues: BuildProviderID.allCases.map(\.rawValue)),
+                    "project_path": AgentToolParam(type: .string, description: "Absolute iSH path; for embedded_toolchain use /var/minis/workspace/<project> in the active session workspace."),
+                    "provider": AgentToolParam(type: .string, description: "Optional provider. Use embedded_toolchain for the native no-shell path.", enumValues: BuildProviderID.allCases.map(\.rawValue)),
                     "configuration": AgentToolParam(type: .string, description: "Build configuration such as Debug or Release (default Debug)."),
                     "toolchain": AgentToolParam(type: .string, description: "Toolchain identity. Default auto probes the selected provider and includes it in the cache fingerprint."),
                     "command": AgentToolParam(type: .string, description: "Optional explicit build command. Never include credentials; configure them in the provider environment."),
@@ -80,14 +80,18 @@ extension AIChatViewModel {
             switch name {
             case "build_project":
                 let request = try buildRequest(from: args, forTestsOnly: false)
-                let result = try await ProgrammingBuildTools.shared.build(request: request, executor: executor)
+                let nativeWorkspaceRoot = request.provider == .embeddedToolchain ? sessionWorkspaceDirectory : nil
+                let result = try await ProgrammingBuildTools.shared.build(
+                    request: request, executor: executor, nativeWorkspaceRoot: nativeWorkspaceRoot)
                 let output = try encodeToolOutput(result, encoder: encoder)
                 let artifactRequirementMet = request.artifactPaths.isEmpty || result.artifacts.allSatisfy { $0.state == .available }
                 let testRequirementMet = request.testCommand == nil || result.testsState == .passed
                 return FileToolResult(output: output, success: result.buildState == .success && artifactRequirementMet && testRequirementMet && result.persistenceError == nil)
             case "run_tests":
                 let request = try buildRequest(from: args, forTestsOnly: true)
-                let result = try await ProgrammingBuildTools.shared.runTests(request: request, executor: executor)
+                let nativeWorkspaceRoot = request.provider == .embeddedToolchain ? sessionWorkspaceDirectory : nil
+                let result = try await ProgrammingBuildTools.shared.runTests(
+                    request: request, executor: executor, nativeWorkspaceRoot: nativeWorkspaceRoot)
                 return FileToolResult(output: try encodeToolOutput(result, encoder: encoder), success: result.state == .passed)
             case "analyze_build_log":
                 let analysis = try await ProgrammingBuildTools.shared.analyzeBuildLog(path: args["log_path"] as? String, text: args["log_text"] as? String, executor: executor)

@@ -50,6 +50,28 @@ struct EmbeddedDebMetadata: Codable, Equatable, Sendable {
     }
 }
 
+/// Fixed-name project manifest consumed only by the native embedded provider.
+/// It contains package metadata, never commands, paths or toolchain arguments.
+struct EmbeddedToolchainTweakManifest: Codable, Equatable, Sendable {
+    static let filename = "MinisTweak.json"
+    static let maxBytes = 16 * 1024
+    let schema: Int
+    let package: EmbeddedDebMetadata
+
+    func validate() throws {
+        guard schema == 1 else { throw EmbeddedAdapterError.rejected("unsupported MinisTweak.json schema") }
+        try package.validate()
+    }
+
+    static func load(from projectRoot: URL) throws -> EmbeddedToolchainTweakManifest {
+        let data = try EmbeddedToolchainProjectSnapshotBuilder.readBoundedProjectFile(
+            filename, root: projectRoot, limit: maxBytes)
+        let manifest = try JSONDecoder().decode(Self.self, from: data)
+        try manifest.validate()
+        return manifest
+    }
+}
+
 struct EmbeddedDebArtifact: Codable, Equatable, Sendable {
     let filename: String
     let bytes: Int

@@ -70,9 +70,11 @@ for cc1_flag in ("-fdefine-target-os-macros", "-target-cpu",
             "CC1 must receive clang Driver's SDK/builtin configuration: " + cc1_flag)
 require("Task.detached" in view and "最多重复 3 轮" in view,
         "UI must run off-main and disclose the bounded repetition")
-require(provider.count(".unavailable(await availability(for: context))") == 2,
-        "BuildProvider build/test must remain unavailable")
-require("state: .unavailable" in provider, "BuildProvider availability must remain unavailable")
+require("EmbeddedToolchainTweakManifest" in provider and "executeUniversal" in provider and
+        "completedWithArtifacts" in provider and "publishRootlessDeb" in provider,
+        "embedded provider must be manifest-gated, return verified packages and use the native adapter")
+require("state: .available" in provider and "state: .unavailable" in provider,
+        "provider must expose availability only when runtime and project gates pass")
 require("OMRunLinkerCapturing" in toolchain_impl and "OMStdioCaptureBegin(&capture" in toolchain_impl,
         "runLinker must capture ld64's stdout/stderr while the call is in flight")
 require(toolchain_impl.count("run.exitStatus = invoke();") == 1,

@@ -108,8 +108,7 @@ struct LocalISHBuildProvider: BuildProvider {
         case .cargo: return "cargo"
         case .cmake: return "cmake"
         case .make, .theos: return "make"
-        case .node: return "npm"
-        default: return nil
+        case .embeddedTweak, .node: return nil
         }
     }
 }
