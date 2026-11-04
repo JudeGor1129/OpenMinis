@@ -24,6 +24,8 @@ enum EmbeddedToolchainProjectPublisherError: Error, Equatable, LocalizedError, S
     case writeFailed(Int32)
     case syncFailed(Int32)
     case replaceFailed(Int32)
+    case readBackFailed(Int32)
+    case committedButUnverified(String, directorySynced: Bool)
 
     var errorDescription: String? {
         switch self {
@@ -37,6 +39,9 @@ enum EmbeddedToolchainProjectPublisherError: Error, Equatable, LocalizedError, S
         case .writeFailed(let code): return "cannot write verified output (errno \(code))"
         case .syncFailed(let code): return "cannot sync verified output (errno \(code))"
         case .replaceFailed(let code): return "cannot atomically publish verified output (errno \(code))"
+        case .readBackFailed(let code): return "published output could not be read back safely (errno \(code))"
+        case .committedButUnverified(let reason, let synced):
+            return "destination rename committed, but final verification failed (directory synced: \(synced)): \(reason)"
         }
     }
 }
@@ -129,10 +134,86 @@ enum EmbeddedToolchainProjectPublisher {
             tempExists = false
         }
         let directorySynced = fsync(outputFD) == 0
-        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        return EmbeddedToolchainPublishedArtifact(relativePath: "\(outputDirectory)/\(name)",
-            bytes: data.count, sha256: hash, architecture: architecture, filetype: filetype,
-            artifactKind: kind, directorySynced: directorySynced)
+        do {
+            let hash = try readBackVerified(data, named: name, under: outputFD, publishedDescriptor: tempFD)
+            guard directoryEntryMatches(rootFD, name: "build", descriptor: buildFD),
+                  directoryEntryMatches(buildFD, name: "minis-embedded", descriptor: outputFD) else {
+                throw EmbeddedToolchainProjectPublisherError.readBackFailed(EIO)
+            }
+            let currentRootFD = try openCanonicalDirectory(root)
+            defer { close(currentRootFD) }
+            guard sameDirectoryIdentity(rootFD, currentRootFD) else {
+                throw EmbeddedToolchainProjectPublisherError.readBackFailed(EIO)
+            }
+            return EmbeddedToolchainPublishedArtifact(relativePath: "\(outputDirectory)/\(name)",
+                bytes: data.count, sha256: hash, architecture: architecture, filetype: filetype,
+                artifactKind: kind, directorySynced: directorySynced)
+        } catch {
+            throw EmbeddedToolchainProjectPublisherError.committedButUnverified(
+                error.localizedDescription, directorySynced: directorySynced)
+        }
+    }
+
+    /// Read the final directory entry, not the original in-memory buffer. The
+    /// write descriptor pins the inode that rename committed; fstatat also
+    /// rejects replacement/unlink while the bounded streaming read is in flight.
+    /// After rename there are deliberately no cancellation checks: commit won.
+    static func readBackVerified(_ expected: Data, named name: String, under directory: Int32,
+                                 publishedDescriptor: Int32) throws -> String {
+        guard safeOutputFilename(name), !expected.isEmpty,
+              expected.count <= EmbeddedToolchainDebPackage.maxBytes else {
+            throw EmbeddedToolchainProjectPublisherError.readBackFailed(EINVAL)
+        }
+        let descriptor = name.withCString {
+            openat(directory, $0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        }
+        guard descriptor >= 0 else { throw EmbeddedToolchainProjectPublisherError.readBackFailed(errno) }
+        defer { close(descriptor) }
+        var committed = stat()
+        var before = stat()
+        guard fstat(publishedDescriptor, &committed) == 0, fstat(descriptor, &before) == 0,
+              before.st_mode & S_IFMT == S_IFREG,
+              before.st_size == off_t(expected.count), before.st_nlink > 0,
+              committed.st_dev == before.st_dev, committed.st_ino == before.st_ino,
+              committed.st_size == before.st_size else {
+            throw EmbeddedToolchainProjectPublisherError.readBackFailed(EIO)
+        }
+        var digest = SHA256()
+        var total = 0
+        var buffer = [UInt8](repeating: 0, count: 16 * 1024)
+        while true {
+            let count = buffer.withUnsafeMutableBytes { bytes in
+                Darwin.read(descriptor, bytes.baseAddress, bytes.count)
+            }
+            if count < 0 && errno == EINTR { continue }
+            guard count >= 0 else { throw EmbeddedToolchainProjectPublisherError.readBackFailed(errno) }
+            if count == 0 { break }
+            guard count <= expected.count - total else {
+                throw EmbeddedToolchainProjectPublisherError.readBackFailed(EIO)
+            }
+            let block = Data(buffer[0..<count])
+            guard expected[total..<(total + count)].elementsEqual(block) else {
+                throw EmbeddedToolchainProjectPublisherError.readBackFailed(EIO)
+            }
+            digest.update(data: block)
+            total += count
+        }
+        var after = stat()
+        var entry = stat()
+        let entryStatus = name.withCString { fstatat(directory, $0, &entry, AT_SYMLINK_NOFOLLOW) }
+        guard total == expected.count, fstat(descriptor, &after) == 0, entryStatus == 0,
+              after.st_mode & S_IFMT == S_IFREG, entry.st_mode & S_IFMT == S_IFREG,
+              after.st_dev == before.st_dev, after.st_ino == before.st_ino,
+              entry.st_dev == after.st_dev, entry.st_ino == after.st_ino,
+              after.st_size == before.st_size, entry.st_size == after.st_size,
+              after.st_nlink > 0,
+              before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec,
+              before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec,
+              before.st_ctimespec.tv_sec == after.st_ctimespec.tv_sec,
+              before.st_ctimespec.tv_nsec == after.st_ctimespec.tv_nsec else {
+            throw EmbeddedToolchainProjectPublisherError.readBackFailed(EIO)
+        }
+        return digest.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private static func writeAll(_ data: Data, to descriptor: Int32) throws {
@@ -167,6 +248,23 @@ enum EmbeddedToolchainProjectPublisher {
             close(descriptor); throw EmbeddedToolchainProjectPublisherError.invalidRoot("descriptor is not a directory")
         }
         return descriptor
+    }
+
+    private static func sameDirectoryIdentity(_ lhs: Int32, _ rhs: Int32) -> Bool {
+        var left = stat()
+        var right = stat()
+        guard fstat(lhs, &left) == 0, fstat(rhs, &right) == 0 else { return false }
+        return left.st_mode & S_IFMT == S_IFDIR && right.st_mode & S_IFMT == S_IFDIR &&
+            left.st_dev == right.st_dev && left.st_ino == right.st_ino
+    }
+
+    private static func directoryEntryMatches(_ parent: Int32, name: String, descriptor: Int32) -> Bool {
+        var entry = stat()
+        guard name.withCString({ fstatat(parent, $0, &entry, AT_SYMLINK_NOFOLLOW) }) == 0 else { return false }
+        var opened = stat()
+        guard fstat(descriptor, &opened) == 0 else { return false }
+        return entry.st_mode & S_IFMT == S_IFDIR && opened.st_mode & S_IFMT == S_IFDIR &&
+            entry.st_dev == opened.st_dev && entry.st_ino == opened.st_ino
     }
 
     private static func openOrCreateDirectory(_ name: String, under parent: Int32) throws -> Int32 {

@@ -31,7 +31,7 @@ extension AIChatViewModel {
                 description: "Run a real test command through the same BuildProvider seam. Only exit code 0 yields passed; unavailable providers and missing commands are reported structurally.",
                 parameters: [
                     "tool_title": title,
-                    "project_path": AgentToolParam(type: .string, description: "Absolute iSH/Linux project directory."),
+                    "project_path": AgentToolParam(type: .string, description: "Absolute iSH path; for embedded_toolchain use /var/minis/workspace/<project> in the active session workspace."),
                     "provider": AgentToolParam(type: .string, description: "Optional provider.", enumValues: BuildProviderID.allCases.map(\.rawValue)),
                     "test_command": AgentToolParam(type: .string, description: "Explicit test command, or dedicated workflow filename for remote_github_actions."),
                     "configuration": AgentToolParam(type: .string, description: "Configuration (default Debug)."),

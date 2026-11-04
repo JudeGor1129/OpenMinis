@@ -2,6 +2,46 @@ import Foundation
 
 private struct ExecutionContractFailure: Error { let description: String }
 
+/// A one-shot, bounded async gate. Every continuation is resumed exactly once,
+/// either by open() or by its watchdog. open() cancels the watchdog immediately.
+private actor ExecutionContractGate {
+    private var result: Bool?
+    private var waiter: CheckedContinuation<Bool, Never>?
+    private var watchdog: Task<Void, Never>?
+
+    func wait() async -> Bool {
+        if let result { return result }
+        precondition(waiter == nil, "only one waiter per contract gate")
+        return await withCheckedContinuation { continuation in
+            waiter = continuation
+            watchdog = Task {
+                do { try await Task.sleep(nanoseconds: 10_000_000_000) }
+                catch { return }
+                self.finish(false)
+            }
+        }
+    }
+
+    func open() { finish(true) }
+
+    private func finish(_ value: Bool) {
+        guard result == nil else { return }
+        result = value
+        let continuation = waiter
+        waiter = nil
+        watchdog?.cancel()
+        watchdog = nil
+        continuation?.resume(returning: value)
+    }
+}
+
+private enum ScopedDeliveryOutcome: Sendable {
+    case published(EmbeddedToolchainPublishedArtifact)
+    case cancelled
+    case gateTimedOut
+    case failed(String)
+}
+
 /// Compiled beside the adapter harness; FakeBridge is the same test seam.
 @MainActor
 enum RestrictedExecutionContracts {
@@ -97,7 +137,131 @@ enum RestrictedExecutionContracts {
                 !FileManager.default.fileExists(atPath: $0)
             }, "failed link cleanup")
         }
+        checks += try await sharedCancellationContracts(request: universalRequest, metadata: metadata)
         print("PASS: \(checks) restricted execution/capture/cancellation contracts (fake bridge only)")
+        return checks
+    }
+
+    private static func sharedCancellationContracts(request: EmbeddedToolchainRestrictedRequest,
+                                                    metadata: EmbeddedDebMetadata) async throws -> Int {
+        var checks = 0
+        func require(_ condition: Bool, _ message: String) throws {
+            checks += 1
+            if !condition { throw ExecutionContractFailure(description: message) }
+        }
+        let fm = FileManager.default
+        let parent = fm.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("shared-cancellation-" + UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: parent, withIntermediateDirectories: false)
+        defer { try? fm.removeItem(at: parent) }
+        func project(_ name: String) throws -> (URL, URL) {
+            let root = parent.appendingPathComponent(name, isDirectory: true)
+            let output = root.appendingPathComponent(EmbeddedToolchainProjectPublisher.outputDirectory, isDirectory: true)
+            try fm.createDirectory(at: output, withIntermediateDirectories: true)
+            return (root, output)
+        }
+        // A distinct, valid old package makes accidental replacement observable.
+        var oldArm64 = MachOFixture.image(filetype: 6, installName: "@rpath/" + metadata.dylibName)
+        oldArm64[oldArm64.count - 1] = 0
+        var oldArm64e = oldArm64
+        MachOFixture.patch(&oldArm64e, 8, 0x80000002)
+        let oldFat = try EmbeddedToolchainUniversalBinary.merge(
+            arm64: oldArm64, arm64e: oldArm64e, name: metadata.dylibName)
+        let oldDeb = try EmbeddedToolchainDebPackage.build(dylib: oldFat, metadata: metadata)
+
+        // The ordinary path must really execute both fake slices, package and publish.
+        let (normalRoot, normalOutput) = try project("normal")
+        let normalFake = FakeBridge()
+        let normalExecutor = EmbeddedToolchainRestrictedExecutor(adapter: EmbeddedToolchainExecutionAdapter(bridge: normalFake))
+        let normal = await EmbeddedToolchainCancellationScope.run { token in
+            let delivery = await normalExecutor.executeUniversal(request, metadata: metadata, cancellation: token)
+            guard delivery.passed, let deb = delivery.debData, let evidence = delivery.debArtifact else {
+                return ScopedDeliveryOutcome.failed("normal delivery: " + delivery.reason)
+            }
+            do {
+                let published = try await Task.detached {
+                    try EmbeddedToolchainProjectPublisher.publishRootlessDeb(
+                        deb, metadata: metadata, projectRoot: normalRoot, cancellation: token)
+                }.value
+                guard published.sha256 == evidence.sha256, published.bytes == evidence.bytes else {
+                    return .failed("published artifact does not match delivery evidence")
+                }
+                return .published(published)
+            } catch { return .failed("normal publish: \(error)") }
+        }
+        guard case let .published(published) = normal else {
+            throw ExecutionContractFailure(description: "uncancelled scope must publish: \(normal)")
+        }
+        let normalDeb = try Data(contentsOf: normalOutput.appendingPathComponent(metadata.filename))
+        try require(published.artifactKind == "rootless_deb" &&
+                    published.sha256 == EmbeddedAdapterArtifact.digest(normalDeb) && normalDeb != oldDeb,
+                    "normal scope publishes verified new DEB")
+        try require(try fm.contentsOfDirectory(atPath: normalOutput.path) == [metadata.filename] &&
+                    normalFake.snapshot().kinds == ["compile", "compile", "link", "compile", "compile", "link"],
+                    "normal scope performs both slices without temporary output")
+
+        let (cancelRoot, cancelOutput) = try project("cancel")
+        let oldPath = cancelOutput.appendingPathComponent(metadata.filename)
+        try oldDeb.write(to: oldPath)
+        let cancelFake = FakeBridge()
+        let cancelExecutor = EmbeddedToolchainRestrictedExecutor(adapter: EmbeddedToolchainExecutionAdapter(bridge: cancelFake))
+        let deliveryReady = ExecutionContractGate()
+        let publishRelease = ExecutionContractGate()
+        let task = Task {
+            await EmbeddedToolchainCancellationScope.run { token in
+                let delivery = await cancelExecutor.executeUniversal(request, metadata: metadata, cancellation: token)
+                guard delivery.passed, let deb = delivery.debData else {
+                    await deliveryReady.open()
+                    return ScopedDeliveryOutcome.failed("delivery before cancellation: " + delivery.reason)
+                }
+                await deliveryReady.open()
+                guard await publishRelease.wait() else { return .gateTimedOut }
+                do {
+                    // A detached child does not inherit cancellation: this only
+                    // works if the very same scope token reaches the publisher.
+                    let artifact = try await Task.detached {
+                        try EmbeddedToolchainProjectPublisher.publishRootlessDeb(
+                            deb, metadata: metadata, projectRoot: cancelRoot, cancellation: token)
+                    }.value
+                    return .published(artifact)
+                } catch is CancellationError { return .cancelled }
+                catch { return .failed("cancelled publish: \(error)") }
+            }
+        }
+        let reachedPublicationBoundary = await deliveryReady.wait()
+        task.cancel()
+        await publishRelease.open()
+        let cancelled = await task.value
+        try require(reachedPublicationBoundary, "delivery must reach the pre-publication barrier before timeout")
+        guard case .cancelled = cancelled else {
+            throw ExecutionContractFailure(description: "cancelled scope published or failed unexpectedly: \(cancelled)")
+        }
+        try require(cancelFake.snapshot().kinds == ["compile", "compile", "link", "compile", "compile", "link"],
+                    "both delivery slices completed before cancellation")
+        try require(try Data(contentsOf: oldPath) == oldDeb, "cancelled publication preserves old DEB byte-for-byte")
+        try require(try fm.contentsOfDirectory(atPath: cancelOutput.path) == [metadata.filename],
+                    "cancelled publication returns no artifact and leaves no temporary files")
+
+        // Cancel the parent Task before it enters the scope, without any sleeps.
+        let preEntryReady = ExecutionContractGate()
+        let preEntryRelease = ExecutionContractGate()
+        let preFake = FakeBridge()
+        let preExecutor = EmbeddedToolchainRestrictedExecutor(adapter: EmbeddedToolchainExecutionAdapter(bridge: preFake))
+        let preTask = Task {
+            await preEntryReady.open()
+            guard await preEntryRelease.wait() else { return false }
+            return await EmbeddedToolchainCancellationScope.run { token in
+                let alreadyCancelled = token.isCancelled
+                let delivery = await preExecutor.executeUniversal(request, metadata: metadata, cancellation: token)
+                return alreadyCancelled && !delivery.passed && delivery.debData == nil && delivery.reason == "cancelled"
+            }
+        }
+        let preReady = await preEntryReady.wait()
+        preTask.cancel()
+        await preEntryRelease.open()
+        let preCancelled = await preTask.value
+        try require(preReady && preCancelled && preFake.snapshot().calls.isEmpty,
+                    "already-cancelled parent enters scope with token cancelled and no bridge calls")
         return checks
     }
 }

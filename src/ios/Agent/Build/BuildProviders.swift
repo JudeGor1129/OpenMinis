@@ -108,7 +108,7 @@ struct LocalISHBuildProvider: BuildProvider {
         case .cargo: return "cargo"
         case .cmake: return "cmake"
         case .make, .theos: return "make"
-        case .embeddedTweak, .node: return nil
+        case .embeddedTweak, .node, .gradle, .mixed, .unknown: return nil
         }
     }
 }

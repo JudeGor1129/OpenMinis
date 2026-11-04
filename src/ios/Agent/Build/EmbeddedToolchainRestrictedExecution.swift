@@ -1,5 +1,21 @@
 import Foundation
 
+/// One cancellation token for the entire asynchronous delivery, including any
+/// detached publication. Pass it unchanged to the adapter, package and publisher.
+/// The operation still runs when the task was already cancelled, with the token
+/// already cancelled. Publication's commitIfNotCancelled remains the arbiter:
+/// cancellation after its rename has won does not undo a committed artifact.
+enum EmbeddedToolchainCancellationScope {
+    static func run<T: Sendable>(_ operation: @escaping @Sendable (EmbeddedAdapterCancellation) async -> T) async -> T {
+        let cancellation = EmbeddedAdapterCancellation()
+        return await withTaskCancellationHandler(operation: {
+            await operation(cancellation)
+        }, onCancel: {
+            cancellation.cancel()
+        })
+    }
+}
+
 /// Verification-only execution seam for a validated immutable request.
 /// It returns adapter evidence and deliberately has no output publication verb.
 struct EmbeddedToolchainRestrictedExecutionReport: Sendable {

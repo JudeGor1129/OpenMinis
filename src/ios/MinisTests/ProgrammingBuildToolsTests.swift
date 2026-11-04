@@ -74,6 +74,32 @@ final class ProgrammingBuildToolsTests: XCTestCase {
         XCTAssertEqual(shellCalls.value, 0)
     }
 
+    func testEmbeddedFailurePreservesFirstCompilerErrorAndRealSamples() {
+        var result = EmbeddedAdapterResult()
+        result.state = "diagnostics"
+        result.reason = "compiler/linker rejected the bounded input"
+        result.residentSamplesBytes = [100, 140, 110]
+        result.processLinkCount = 1
+        result.steps = [EmbeddedAdapterStep(operation: "unit0.o", status: 1, stdout: "",
+            stderr: "source.c:4:2: error: expected ';'\n" + String(repeating: "a warning line\n", count: 300))]
+        let provider = EmbeddedToolchainBuildProvider()
+        guard case .completed(let execution) = provider.failedExecution(result.reason, runID: "test",
+                                                                        started: Date(), reports: [result]) else {
+            return XCTFail("native compiler failure must not return an available artifact")
+        }
+        XCTAssertEqual(execution.exitCode, 1)
+        XCTAssertEqual(execution.remoteMetadata["resident_samples_by_architecture"], "arm64=100,140,110")
+        XCTAssertEqual(execution.remoteMetadata["peak_observed_resident_bytes"], "140")
+        XCTAssertEqual(execution.remoteMetadata["arm64_observed_growth_from_first_sample_bytes"], "40")
+        XCTAssertEqual(execution.remoteMetadata["process_link_count"], "1")
+        XCTAssertEqual(execution.fullLogPath, "")
+        let first = BuildLogAnalyzer.analyze(execution.diagnosticExcerpt).firstError
+        XCTAssertEqual(first?.file, "source.c")
+        XCTAssertEqual(first?.line, 4)
+        XCTAssertEqual(first?.column, 2)
+        XCTAssertTrue(first?.message.contains("expected") == true)
+    }
+
     func testEmbeddedOperationRejectsUnsafeInputs() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

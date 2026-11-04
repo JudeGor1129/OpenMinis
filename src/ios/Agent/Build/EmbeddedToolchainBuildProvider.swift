@@ -214,53 +214,71 @@ struct EmbeddedToolchainBuildProvider: BuildProvider {
     }
 
     func build(context: BuildProviderContext, runID: String) async -> BuildProviderExecution {
-        let ready = await availability(for: context)
-        guard ready.isAvailable else { return .unavailable(ready) }
         let started = Date()
-        do {
-            let prepared = try await prepare(context)
-            let delivery = await EmbeddedToolchainRestrictedExecutor.shared.executeUniversal(
-                prepared.request, metadata: prepared.metadata)
-            guard delivery.passed, let deb = delivery.debData,
-                  let debEvidence = delivery.debArtifact,
-                  let universal = delivery.universalArtifact else {
-                return failedExecution(delivery.reason.isEmpty ? "native dual-target build or DEB verification failed" : delivery.reason,
-                    runID: runID, started: started)
+        let cancellation = EmbeddedAdapterCancellation()
+        return await withTaskCancellationHandler {
+            var reports: [EmbeddedAdapterResult] = []
+            do {
+                guard !cancellation.isCancelled else { throw CancellationError() }
+                let ready = await availability(for: context)
+                guard !cancellation.isCancelled else { throw CancellationError() }
+                guard ready.isAvailable else { return .unavailable(ready) }
+                let prepared = try await prepare(context)
+                guard !cancellation.isCancelled else { throw CancellationError() }
+                let delivery = await EmbeddedToolchainRestrictedExecutor.shared.executeUniversal(
+                    prepared.request, metadata: prepared.metadata, cancellation: cancellation)
+                reports = delivery.adapterReports
+                guard delivery.passed, let deb = delivery.debData,
+                      let debEvidence = delivery.debArtifact,
+                      let universal = delivery.universalArtifact else {
+                    return failedExecution(delivery.reason.isEmpty ? "native dual-target build or DEB verification failed" : delivery.reason,
+                        runID: runID, started: started, reports: reports)
+                }
+                // Check all in-memory evidence before committing the destination.
+                guard reports.count == 2, universal.slices.count == 2,
+                      reports[0].artifacts.contains(where: { $0.architecture == "arm64" && $0.sha256 == universal.slices[0].sha256 }),
+                      reports[1].artifacts.contains(where: { $0.architecture == "arm64e" && $0.sha256 == universal.slices[1].sha256 }) else {
+                    return failedExecution("per-architecture thin artifact evidence is incomplete",
+                        runID: runID, started: started, reports: reports)
+                }
+                let published = try await Task.detached(priority: .userInitiated) {
+                    try EmbeddedToolchainProjectPublisher.publishRootlessDeb(
+                        deb, metadata: prepared.metadata, projectRoot: prepared.root, cancellation: cancellation)
+                }.value
+                // A committed rename wins a concurrent late cancellation. The publisher
+                // has independently read back the committed directory entry.
+                guard published.sha256 == debEvidence.sha256, published.bytes == debEvidence.bytes else {
+                    return failedExecution("published DEB does not match the verified in-memory package; destination may already be replaced",
+                        runID: runID, started: started, reports: reports)
+                }
+                let stderr = reports.flatMap(\.steps).map(\.stderr).filter { !$0.isEmpty }.joined(separator: "\n")
+                let (safeStderr, _) = EnvVarRedactor.redactIfEnabled(String(stderr.prefix(6000)))
+                let artifactPath = prepared.artifactGuestPath
+                var metadata = reportMetadata(reports)
+                metadata["artifact_path"] = artifactPath
+                metadata["artifact_sha256"] = published.sha256
+                metadata["artifact_bytes"] = String(published.bytes)
+                metadata["fat_sha256"] = universal.sha256
+                metadata["directory_synced"] = String(published.directorySynced)
+                let execution = BuildCommandExecution(command: "embedded-toolchain: arm64 + arm64e -> rootless DEB", exitCode: 0,
+                    durationSeconds: Date().timeIntervalSince(started), stdoutSummary: reportSummary(reports),
+                    stderrSummary: safeStderr, fullLogPath: "", diagnosticExcerpt: safeStderr,
+                    remoteMetadata: metadata, remoteJobs: [], remoteArtifacts: [])
+                return .completedWithArtifacts(execution, [verifiedDEB(published, evidence: debEvidence,
+                    universal: universal, guestPath: artifactPath, metadata: prepared.metadata)])
+            } catch {
+                if let publisherError = error as? EmbeddedToolchainProjectPublisherError,
+                   case let .committedButUnverified(_, directorySynced) = publisherError {
+                    return failedExecution(error.localizedDescription, runID: runID, started: started,
+                        reports: reports, extraMetadata: ["publication_committed": "true",
+                                                         "directory_synced": String(directorySynced),
+                                                         "artifact_available": "false"])
+                }
+                return failedExecution(error is CancellationError ? "cancelled before publication" : error.localizedDescription,
+                    runID: runID, started: started, reports: reports)
             }
-            let published = try await Task.detached(priority: .userInitiated) {
-                try EmbeddedToolchainProjectPublisher.publishRootlessDeb(
-                    deb, metadata: prepared.metadata, projectRoot: prepared.root)
-            }.value
-            guard published.sha256 == debEvidence.sha256, published.bytes == debEvidence.bytes else {
-                return failedExecution("published DEB does not match the verified in-memory package",
-                    runID: runID, started: started)
-            }
-            let reports = delivery.adapterReports
-            guard reports.count == 2,
-                  reports[0].artifacts.contains(where: { $0.architecture == "arm64" && $0.sha256 == universal.slices[0].sha256 }),
-                  reports[1].artifacts.contains(where: { $0.architecture == "arm64e" && $0.sha256 == universal.slices[1].sha256 }) else {
-                return failedExecution("per-architecture thin artifact evidence is incomplete",
-                    runID: runID, started: started)
-            }
-            let stepSummary = reports.enumerated().map { pair in
-                let (index, report) = pair
-                let architecture = index == 0 ? "arm64" : "arm64e"
-                return architecture + ": " + report.steps.map { "\($0.operation)=\($0.status)" }.joined(separator: ", ")
-            }.joined(separator: "\n")
-            let stderr = reports.flatMap(\.steps).map(\.stderr).filter { !$0.isEmpty }.joined(separator: "\n")
-            let artifactPath = prepared.artifactGuestPath
-            let command = "embedded-toolchain: arm64 + arm64e -> rootless DEB"
-            let execution = BuildCommandExecution(command: command, exitCode: 0,
-                durationSeconds: Date().timeIntervalSince(started), stdoutSummary: stepSummary,
-                stderrSummary: String(stderr.prefix(6000)), fullLogPath: "",
-                diagnosticExcerpt: String(stderr.prefix(6000)),
-                remoteMetadata: ["artifact_path": artifactPath, "artifact_sha256": published.sha256,
-                                 "artifact_bytes": String(published.bytes), "fat_sha256": universal.sha256],
-                remoteJobs: [], remoteArtifacts: [])
-            return .completedWithArtifacts(execution, [verifiedDEB(published, evidence: debEvidence,
-                universal: universal, guestPath: artifactPath, metadata: prepared.metadata)])
-        } catch {
-            return failedExecution(error.localizedDescription, runID: runID, started: started)
+        } onCancel: {
+            cancellation.cancel()
         }
     }
 
@@ -335,8 +353,8 @@ struct EmbeddedToolchainBuildProvider: BuildProvider {
             "Depends": "firmware (>= 15.0), mobilesubstrate"
         ]
         let capabilities = [
-            VerificationCapability(name: "sha256", state: .verified, detail: published.sha256),
-            VerificationCapability(name: "deb_archive", state: .verified, detail: "ar/control.tar/data.tar verified in memory"),
+            VerificationCapability(name: "sha256", state: .verified, detail: "final file readback: " + published.sha256),
+            VerificationCapability(name: "deb_archive", state: .verified, detail: "ar/control.tar/data.tar inspected in memory; final file read back byte-for-byte"),
             VerificationCapability(name: "rootless_layout", state: .verified, detail: evidence.payloadPath),
             VerificationCapability(name: "fat_architectures", state: .verified, detail: universal.architectures.joined(separator: ",")),
             VerificationCapability(name: "signature", state: .notApplicable, detail: "build does not sign packages")
@@ -350,11 +368,54 @@ struct EmbeddedToolchainBuildProvider: BuildProvider {
             rootlessViolations: [], capabilities: capabilities, errors: [])
     }
 
-    private func failedExecution(_ reason: String, runID: String, started: Date) -> BuildProviderExecution {
-        let safe = String(reason.prefix(4000))
+    // Evidence is intentionally limited to actual adapter samples: no inferred
+    // process-lifetime baseline or fake complete log is reported.
+    func reportMetadata(_ reports: [EmbeddedAdapterResult]) -> [String: String] {
+        var fields = ["native_provider": "embedded_toolchain", "full_log_persisted": "false"]
+        let samples = reports.flatMap(\.residentSamplesBytes)
+        if let peak = samples.max() { fields["peak_observed_resident_bytes"] = String(peak) }
+        if !reports.isEmpty {
+            fields["resident_samples_by_architecture"] = reports.enumerated().map { index, report in
+                (index == 0 ? "arm64=" : "arm64e=") + report.residentSamplesBytes.map(String.init).joined(separator: ",")
+            }.joined(separator: ";")
+        }
+        if let last = reports.last { fields["process_link_count"] = String(last.processLinkCount) }
+        for (index, report) in reports.enumerated() where index < 2 {
+            let architecture = index == 0 ? "arm64" : "arm64e"
+            fields[architecture + "_state"] = report.state
+            fields[architecture + "_temporary_outputs_removed"] = String(report.temporaryOutputsRemoved)
+            fields[architecture + "_process_link_count"] = String(report.processLinkCount)
+            fields[architecture + "_resident_samples_bytes"] = report.residentSamplesBytes.map(String.init).joined(separator: ",")
+            if let first = report.residentSamplesBytes.first, let peak = report.residentSamplesBytes.max() {
+                fields[architecture + "_observed_growth_from_first_sample_bytes"] = String(peak > first ? peak - first : 0)
+            }
+        }
+        return fields
+    }
+
+    func reportSummary(_ reports: [EmbeddedAdapterResult]) -> String {
+        reports.enumerated().map { index, report in
+            let architecture = index == 0 ? "arm64" : "arm64e"
+            let steps = report.steps.map { "\($0.operation)=\($0.status)" }.joined(separator: ", ")
+            return architecture + " [" + report.state + "; links=" + String(report.processLinkCount) +
+                "; cleanup=" + String(report.temporaryOutputsRemoved) + "]: " + steps
+        }.joined(separator: "\n")
+    }
+
+    func failedExecution(_ reason: String, runID: String, started: Date,
+                         reports: [EmbeddedAdapterResult] = [],
+                         extraMetadata: [String: String] = [:]) -> BuildProviderExecution {
+        let stderr = reports.flatMap(\.steps).map(\.stderr).filter { !$0.isEmpty }.joined(separator: "\n")
+        let firstError = BuildLogAnalyzer.analyze(stderr).firstError?.raw
+        let bounded = String(stderr.prefix(6000))
+        let excerpt = [firstError, bounded.isEmpty ? nil : bounded, String(reason.prefix(4000))]
+            .compactMap { $0 }.joined(separator: "\n")
+        let (safe, _) = EnvVarRedactor.redactIfEnabled(excerpt)
+        var metadata = reportMetadata(reports)
+        for (key, value) in extraMetadata { metadata[key] = value }
         return .completed(BuildCommandExecution(command: "embedded-toolchain structured build",
-            exitCode: 1, durationSeconds: Date().timeIntervalSince(started), stdoutSummary: "",
+            exitCode: 1, durationSeconds: Date().timeIntervalSince(started), stdoutSummary: reportSummary(reports),
             stderrSummary: safe, fullLogPath: "", diagnosticExcerpt: safe,
-            remoteMetadata: ["native_provider": "embedded_toolchain"], remoteJobs: [], remoteArtifacts: []))
+            remoteMetadata: metadata, remoteJobs: [], remoteArtifacts: []))
     }
 }
