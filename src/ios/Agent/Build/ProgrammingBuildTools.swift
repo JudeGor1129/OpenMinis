@@ -194,7 +194,7 @@ final class ProgrammingBuildTools {
         let inspection: BuildProjectInspection
         if isEmbedded {
             inspection = BuildProjectInspection(canonicalPath: request.projectPath, kind: .embeddedTweak,
-                manifests: [".\/MinisTweak.json"], languageStack: ["C", "Objective-C"],
+                manifests: ["./MinisTweak.json"], languageStack: ["C", "Objective-C"],
                 gitBranch: nil, gitCommit: nil, gitIsDirty: true, gitRemote: nil,
                 suggestedProviders: [.embeddedToolchain], suggestedCommands: [])
         } else {
