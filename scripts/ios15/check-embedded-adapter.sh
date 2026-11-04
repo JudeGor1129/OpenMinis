@@ -195,7 +195,8 @@ swiftc -swift-version 6 -strict-concurrency=complete -parse-as-library \
 "$TMP/embedded-adapter-contract" "$TMP/real-linker.dylib" "$TMP"
 python3 scripts/ios15/verify-embedded-package-contract.py "$TMP"
 ar -t "$TMP/contract.deb"
-xcrun lipo -verify_arch arm64 arm64e "$TMP/contract-fat.dylib"
+xcrun lipo "$TMP/contract-fat.dylib" -verify_arch arm64 arm64e
+xcrun lipo "$TMP/contract-fat.dylib" -archs
 echo 'PASS: independent ar/ustar/plist readers and real lipo verified Swift-generated containers.'
 echo 'PASS: actual Swift adapter compiled and fake-bridge contracts executed.'
 echo 'NOTE: native SHA-256/evidence checks were not changed; real LLVM, signing, loading and device RSS remain separate gates.'
