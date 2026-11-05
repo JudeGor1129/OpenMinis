@@ -272,6 +272,26 @@ final class ProgrammingBuildToolsTests: XCTestCase {
             expectedEntitlements: entitlements))
         XCTAssertThrowsError(try EmbeddedCodeSignature.verify(image,
             expectedEntitlements: Data("different".utf8)))
+
+        var duplicateBlobType = image
+        put(big(EmbeddedCodeSignature.slotCodeDirectory), at: codeLimit + 20, in: &duplicateBlobType)
+        XCTAssertThrowsError(try EmbeddedCodeSignature.verify(duplicateBlobType,
+            expectedEntitlements: entitlements))
+
+        var overlappingBlobs = image
+        put(big(UInt32(codeDirectoryOffset)), at: codeLimit + 24, in: &overlappingBlobs)
+        XCTAssertThrowsError(try EmbeddedCodeSignature.verify(overlappingBlobs,
+            expectedEntitlements: entitlements))
+
+        var trailingUnsignedByte = image
+        trailingUnsignedByte.append(0)
+        XCTAssertThrowsError(try EmbeddedCodeSignature.verify(trailingUnsignedByte,
+            expectedEntitlements: entitlements))
+
+        var changedEntitlementBlob = image
+        changedEntitlementBlob[codeLimit + entitlementOffset + 9] ^= 0x01
+        XCTAssertThrowsError(try EmbeddedCodeSignature.verify(changedEntitlementBlob,
+            expectedEntitlements: entitlements))
     }
 
     func testEmbeddedProviderRequiresNativeWorkspaceAndNeverRunsShell() async {
