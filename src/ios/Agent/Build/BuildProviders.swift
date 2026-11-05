@@ -169,15 +169,79 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
         guard context.inspection.kind == .theos else {
             return unavailable("embedded_theos requires a detected Theos project", ["ProjectBuildKind.theos"])
         }
+        guard let workspace = context.nativeWorkspaceRoot else {
+            return unavailable("The active chat session has no native workspace URL.", ["session workspace URL"])
+        }
+        let root: URL
+        let makefile: String
+        let inspection: EmbeddedTheosManifestParser.Inspection
+        do {
+            root = try Self.resolveWorkspaceProject(context.request.projectPath, workspace: workspace)
+            makefile = try Self.readBoundedMakefile(root)
+            inspection = try EmbeddedTheosManifestParser.inspect(makefile: makefile)
+        } catch {
+            return unavailable("Theos project preflight failed: \(error.localizedDescription)",
+                ["declarative Theos Makefile under the active session workspace"])
+        }
+        var missing: [String] = []
+        if !inspection.isComplete { missing.append("both daemon and tweak targets") }
+        if !inspection.ignoredRecipes.isEmpty {
+            missing.append("declarative staging for \(inspection.ignoredRecipes.count) skipped package recipe(s)")
+        }
+        let status = OMToolchain.capabilityStatus()
+        let required: [(String, String)] = [
+            ("compiler_linked", "yes"), ("verification", "passed"),
+            ("resource_headers", "present"), ("sdk", "present"), ("state", "ready")
+        ]
+        missing.append(contentsOf: required.compactMap { key, value in status[key] == value ? nil : key + "=" + value })
+        missing.append("Theos target graph -> in-process CC1/ld64 adapter")
+        missing.append("rootless DEB publisher for multi-target outputs")
+        let summary = inspection.targets
+            .map { $0.name + ":" + $0.kind.rawValue }
+            .joined(separator: ",")
         return unavailable(
-            "The Twork-level embedded Theos adapter is not linked into this App build yet; no compiler, linker, Makefile recipe, or package hook was executed.",
-            [
-                "embedded Theos compiler/linker adapter",
-                "Twork LLVM/ld64 archives linked into Minis",
-                "app-owned iPhoneOS SDK and framework index",
-                "declarative Theos target graph",
-                "rootless DEB publisher for multi-target outputs"
-            ])
+            "The Twork-level embedded Theos adapter is not linked into this App build yet; nothing was compiled and no Makefile recipe executed. Inspected targets=[\(summary)] skippedRecipes=\(inspection.ignoredRecipes.count).",
+            missing)
+    }
+
+    /// Resolves the same workspace-confined project root used by the restricted
+    /// provider, so embedded_theos never reads outside the active session folder.
+    private static func resolveWorkspaceProject(_ guestPath: String, workspace: URL) throws -> URL {
+        let prefix = "/var/minis/workspace/"
+        guard guestPath.hasPrefix(prefix), !guestPath.contains("\\"), !guestPath.contains("\0") else {
+            throw EmbeddedAdapterError.rejected("embedded_theos only builds a project under /var/minis/workspace")
+        }
+        let relative = String(guestPath.dropFirst(prefix.count))
+        let parts = relative.split(separator: "/", omittingEmptySubsequences: false)
+        guard !relative.isEmpty, parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+            throw EmbeddedAdapterError.rejected("project path is not a safe workspace-relative directory")
+        }
+        let canonicalWorkspace = try EmbeddedToolchainProjectSnapshotBuilder.validatedRoot(workspace)
+        let candidate = canonicalWorkspace.appendingPathComponent(relative, isDirectory: true).standardizedFileURL
+        let base = canonicalWorkspace.path.hasSuffix("/") ? canonicalWorkspace.path : canonicalWorkspace.path + "/"
+        guard candidate.path.hasPrefix(base) else {
+            throw EmbeddedAdapterError.rejected("project path escapes the active session workspace")
+        }
+        return try EmbeddedToolchainProjectSnapshotBuilder.validatedRoot(candidate)
+    }
+
+    /// Reads only a bounded, symlink-free regular Makefile from the project root.
+    private static func readBoundedMakefile(_ root: URL) throws -> String {
+        let url = root.appendingPathComponent("Makefile")
+        let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        guard descriptor >= 0 else { throw EmbeddedAdapterError.rejected("Makefile is missing or unsafe") }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var attributes = stat()
+        guard fstat(descriptor, &attributes) == 0, attributes.st_mode & S_IFMT == S_IFREG,
+              attributes.st_size > 0, attributes.st_size <= off_t(EmbeddedTheosManifestParser.maxBytes) else {
+            throw EmbeddedAdapterError.rejected("Makefile is not a bounded regular file")
+        }
+        let data = try handle.read(upToCount: EmbeddedTheosManifestParser.maxBytes + 1) ?? Data()
+        guard data.count == Int(attributes.st_size), let text = String(data: data, encoding: .utf8) else {
+            throw EmbeddedAdapterError.rejected("Makefile is not bounded UTF-8")
+        }
+        return text
     }
 
     func resolvedToolchain(for context: BuildProviderContext) async -> String {

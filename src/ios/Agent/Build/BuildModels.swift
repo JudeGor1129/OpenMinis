@@ -154,7 +154,18 @@ enum EmbeddedTheosManifestParser {
     static let maxBytes = 128 * 1024
     static let maxLines = 4096
 
-    static func parse(makefile: String, metadata: EmbeddedDebMetadata) throws -> EmbeddedTheosProjectPlan {
+    struct Inspection: Equatable, Sendable {
+        let targets: [EmbeddedTheosTarget]
+        let ignoredRecipes: [String]
+        var isComplete: Bool {
+            targets.contains { $0.kind == .daemon } && targets.contains { $0.kind == .tweak }
+        }
+    }
+
+    /// Declarative-only inspection: needs no package metadata and never executes
+    /// the Makefile. It reports the exact target graph plus every recipe that was
+    /// deliberately skipped, so a caller can list precise blockers.
+    static func inspect(makefile: String) throws -> Inspection {
         guard makefile.utf8.count <= maxBytes else { throw EmbeddedTheosManifestError.unsafeDirective("Makefile exceeds byte budget") }
         var assignments: [String: String] = [:]
         var targetNames: [String] = []
@@ -237,9 +248,14 @@ enum EmbeddedTheosManifestParser {
             targets.append(target)
         }
         guard toolName != nil || tweakName != nil else { throw EmbeddedTheosManifestError.noTargets }
+        return Inspection(targets: targets, ignoredRecipes: ignoredRecipes(in: makefile))
+    }
+
+    static func parse(makefile: String, metadata: EmbeddedDebMetadata) throws -> EmbeddedTheosProjectPlan {
+        let inspection = try inspect(makefile: makefile)
         let plan = EmbeddedTheosProjectPlan(schema: 1, packageID: metadata.packageID,
             version: metadata.version, name: metadata.name, maintainer: metadata.maintainer,
-            description: metadata.description, bundleIDs: metadata.bundleIDs, targets: targets)
+            description: metadata.description, bundleIDs: metadata.bundleIDs, targets: inspection.targets)
         try plan.validate()
         return plan
     }
