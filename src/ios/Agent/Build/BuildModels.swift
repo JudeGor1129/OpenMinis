@@ -59,6 +59,97 @@ struct BuildProjectInspection: Codable, Equatable, Sendable {
     let suggestedCommands: [SuggestedBuildCommand]
 }
 
+// Declarative target graph accepted by the future Twork-level in-process Theos adapter.
+// It carries no shell recipes and never represents executable package hooks.
+enum EmbeddedTheosTargetKind: String, Codable, Equatable, Sendable {
+    case daemon
+    case tweak
+}
+
+struct EmbeddedTheosTarget: Codable, Equatable, Sendable {
+    let name: String
+    let kind: EmbeddedTheosTargetKind
+    let sourcePaths: [String]
+    let headerPaths: [String]
+    let frameworks: [String]
+    let installPath: String
+    let installName: String?
+    let filterPlistPath: String?
+    let entitlementsPath: String?
+    let architectures: [EmbeddedToolchainArchitecture]
+
+    func validate() throws {
+        func safeName(_ value: String) -> Bool {
+            value.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", options: .regularExpression) != nil
+        }
+        func safeRelative(_ value: String) -> Bool {
+            !value.isEmpty && !value.hasPrefix("/") && !value.contains("\\") &&
+                !value.split(separator: "/").contains("..") &&
+                value.split(separator: "/").allSatisfy { !$0.isEmpty && $0 != "." }
+        }
+        guard safeName(name), !sourcePaths.isEmpty, sourcePaths.count <= 128,
+              headerPaths.count <= 256, frameworks.count <= 32,
+              sourcePaths.allSatisfy(safeRelative), headerPaths.allSatisfy(safeRelative),
+              frameworks.allSatisfy(safeName), safeRelative(installPath),
+              architectures == [.arm64, .arm64e] else {
+            throw EmbeddedTheosPlanError.invalidTarget(name)
+        }
+        if let installName {
+            guard installName.hasPrefix("@rpath/"), safeName(String(installName.dropFirst(7))) else {
+                throw EmbeddedTheosPlanError.invalidInstallName(name)
+            }
+        }
+        for optionalPath in [filterPlistPath, entitlementsPath].compactMap({ $0 }) {
+            guard safeRelative(optionalPath) else { throw EmbeddedTheosPlanError.invalidTarget(name) }
+        }
+    }
+}
+
+struct EmbeddedTheosProjectPlan: Codable, Equatable, Sendable {
+    let schema: Int
+    let packageID: String
+    let version: String
+    let name: String
+    let maintainer: String
+    let description: String
+    let bundleIDs: [String]
+    let targets: [EmbeddedTheosTarget]
+
+    func validate() throws {
+        guard schema == 1, targets.count > 0, targets.count <= 8,
+              packageID.range(of: "^[a-z0-9][a-z0-9+.-]{1,127}$", options: .regularExpression) != nil,
+              version.range(of: "^[0-9][A-Za-z0-9.+~_-]{0,63}$", options: .regularExpression) != nil,
+              !name.isEmpty, name.utf8.count <= 256,
+              !maintainer.isEmpty, maintainer.utf8.count <= 256,
+              !description.isEmpty, description.utf8.count <= 512,
+              !bundleIDs.isEmpty, bundleIDs.count <= 20,
+              bundleIDs.allSatisfy({ $0.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]{0,254}$", options: .regularExpression) != nil }),
+              Set(targets.map(\.name)).count == targets.count else {
+            throw EmbeddedTheosPlanError.invalidPackage
+        }
+        for target in targets { try target.validate() }
+        guard targets.contains(where: { $0.kind == .daemon }), targets.contains(where: { $0.kind == .tweak }) else {
+            throw EmbeddedTheosPlanError.missingTargetKind
+        }
+    }
+}
+
+enum EmbeddedTheosPlanError: Error, Equatable, LocalizedError, Sendable {
+    case invalidPackage
+    case invalidTarget(String)
+    case invalidInstallName(String)
+    case missingTargetKind
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidPackage: return "Theos plan package metadata or target count is invalid"
+        case .invalidTarget(let name): return "Theos target is invalid or outside the bounded policy: \(name)"
+        case .invalidInstallName(let name): return "Theos target has an unsafe install name: \(name)"
+        case .missingTargetKind: return "Theos plan must contain both daemon and tweak targets"
+        }
+    }
+}
+
 enum BuildDiagnosticSeverity: String, Codable, Sendable {
     case note
     case warning

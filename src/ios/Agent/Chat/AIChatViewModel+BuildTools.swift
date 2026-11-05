@@ -6,10 +6,10 @@ extension AIChatViewModel {
         return [
             AgentToolDefinition(
                 name: "build_project",
-                description: "Build a project through a real provider and persist the run. embedded_toolchain is a no-shell native path for the active session workspace only: it requires MinisTweak.json, builds arm64+arm64e, and atomically exports a verified rootless DEB. It rejects arbitrary commands, installs, signing, and execution. Other providers retain their configured command workflows.",
+                description: "Build a project through a real provider and persist the run. embedded_theos is the Twork-level in-process Clang/LLVM/ld64 path for Theos multi-target projects; embedded_toolchain remains the restricted C/Objective-C path. Native providers reject shell commands, installs, signing, execution and package hooks until their reviewed adapter gates pass.",
                 parameters: [
                     "tool_title": title,
-                    "project_path": AgentToolParam(type: .string, description: "Absolute iSH path; for embedded_toolchain use /var/minis/workspace/<project> in the active session workspace."),
+                    "project_path": AgentToolParam(type: .string, description: "Absolute iSH path; native providers require the project under /var/minis/workspace in the active session workspace."),
                     "provider": AgentToolParam(type: .string, description: "Optional provider. Use embedded_toolchain for the native no-shell path.", enumValues: BuildProviderID.allCases.map(\.rawValue)),
                     "configuration": AgentToolParam(type: .string, description: "Build configuration such as Debug or Release (default Debug)."),
                     "toolchain": AgentToolParam(type: .string, description: "Toolchain identity. Default auto probes the selected provider and includes it in the cache fingerprint."),
@@ -31,7 +31,7 @@ extension AIChatViewModel {
                 description: "Run a real test command through the same BuildProvider seam. Only exit code 0 yields passed; unavailable providers and missing commands are reported structurally.",
                 parameters: [
                     "tool_title": title,
-                    "project_path": AgentToolParam(type: .string, description: "Absolute iSH path; for embedded_toolchain use /var/minis/workspace/<project> in the active session workspace."),
+                    "project_path": AgentToolParam(type: .string, description: "Absolute iSH path; native providers require the project under /var/minis/workspace in the active session workspace."),
                     "provider": AgentToolParam(type: .string, description: "Optional provider.", enumValues: BuildProviderID.allCases.map(\.rawValue)),
                     "test_command": AgentToolParam(type: .string, description: "Explicit test command, or dedicated workflow filename for remote_github_actions."),
                     "configuration": AgentToolParam(type: .string, description: "Configuration (default Debug)."),
@@ -80,7 +80,7 @@ extension AIChatViewModel {
             switch name {
             case "build_project":
                 let request = try buildRequest(from: args, forTestsOnly: false)
-                let nativeWorkspaceRoot = request.provider == .embeddedToolchain ? sessionWorkspaceDirectory : nil
+                let nativeWorkspaceRoot = (request.provider == .embeddedToolchain || request.provider == .embeddedTheos) ? sessionWorkspaceDirectory : nil
                 let result = try await ProgrammingBuildTools.shared.build(
                     request: request, executor: executor, nativeWorkspaceRoot: nativeWorkspaceRoot)
                 let output = try encodeToolOutput(result, encoder: encoder)
@@ -89,7 +89,7 @@ extension AIChatViewModel {
                 return FileToolResult(output: output, success: result.buildState == .success && artifactRequirementMet && testRequirementMet && result.persistenceError == nil)
             case "run_tests":
                 let request = try buildRequest(from: args, forTestsOnly: true)
-                let nativeWorkspaceRoot = request.provider == .embeddedToolchain ? sessionWorkspaceDirectory : nil
+                let nativeWorkspaceRoot = (request.provider == .embeddedToolchain || request.provider == .embeddedTheos) ? sessionWorkspaceDirectory : nil
                 let result = try await ProgrammingBuildTools.shared.runTests(
                     request: request, executor: executor, nativeWorkspaceRoot: nativeWorkspaceRoot)
                 return FileToolResult(output: try encodeToolOutput(result, encoder: encoder), success: result.state == .passed)

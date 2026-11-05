@@ -53,6 +53,35 @@ final class ProgrammingBuildToolsTests: XCTestCase {
         XCTAssertEqual(BuildProjectDetector.classify(manifests: ["./Makefile"], isTheos: false), .make)
     }
 
+    func testEmbeddedTheosPlanRequiresSafeDualTargetGraph() throws {
+        let daemon = EmbeddedTheosTarget(name: "ictrld", kind: .daemon,
+            sourcePaths: ["daemon/main.m"], headerPaths: ["daemon/ICNAuth.h"],
+            frameworks: ["Foundation", "Security"], installPath: "usr/libexec/ictrld",
+            installName: nil, filterPlistPath: nil, entitlementsPath: "daemon/entitlements.plist",
+            architectures: [.arm64, .arm64e])
+        let tweak = EmbeddedTheosTarget(name: "iCTRLBridge", kind: .tweak,
+            sourcePaths: ["bridge/ICNBridge.m"], headerPaths: ["shared/ICNProtocol.h"],
+            frameworks: ["Foundation", "UIKit", "CoreFoundation"],
+            installPath: "Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.dylib",
+            installName: "@rpath/iCTRLBridge.dylib", filterPlistPath: "iCTRLBridge.plist",
+            entitlementsPath: nil, architectures: [.arm64, .arm64e])
+        let plan = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
+            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+            bundleIDs: ["com.apple.springboard"], targets: [daemon, tweak])
+        XCTAssertNoThrow(try plan.validate())
+
+        let unsafe = EmbeddedTheosTarget(name: "bad", kind: .tweak,
+            sourcePaths: ["../escape.m"], headerPaths: [], frameworks: [],
+            installPath: "Library/Tweak.dylib", installName: "@rpath/Tweak.dylib",
+            filterPlistPath: nil, entitlementsPath: nil, architectures: [.arm64, .arm64e])
+        XCTAssertThrowsError(try unsafe.validate())
+
+        let singleTarget = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
+            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+            bundleIDs: ["com.apple.springboard"], targets: [daemon])
+        XCTAssertThrowsError(try singleTarget.validate())
+    }
+
     func testEmbeddedProviderRequiresNativeWorkspaceAndNeverRunsShell() async {
         final class CallCounter { var value = 0 }
         let shellCalls = CallCounter()
