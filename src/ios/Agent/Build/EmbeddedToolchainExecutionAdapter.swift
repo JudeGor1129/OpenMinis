@@ -317,6 +317,247 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
     }
 }
 
+/// Independent reader for the ad-hoc signature that the in-process ld64 embeds
+/// with `-adhoc_codesign`. It verifies the SuperBlob, the CodeDirectory header and
+/// every SHA-256 code slot against the real file bytes. When expected entitlements
+/// are supplied, it also verifies the embedded entitlement blob byte-for-byte and
+/// its CodeDirectory special-slot hash. It never loads the binary.
+struct EmbeddedCodeSignatureReport: Equatable, Sendable {
+    let identifier: String
+    let codeSlots: Int
+    let specialSlots: Int
+    let fileOffset: UInt64
+    let byteCount: UInt64
+    let adHoc: Bool
+    let entitlementsPresent: Bool
+    let entitlementsBytes: Int
+}
+
+enum EmbeddedCodeSignatureError: Error, Equatable, LocalizedError, Sendable {
+    case missingSignature
+    case malformed(String)
+    case codeSlotMismatch(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingSignature: return "Mach-O has no embedded ad-hoc code signature"
+        case .malformed(let rule): return "code signature rejected: \(rule)"
+        case .codeSlotMismatch(let slot): return "code signature slot \(slot) does not match the file bytes"
+        }
+    }
+}
+
+enum EmbeddedCodeSignature {
+    static let magicEmbeddedSignature: UInt32 = 0xfade0cc0
+    static let magicCodeDirectory: UInt32 = 0xfade0c02
+    static let magicEntitlements: UInt32 = 0xfade7171
+    static let slotCodeDirectory: UInt32 = 0
+    static let slotEntitlements: UInt32 = 5
+    static let slotCMS: UInt32 = 0x10000
+
+    static func verify(_ data: Data, expectedEntitlements: Data? = nil) throws -> EmbeddedCodeSignatureReport {
+        let origin = data.startIndex
+        func le32(_ offset: Int) -> UInt32? {
+            guard offset >= 0, origin + offset + 4 <= data.endIndex else { return nil }
+            let index = origin + offset
+            return UInt32(data[index]) | (UInt32(data[index + 1]) << 8) |
+                (UInt32(data[index + 2]) << 16) | (UInt32(data[index + 3]) << 24)
+        }
+        func be32(_ offset: Int) -> UInt32? {
+            guard offset >= 0, origin + offset + 4 <= data.endIndex else { return nil }
+            let index = origin + offset
+            return (UInt32(data[index]) << 24) | (UInt32(data[index + 1]) << 16) |
+                (UInt32(data[index + 2]) << 8) | UInt32(data[index + 3])
+        }
+        func byte(_ offset: Int) -> UInt8? {
+            guard offset >= 0, origin + offset < data.endIndex else { return nil }
+            return data[origin + offset]
+        }
+        func slice(_ offset: Int, _ count: Int) -> Data? {
+            guard offset >= 0, count >= 0, origin + offset + count <= data.endIndex else { return nil }
+            return data[(origin + offset)..<(origin + offset + count)]
+        }
+
+        guard let magic = le32(0), magic == 0xfeedfacf,
+              let commandCount = le32(16), let commandBytes = le32(20) else {
+            throw EmbeddedCodeSignatureError.malformed("not a 64-bit Mach-O")
+        }
+        let commandsEnd = 32 + Int(commandBytes)
+        guard commandCount > 0, commandCount <= 4096, Int(commandBytes) >= Int(commandCount) * 8,
+              commandsEnd <= data.count else {
+            throw EmbeddedCodeSignatureError.malformed("load command bounds")
+        }
+        var cursor = 32
+        var signatureOffset: UInt64?
+        var signatureSize: UInt64?
+        for _ in 0..<Int(commandCount) {
+            guard let command = le32(cursor), let size = le32(cursor + 4),
+                  size >= 8, cursor + Int(size) <= commandsEnd else {
+                throw EmbeddedCodeSignatureError.malformed("load command layout")
+            }
+            if command == 0x1d {
+                guard size == 16, signatureOffset == nil,
+                      let offset = le32(cursor + 8), let bytes = le32(cursor + 12) else {
+                    throw EmbeddedCodeSignatureError.malformed("LC_CODE_SIGNATURE layout")
+                }
+                signatureOffset = UInt64(offset)
+                signatureSize = UInt64(bytes)
+            }
+            cursor += Int(size)
+        }
+        guard cursor == commandsEnd else { throw EmbeddedCodeSignatureError.malformed("load command walk") }
+        guard let offset = signatureOffset, let size = signatureSize, size > 0 else {
+            throw EmbeddedCodeSignatureError.missingSignature
+        }
+        guard offset <= UInt64(data.count), size <= UInt64(data.count) - offset,
+              size <= UInt64(Int.max), offset + size == UInt64(data.count),
+              offset >= UInt64(commandsEnd), offset % 8 == 0 else {
+            throw EmbeddedCodeSignatureError.malformed("signature outside file or not terminal")
+        }
+        let base = Int(offset)
+        guard let blobMagic = be32(base), blobMagic == magicEmbeddedSignature,
+              let length = be32(base + 4), let count = be32(base + 8) else {
+            throw EmbeddedCodeSignatureError.malformed("embedded signature header")
+        }
+        guard UInt64(length) <= size, size - UInt64(length) < 8,
+              let signaturePadding = slice(base + Int(length), Int(size - UInt64(length))),
+              signaturePadding.allSatisfy({ $0 == 0 }),
+              count > 0, count <= 32 else {
+            throw EmbeddedCodeSignatureError.malformed("embedded signature index table")
+        }
+        let indexEnd = 12 + Int(count) * 8
+        guard indexEnd <= Int(length) else {
+            throw EmbeddedCodeSignatureError.malformed("embedded signature index table")
+        }
+        var codeDirectoryOffset: Int?
+        var entitlementsOffset: Int?
+        var hasCMS = false
+        var indexedBlobs: [(type: UInt32, offset: Int, length: Int)] = []
+        var seenTypes: Set<UInt32> = []
+        for index in 0..<Int(count) {
+            guard let type = be32(base + 12 + index * 8),
+                  let slotOffset = be32(base + 16 + index * 8),
+                  slotOffset >= UInt32(indexEnd), slotOffset <= length,
+                  length - slotOffset >= 8, seenTypes.insert(type).inserted,
+                  let blobLength = be32(base + Int(slotOffset) + 4), blobLength >= 8,
+                  blobLength <= length - slotOffset else {
+                throw EmbeddedCodeSignatureError.malformed("blob index layout or duplicate type")
+            }
+            indexedBlobs.append((type, Int(slotOffset), Int(blobLength)))
+            if type == slotCMS { hasCMS = true }
+            if type == slotCodeDirectory { codeDirectoryOffset = base + Int(slotOffset) }
+            if type == slotEntitlements { entitlementsOffset = base + Int(slotOffset) }
+        }
+        let expectedTypes: Set<UInt32> = expectedEntitlements == nil
+            ? [slotCodeDirectory] : [slotCodeDirectory, slotEntitlements]
+        guard seenTypes == expectedTypes else {
+            throw EmbeddedCodeSignatureError.malformed("unexpected or missing signature blob type")
+        }
+        indexedBlobs.sort { $0.offset < $1.offset }
+        var nextBlobOffset = indexEnd
+        for blob in indexedBlobs {
+            guard blob.offset == nextBlobOffset else {
+                throw EmbeddedCodeSignatureError.malformed("signature blobs overlap or leave gaps")
+            }
+            nextBlobOffset += blob.length
+        }
+        guard nextBlobOffset == Int(length) else {
+            throw EmbeddedCodeSignatureError.malformed("signature blobs do not cover the SuperBlob")
+        }
+        guard let codeDirectoryEntry = indexedBlobs.first(where: { $0.type == slotCodeDirectory }),
+              let cd = codeDirectoryOffset,
+              let cdMagic = be32(cd), cdMagic == magicCodeDirectory,
+              let cdLength = be32(cd + 4), let version = be32(cd + 8),
+              let flags = be32(cd + 12),
+              let hashOffset = be32(cd + 16), let identOffset = be32(cd + 20),
+              let specialSlots = be32(cd + 24), let codeSlots = be32(cd + 28),
+              let codeLimit = be32(cd + 32) else {
+            throw EmbeddedCodeSignatureError.missingSignature
+        }
+        let expectedSpecialSlots: UInt32 = expectedEntitlements == nil ? 0 : slotEntitlements
+        guard Int(cdLength) == codeDirectoryEntry.length,
+              cdLength >= 0x58, cd + Int(cdLength) <= base + Int(length),
+              version == 0x20400, flags & 0x2 != 0,
+              codeSlots > 0, specialSlots == expectedSpecialSlots,
+              UInt64(codeLimit) == offset, Int(identOffset) == 0x58 else {
+            throw EmbeddedCodeSignatureError.malformed("CodeDirectory fields")
+        }
+        guard let hashSize = byte(cd + 36), let hashType = byte(cd + 37), let pageShift = byte(cd + 39) else {
+            throw EmbeddedCodeSignatureError.malformed("CodeDirectory hash header")
+        }
+        guard hashSize == 32, hashType == 2, pageShift == 12 else {
+            throw EmbeddedCodeSignatureError.malformed("hash policy \(hashType)/\(hashSize)/\(pageShift)")
+        }
+        let hashArray = cd + Int(hashOffset)
+        let identStart = cd + Int(identOffset)
+        guard identStart < cd + Int(cdLength), let identData = slice(identStart, cd + Int(cdLength) - identStart),
+              let nul = identData.firstIndex(of: 0),
+              let identifier = String(data: identData[identData.startIndex..<nul], encoding: .utf8),
+              !identifier.isEmpty, identifier.utf8.count <= 256,
+              Int(hashOffset) == Int(identOffset) + identifier.utf8.count + 1 + Int(specialSlots) * 32,
+              hashArray + Int(codeSlots) * 32 == cd + Int(cdLength) else {
+            throw EmbeddedCodeSignatureError.malformed("CodeDirectory identifier or hash layout")
+        }
+        let pageBytes = 1 << Int(pageShift)
+        let expectedSlots = (Int(codeLimit) + pageBytes - 1) / pageBytes
+        guard expectedSlots == Int(codeSlots) else {
+            throw EmbeddedCodeSignatureError.malformed("code slot count \(codeSlots) != \(expectedSlots)")
+        }
+        for slot in 0..<Int(codeSlots) {
+            let pageStart = slot * pageBytes
+            let pageLength = min(pageBytes, Int(codeLimit) - pageStart)
+            guard pageLength > 0, let page = slice(pageStart, pageLength) else {
+                throw EmbeddedCodeSignatureError.malformed("code page \(slot) outside file")
+            }
+            var hasher = SHA256()
+            hasher.update(data: page)
+            let expected = Array(hasher.finalize())
+            let slotStart = hashArray + slot * 32
+            for index in 0..<32 where data[slotStart + index] != expected[index] {
+                throw EmbeddedCodeSignatureError.codeSlotMismatch(slot)
+            }
+        }
+        var entitlementPayloadBytes = 0
+        if let entitlementsOffset {
+            guard let magic = be32(entitlementsOffset), magic == magicEntitlements,
+                  let blobLength = be32(entitlementsOffset + 4), blobLength >= 8,
+                  entitlementsOffset >= base,
+                  entitlementsOffset + Int(blobLength) <= base + Int(length),
+                  specialSlots >= slotEntitlements else {
+                throw EmbeddedCodeSignatureError.malformed("entitlements blob layout")
+            }
+            guard let blob = slice(entitlementsOffset, Int(blobLength)) else {
+                throw EmbeddedCodeSignatureError.malformed("entitlements blob range")
+            }
+            var hasher = SHA256()
+            hasher.update(data: blob)
+            let expected = Array(hasher.finalize())
+            let entitlementSlotStart = hashArray - Int(slotEntitlements) * 32
+            guard entitlementSlotStart >= cd else {
+                throw EmbeddedCodeSignatureError.malformed("entitlements special slot range")
+            }
+            for index in 0..<32 where data[entitlementSlotStart + index] != expected[index] {
+                throw EmbeddedCodeSignatureError.malformed("entitlements special-slot hash mismatch")
+            }
+            let payload = Data(blob.dropFirst(8))
+            entitlementPayloadBytes = payload.count
+            if let expectedEntitlements, payload != expectedEntitlements {
+                throw EmbeddedCodeSignatureError.malformed("embedded entitlements differ from the validated plist")
+            }
+        } else if expectedEntitlements != nil {
+            throw EmbeddedCodeSignatureError.malformed("expected entitlements are missing")
+        }
+        if expectedEntitlements == nil, entitlementsOffset != nil {
+            throw EmbeddedCodeSignatureError.malformed("unexpected entitlements blob")
+        }
+        return EmbeddedCodeSignatureReport(identifier: identifier, codeSlots: Int(codeSlots),
+                                           specialSlots: Int(specialSlots), fileOffset: offset,
+                                           byteCount: size, adHoc: !hasCMS,
+                                           entitlementsPresent: entitlementsOffset != nil,
+                                           entitlementsBytes: entitlementPayloadBytes)
+    }
+}
+
 struct EmbeddedAdapterStep: Codable, Sendable {
     let operation: String
     let status: Int

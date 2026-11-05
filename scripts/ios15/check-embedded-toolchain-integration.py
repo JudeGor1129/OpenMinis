@@ -18,6 +18,9 @@ build = text("scripts/ios15/build-diagnostics.sh")
 package = text("scripts/ios15/package-trollstore.sh")
 prepare = text("scripts/ios15/prepare-embedded-toolchain.sh")
 provider = text("src/ios/Agent/Build/EmbeddedToolchainBuildProvider.swift")
+theos_executor = text("src/ios/Agent/Build/EmbeddedTheosExecutor.swift")
+adapter = text("src/ios/Agent/Build/EmbeddedToolchainExecutionAdapter.swift")
+ld64_adapter = text("toolchain-build/scripts/build-ld64-inprocess.py")
 project = text("src/ios/Minis.xcodeproj/project.pbxproj")
 lock_path = ROOT / "toolchain-build/verified-toolchain-lock.json"
 evidence_path = ROOT / "toolchain-build/runtime-validation-evidence.json"
@@ -72,6 +75,16 @@ require("isArm64Object(at:" in provider and "containsSymlinkComponent" in provid
         "structured adapter policy must check Mach-O, symlinks, bounds and install names")
 require("context.executor" not in provider,
         "embedded provider must not invoke the shell executor")
+require('"-adhoc_codesign"' in theos_executor and
+        '"-adhoc_codesign_entitlements"' in theos_executor and
+        "EmbeddedCodeSignature.verify" in theos_executor,
+        "embedded Theos executor must request and independently verify ad-hoc signatures")
+require("expectedEntitlements" in adapter and "entitlements special-slot hash mismatch" in adapter and
+        "codeSlotMismatch" in adapter,
+        "ad-hoc verification must cover code pages and entitlement special slots")
+require("adapt_options_h" in ld64_adapter and "adapt_linkedit_h" in ld64_adapter and
+        "CSSLOT_ENTITLEMENTS" in ld64_adapter and "O_NOFOLLOW" in ld64_adapter,
+        "ld64 adaptation must embed bounded, nofollow entitlement blobs")
 require(lock.get("schema") == 1, "lock schema must be 1")
 # The lock must describe exactly one artifact, and that artifact's name must
 # identify the commit it was built from. Binding it this way catches a pin that

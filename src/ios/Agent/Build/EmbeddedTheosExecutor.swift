@@ -12,6 +12,11 @@ struct EmbeddedTheosBuiltArtifact: Equatable, Sendable {
     let sha256: String
     let filetype: UInt32
     let installedPath: String
+    let signatureIdentifier: String
+    let signatureCodeSlots: Int
+    let adHocSigned: Bool
+    let entitlementsEmbedded: Bool
+    let entitlementsBytes: Int
 }
 
 struct EmbeddedTheosExecutionOutcome: Sendable {
@@ -85,8 +90,8 @@ enum EmbeddedTheosExecutor {
                      includeDirs: [String], objectURL: URL) throws {
             let sourceURL = runRoot.appendingPathComponent(source.path.replacingOccurrences(of: "/", with: "_"))
             try source.contents.data(using: .ascii)?.write(to: sourceURL, options: .withoutOverwriting)
-            var arguments = OMToolchain.cc1ArgumentsForSource(
-                sourcePath: sourceURL.path, outputPath: objectURL.path,
+            var arguments = OMToolchain.cc1Arguments(
+                forSource: sourceURL.path, outputPath: objectURL.path,
                 sysroot: sysroot, resourceDir: resourceDir,
                 archName: arch.rawValue, minimumIOS: minimumIOS)
             for dir in includeDirs { arguments.append(contentsOf: ["-I", dir]) }
@@ -94,7 +99,7 @@ enum EmbeddedTheosExecutor {
             var err: NSString?
             let status = OMToolchain.runCC1(arguments, stdout: &out, stderr: &err)
             outcome.attempts += 1
-            guard status == .ok else {
+            guard status.rawValue == 0 else {
                 throw EmbeddedTheosExecutorError.compileFailed(source.path, Int32(status.rawValue),
                                                               String(((err as String?) ?? "").prefix(2000)))
             }
@@ -111,6 +116,26 @@ enum EmbeddedTheosExecutor {
                 let dir = projectRoot.appendingPathComponent(source).deletingLastPathComponent()
                 includeDirs.insert(dir.path)
             }
+            let entitlementURL: URL?
+            let entitlementBytes: Data?
+            if let relative = plan.target.entitlementsPath {
+                let entitlementData = try EmbeddedToolchainProjectSnapshotBuilder.readBoundedProjectFile(
+                    relative, root: projectRoot, limit: 16 * 1024)
+                let object = try PropertyListSerialization.propertyList(from: entitlementData,
+                    options: [], format: nil)
+                guard let dictionary = object as? [String: Any], !dictionary.isEmpty else {
+                    throw EmbeddedTheosExecutorError.invalidOutput("entitlements are not a non-empty dictionary")
+                }
+                let canonical = try PropertyListSerialization.data(fromPropertyList: dictionary,
+                    format: .xml, options: 0)
+                let destination = runRoot.appendingPathComponent("\(plan.target.name)-entitlements.plist")
+                try canonical.write(to: destination, options: .withoutOverwriting)
+                entitlementURL = destination
+                entitlementBytes = canonical
+            } else {
+                entitlementURL = nil
+                entitlementBytes = nil
+            }
             for arch in plan.architectures {
                 guard !cancellation.isCancelled else { outcome.failure = "cancelled"; return outcome }
                 var objects: [String] = []
@@ -122,7 +147,10 @@ enum EmbeddedTheosExecutor {
                 }
                 let outputName = plan.target.kind == .tweak ? "\(plan.target.name).dylib" : plan.target.name
                 let output = runRoot.appendingPathComponent("\(arch.rawValue)-\(outputName)")
-                var linkArguments = ["-arch", arch.rawValue]
+                var linkArguments = ["-arch", arch.rawValue, "-adhoc_codesign"]
+                if let entitlementURL {
+                    linkArguments += ["-adhoc_codesign_entitlements", entitlementURL.path]
+                }
                 linkArguments += plan.target.kind == .tweak
                     ? ["-dylib", "-install_name", plan.target.installName ?? "@rpath/\(plan.target.name).dylib"]
                     : ["-execute", "-e", "_main"]
@@ -135,7 +163,7 @@ enum EmbeddedTheosExecutor {
                 var linkErr: NSString?
                 outcome.linkCount += 1
                 let status = OMToolchain.runLinker(linkArguments, stdout: &linkOut, stderr: &linkErr)
-                guard status == .ok else {
+                guard status.rawValue == 0 else {
                     throw EmbeddedTheosExecutorError.linkFailed(plan.target.name, Int32(status.rawValue),
                                                                 String(((linkErr as String?) ?? "").prefix(2000)))
                 }
@@ -154,9 +182,15 @@ enum EmbeddedTheosExecutor {
                 }
                 let filetype: UInt32 = plan.target.kind == .tweak ? 6 : 2
                 let artifact: EmbeddedAdapterArtifact
+                let signature: EmbeddedCodeSignatureReport
                 do {
                     artifact = try EmbeddedAdapterArtifact.inspect(data, name: outputName,
                                                                    filetype: filetype, architecture: arch)
+                    signature = try EmbeddedCodeSignature.verify(data,
+                        expectedEntitlements: entitlementBytes)
+                    guard signature.adHoc else {
+                        throw EmbeddedCodeSignatureError.malformed("CMS signature present; expected ad-hoc")
+                    }
                 } catch {
                     throw EmbeddedTheosExecutorError.invalidOutput("\(outputName): \(error.localizedDescription)")
                 }
@@ -164,7 +198,11 @@ enum EmbeddedTheosExecutor {
                     data: data,
                     targetName: plan.target.name, kind: plan.target.kind, architecture: arch.rawValue,
                     bytes: artifact.bytes, sha256: artifact.sha256, filetype: filetype,
-                    installedPath: EmbeddedTheosDebPackage.rootlessPrefix + plan.target.installPath))
+                    installedPath: EmbeddedTheosDebPackage.rootlessPrefix + plan.target.installPath,
+                    signatureIdentifier: signature.identifier,
+                    signatureCodeSlots: signature.codeSlots, adHocSigned: signature.adHoc,
+                    entitlementsEmbedded: signature.entitlementsPresent,
+                    entitlementsBytes: signature.entitlementsBytes))
             }
         }
         do {

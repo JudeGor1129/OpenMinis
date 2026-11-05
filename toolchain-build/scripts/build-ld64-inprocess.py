@@ -389,12 +389,99 @@ def adapt_options(text: str, report: dict) -> str:
     text = text.replace(old_crash, new_crash)
     report["crashreporter_symbol_made_weak"] = 1
 
+    init_old = "fAdHocSign(false), fAdHocSignForceOn(false), fAdHocSignForceOff(false),"
+    init_new = init_old + " fAdHocEntitlementsPath(NULL),"
+    if text.count(init_old) != 1:
+        raise AdaptError("Options.cpp: ad-hoc initializer not found exactly once")
+    text = text.replace(init_old, init_new)
+    parse_old = """			else if (strcmp(arg, "-adhoc_codesign") == 0) {
+				fAdHocSignForceOn = true;
+			}"""
+    parse_new = parse_old + """
+			else if (strcmp(arg, "-adhoc_codesign_entitlements") == 0) {
+				const char* path = argv[++i];
+				if ( path == NULL )
+					throw "-adhoc_codesign_entitlements missing <path>";
+				fAdHocSignForceOn = true;
+				fAdHocEntitlementsPath = path;
+			}"""
+    if text.count(parse_old) != 1:
+        raise AdaptError("Options.cpp: -adhoc_codesign parser not found exactly once")
+    text = text.replace(parse_old, parse_new)
+    report["adhoc_entitlements_option_parser"] = 1
+
     text += (
         "\nextern \"C\" void om_ld64_reset_options() {\n"
         "  if (sWarningsSideFile) fclose(sWarningsSideFile);\n"
         "  sWarningsSideFile=nullptr; sWarningsSideFilePath=nullptr;\n"
         "  sWarningsCount=0; sFatalWarnings=false; sEmitWarnings=true;\n}\n"
     )
+    return text
+
+
+def adapt_options_h(text: str, report: dict) -> str:
+    accessor = "\tbool\t\t\t\t\t\tadHocSign() const { return fAdHocSign; }"
+    if text.count(accessor) != 1:
+        raise AdaptError("Options.h: adHocSign accessor not found exactly once")
+    text = text.replace(accessor, accessor +
+        "\n\tconst char*\t\t\t\tadHocEntitlementsPath() const { return fAdHocEntitlementsPath; }")
+    fields = "\tbool\t\t\t\t\t\t\t\tfAdHocSignForceOff;"
+    if text.count(fields) != 1:
+        raise AdaptError("Options.h: ad-hoc signing fields not found exactly once")
+    text = text.replace(fields, fields + "\n\tconst char*\t\t\t\t\tfAdHocEntitlementsPath;")
+    report["adhoc_entitlements_option_header"] = 1
+    return text
+
+
+def adapt_linkedit_h(text: str, report: dict) -> str:
+    include = "#include <sys/types.h>"
+    if text.count(include) != 1:
+        raise AdaptError("LinkEdit.hpp: sys/types include not found")
+    text = text.replace(include, include + "\n#include <sys/stat.h>\n#include <fcntl.h>")
+    member = "\tmutable libcd*\t\t\t\t_sigRef = nullptr;"
+    if text.count(member) != 1:
+        raise AdaptError("LinkEdit.hpp: CodeSignatureAtom libcd member not found")
+    text = text.replace(member, member + "\n\tmutable std::vector<uint8_t>\t_entitlementsBlob;")
+    marker = "\t// add flags\n\tlibcd_set_flags(_sigRef, CS_ADHOC | CS_LINKER_SIGNED);"
+    if text.count(marker) != 1:
+        raise AdaptError("LinkEdit.hpp: code signature flags marker not found")
+    block = r'''
+	// Optional bounded entitlement blob for the native Theos adapter. The file
+	// path comes from a structured target plan, never a Makefile recipe.
+	const char* entitlementPath = _opts.adHocEntitlementsPath();
+	if ( entitlementPath != nullptr ) {
+		int fd = ::open(entitlementPath, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+		struct stat info;
+		if ( (fd < 0) || (::fstat(fd, &info) != 0) || !S_ISREG(info.st_mode) ||
+			 (info.st_size <= 0) || (info.st_size > 64*1024) ) {
+			if ( fd >= 0 ) ::close(fd);
+			throw "invalid ad-hoc entitlements file";
+		}
+		_entitlementsBlob.assign(sizeof(CS_GenericBlob) + (size_t)info.st_size, 0);
+		auto putBE32 = [&](size_t offset, uint32_t value) {
+			_entitlementsBlob[offset+0] = (uint8_t)(value >> 24);
+			_entitlementsBlob[offset+1] = (uint8_t)(value >> 16);
+			_entitlementsBlob[offset+2] = (uint8_t)(value >> 8);
+			_entitlementsBlob[offset+3] = (uint8_t)value;
+		};
+		putBE32(0, CSMAGIC_EMBEDDED_ENTITLEMENTS);
+		putBE32(4, (uint32_t)_entitlementsBlob.size());
+		size_t done = 0;
+		while ( done < (size_t)info.st_size ) {
+			ssize_t amount = ::read(fd, _entitlementsBlob.data() + sizeof(CS_GenericBlob) + done,
+								(size_t)info.st_size - done);
+			if ( amount <= 0 ) { ::close(fd); throw "cannot read ad-hoc entitlements file"; }
+			done += (size_t)amount;
+		}
+		::close(fd);
+		libcd_add_raw_blob_no_copy(_sigRef, CSSLOT_ENTITLEMENTS,
+			_entitlementsBlob.data(), _entitlementsBlob.size());
+		libcd_add_sslot_data_no_copy(_sigRef, CSSLOT_ENTITLEMENTS,
+			_entitlementsBlob.data(), _entitlementsBlob.size());
+	}
+'''
+    text = text.replace(marker, marker + block)
+    report["adhoc_entitlements_signature_blob"] = 1
     return text
 
 
@@ -549,6 +636,10 @@ def adapt_plain(rel: str, text: str, report: dict) -> str:
         return adapt_ld_cpp(text, report)
     if rel.endswith("ld64/src/ld/Options.cpp"):
         return adapt_options(text, report)
+    if rel.endswith("ld64/src/ld/Options.h"):
+        return adapt_options_h(text, report)
+    if rel.endswith("ld64/src/ld/LinkEdit.hpp"):
+        return adapt_linkedit_h(text, report)
     if rel.endswith("ld64/src/ld/InputFiles.cpp"):
         return adapt_input_files_cpp(text, report)
     if rel.endswith("ld64/src/ld/InputFiles.h"):
@@ -603,7 +694,7 @@ def main() -> int:
     if not ld_dir.is_dir():
         sys.exit("missing ld64 sources under cctools-port")
 
-    targets = [p for p in ld_dir.rglob("*") if p.suffix in (".cpp", ".h")]
+    targets = [p for p in ld_dir.rglob("*") if p.suffix in (".cpp", ".h", ".hpp")]
     report: dict = {"mode": "check" if args.check else "apply", "edits": {}}
     failures: list[str] = []
     changed: list[str] = []

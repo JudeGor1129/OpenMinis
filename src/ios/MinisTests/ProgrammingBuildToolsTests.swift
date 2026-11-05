@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import CryptoKit
 @testable import Minis
 
 @MainActor
@@ -188,6 +189,89 @@ final class ProgrammingBuildToolsTests: XCTestCase {
             maintainerScripts: ["postrm": "#!/bin/sh\n"]))
         XCTAssertThrowsError(try EmbeddedTheosDebPackage.control(packageID: "Bad ID",
             name: "n", version: "1.0", maintainer: "m", description: "d", depends: "mobilesubstrate"))
+    }
+
+    func testEmbeddedAdHocSignatureVerifierCoversPagesAndEntitlements() throws {
+        func little(_ value: UInt32) -> Data {
+            Data([UInt8(truncatingIfNeeded: value), UInt8(truncatingIfNeeded: value >> 8),
+                  UInt8(truncatingIfNeeded: value >> 16), UInt8(truncatingIfNeeded: value >> 24)])
+        }
+        func big(_ value: UInt32) -> Data {
+            Data([UInt8(truncatingIfNeeded: value >> 24), UInt8(truncatingIfNeeded: value >> 16),
+                  UInt8(truncatingIfNeeded: value >> 8), UInt8(truncatingIfNeeded: value)])
+        }
+        func put(_ bytes: Data, at offset: Int, in data: inout Data) {
+            data.replaceSubrange(offset..<(offset + bytes.count), with: bytes)
+        }
+
+        let entitlements = Data("<plist><dict><key>platform-application</key><true/></dict></plist>".utf8)
+        var entitlementBlob = big(EmbeddedCodeSignature.magicEntitlements)
+        entitlementBlob.append(big(UInt32(8 + entitlements.count)))
+        entitlementBlob.append(entitlements)
+
+        let identifier = Data("fixture\0".utf8)
+        let fixedHeader = 0x58
+        let entitlementHashOffset = fixedHeader + identifier.count
+        let hashOffset = entitlementHashOffset + 5 * 32
+        let codeDirectoryLength = hashOffset + 32
+        let codeDirectoryOffset = 28
+        let entitlementOffset = codeDirectoryOffset + codeDirectoryLength
+        let superBlobLength = entitlementOffset + entitlementBlob.count
+        let signatureSize = (superBlobLength + 7) & ~7
+        let codeLimit = 4096
+
+        var image = Data(repeating: 0, count: codeLimit)
+        put(little(0xfeedfacf), at: 0, in: &image)
+        put(little(0x0100000c), at: 4, in: &image)
+        put(little(2), at: 12, in: &image)
+        put(little(1), at: 16, in: &image)
+        put(little(16), at: 20, in: &image)
+        put(little(0x1d), at: 32, in: &image)
+        put(little(16), at: 36, in: &image)
+        put(little(UInt32(codeLimit)), at: 40, in: &image)
+        put(little(UInt32(signatureSize)), at: 44, in: &image)
+
+        var codeDirectory = Data(repeating: 0, count: codeDirectoryLength)
+        put(big(EmbeddedCodeSignature.magicCodeDirectory), at: 0, in: &codeDirectory)
+        put(big(UInt32(codeDirectoryLength)), at: 4, in: &codeDirectory)
+        put(big(0x20400), at: 8, in: &codeDirectory)
+        put(big(0x2), at: 12, in: &codeDirectory)
+        put(big(UInt32(hashOffset)), at: 16, in: &codeDirectory)
+        put(big(UInt32(fixedHeader)), at: 20, in: &codeDirectory)
+        put(big(5), at: 24, in: &codeDirectory)
+        put(big(1), at: 28, in: &codeDirectory)
+        put(big(UInt32(codeLimit)), at: 32, in: &codeDirectory)
+        codeDirectory[36] = 32
+        codeDirectory[37] = 2
+        codeDirectory[39] = 12
+        put(identifier, at: fixedHeader, in: &codeDirectory)
+        put(Data(SHA256.hash(data: entitlementBlob)), at: entitlementHashOffset, in: &codeDirectory)
+        put(Data(SHA256.hash(data: image)), at: hashOffset, in: &codeDirectory)
+
+        var superBlob = big(EmbeddedCodeSignature.magicEmbeddedSignature)
+        superBlob.append(big(UInt32(superBlobLength)))
+        superBlob.append(big(2))
+        superBlob.append(big(EmbeddedCodeSignature.slotCodeDirectory))
+        superBlob.append(big(UInt32(codeDirectoryOffset)))
+        superBlob.append(big(EmbeddedCodeSignature.slotEntitlements))
+        superBlob.append(big(UInt32(entitlementOffset)))
+        superBlob.append(codeDirectory)
+        superBlob.append(entitlementBlob)
+        superBlob.append(Data(repeating: 0, count: signatureSize - superBlob.count))
+        image.append(superBlob)
+
+        let report = try EmbeddedCodeSignature.verify(image, expectedEntitlements: entitlements)
+        XCTAssertTrue(report.adHoc)
+        XCTAssertTrue(report.entitlementsPresent)
+        XCTAssertEqual(report.entitlementsBytes, entitlements.count)
+        XCTAssertEqual(report.codeSlots, 1)
+
+        var changedCode = image
+        changedCode[100] ^= 0x01
+        XCTAssertThrowsError(try EmbeddedCodeSignature.verify(changedCode,
+            expectedEntitlements: entitlements))
+        XCTAssertThrowsError(try EmbeddedCodeSignature.verify(image,
+            expectedEntitlements: Data("different".utf8)))
     }
 
     func testEmbeddedProviderRequiresNativeWorkspaceAndNeverRunsShell() async {
