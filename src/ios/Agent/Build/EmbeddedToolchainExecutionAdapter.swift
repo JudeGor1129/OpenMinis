@@ -116,7 +116,7 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         func invalid(_ rule: String = "structure", line: Int = #line) -> EmbeddedAdapterError {
             .poisoned("Mach-O output rejected: \(rule) (check_line=\(line))")
         }
-        guard [UInt32(1), 6].contains(filetype) else { throw invalid("unexpected_filetype=\(filetype)") }
+        guard [UInt32(1), 2, 6].contains(filetype) else { throw invalid("unexpected_filetype=\(filetype)") }
         guard data.count >= 32, data.count <= 16 * 1024 * 1024 else { throw invalid("output_size_out_of_bounds") }
         func word(_ offset: Int) -> UInt32 {
             UInt32(data[offset]) | UInt32(data[offset + 1]) << 8 |
@@ -148,6 +148,9 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         // Admit only its bounded, unencrypted form; never bypass inspection.
         let dylibCommands = objectCommands.union([0xc, 0xd, 0x1b, 0x2e, 0x80000022, 0x26, 0x1d,
                                                   0x2a, 0x80000033, 0x80000034, 0x2c])
+        // MH_EXECUTE (daemon/tool): system dylibs, a dyld stub, rpaths and LC_MAIN.
+        let executableCommands = dylibCommands.union([0xe, 0x8000001c, 0x80000028])
+        var hasMain = false
         func inFile(_ offset: UInt64, _ bytes: UInt64) -> Bool {
             offset <= UInt64(data.count) && bytes <= UInt64(data.count) - offset
         }
@@ -157,7 +160,8 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             if command == 0x2c && size != 24 { throw invalid("encryption_command_size_or_duplicate") }
             guard size >= 8, size % 8 == 0, size <= end - cursor else { throw invalid() }
             // Unknown/unsupported commands are rejected, not silently skipped.
-            guard (filetype == 1 ? objectCommands : dylibCommands).contains(command) else {
+            let admittedCommands = filetype == 1 ? objectCommands : (filetype == 2 ? executableCommands : dylibCommands)
+            guard admittedCommands.contains(command) else {
                 throw invalid("unsupported_load_command=0x\(String(command, radix: 16)),offset=\(cursor)")
             }
             if command == 0x19 {
@@ -189,14 +193,16 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
                         guard relocationCount == 0 else { throw invalid() }
                     }
                 }
-            } else if command == 0xc || command == 0xd {
+            } else if command == 0xc || command == 0xd || command == 0xe || command == 0x8000001c {
                 guard size >= 24 else { throw invalid() }
                 let offset = Int(word(cursor + 8))
                 guard offset >= 24, offset < size else { throw invalid() }
                 let bytes = data[(cursor + offset)..<(cursor + size)]
                 guard let nul = bytes.firstIndex(of: 0),
                       let string = String(data: data[(cursor + offset)..<nul], encoding: .utf8) else { throw invalid() }
-                if command == 0xc { dependencies.append(string) } else { installNames.append(string) }
+                if command == 0xc { dependencies.append(string) }
+                else if command == 0xd { installNames.append(string) }
+                // LC_LOAD_DYLINKER / LC_RPATH: bounds-validated only, never trusted as output metadata.
             } else if command == 0x2 {
                 guard size == 24, symbolCount == nil else { throw invalid() }
                 let symbols = UInt64(word(cursor + 8)), count = UInt64(word(cursor + 12))
@@ -236,6 +242,11 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
                 let offset = UInt64(word(cursor + 8)), bytes = UInt64(word(cursor + 12))
                 guard inFile(offset, bytes), offset >= UInt64(end) else { throw invalid("encryption_range_outside_payload") }
                 encryptionRange = (offset, bytes)
+            } else if command == 0x80000028 {
+                guard size == 24, !hasMain else { throw invalid("duplicate_or_malformed_lc_main") }
+                let entry = wide(cursor + 8)
+                guard inFile(entry, 4) else { throw invalid("lc_main_entry_outside_file") }
+                hasMain = true
             } else if command == 0x25 || command == 0x2a {
                 guard size == 16 else { throw invalid() }
             } else if command == 0x1b {
@@ -292,6 +303,12 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             guard (dependencies == allowedDependencies || dependencies == objcDependencies),
                   installNames == ["@rpath/" + name] else {
                 throw invalid("dependency_or_install_name_mismatch")
+            }
+        } else if filetype == 2 {
+            let allowedExecutableDependencies = ["/usr/lib/libSystem.B.dylib", "/usr/lib/libobjc.A.dylib"]
+            guard hasMain else { throw invalid("executable_missing_lc_main") }
+            guard installNames.isEmpty, dependencies.allSatisfy({ allowedExecutableDependencies.contains($0) }) else {
+                throw invalid("executable_dependency_mismatch")
             }
         } else {
             guard dependencies.isEmpty, installNames.isEmpty else { throw invalid() }

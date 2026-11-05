@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B10000000000000000000014 /* EmbeddedTheosExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000014 /* EmbeddedTheosExecutor.swift */; };
 		B10000000000000000000013 /* EmbeddedTheosCompilePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000013 /* EmbeddedTheosCompilePlan.swift */; };
 		B10000000000000000000012 /* EmbeddedToolchainDebPackage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000012 /* EmbeddedToolchainDebPackage.swift */; };
 		B10000000000000000000011 /* EmbeddedToolchainUniversalArtifact.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000011 /* EmbeddedToolchainUniversalArtifact.swift */; };
@@ -684,6 +685,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B20000000000000000000014 /* EmbeddedTheosExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedTheosExecutor.swift; sourceTree = "<group>"; };
 		B20000000000000000000013 /* EmbeddedTheosCompilePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedTheosCompilePlan.swift; sourceTree = "<group>"; };
 		B20000000000000000000012 /* EmbeddedToolchainDebPackage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainDebPackage.swift; sourceTree = "<group>"; };
 		B20000000000000000000011 /* EmbeddedToolchainUniversalArtifact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddedToolchainUniversalArtifact.swift; sourceTree = "<group>"; };
@@ -2245,6 +2247,7 @@
 				B20000000000000000000012 /* EmbeddedToolchainDebPackage.swift */,
 				B20000000000000000000011 /* EmbeddedToolchainUniversalArtifact.swift */,
 				B20000000000000000000013 /* EmbeddedTheosCompilePlan.swift */,
+				B20000000000000000000014 /* EmbeddedTheosExecutor.swift */,
 			);
 			path = Build;
 			sourceTree = "<group>";
@@ -3044,6 +3047,7 @@
 				B10000000000000000000009 /* EmbeddedToolchainExecutionAdapter.swift in Sources */,
 				B1000000000000000000000A /* EmbeddedAdapterDiagnosticsView.swift in Sources */,
 				B10000000000000000000013 /* EmbeddedTheosCompilePlan.swift in Sources */,
+				B10000000000000000000014 /* EmbeddedTheosExecutor.swift in Sources */,
 				B1000000000000000000000B /* EmbeddedToolchainProjectSnapshot.swift in Sources */,
 				B1000000000000000000000C /* EmbeddedToolchainProjectMaterializer.swift in Sources */,
 				B1000000000000000000000D /* EmbeddedToolchainRestrictedRequest.swift in Sources */,

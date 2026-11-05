@@ -1,0 +1,179 @@
+import Foundation
+import Darwin
+
+struct EmbeddedTheosBuiltArtifact: Equatable, Sendable {
+    let targetName: String
+    let kind: EmbeddedTheosTargetKind
+    let architecture: String
+    let bytes: Int
+    let sha256: String
+    let filetype: UInt32
+    let installedPath: String
+}
+
+struct EmbeddedTheosExecutionOutcome: Sendable {
+    var artifacts: [EmbeddedTheosBuiltArtifact] = []
+    var attempts: Int = 0
+    var linkCount: Int = 0
+    var temporaryOutputsRemoved = true
+    var failure: String?
+
+    var passed: Bool { failure == nil && temporaryOutputsRemoved && !artifacts.isEmpty }
+}
+
+enum EmbeddedTheosExecutorError: Error, Equatable, LocalizedError, Sendable {
+    case missingToolchain(String)
+    case missingSDK
+    case compileFailed(String, Int32, String)
+    case linkFailed(String, Int32, String)
+    case invalidOutput(String)
+    case cleanupFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .missingToolchain(let detail): return "embedded Theos toolchain is not ready: \(detail)"
+        case .missingSDK: return "no usable iPhoneOS SDK is available to the in-process Theos adapter"
+        case .compileFailed(let unit, let status, let text): return "compile failed (\(unit), status \(status)): \(text)"
+        case .linkFailed(let target, let status, let text): return "link failed (\(target), status \(status)): \(text)"
+        case .invalidOutput(let detail): return "generated Mach-O rejected: \(detail)"
+        case .cleanupFailed: return "temporary Theos outputs could not be removed"
+        }
+    }
+}
+
+/// In-process Theos adapter: it compiles and links the typed target graph with the
+/// already-linked Clang/ld64 bridge. It never runs a shell, Makefile recipe, package
+/// hook, or generated code, and it never signs, installs or loads an output.
+enum EmbeddedTheosExecutor {
+    static let maxCompileUnits = 256
+    static let maxOutputBytes = 32 * 1024 * 1024
+
+    static func execute(plans: [EmbeddedTheosTargetPlan], projectRoot: URL,
+                        cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) throws -> EmbeddedTheosExecutionOutcome {
+        let status = OMToolchain.capabilityStatus()
+        guard status["compiler_linked"] == "yes", status["verification"] == "passed",
+              status["state"] == "ready" else {
+            throw EmbeddedTheosExecutorError.missingToolchain(
+                "compiler_linked=\(status["compiler_linked"] ?? "unknown") verification=\(status["verification"] ?? "unknown") state=\(status["state"] ?? "unknown")")
+        }
+        guard let sysroot = status["sysroot"], !sysroot.isEmpty, status["sdk"] == "present",
+              !sysroot.hasSuffix("/") || sysroot.count > 1 else {
+            throw EmbeddedTheosExecutorError.missingSDK
+        }
+        let resourceDir = status["resource_dir"].flatMap { $0.isEmpty ? nil : $0 }
+        let minimumIOS = "15.4"
+        let fileManager = FileManager.default
+        let runRoot = fileManager.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("minis-theos-" + UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: runRoot, withIntermediateDirectories: false,
+                                        attributes: [.posixPermissions: 0o700])
+        var outcome = EmbeddedTheosExecutionOutcome()
+        var cleanupNeeded = true
+        defer {
+            if cleanupNeeded {
+                do {
+                    try fileManager.removeItem(at: runRoot)
+                    if fileManager.fileExists(atPath: runRoot.path) { outcome.temporaryOutputsRemoved = false }
+                } catch { outcome.temporaryOutputsRemoved = false }
+            }
+        }
+
+        func compile(_ source: EmbeddedTheosMaterializedSource, arch: EmbeddedToolchainArchitecture,
+                     includeDirs: [String], objectURL: URL) throws {
+            let sourceURL = runRoot.appendingPathComponent(source.path.replacingOccurrences(of: "/", with: "_"))
+            try source.contents.data(using: .ascii)?.write(to: sourceURL, options: .withoutOverwriting)
+            var arguments = OMToolchain.cc1ArgumentsForSource(
+                sourcePath: sourceURL.path, outputPath: objectURL.path,
+                sysroot: sysroot, resourceDir: resourceDir,
+                archName: arch.rawValue, minimumIOS: minimumIOS)
+            for dir in includeDirs { arguments.append(contentsOf: ["-I", dir]) }
+            var out: NSString?
+            var err: NSString?
+            let status = OMToolchain.runCC1(arguments, stdout: &out, stderr: &err)
+            outcome.attempts += 1
+            guard status == .ok else {
+                throw EmbeddedTheosExecutorError.compileFailed(source.path, Int32(status.rawValue),
+                                                              String(((err as String?) ?? "").prefix(2000)))
+            }
+        }
+
+        for plan in plans {
+            guard !cancellation.isCancelled else { outcome.failure = "cancelled"; return outcome }
+            var includeDirs = Set<String>([projectRoot.path])
+            for header in plan.target.headerPaths {
+                let dir = projectRoot.appendingPathComponent(header).deletingLastPathComponent()
+                includeDirs.insert(dir.path)
+            }
+            for source in plan.target.sourcePaths {
+                let dir = projectRoot.appendingPathComponent(source).deletingLastPathComponent()
+                includeDirs.insert(dir.path)
+            }
+            for arch in plan.architectures {
+                guard !cancellation.isCancelled else { outcome.failure = "cancelled"; return outcome }
+                var objects: [String] = []
+                for source in plan.sources {
+                    let object = runRoot.appendingPathComponent(
+                        "\(plan.target.name)-\(arch.rawValue)-\(EmbeddedTheosTargetPlan.objectName(for: source.path))")
+                    try compile(source, arch: arch, includeDirs: includeDirs.sorted(), objectURL: object)
+                    objects.append(object.path)
+                }
+                let outputName = plan.target.kind == .tweak ? "\(plan.target.name).dylib" : plan.target.name
+                let output = runRoot.appendingPathComponent("\(arch.rawValue)-\(outputName)")
+                var linkArguments = ["-arch", arch.rawValue]
+                linkArguments += plan.target.kind == .tweak
+                    ? ["-dylib", "-install_name", plan.target.installName ?? "@rpath/\(plan.target.name).dylib"]
+                    : ["-execute", "-e", "_main"]
+                linkArguments += ["-syslibroot", sysroot, "-platform_version", "ios", minimumIOS, "16.5",
+                                  "-o", output.path]
+                linkArguments += objects
+                for framework in plan.target.frameworks { linkArguments += ["-framework", framework] }
+                linkArguments += ["-lSystem"]
+                var linkOut: NSString?
+                var linkErr: NSString?
+                outcome.linkCount += 1
+                let status = OMToolchain.runLinker(linkArguments, stdout: &linkOut, stderr: &linkErr)
+                guard status == .ok else {
+                    throw EmbeddedTheosExecutorError.linkFailed(plan.target.name, Int32(status.rawValue),
+                                                                String(((linkErr as String?) ?? "").prefix(2000)))
+                }
+                let descriptor = open(output.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+                guard descriptor >= 0 else { throw EmbeddedTheosExecutorError.invalidOutput(outputName) }
+                let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+                defer { try? handle.close() }
+                var attributes = stat()
+                guard fstat(descriptor, &attributes) == 0, attributes.st_mode & S_IFMT == S_IFREG,
+                      attributes.st_size > 0, attributes.st_size <= off_t(maxOutputBytes) else {
+                    throw EmbeddedTheosExecutorError.invalidOutput(outputName)
+                }
+                let data = (try? handle.read(upToCount: maxOutputBytes + 1)) ?? Data()
+                guard data.count == Int(attributes.st_size) else {
+                    throw EmbeddedTheosExecutorError.invalidOutput(outputName)
+                }
+                let filetype: UInt32 = plan.target.kind == .tweak ? 6 : 2
+                let artifact: EmbeddedAdapterArtifact
+                do {
+                    artifact = try EmbeddedAdapterArtifact.inspect(data, name: outputName,
+                                                                   filetype: filetype, architecture: arch)
+                } catch {
+                    throw EmbeddedTheosExecutorError.invalidOutput("\(outputName): \(error.localizedDescription)")
+                }
+                outcome.artifacts.append(EmbeddedTheosBuiltArtifact(
+                    targetName: plan.target.name, kind: plan.target.kind, architecture: arch.rawValue,
+                    bytes: artifact.bytes, sha256: artifact.sha256, filetype: filetype,
+                    installedPath: EmbeddedTheosDebPackage.rootlessPrefix + plan.target.installPath))
+            }
+        }
+        do {
+            try fileManager.removeItem(at: runRoot)
+            guard !fileManager.fileExists(atPath: runRoot.path) else {
+                throw EmbeddedTheosExecutorError.cleanupFailed
+            }
+            cleanupNeeded = false
+        } catch {
+            outcome.temporaryOutputsRemoved = false
+            outcome.failure = "temporary Theos outputs could not be removed"
+            cleanupNeeded = false
+        }
+        return outcome
+    }
+}
