@@ -399,6 +399,8 @@ def adapt_options(text: str, report: dict) -> str:
 			}"""
     parse_new = parse_old + """
 			else if (strcmp(arg, "-adhoc_codesign_entitlements") == 0) {
+				if ( i + 1 >= argc )
+					throw "-adhoc_codesign_entitlements missing <path>";
 				const char* path = argv[++i];
 				if ( path == NULL )
 					throw "-adhoc_codesign_entitlements missing <path>";

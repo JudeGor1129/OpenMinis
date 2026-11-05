@@ -85,6 +85,8 @@ require("expectedEntitlements" in adapter and "entitlements special-slot hash mi
 require("adapt_options_h" in ld64_adapter and "adapt_linkedit_h" in ld64_adapter and
         "CSSLOT_ENTITLEMENTS" in ld64_adapter and "O_NOFOLLOW" in ld64_adapter,
         "ld64 adaptation must embed bounded, nofollow entitlement blobs")
+require("i + 1 >= argc" in ld64_adapter,
+        "entitlements linker option must reject a missing path before argv increment")
 require(lock.get("schema") == 1, "lock schema must be 1")
 # The lock must describe exactly one artifact, and that artifact's name must
 # identify the commit it was built from. Binding it this way catches a pin that
