@@ -94,6 +94,22 @@ enum EmbeddedToolchainProjectPublisher {
             projectRoot: projectRoot, cancellation: cancellation)
     }
 
+    /// Publishes a multi-target Theos rootless DEB (daemon and/or tweak) after the
+    /// caller's own structural verification of the exact bytes being committed.
+    /// The package is never installed, signed or executed.
+    static func publishVerifiedTheosDeb(_ data: Data, named name: String,
+                                        projectRoot: URL,
+                                        verification: () throws -> Void,
+                                        cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) throws -> EmbeddedToolchainPublishedArtifact {
+        guard safeDebFilename(name) else { throw EmbeddedToolchainProjectPublisherError.unsafeName }
+        guard data.count <= EmbeddedTheosDebPackage.maxBytes else { throw EmbeddedToolchainProjectPublisherError.outputTooLarge }
+        guard !cancellation.isCancelled else { throw CancellationError() }
+        do { try verification() } catch { throw EmbeddedToolchainProjectPublisherError.invalidPackage }
+        return try publishVerifiedBytes(data, named: name, architecture: "iphoneos-arm64", filetype: 0,
+            kind: "theos_rootless_deb", maximumBytes: EmbeddedTheosDebPackage.maxBytes,
+            projectRoot: projectRoot, cancellation: cancellation)
+    }
+
     private static func publishVerifiedBytes(_ data: Data, named name: String,
                                              architecture: String, filetype: UInt32, kind: String,
                                              maximumBytes: Int, projectRoot: URL,
@@ -161,7 +177,7 @@ enum EmbeddedToolchainProjectPublisher {
     static func readBackVerified(_ expected: Data, named name: String, under directory: Int32,
                                  publishedDescriptor: Int32) throws -> String {
         guard safeOutputFilename(name), !expected.isEmpty,
-              expected.count <= EmbeddedToolchainDebPackage.maxBytes else {
+              expected.count <= max(EmbeddedToolchainDebPackage.maxBytes, EmbeddedTheosDebPackage.maxBytes) else {
             throw EmbeddedToolchainProjectPublisherError.readBackFailed(EINVAL)
         }
         let descriptor = name.withCString {

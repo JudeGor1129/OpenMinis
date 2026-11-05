@@ -297,17 +297,25 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
                 guard inLinkedit else { throw invalid("optimization_hint_outside_linkedit") }
             }
         }
+        // A tweak or daemon may legitimately link Apple frameworks (UIKit, Foundation,
+        // Security, ...), so the dependency rule admits any absolute system library or
+        // framework below /usr/lib or /System/Library. Project-relative, @rpath,
+        // non-system and malformed paths stay rejected, so an output still cannot
+        // smuggle a dependency on user-supplied code.
+        func isSystemDependency(_ path: String) -> Bool {
+            guard path.hasPrefix("/"), !path.contains("//"), !path.contains("/../"),
+                  !path.contains("/./") else { return false }
+            return path.hasPrefix("/usr/lib/") || path.hasPrefix("/System/Library/")
+        }
         if filetype == 6 {
-            let allowedDependencies = ["/usr/lib/libSystem.B.dylib"]
-            let objcDependencies = ["/usr/lib/libSystem.B.dylib", "/usr/lib/libobjc.A.dylib"]
-            guard (dependencies == allowedDependencies || dependencies == objcDependencies),
+            guard dependencies.count <= 64, dependencies.allSatisfy(isSystemDependency),
                   installNames == ["@rpath/" + name] else {
                 throw invalid("dependency_or_install_name_mismatch")
             }
         } else if filetype == 2 {
-            let allowedExecutableDependencies = ["/usr/lib/libSystem.B.dylib", "/usr/lib/libobjc.A.dylib"]
             guard hasMain else { throw invalid("executable_missing_lc_main") }
-            guard installNames.isEmpty, dependencies.allSatisfy({ allowedExecutableDependencies.contains($0) }) else {
+            guard installNames.isEmpty, dependencies.count <= 64,
+                  dependencies.allSatisfy(isSystemDependency) else {
                 throw invalid("executable_dependency_mismatch")
             }
         } else {

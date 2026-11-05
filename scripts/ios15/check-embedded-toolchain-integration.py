@@ -118,5 +118,45 @@ require(set(lock.get("manifest", {}).get("archives", {})) == {
 require(lock.get("enabled_link_report", {}).get("result_architectures") ==
         ["arm64", "arm64", "arm64e", "arm64e"],
         "locked enabled-link report must cover both object and executable architectures")
+
+# --- embedded_theos product delivery wiring --------------------------------
+providers = text("src/ios/Agent/Build/BuildProviders.swift")
+models = text("src/ios/Agent/Build/BuildModels.swift")
+deb_package = text("src/ios/Agent/Build/EmbeddedToolchainDebPackage.swift")
+publisher = text("src/ios/Agent/Build/EmbeddedToolchainProjectPublisher.swift")
+universal = text("src/ios/Agent/Build/EmbeddedToolchainUniversalArtifact.swift")
+
+require("struct EmbeddedTheosBuildProvider: BuildProvider" in providers and
+        "EmbeddedTheosExecutor.execute" in providers and
+        "EmbeddedTheosDebPackage.build" in providers and
+        "publishVerifiedTheosDeb" in providers and
+        "completedWithArtifacts" in providers,
+        "embedded_theos provider must compile, package and publish a verified DEB")
+require("blocked.isEmpty" in providers and "never executes Makefile recipes or package hooks" in providers,
+        "embedded_theos must fail explicitly instead of ignoring package recipes")
+require("EmbeddedTheosLayoutLoader.load" in providers and
+        "EmbeddedTheosControlMetadata.parse" in providers and
+        "EmbeddedTheosFilterPlist.bundleIDs" in providers,
+        "embedded_theos must read control, filter plist and layout declaratively")
+theos_provider = providers[providers.index("struct EmbeddedTheosBuildProvider:"):
+                          providers.index("struct RemoteGitHubActionsProvider:")]
+require("context.executor" not in theos_provider,
+        "embedded_theos provider must never invoke the shell executor")
+require("EmbeddedUniversalFileType" in universal and "case executable = 2" in universal and
+        "filetype: UInt32 = EmbeddedUniversalFileType.dylib.rawValue" in universal,
+        "universal container must carry dylibs and daemon executables without faking slices")
+require("EmbeddedTheosControlMetadata" in deb_package and "EmbeddedTheosLayoutLoader" in deb_package and
+        "readBoundedProjectFile" in deb_package and "isSymbolicLink" in deb_package,
+        "Theos control/layout inputs must be read through bounded nofollow project reads")
+require("layout/DEBIAN maintainer scripts are not supported" in deb_package,
+        "unsupported layout/DEBIAN staging must be reported, not ignored")
+require("publishVerifiedTheosDeb" in publisher and
+        "EmbeddedTheosDebPackage.maxBytes" in publisher and
+        "verification()" in publisher,
+        "Theos DEB publication must verify the exact bytes it commits")
+require("!targets.contains { $0.kind == .tweak } || !bundleIDs.isEmpty" in models,
+        "plan validation must allow daemon-only projects while still requiring tweak filters")
+print("PASS: embedded_theos product delivery is declarative, verified and publication-gated.")
+
 print("PASS: policy binds the disposable arm64 validation App to the locked kit and fixed-runtime evidence.")
 print("PASS: OM_TOOLCHAIN_VERIFIED is validation-only; committed Xcode target and BuildProvider remain locked.")

@@ -275,6 +275,160 @@ enum EmbeddedTheosDebPackage {
     }
 }
 
+/// Theos/Debian `control` metadata parsed declaratively. Only a fixed set of
+/// fields is read; no variable substitution, shell text or recipe is evaluated.
+struct EmbeddedTheosControlMetadata: Equatable, Sendable {
+    static let maxBytes = 16 * 1024
+    static let defaultDepends = "firmware (>= 15.4), mobilesubstrate"
+
+    let packageID: String
+    let name: String
+    let version: String
+    let maintainer: String
+    let description: String
+    let depends: String
+
+    static func parse(_ text: String) throws -> EmbeddedTheosControlMetadata {
+        guard text.utf8.count <= maxBytes else { throw EmbeddedTheosDebPackageError.invalidMetadata }
+        var fields: [String: String] = [:]
+        for raw in text.components(separatedBy: "\n") {
+            let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
+            if line.isEmpty { continue }
+            // Continuation lines belong to a field this parser deliberately ignores.
+            if line.hasPrefix(" ") || line.hasPrefix("\t") { continue }
+            guard let colon = line.firstIndex(of: ":") else { throw EmbeddedTheosDebPackageError.invalidMetadata }
+            let key = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
+            let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty,
+                  key.range(of: "^[A-Za-z][A-Za-z0-9-]{0,31}$", options: .regularExpression) != nil else {
+                throw EmbeddedTheosDebPackageError.invalidMetadata
+            }
+            fields[key] = value
+        }
+        func singleLine(_ value: String, _ limit: Int) -> Bool {
+            !value.isEmpty && value.utf8.count <= limit && value.unicodeScalars.allSatisfy {
+                !CharacterSet.controlCharacters.contains($0) && !CharacterSet.newlines.contains($0)
+            }
+        }
+        guard let packageID = fields["Package"],
+              packageID.range(of: "^[a-z0-9][a-z0-9+.-]{1,127}$", options: .regularExpression) != nil,
+              let name = fields["Name"], singleLine(name, 256),
+              let version = fields["Version"],
+              version.range(of: "^[0-9][A-Za-z0-9.+~_-]{0,63}$", options: .regularExpression) != nil,
+              let maintainer = fields["Maintainer"], singleLine(maintainer, 256),
+              let description = fields["Description"], singleLine(description, 512) else {
+            throw EmbeddedTheosDebPackageError.invalidMetadata
+        }
+        let depends = fields["Depends"].flatMap { singleLine($0, 256) ? $0 : nil } ?? defaultDepends
+        return EmbeddedTheosControlMetadata(packageID: packageID, name: name, version: version,
+                                            maintainer: maintainer, description: description, depends: depends)
+    }
+
+    var filename: String { packageID + "_" + version + "_iphoneos-arm64.deb" }
+
+    var controlText: String {
+        "Package: \(packageID)\nName: \(name)\nVersion: \(version)\n" +
+            "Architecture: iphoneos-arm64\nMaintainer: \(maintainer)\n" +
+            "Description: \(description)\nSection: Tweaks\nPriority: optional\n" +
+            "Depends: \(depends)\n"
+    }
+}
+
+/// Reads the SpringBoard filter bundles a tweak declares in its own plist.
+enum EmbeddedTheosFilterPlist {
+    static let maxBytes = 16 * 1024
+
+    static func bundleIDs(from data: Data) throws -> [String] {
+        guard !data.isEmpty, data.count <= maxBytes else { throw EmbeddedTheosDebPackageError.invalidMetadata }
+        let object: Any
+        do { object = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) }
+        catch { throw EmbeddedTheosDebPackageError.invalidMetadata }
+        guard let dictionary = object as? [String: Any],
+              let filter = dictionary["Filter"] as? [String: Any],
+              let bundles = filter["Bundles"] as? [String], !bundles.isEmpty, bundles.count <= 20,
+              Set(bundles).count == bundles.count,
+              bundles.allSatisfy({ $0.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]{0,254}$",
+                                            options: .regularExpression) != nil }) else {
+            throw EmbeddedTheosDebPackageError.invalidMetadata
+        }
+        return bundles
+    }
+}
+
+struct EmbeddedTheosLayoutEntry: Equatable, Sendable {
+    /// Path relative to the rootless prefix, e.g. "Library/LaunchDaemons/a.plist".
+    let path: String
+    let bytes: Data
+    let mode: Int
+}
+
+/// Reads the project's `layout/` staging tree - the documented Theos way to ship
+/// extra files such as LaunchDaemon plists - without executing anything. Every
+/// file is re-read through the bounded O_NOFOLLOW project reader, so a symlink or
+/// oversized file is rejected rather than trusted.
+enum EmbeddedTheosLayoutLoader {
+    static let directory = "layout"
+    static let maxFiles = 256
+    static let maxFileBytes = 16 * 1024
+    static let maxTotalBytes = 4 * 1024 * 1024
+
+    static func load(root: URL) throws -> [EmbeddedTheosLayoutEntry] {
+        let canonical = try EmbeddedToolchainProjectSnapshotBuilder.validatedRoot(root)
+        let base = canonical.appendingPathComponent(directory, isDirectory: true)
+        var isDirectoryFlag: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: base.path, isDirectory: &isDirectoryFlag) else { return [] }
+        guard isDirectoryFlag.boolValue else { throw EmbeddedTheosDebPackageError.unsafePath(directory) }
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
+        guard let walker = FileManager.default.enumerator(at: base, includingPropertiesForKeys: keys,
+                                                          options: [.skipsHiddenFiles], errorHandler: nil) else {
+            throw EmbeddedTheosDebPackageError.unsafePath(directory)
+        }
+        var relatives: [String] = []
+        for case let url as URL in walker {
+            guard let values = try? url.resourceValues(forKeys: Set(keys)) else {
+                throw EmbeddedTheosDebPackageError.unsafePath(url.lastPathComponent)
+            }
+            if values.isSymbolicLink == true { throw EmbeddedTheosDebPackageError.unsafePath(url.lastPathComponent) }
+            guard values.isRegularFile == true else { continue }
+            let pathPrefix = base.path.hasSuffix("/") ? base.path : base.path + "/"
+            guard url.path.hasPrefix(pathPrefix) else {
+                throw EmbeddedTheosDebPackageError.unsafePath(url.lastPathComponent)
+            }
+            let relative = directory + "/" + String(url.path.dropFirst(pathPrefix.count))
+            relatives.append(relative)
+            guard relatives.count <= maxFiles else { throw EmbeddedTheosDebPackageError.tooLarge }
+        }
+        var entries: [EmbeddedTheosLayoutEntry] = []
+        var total = 0
+        for relative in relatives.sorted() {
+            let stripped = String(relative.dropFirst(directory.count + 1))
+            guard !stripped.isEmpty else { throw EmbeddedTheosDebPackageError.unsafePath(relative) }
+            guard stripped != "DEBIAN", !stripped.hasPrefix("DEBIAN/") else {
+                throw EmbeddedTheosDebPackageError.invalidPackage("layout/DEBIAN maintainer scripts are not supported")
+            }
+            let bytes = try EmbeddedToolchainProjectSnapshotBuilder.readBoundedProjectFile(
+                relative, root: canonical, limit: maxFileBytes)
+            guard !bytes.isEmpty, total <= maxTotalBytes - bytes.count else {
+                throw EmbeddedTheosDebPackageError.tooLarge
+            }
+            total += bytes.count
+            entries.append(EmbeddedTheosLayoutEntry(path: stripped, bytes: bytes,
+                                                    mode: try mode(of: relative, root: canonical)))
+        }
+        return entries
+    }
+
+    private static func mode(of relative: String, root: URL) throws -> Int {
+        let url = root.appendingPathComponent(relative)
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let permissions = (attributes?[.posixPermissions] as? NSNumber)?.intValue ?? 0o644
+        guard permissions == 0o755 || permissions == 0o644 else {
+            throw EmbeddedTheosDebPackageError.invalidPackage("layout file mode must be 0755 or 0644: \(relative)")
+        }
+        return permissions
+    }
+}
+
 private struct PackageTarEntry {
     let path: String
     let bytes: Data

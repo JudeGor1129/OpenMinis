@@ -54,7 +54,7 @@ final class ProgrammingBuildToolsTests: XCTestCase {
         XCTAssertEqual(BuildProjectDetector.classify(manifests: ["./Makefile"], isTheos: false), .make)
     }
 
-    func testEmbeddedTheosPlanRequiresSafeDualTargetGraph() throws {
+    func testEmbeddedTheosPlanAcceptsSingleTargetProjectsAndRejectsUnsafePaths() throws {
         let daemon = EmbeddedTheosTarget(name: "ictrld", kind: .daemon,
             sourcePaths: ["daemon/main.m"], headerPaths: ["daemon/ICNAuth.h"],
             frameworks: ["Foundation", "Security"], installPath: "usr/libexec/ictrld",
@@ -77,10 +77,26 @@ final class ProgrammingBuildToolsTests: XCTestCase {
             filterPlistPath: nil, entitlementsPath: nil, architectures: [.arm64, .arm64e])
         XCTAssertThrowsError(try unsafe.validate())
 
-        let singleTarget = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
+        // A single-tweak or single-daemon project is a normal Theos project.
+        let daemonOnly = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
             version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
-            bundleIDs: ["com.apple.springboard"], targets: [daemon])
-        XCTAssertThrowsError(try singleTarget.validate())
+            bundleIDs: [], targets: [daemon])
+        XCTAssertNoThrow(try daemonOnly.validate())
+
+        let tweakOnly = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
+            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+            bundleIDs: ["com.apple.springboard"], targets: [tweak])
+        XCTAssertNoThrow(try tweakOnly.validate())
+
+        let noTargets = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
+            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+            bundleIDs: [], targets: [])
+        XCTAssertThrowsError(try noTargets.validate())
+
+        let tweakWithoutFilter = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
+            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+            bundleIDs: [], targets: [tweak])
+        XCTAssertThrowsError(try tweakWithoutFilter.validate())
     }
 
     func testEmbeddedTheosManifestParserBuildsDualTargetGraphAndRejectsShell() throws {
@@ -201,6 +217,46 @@ final class ProgrammingBuildToolsTests: XCTestCase {
             maintainerScripts: ["postrm": "#!/bin/sh\n"]))
         XCTAssertThrowsError(try EmbeddedTheosDebPackage.control(packageID: "Bad ID",
             name: "n", version: "1.0", maintainer: "m", description: "d", depends: "mobilesubstrate"))
+    }
+
+    func testEmbeddedTheosControlAndFilterParsing() throws {
+        let control = """
+        Package: com.example.tweak
+        Name: Example Tweak
+        Version: 1.2.3
+        Architecture: iphoneos-arm64
+        Maintainer: Example <me@example.com>
+        Depends: firmware (>= 15.4), mobilesubstrate
+        Description: A declarative control file
+         with an ignored continuation line.
+        Section: Tweaks
+        """
+        let metadata = try EmbeddedTheosControlMetadata.parse(control)
+        XCTAssertEqual(metadata.packageID, "com.example.tweak")
+        XCTAssertEqual(metadata.version, "1.2.3")
+        XCTAssertEqual(metadata.filename, "com.example.tweak_1.2.3_iphoneos-arm64.deb")
+        XCTAssertTrue(metadata.controlText.contains("Depends: firmware (>= 15.4), mobilesubstrate"))
+        XCTAssertTrue(metadata.controlText.contains("Architecture: iphoneos-arm64"))
+
+        // A daemon-only control file legitimately declares no Depends.
+        let daemonControl = try EmbeddedTheosControlMetadata.parse("""
+        Package: com.example.daemon
+        Name: Example Daemon
+        Version: 1.0
+        Maintainer: Example
+        Description: daemon only
+        """)
+        XCTAssertEqual(daemonControl.depends, EmbeddedTheosControlMetadata.defaultDepends)
+
+        XCTAssertThrowsError(try EmbeddedTheosControlMetadata.parse(
+            "Package: Bad ID\nName: n\nVersion: 1.0\nMaintainer: m\nDescription: d"))
+        XCTAssertThrowsError(try EmbeddedTheosControlMetadata.parse(
+            "Package: com.example.x\nName: n\nVersion: not-a-version\nMaintainer: m\nDescription: d"))
+
+        let filter = try PropertyListSerialization.data(
+            fromPropertyList: ["Filter": ["Bundles": ["com.apple.springboard"]]], format: .xml, options: 0)
+        XCTAssertEqual(try EmbeddedTheosFilterPlist.bundleIDs(from: filter), ["com.apple.springboard"])
+        XCTAssertThrowsError(try EmbeddedTheosFilterPlist.bundleIDs(from: Data("{\"Filter\":{}}".utf8)))
     }
 
     func testEmbeddedAdHocSignatureVerifierCoversPagesAndEntitlements() throws {

@@ -160,48 +160,308 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
     private let capabilities = [
         "Twork-level in-process Clang/LLVM and ld64 target",
         "real iPhoneOS SDK and framework header resolution",
-        "multi-target Theos graph: daemon plus tweak/dylib",
+        "multi-target Theos graph: daemon and/or tweak",
         "arm64 and arm64e native Mach-O outputs",
         "rootless DEB staging and independent verification"
     ]
 
+    private struct PreparedRequest: Sendable {
+        let root: URL
+        let project: EmbeddedTheosProjectPlan
+        let plans: [EmbeddedTheosTargetPlan]
+        let control: EmbeddedTheosControlMetadata
+        let filterPlist: Data?
+        let layout: [EmbeddedTheosLayoutEntry]
+        let artifactGuestPath: String
+    }
+
+    private struct PackagedDelivery: Sendable {
+        let deb: Data
+        let architectures: [String]
+        let payloadPaths: [String]
+        let targetKinds: [String]
+    }
+
     func availability(for context: BuildProviderContext) async -> BuildProviderAvailability {
+        do {
+            _ = try prepare(context)
+        } catch {
+            return unavailable(error.localizedDescription,
+                ["declarative rootless Theos project under the active session workspace"])
+        }
+        return toolchainAvailability()
+    }
+
+    /// Declarative preflight: it reads the Makefile, the `control` file, the tweak
+    /// filter plist and the `layout/` tree, then plans typed compile actions. It
+    /// never runs a recipe, hook or command.
+    private func prepare(_ context: BuildProviderContext) throws -> PreparedRequest {
         guard context.inspection.kind == .theos else {
-            return unavailable("embedded_theos requires a detected Theos project", ["ProjectBuildKind.theos"])
+            throw EmbeddedAdapterError.rejected("embedded_theos requires a detected Theos project")
+        }
+        guard context.request.command == nil && context.request.testCommand == nil else {
+            throw EmbeddedAdapterError.rejected("embedded_theos accepts no shell command or test command")
         }
         guard let workspace = context.nativeWorkspaceRoot else {
-            return unavailable("The active chat session has no native workspace URL.", ["session workspace URL"])
+            throw EmbeddedAdapterError.rejected("the active chat session has no native workspace URL")
         }
-        let root: URL
-        let makefile: String
-        let inspection: EmbeddedTheosManifestParser.Inspection
-        do {
-            root = try Self.resolveWorkspaceProject(context.request.projectPath, workspace: workspace)
-            makefile = try Self.readBoundedMakefile(root)
-            inspection = try EmbeddedTheosManifestParser.inspect(makefile: makefile)
-        } catch {
-            return unavailable("Theos project preflight failed: \(error.localizedDescription)",
-                ["declarative Theos Makefile under the active session workspace"])
+        let root = try Self.resolveWorkspaceProject(context.request.projectPath, workspace: workspace)
+        let makefile = try Self.readBoundedMakefile(root)
+        let inspection = try EmbeddedTheosManifestParser.inspect(makefile: makefile)
+        // Every recipe and hook is reported by the parser and deliberately not run.
+        // Anything beyond the default `all` target would change the staged package,
+        // so the build fails instead of silently shipping an incomplete DEB.
+        let blocked = inspection.ignoredRecipes.filter { $0 != "all::" && $0 != "all:" }
+        guard blocked.isEmpty else {
+            throw EmbeddedAdapterError.rejected(
+                "the native adapter never executes Makefile recipes or package hooks; move that staging into layout/ and delete: " +
+                blocked.prefix(8).joined(separator: " | "))
         }
-        var missing: [String] = []
-        if !inspection.isComplete { missing.append("both daemon and tweak targets") }
-        if !inspection.ignoredRecipes.isEmpty {
-            missing.append("declarative staging for \(inspection.ignoredRecipes.count) skipped package recipe(s)")
+        let control = try Self.readControl(root)
+        var filterPlist: Data?
+        var bundleIDs: [String] = []
+        if let tweak = inspection.targets.first(where: { $0.kind == .tweak }),
+           let filterPath = tweak.filterPlistPath {
+            guard let data = try? EmbeddedToolchainProjectSnapshotBuilder.readBoundedProjectFile(
+                filterPath, root: root, limit: EmbeddedTheosFilterPlist.maxBytes) else {
+                throw EmbeddedAdapterError.rejected("Theos tweak must ship \(filterPath) declaring Filter.Bundles")
+            }
+            filterPlist = data
+            bundleIDs = try EmbeddedTheosFilterPlist.bundleIDs(from: data)
         }
+        let project = EmbeddedTheosProjectPlan(schema: 1, packageID: control.packageID,
+            version: control.version, name: control.name, maintainer: control.maintainer,
+            description: control.description, bundleIDs: bundleIDs, targets: inspection.targets)
+        try project.validate()
+        var declared = inspection.targets.flatMap { $0.sourcePaths + $0.headerPaths }
+        declared.append(contentsOf: inspection.targets.compactMap(\.entitlementsPath))
+        declared.append(contentsOf: inspection.targets.compactMap(\.filterPlistPath))
+        let contents = try EmbeddedToolchainProjectSnapshotBuilder.loadDeclaredTheosFiles(
+            Array(Set(declared)).sorted(), root: root)
+        let plans = try EmbeddedTheosCompilePlanner.plan(project: project, fileContents: contents)
+        let layout = try EmbeddedTheosLayoutLoader.load(root: root)
+        let guestOutput = context.request.projectPath + "/" +
+            EmbeddedToolchainProjectPublisher.outputDirectory + "/" + control.filename
+        if !context.request.artifactPaths.isEmpty && context.request.artifactPaths != [guestOutput] {
+            throw EmbeddedAdapterError.rejected("artifact_paths, when supplied, must name the generated DEB inside this project")
+        }
+        return PreparedRequest(root: root, project: project, plans: plans, control: control,
+                               filterPlist: filterPlist, layout: layout, artifactGuestPath: guestOutput)
+    }
+
+    func build(context: BuildProviderContext, runID: String) async -> BuildProviderExecution {
+        let started = Date()
+        let cancellation = EmbeddedAdapterCancellation()
+        return await withTaskCancellationHandler {
+            do {
+                guard !cancellation.isCancelled else { throw CancellationError() }
+                let ready = await availability(for: context)
+                guard !cancellation.isCancelled else { throw CancellationError() }
+                guard ready.isAvailable else { return .unavailable(ready) }
+                let prepared = try prepare(context)
+                guard !cancellation.isCancelled else { throw CancellationError() }
+                let outcome = try await Task.detached(priority: .userInitiated) {
+                    try EmbeddedTheosExecutor.execute(plans: prepared.plans, cancellation: cancellation)
+                }.value
+                guard !cancellation.isCancelled else { throw CancellationError() }
+                guard outcome.passed else {
+                    return failedExecution(outcome.failure ?? "the in-process Theos adapter produced no verified output",
+                                           runID: runID, started: started, outcome: outcome)
+                }
+                let delivery = try Self.package(outcome: outcome, prepared: prepared)
+                let published = try await Task.detached(priority: .userInitiated) {
+                    try EmbeddedToolchainProjectPublisher.publishVerifiedTheosDeb(
+                        delivery.deb, named: prepared.control.filename, projectRoot: prepared.root,
+                        verification: { _ = try EmbeddedTheosDebPackage.inspect(delivery.deb) },
+                        cancellation: cancellation)
+                }.value
+                // A committed rename wins a concurrent late cancellation; the publisher
+                // has already read the committed directory entry back byte-for-byte.
+                guard published.sha256 == EmbeddedAdapterArtifact.digest(delivery.deb),
+                      published.bytes == delivery.deb.count else {
+                    return failedExecution("published DEB does not match the verified in-memory package",
+                                           runID: runID, started: started, outcome: outcome)
+                }
+                var metadata = ["native_provider": "embedded_theos", "full_log_persisted": "false",
+                                "artifact_path": prepared.artifactGuestPath,
+                                "artifact_sha256": published.sha256,
+                                "artifact_bytes": String(published.bytes),
+                                "directory_synced": String(published.directorySynced),
+                                "targets": delivery.targetKinds.joined(separator: ","),
+                                "layout_files": String(prepared.layout.count),
+                                "compile_attempts": String(outcome.attempts),
+                                "link_count": String(outcome.linkCount)]
+                metadata["payload_paths"] = delivery.payloadPaths.joined(separator: ";")
+                let execution = BuildCommandExecution(
+                    command: "embedded-theos: arm64 + arm64e -> rootless DEB", exitCode: 0,
+                    durationSeconds: Date().timeIntervalSince(started),
+                    stdoutSummary: Self.summary(outcome: outcome, delivery: delivery),
+                    stderrSummary: "", fullLogPath: "", diagnosticExcerpt: "",
+                    remoteMetadata: metadata, remoteJobs: [], remoteArtifacts: [])
+                return .completedWithArtifacts(execution, [Self.verifiedDEB(published, delivery: delivery,
+                    control: prepared.control, guestPath: prepared.artifactGuestPath)])
+            } catch {
+                if let publisherError = error as? EmbeddedToolchainProjectPublisherError,
+                   case let .committedButUnverified(_, directorySynced) = publisherError {
+                    return failedExecution(error.localizedDescription, runID: runID, started: started,
+                        outcome: nil, extraMetadata: ["publication_committed": "true",
+                                                      "directory_synced": String(directorySynced)])
+                }
+                return failedExecution(error is CancellationError ? "cancelled before publication" : error.localizedDescription,
+                    runID: runID, started: started, outcome: nil)
+            }
+        } onCancel: {
+            cancellation.cancel()
+        }
+    }
+
+    func test(context: BuildProviderContext, runID: String) async -> BuildProviderExecution {
+        let availability = await availability(for: context)
+        return .unavailable(.init(provider: id, state: .unavailable,
+            reason: "embedded_theos compiles and packages a rootless DEB but never runs generated code or tests on device.",
+            missingConfiguration: ["separate authorized device test workflow"],
+            capabilities: availability.capabilities))
+    }
+
+    func resolvedToolchain(for context: BuildProviderContext) async -> String {
+        let status = OMToolchain.capabilityStatus()
+        let fields = ["compiler_linked", "verification", "state", "host_architecture", "resource_headers", "sdk"]
+            .compactMap { key in status[key].map { "\(key)=\($0)" } }
+            .joined(separator: " ")
+        return "embedded-theos: " + fields
+    }
+
+    private func toolchainAvailability() -> BuildProviderAvailability {
         let status = OMToolchain.capabilityStatus()
         let required: [(String, String)] = [
             ("compiler_linked", "yes"), ("verification", "passed"),
             ("resource_headers", "present"), ("sdk", "present"), ("state", "ready")
         ]
-        missing.append(contentsOf: required.compactMap { key, value in status[key] == value ? nil : key + "=" + value })
-        missing.append("Theos target graph -> in-process CC1/ld64 adapter")
-        missing.append("rootless DEB publisher for multi-target outputs")
-        let summary = inspection.targets
-            .map { $0.name + ":" + $0.kind.rawValue }
-            .joined(separator: ",")
-        return unavailable(
-            "The Twork-level embedded Theos adapter is not linked into this App build yet; nothing was compiled and no Makefile recipe executed. Inspected targets=[\(summary)] skippedRecipes=\(inspection.ignoredRecipes.count).",
-            missing)
+        let missing = required.compactMap { key, value in status[key] == value ? nil : key + "=" + value }
+        guard status["host_architecture"] == "arm64" || status["host_architecture"] == "arm64e" else {
+            return unavailable("The in-process compiler host architecture is unsupported.",
+                               missing + ["arm64 or arm64e host"])
+        }
+        guard missing.isEmpty else {
+            return unavailable("The verified in-process compiler or pinned SDK is not ready; nothing was compiled and no Makefile recipe ran.",
+                               missing)
+        }
+        return BuildProviderAvailability(provider: id, state: .available,
+            reason: "The session-workspace Theos project passes the declarative native preflight.",
+            missingConfiguration: [], capabilities: capabilities)
+    }
+
+    private static func readControl(_ root: URL) throws -> EmbeddedTheosControlMetadata {
+        let data = try EmbeddedToolchainProjectSnapshotBuilder.readBoundedProjectFile(
+            "control", root: root, limit: EmbeddedTheosControlMetadata.maxBytes)
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw EmbeddedAdapterError.rejected("the Theos control file must be bounded UTF-8")
+        }
+        return try EmbeddedTheosControlMetadata.parse(text)
+    }
+
+    /// Merges each target's verified thin slices into a canonical FAT container and
+    /// assembles the rootless payload. Nothing is written, signed or executed here.
+    private static func package(outcome: EmbeddedTheosExecutionOutcome,
+                                prepared: PreparedRequest) throws -> PackagedDelivery {
+        var slicesByTarget: [String: [String: EmbeddedTheosBuiltArtifact]] = [:]
+        for artifact in outcome.artifacts {
+            slicesByTarget[artifact.targetName, default: [:]][artifact.architecture] = artifact
+        }
+        var entries: [EmbeddedTheosDebEntry] = []
+        var architectures: [String] = []
+        var payloadPaths: [String] = []
+        var kinds: [String] = []
+        for target in prepared.project.targets {
+            guard let byArchitecture = slicesByTarget[target.name],
+                  let arm64 = byArchitecture["arm64"], let arm64e = byArchitecture["arm64e"] else {
+                throw EmbeddedAdapterError.rejected("Theos target did not produce both arm64 and arm64e slices: \(target.name)")
+            }
+            let filetype = target.kind == .tweak
+                ? EmbeddedUniversalFileType.dylib.rawValue : EmbeddedUniversalFileType.executable.rawValue
+            // The Mach-O inspector derives a dylib's expected @rpath install name from
+            // this container name, so a tweak must be named exactly like its install name.
+            let containerName = target.kind == .tweak ? target.name + ".dylib" : target.name
+            let universal = try EmbeddedToolchainUniversalBinary.merge(
+                arm64: arm64.data, arm64e: arm64e.data, name: containerName, filetype: filetype)
+            let verified = try EmbeddedToolchainUniversalBinary.inspect(universal, name: containerName, filetype: filetype)
+            guard verified.slices.count == 2, verified.filetype == filetype else {
+                throw EmbeddedAdapterError.rejected("Theos universal output is not a verified two-slice container: \(target.name)")
+            }
+            architectures = verified.architectures
+            let installed = EmbeddedTheosDebPackage.rootlessPrefix + target.installPath
+            entries.append(EmbeddedTheosDebEntry(path: installed, bytes: universal, mode: 0o755))
+            payloadPaths.append(installed)
+            kinds.append(target.name + ":" + target.kind.rawValue + ":" + verified.architectures.joined(separator: "+"))
+            if target.kind == .tweak {
+                guard let filter = prepared.filterPlist else {
+                    throw EmbeddedAdapterError.rejected("Theos tweak has no verified filter plist: \(target.name)")
+                }
+                let installedFilter = EmbeddedTheosDebPackage.rootlessPrefix +
+                    "Library/MobileSubstrate/DynamicLibraries/" + target.name + ".plist"
+                entries.append(EmbeddedTheosDebEntry(path: installedFilter, bytes: filter, mode: 0o644))
+                payloadPaths.append(installedFilter)
+            }
+        }
+        for layout in prepared.layout {
+            let installed = EmbeddedTheosDebPackage.rootlessPrefix + layout.path
+            guard !payloadPaths.contains(installed) else {
+                throw EmbeddedAdapterError.rejected("layout file collides with a generated output: \(layout.path)")
+            }
+            entries.append(EmbeddedTheosDebEntry(path: installed, bytes: layout.bytes, mode: layout.mode))
+            payloadPaths.append(installed)
+        }
+        let deb = try EmbeddedTheosDebPackage.build(files: entries, controlText: prepared.control.controlText)
+        _ = try EmbeddedTheosDebPackage.inspect(deb)
+        return PackagedDelivery(deb: deb, architectures: architectures, payloadPaths: payloadPaths, targetKinds: kinds)
+    }
+
+    private static func summary(outcome: EmbeddedTheosExecutionOutcome, delivery: PackagedDelivery) -> String {
+        "targets=" + delivery.targetKinds.joined(separator: ",") +
+            "; compile_units=" + String(outcome.attempts) +
+            "; links=" + String(outcome.linkCount) +
+            "; payload_files=" + String(delivery.payloadPaths.count) +
+            "; temporary_outputs_removed=" + String(outcome.temporaryOutputsRemoved)
+    }
+
+    private static func verifiedDEB(_ published: EmbeddedToolchainPublishedArtifact,
+                                    delivery: PackagedDelivery, control: EmbeddedTheosControlMetadata,
+                                    guestPath: String) -> ArtifactVerificationResult {
+        let debControl = ["Package": control.packageID, "Name": control.name, "Version": control.version,
+                          "Architecture": "iphoneos-arm64", "Maintainer": control.maintainer,
+                          "Description": control.description, "Section": "Tweaks", "Priority": "optional",
+                          "Depends": control.depends]
+        let capabilities = [
+            VerificationCapability(name: "sha256", state: .verified, detail: "final file readback: " + published.sha256),
+            VerificationCapability(name: "deb_archive", state: .verified, detail: "ar/control.tar/data.tar inspected in memory; final file read back byte-for-byte"),
+            VerificationCapability(name: "rootless_layout", state: .verified, detail: delivery.payloadPaths.joined(separator: ",")),
+            VerificationCapability(name: "fat_architectures", state: .verified, detail: delivery.architectures.joined(separator: ",")),
+            VerificationCapability(name: "signature", state: .notApplicable, detail: "build does not sign packages")
+        ]
+        return ArtifactVerificationResult(path: guestPath, kind: .deb, state: .available,
+            exists: true, sizeBytes: Int64(published.bytes), sha256: published.sha256,
+            archiveEntries: ["debian-binary", "control.tar", "data.tar"] + delivery.payloadPaths,
+            archiveEntryCount: delivery.payloadPaths.count + 3, architectures: delivery.architectures,
+            encryption: nil, signature: "unsigned", debControl: debControl, rootlessPaths: true,
+            rootlessViolations: [], capabilities: capabilities, errors: [])
+    }
+
+    private func failedExecution(_ reason: String, runID: String, started: Date,
+                                 outcome: EmbeddedTheosExecutionOutcome?,
+                                 extraMetadata: [String: String] = [:]) -> BuildProviderExecution {
+        var metadata = ["native_provider": "embedded_theos", "full_log_persisted": "false"]
+        if let outcome = outcome {
+            metadata["compile_attempts"] = String(outcome.attempts)
+            metadata["link_count"] = String(outcome.linkCount)
+            metadata["temporary_outputs_removed"] = String(outcome.temporaryOutputsRemoved)
+            metadata["built_artifacts"] = String(outcome.artifacts.count)
+        }
+        for (key, value) in extraMetadata { metadata[key] = value }
+        let bounded = String(reason.prefix(4000))
+        return .completed(BuildCommandExecution(command: "embedded-theos structured build", exitCode: 1,
+            durationSeconds: Date().timeIntervalSince(started), stdoutSummary: "",
+            stderrSummary: bounded, fullLogPath: "", diagnosticExcerpt: bounded,
+            remoteMetadata: metadata, remoteJobs: [], remoteArtifacts: []))
     }
 
     /// Resolves the same workspace-confined project root used by the restricted
@@ -242,18 +502,6 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
             throw EmbeddedAdapterError.rejected("Makefile is not bounded UTF-8")
         }
         return text
-    }
-
-    func resolvedToolchain(for context: BuildProviderContext) async -> String {
-        "embedded-theos: adapter=unlinked state=unavailable"
-    }
-
-    func build(context: BuildProviderContext, runID: String) async -> BuildProviderExecution {
-        .unavailable(await availability(for: context))
-    }
-
-    func test(context: BuildProviderContext, runID: String) async -> BuildProviderExecution {
-        .unavailable(await availability(for: context))
     }
 
     private func unavailable(_ reason: String, _ missing: [String]) -> BuildProviderAvailability {

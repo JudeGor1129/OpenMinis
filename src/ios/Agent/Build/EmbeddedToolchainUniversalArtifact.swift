@@ -12,8 +12,20 @@ struct EmbeddedUniversalArtifact: Codable, Equatable, Sendable {
     let name: String
     let bytes: Int
     let sha256: String
+    /// MH_DYLIB (6) for a SpringBoard tweak, MH_EXECUTE (2) for a daemon.
+    let filetype: UInt32
     let slices: [EmbeddedUniversalSlice]
     var architectures: [String] { slices.map(\.architecture) }
+}
+
+/// Bounded Mach-O file types this FAT writer can carry. Objects (MH_OBJECT) are
+/// deliberately absent: a universal container is only ever produced from a real
+/// linked dylib or executable.
+enum EmbeddedUniversalFileType: UInt32, Sendable {
+    case executable = 2
+    case dylib = 6
+
+    var kind: String { self == .dylib ? "dylib" : "executable" }
 }
 
 struct EmbeddedUniversalExecutionResult: Sendable {
@@ -51,12 +63,17 @@ enum EmbeddedToolchainUniversalBinary {
     }
 
     static func merge(arm64: Data, arm64e: Data, name: String,
+                      filetype: UInt32 = EmbeddedUniversalFileType.dylib.rawValue,
                       cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) throws -> Data {
         guard !cancellation.isCancelled else { throw CancellationError() }
+        guard [EmbeddedUniversalFileType.executable.rawValue,
+               EmbeddedUniversalFileType.dylib.rawValue].contains(filetype) else {
+            throw rejected("unsupported container file type")
+        }
         let slices = [arm64, arm64e]
         let targets: [EmbeddedToolchainArchitecture] = [.arm64, .arm64e]
         for index in 0..<2 {
-            _ = try EmbeddedAdapterArtifact.inspect(slices[index], name: name, filetype: 6,
+            _ = try EmbeddedAdapterArtifact.inspect(slices[index], name: name, filetype: filetype,
                                                     architecture: targets[index])
         }
         let offsets = [align(48), align(align(48) + arm64.count)]
@@ -77,12 +94,13 @@ enum EmbeddedToolchainUniversalBinary {
             data.append(Data(repeating: 0, count: offsets[index] - data.count))
             data.append(slices[index])
         }
-        _ = try inspect(data, name: name)
+        _ = try inspect(data, name: name, filetype: filetype)
         guard !cancellation.isCancelled else { throw CancellationError() }
         return data
     }
 
-    static func inspect(_ data: Data, name: String) throws -> EmbeddedUniversalArtifact {
+    static func inspect(_ data: Data, name: String,
+                        filetype: UInt32 = EmbeddedUniversalFileType.dylib.rawValue) throws -> EmbeddedUniversalArtifact {
         guard data.count >= 48, data.count <= maxBytes,
               read32(data, at: 0) == 0xcafebabe, read32(data, at: 4) == 2 else {
             throw rejected("requires canonical FAT32 with exactly two slices")
@@ -107,7 +125,7 @@ enum EmbeddedToolchainUniversalBinary {
                 throw rejected("nonzero bytes in container padding")
             }
             let thin = Data(data[offset..<(offset + bytes)])
-            let artifact = try EmbeddedAdapterArtifact.inspect(thin, name: name, filetype: 6,
+            let artifact = try EmbeddedAdapterArtifact.inspect(thin, name: name, filetype: filetype,
                                                               architecture: targets[index])
             guard read32(thin, at: 8, bigEndian: false) == subtype else {
                 throw rejected("FAT table differs from thin slice header")
@@ -118,6 +136,6 @@ enum EmbeddedToolchainUniversalBinary {
         }
         guard cursor == data.count else { throw rejected("trailing bytes/hidden slice") }
         return EmbeddedUniversalArtifact(name: name, bytes: data.count,
-            sha256: EmbeddedAdapterArtifact.digest(data), slices: metadata)
+            sha256: EmbeddedAdapterArtifact.digest(data), filetype: filetype, slices: metadata)
     }
 }

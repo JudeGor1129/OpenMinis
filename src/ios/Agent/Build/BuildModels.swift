@@ -122,13 +122,19 @@ struct EmbeddedTheosProjectPlan: Codable, Equatable, Sendable {
               !name.isEmpty, name.utf8.count <= 256,
               !maintainer.isEmpty, maintainer.utf8.count <= 256,
               !description.isEmpty, description.utf8.count <= 512,
-              !bundleIDs.isEmpty, bundleIDs.count <= 20,
+              // Bundle filters only make sense for a SpringBoard tweak; a daemon-only
+              // project legitimately declares none. A tweak project must declare them.
+              bundleIDs.count <= 20,
+              (!targets.contains { $0.kind == .tweak } || !bundleIDs.isEmpty),
               bundleIDs.allSatisfy({ $0.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]{0,254}$", options: .regularExpression) != nil }),
               Set(targets.map(\.name)).count == targets.count else {
             throw EmbeddedTheosPlanError.invalidPackage
         }
         for target in targets { try target.validate() }
-        guard targets.contains(where: { $0.kind == .daemon }), targets.contains(where: { $0.kind == .tweak }) else {
+        // A Theos project may ship only a tweak, only a daemon, or both. Requiring
+        // both kinds used to reject every ordinary single-tweak tweak project.
+        guard targets.contains(where: { $0.kind == .tweak }) ||
+              targets.contains(where: { $0.kind == .daemon }) else {
             throw EmbeddedTheosPlanError.missingTargetKind
         }
     }
@@ -145,7 +151,7 @@ enum EmbeddedTheosPlanError: Error, Equatable, LocalizedError, Sendable {
         case .invalidPackage: return "Theos plan package metadata or target count is invalid"
         case .invalidTarget(let name): return "Theos target is invalid or outside the bounded policy: \(name)"
         case .invalidInstallName(let name): return "Theos target has an unsafe install name: \(name)"
-        case .missingTargetKind: return "Theos plan must contain both daemon and tweak targets"
+        case .missingTargetKind: return "Theos plan must contain at least one daemon or tweak target"
         }
     }
 }
