@@ -44,8 +44,13 @@ final class ProgrammingBuildToolsTests: XCTestCase {
     }
 
     func testProviderRosterContainsAllRealAdapters() {
-        XCTAssertEqual(Set(BuildProviderID.allCases), Set([.localISH, .theos, .remoteGitHubActions, .macSSH, .embeddedToolchain]))
+        XCTAssertEqual(Set(BuildProviderID.allCases), Set([.localISH, .theos, .remoteGitHubActions, .macSSH, .embeddedToolchain, .embeddedTheos]))
         XCTAssertEqual(Set(BuildProviderRegistry.providers.map { $0.id }), Set(BuildProviderID.allCases))
+    }
+
+    func testTheosProjectsPreferEmbeddedTheosProviderWithoutExecutingMakefile() {
+        XCTAssertEqual(BuildProjectDetector.classify(manifests: ["./Makefile"], isTheos: true), .theos)
+        XCTAssertEqual(BuildProjectDetector.classify(manifests: ["./Makefile"], isTheos: false), .make)
     }
 
     func testEmbeddedProviderRequiresNativeWorkspaceAndNeverRunsShell() async {

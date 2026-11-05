@@ -150,8 +150,8 @@ enum BuildProjectDetector {
             ))
         }
         if manifests.contains("./Makefile") {
-            let provider: BuildProviderID = kind == .theos ? .theos : .localISH
-            result.append(SuggestedBuildCommand(provider: provider, purpose: "build", command: kind == .theos ? "make package" : "make"))
+            let provider: BuildProviderID = kind == .theos ? .embeddedTheos : .localISH
+            result.append(SuggestedBuildCommand(provider: provider, purpose: "build", command: kind == .theos ? "theos-native-plan" : "make"))
         }
         if let gradlew = manifests.first(where: { $0.hasSuffix("/gradlew") || $0 == "./gradlew" }) {
             let dir = URL(fileURLWithPath: String(gradlew.dropFirst(2))).deletingLastPathComponent().path

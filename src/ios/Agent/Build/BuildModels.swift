@@ -8,6 +8,7 @@ enum BuildProviderID: String, Codable, CaseIterable, Sendable {
     case remoteGitHubActions = "remote_github_actions"
     case macSSH = "mac_ssh"
     case embeddedToolchain = "embedded_toolchain"
+    case embeddedTheos = "embedded_theos"
 }
 
 enum BuildAvailabilityState: String, Codable, Sendable {

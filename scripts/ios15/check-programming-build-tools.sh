@@ -22,7 +22,7 @@ done
 test -f "$chat" || { echo "FAIL: missing build tool adapter"; exit 1; }
 test "$(grep -c 'AIChatViewModel+BuildTools.swift in Sources' "$pbx")" -eq 2 || { echo 'FAIL: build tool adapter not in app Sources'; exit 1; }
 
-for provider in LocalISHBuildProvider TheosBuildProvider RemoteGitHubActionsProvider MacSSHBuildProvider; do
+for provider in LocalISHBuildProvider TheosBuildProvider EmbeddedTheosBuildProvider RemoteGitHubActionsProvider MacSSHBuildProvider; do
   grep -q "struct $provider: BuildProvider" "$build/BuildProviders.swift" || { echo "FAIL: missing $provider"; exit 1; }
 done
 grep -q 'struct EmbeddedToolchainBuildProvider: BuildProvider' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: embedded toolchain provider missing'; exit 1; }

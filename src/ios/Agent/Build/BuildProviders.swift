@@ -14,6 +14,7 @@ enum BuildProviderRegistry {
     static let providers: [any BuildProvider] = [
         LocalISHBuildProvider(),
         TheosBuildProvider(),
+        EmbeddedTheosBuildProvider(),
         RemoteGitHubActionsProvider(),
         MacSSHBuildProvider(),
         EmbeddedToolchainBuildProvider(),
@@ -149,6 +150,51 @@ struct TheosBuildProvider: BuildProvider {
             return .unavailable(.init(provider: id, state: .unavailable, reason: "Theos has no universal test target; pass test_command explicitly.", missingConfiguration: ["test_command"], capabilities: availability.capabilities))
         }
         return await BuildCommandRunner.run(projectPath: context.inspection.canonicalPath, command: command, displayCommand: CredentialLogPolicy.redact(command), runID: runID, phase: "tests", timeout: context.request.timeoutSeconds, executor: context.executor)
+    }
+}
+
+@MainActor
+struct EmbeddedTheosBuildProvider: BuildProvider {
+    let id: BuildProviderID = .embeddedTheos
+
+    private let capabilities = [
+        "Twork-level in-process Clang/LLVM and ld64 target",
+        "real iPhoneOS SDK and framework header resolution",
+        "multi-target Theos graph: daemon plus tweak/dylib",
+        "arm64 and arm64e native Mach-O outputs",
+        "rootless DEB staging and independent verification"
+    ]
+
+    func availability(for context: BuildProviderContext) async -> BuildProviderAvailability {
+        guard context.inspection.kind == .theos else {
+            return unavailable("embedded_theos requires a detected Theos project", ["ProjectBuildKind.theos"])
+        }
+        return unavailable(
+            "The Twork-level embedded Theos adapter is not linked into this App build yet; no compiler, linker, Makefile recipe, or package hook was executed.",
+            [
+                "embedded Theos compiler/linker adapter",
+                "Twork LLVM/ld64 archives linked into Minis",
+                "app-owned iPhoneOS SDK and framework index",
+                "declarative Theos target graph",
+                "rootless DEB publisher for multi-target outputs"
+            ])
+    }
+
+    func resolvedToolchain(for context: BuildProviderContext) async -> String {
+        "embedded-theos: adapter=unlinked state=unavailable"
+    }
+
+    func build(context: BuildProviderContext, runID: String) async -> BuildProviderExecution {
+        .unavailable(await availability(for: context))
+    }
+
+    func test(context: BuildProviderContext, runID: String) async -> BuildProviderExecution {
+        .unavailable(await availability(for: context))
+    }
+
+    private func unavailable(_ reason: String, _ missing: [String]) -> BuildProviderAvailability {
+        BuildProviderAvailability(provider: id, state: .unavailable, reason: reason,
+                                  missingConfiguration: missing, capabilities: capabilities)
     }
 }
 
