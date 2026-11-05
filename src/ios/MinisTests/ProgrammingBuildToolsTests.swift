@@ -123,6 +123,42 @@ final class ProgrammingBuildToolsTests: XCTestCase {
         XCTAssertThrowsError(try EmbeddedTheosManifestParser.parse(makefile: shellMakefile, metadata: metadata))
     }
 
+    func testEmbeddedTheosCompilePlannerBuildsPerTargetActions() throws {
+        let daemon = EmbeddedTheosTarget(name: "ictrld", kind: .daemon,
+            sourcePaths: ["daemon/main.m", "vendor/util.c"], headerPaths: [],
+            frameworks: ["Foundation"], installPath: "usr/libexec/ictrld",
+            installName: nil, filterPlistPath: nil, entitlementsPath: nil,
+            architectures: [.arm64, .arm64e])
+        let tweak = EmbeddedTheosTarget(name: "iCTRLBridge", kind: .tweak,
+            sourcePaths: ["bridge/ICNBridge.m"], headerPaths: [],
+            frameworks: ["UIKit"],
+            installPath: "Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.dylib",
+            installName: "@rpath/iCTRLBridge.dylib", filterPlistPath: "iCTRLBridge.plist",
+            entitlementsPath: nil, architectures: [.arm64, .arm64e])
+        let project = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
+            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+            bundleIDs: ["com.apple.springboard"], targets: [daemon, tweak])
+        let contents = [
+            "daemon/main.m": "int main(void) { return 0; }\n",
+            "vendor/util.c": "int util(void) { return 1; }\n",
+            "bridge/ICNBridge.m": "@interface X @end\n"
+        ]
+        let plans = try EmbeddedTheosCompilePlanner.plan(project: project, fileContents: contents)
+        XCTAssertEqual(plans.count, 2)
+        let daemonPlan = try XCTUnwrap(plans.first { $0.target.kind == .daemon })
+        XCTAssertEqual(daemonPlan.sources.count, 2)
+        XCTAssertEqual(daemonPlan.architectures, [.arm64, .arm64e])
+        XCTAssertEqual(Set(daemonPlan.objectNames).count, 2)
+        XCTAssertEqual(daemonPlan.sources.first { $0.path == "vendor/util.c" }?.language, .c)
+        XCTAssertEqual(daemonPlan.sources.first { $0.path == "daemon/main.m" }?.language, .objectiveC)
+        XCTAssertTrue(daemonPlan.sources.allSatisfy { $0.sha256.count == 64 })
+        let tweakPlan = try XCTUnwrap(plans.first { $0.target.kind == .tweak })
+        XCTAssertEqual(tweakPlan.sources.first?.language, .objectiveC)
+
+        XCTAssertThrowsError(try EmbeddedTheosCompilePlanner.plan(project: project,
+            fileContents: ["daemon/main.m": "int x;\n"]))
+    }
+
     func testEmbeddedProviderRequiresNativeWorkspaceAndNeverRunsShell() async {
         final class CallCounter { var value = 0 }
         let shellCalls = CallCounter()

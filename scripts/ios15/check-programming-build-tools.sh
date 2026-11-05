@@ -15,7 +15,7 @@ test -f "$tests" || { echo 'FAIL: programming build unit tests missing'; exit 1;
 grep -q 'testCommandRunnerUsesCapturedExitCodeNotSuccessText' "$tests" || { echo 'FAIL: exit-code truth test missing'; exit 1; }
 grep -q 'testBuildRunMigrationIsIdempotent' "$tests" || { echo 'FAIL: migration idempotence test missing'; exit 1; }
 
-for file in BuildModels.swift BuildProjectDetector.swift BuildProviders.swift BuildVerification.swift BuildRunStore.swift ProgrammingBuildTools.swift EmbeddedToolchainBuildProvider.swift EmbeddedToolchainProjectSnapshot.swift EmbeddedToolchainProjectMaterializer.swift EmbeddedToolchainRestrictedRequest.swift EmbeddedToolchainRestrictedExecution.swift EmbeddedToolchainProjectPublisher.swift; do
+for file in BuildModels.swift BuildProjectDetector.swift BuildProviders.swift BuildVerification.swift BuildRunStore.swift ProgrammingBuildTools.swift EmbeddedToolchainBuildProvider.swift EmbeddedToolchainProjectSnapshot.swift EmbeddedToolchainProjectMaterializer.swift EmbeddedToolchainRestrictedRequest.swift EmbeddedToolchainRestrictedExecution.swift EmbeddedToolchainProjectPublisher.swift EmbeddedTheosCompilePlan.swift; do
   test -f "$build/$file" || { echo "FAIL: missing $build/$file"; exit 1; }
   test "$(grep -c "$file in Sources" "$pbx")" -eq 2 || { echo "FAIL: $file must have one PBXBuildFile and one Sources entry"; exit 1; }
 done
