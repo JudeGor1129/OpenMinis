@@ -2,6 +2,9 @@ import Foundation
 import Darwin
 
 struct EmbeddedTheosBuiltArtifact: Equatable, Sendable {
+    /// Verified Mach-O bytes retained in memory for the packaging step only.
+    /// Never written outside the private run directory, never executed.
+    let data: Data
     let targetName: String
     let kind: EmbeddedTheosTargetKind
     let architecture: String
@@ -158,6 +161,7 @@ enum EmbeddedTheosExecutor {
                     throw EmbeddedTheosExecutorError.invalidOutput("\(outputName): \(error.localizedDescription)")
                 }
                 outcome.artifacts.append(EmbeddedTheosBuiltArtifact(
+                    data: data,
                     targetName: plan.target.name, kind: plan.target.kind, architecture: arch.rawValue,
                     bytes: artifact.bytes, sha256: artifact.sha256, filetype: filetype,
                     installedPath: EmbeddedTheosDebPackage.rootlessPrefix + plan.target.installPath))
