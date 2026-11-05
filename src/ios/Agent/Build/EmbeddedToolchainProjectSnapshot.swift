@@ -112,6 +112,10 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
     static let maxTotalBytes = 512 * 1024
     static let maxDependencyDepth = 8
     static let maxDependencyEdges = 48
+    static let maxTheosDeclaredFiles = 512
+    static let maxTheosSourceBytes = 1024 * 1024
+    static let maxTheosHeaderBytes = 256 * 1024
+    static let maxTheosTotalBytes = 8 * 1024 * 1024
 
     static func build(files: [String: String], entrySources: [String] = []) throws -> EmbeddedToolchainProjectSnapshot {
         guard !files.isEmpty else { throw EmbeddedToolchainProjectSnapshotError.emptyProject }
@@ -285,7 +289,7 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
     /// Captures only paths declared by the parsed Theos target graph. Every file is
     /// opened beneath the validated root with O_NOFOLLOW and bounded before decode.
     static func loadDeclaredTheosFiles(_ paths: [String], root: URL) throws -> [String: String] {
-        guard !paths.isEmpty, paths.count <= 512, Set(paths).count == paths.count else {
+        guard !paths.isEmpty, paths.count <= maxTheosDeclaredFiles, Set(paths).count == paths.count else {
             throw EmbeddedToolchainProjectSnapshotError.tooManyFiles
         }
         let canonical = try validatedRoot(root)
@@ -296,14 +300,14 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
             let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
             let limit: Int
             switch ext {
-            case "c", "m": limit = EmbeddedTheosCompilePlanner.maxSourceBytes
-            case "h", "hh", "hpp": limit = EmbeddedTheosCompilePlanner.maxHeaderBytes
+            case "c", "m": limit = maxTheosSourceBytes
+            case "h", "hh", "hpp": limit = maxTheosHeaderBytes
             case "plist": limit = 16 * 1024
             default: throw EmbeddedToolchainProjectSnapshotError.unsupportedExtension(path)
             }
             let data = try readBoundedFile(relative: path, root: canonical, limit: limit)
             guard !data.isEmpty, data.count <= limit,
-                  total <= EmbeddedTheosCompilePlanner.maxTotalBytes - data.count else {
+                  total <= maxTheosTotalBytes - data.count else {
                 throw EmbeddedToolchainProjectSnapshotError.fileTooLarge(path)
             }
             total += data.count

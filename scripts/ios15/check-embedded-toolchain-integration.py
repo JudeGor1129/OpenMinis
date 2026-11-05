@@ -81,6 +81,9 @@ require("EmbeddedTheosMaterializedHeader" in theos_plan and
 require("loadDeclaredTheosFiles" in theos_snapshot and
         "O_NOFOLLOW" in theos_snapshot,
         "Theos inputs must be read through bounded nofollow snapshot APIs")
+for budget in ("maxTheosSourceBytes", "maxTheosHeaderBytes", "maxTheosTotalBytes"):
+    require(budget in theos_snapshot and budget.replace("maxTheos", "max") in theos_plan,
+            f"Theos snapshot/planner budget mismatch: {budget}")
 require("snapshot hash mismatch" in theos_executor and
         "projectRoot.path" not in theos_executor,
         "Theos executor must compile only verified private snapshots")
