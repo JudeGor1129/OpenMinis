@@ -244,7 +244,7 @@ enum ProjectPublisherContracts {
             }
         }
         try withReadBackFile("invalid-input") { _, directoryFD, committedDescriptor in
-            for invalid in [Data(), Data(repeating: 0, count: EmbeddedToolchainDebPackage.maxBytes + 1)] {
+            for invalid in [Data(), Data(repeating: 0, count: EmbeddedToolchainProjectPublisher.maxPublishedBytes + 1)] {
                 try rejectReadBack("empty or over-budget expected bytes", expectedCode: EINVAL) {
                     try EmbeddedToolchainProjectPublisher.readBackVerified(
                         invalid, named: "project.dylib", under: directoryFD, publishedDescriptor: committedDescriptor)

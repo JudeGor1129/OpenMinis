@@ -53,6 +53,10 @@ enum EmbeddedToolchainProjectPublisherError: Error, Equatable, LocalizedError, S
 enum EmbeddedToolchainProjectPublisher {
     static let maxDylibBytes = 16 * 1024 * 1024
     static let outputDirectory = "build/minis-embedded"
+    /// The largest artifact this publisher may commit and read back. It covers the
+    /// single-tweak and the multi-target rootless DEB budgets, so a Theos package is
+    /// never rejected by a readback bound narrower than its own package limit.
+    static let maxPublishedBytes = max(EmbeddedToolchainDebPackage.maxBytes, EmbeddedTheosDebPackage.maxBytes)
 
     static func publishVerifiedDylib(_ data: Data, named name: String,
                                      projectRoot: URL,
@@ -177,7 +181,7 @@ enum EmbeddedToolchainProjectPublisher {
     static func readBackVerified(_ expected: Data, named name: String, under directory: Int32,
                                  publishedDescriptor: Int32) throws -> String {
         guard safeOutputFilename(name), !expected.isEmpty,
-              expected.count <= max(EmbeddedToolchainDebPackage.maxBytes, EmbeddedTheosDebPackage.maxBytes) else {
+              expected.count <= maxPublishedBytes else {
             throw EmbeddedToolchainProjectPublisherError.readBackFailed(EINVAL)
         }
         let descriptor = name.withCString {

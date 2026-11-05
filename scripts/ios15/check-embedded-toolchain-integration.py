@@ -154,6 +154,12 @@ require("publishVerifiedTheosDeb" in publisher and
         "EmbeddedTheosDebPackage.maxBytes" in publisher and
         "verification()" in publisher,
         "Theos DEB publication must verify the exact bytes it commits")
+require("static let maxPublishedBytes = max(EmbeddedToolchainDebPackage.maxBytes, EmbeddedTheosDebPackage.maxBytes)" in publisher and
+        "expected.count <= maxPublishedBytes" in publisher,
+        "read-back bound must cover both package budgets through one named limit")
+publisher_harness = text("toolchain-build/scripts/test-embedded-project-publisher.swift")
+require("EmbeddedToolchainProjectPublisher.maxPublishedBytes + 1" in publisher_harness,
+        "the over-budget read-back contract must track the named publication bound")
 require("!targets.contains { $0.kind == .tweak } || !bundleIDs.isEmpty" in models,
         "plan validation must allow daemon-only projects while still requiring tweak filters")
 print("PASS: embedded_theos product delivery is declarative, verified and publication-gated.")
