@@ -126,9 +126,9 @@ final class ProgrammingBuildToolsTests: XCTestCase {
 
     func testEmbeddedTheosCompilePlannerBuildsPerTargetActions() throws {
         let daemon = EmbeddedTheosTarget(name: "ictrld", kind: .daemon,
-            sourcePaths: ["daemon/main.m", "vendor/util.c"], headerPaths: [],
+            sourcePaths: ["daemon/main.m", "vendor/util.c"], headerPaths: ["daemon/include/Shared.h"],
             frameworks: ["Foundation"], installPath: "usr/libexec/ictrld",
-            installName: nil, filterPlistPath: nil, entitlementsPath: nil,
+            installName: nil, filterPlistPath: nil, entitlementsPath: "daemon/entitlements.plist",
             architectures: [.arm64, .arm64e])
         let tweak = EmbeddedTheosTarget(name: "iCTRLBridge", kind: .tweak,
             sourcePaths: ["bridge/ICNBridge.m"], headerPaths: [],
@@ -142,12 +142,19 @@ final class ProgrammingBuildToolsTests: XCTestCase {
         let contents = [
             "daemon/main.m": "int main(void) { return 0; }\n",
             "vendor/util.c": "int util(void) { return 1; }\n",
+            "daemon/include/Shared.h": "#define SHARED_VALUE 7\n",
+            "daemon/entitlements.plist": "<plist><dict><key>com.apple.private.example</key><true/></dict></plist>",
             "bridge/ICNBridge.m": "@interface X @end\n"
         ]
         let plans = try EmbeddedTheosCompilePlanner.plan(project: project, fileContents: contents)
         XCTAssertEqual(plans.count, 2)
         let daemonPlan = try XCTUnwrap(plans.first { $0.target.kind == .daemon })
         XCTAssertEqual(daemonPlan.sources.count, 2)
+        XCTAssertEqual(daemonPlan.headers.count, 1)
+        XCTAssertEqual(daemonPlan.headers.first?.path, "daemon/include/Shared.h")
+        XCTAssertNotNil(daemonPlan.entitlements)
+        XCTAssertTrue(daemonPlan.entitlements.flatMap { String(data: $0, encoding: .utf8) }?
+            .contains("com.apple.private.example") == true)
         XCTAssertEqual(daemonPlan.architectures, [.arm64, .arm64e])
         XCTAssertEqual(Set(daemonPlan.objectNames).count, 2)
         XCTAssertEqual(daemonPlan.sources.first { $0.path == "vendor/util.c" }?.language, .c)
@@ -158,6 +165,11 @@ final class ProgrammingBuildToolsTests: XCTestCase {
 
         XCTAssertThrowsError(try EmbeddedTheosCompilePlanner.plan(project: project,
             fileContents: ["daemon/main.m": "int x;\n"]))
+        XCTAssertThrowsError(try EmbeddedTheosCompilePlanner.plan(project: project,
+            fileContents: ["daemon/main.m": "int main(void) { return 0; }\n",
+                           "vendor/util.c": "int util(void) { return 1; }\n",
+                           "daemon/entitlements.plist": "<plist><dict><key>x</key><true/></dict></plist>",
+                           "bridge/ICNBridge.m": "@interface X @end\n"]))
     }
 
     func testEmbeddedTheosDebPackageBuildsRootlessMultiTargetDeb() throws {

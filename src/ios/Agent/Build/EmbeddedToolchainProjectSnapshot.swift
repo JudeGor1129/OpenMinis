@@ -282,6 +282,39 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
         return try readBoundedFile(relative: relative, root: canonical, limit: limit)
     }
 
+    /// Captures only paths declared by the parsed Theos target graph. Every file is
+    /// opened beneath the validated root with O_NOFOLLOW and bounded before decode.
+    static func loadDeclaredTheosFiles(_ paths: [String], root: URL) throws -> [String: String] {
+        guard !paths.isEmpty, paths.count <= 512, Set(paths).count == paths.count else {
+            throw EmbeddedToolchainProjectSnapshotError.tooManyFiles
+        }
+        let canonical = try validatedRoot(root)
+        var result: [String: String] = [:]
+        var total = 0
+        for path in paths.sorted() {
+            try validatePath(path)
+            let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+            let limit: Int
+            switch ext {
+            case "c", "m": limit = EmbeddedTheosCompilePlanner.maxSourceBytes
+            case "h", "hh", "hpp": limit = EmbeddedTheosCompilePlanner.maxHeaderBytes
+            case "plist": limit = 16 * 1024
+            default: throw EmbeddedToolchainProjectSnapshotError.unsupportedExtension(path)
+            }
+            let data = try readBoundedFile(relative: path, root: canonical, limit: limit)
+            guard !data.isEmpty, data.count <= limit,
+                  total <= EmbeddedTheosCompilePlanner.maxTotalBytes - data.count else {
+                throw EmbeddedToolchainProjectSnapshotError.fileTooLarge(path)
+            }
+            total += data.count
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw EmbeddedToolchainProjectSnapshotError.nonASCII(path)
+            }
+            result[path] = text
+        }
+        return result
+    }
+
     static func load(root: URL, entrySources: [String]) throws -> EmbeddedToolchainProjectSnapshot {
         guard !entrySources.isEmpty, entrySources.count <= maxSources,
               Set(entrySources).count == entrySources.count else {

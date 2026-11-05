@@ -20,6 +20,8 @@ prepare = text("scripts/ios15/prepare-embedded-toolchain.sh")
 provider = text("src/ios/Agent/Build/EmbeddedToolchainBuildProvider.swift")
 theos_executor = text("src/ios/Agent/Build/EmbeddedTheosExecutor.swift")
 adapter = text("src/ios/Agent/Build/EmbeddedToolchainExecutionAdapter.swift")
+theos_plan = text("src/ios/Agent/Build/EmbeddedTheosCompilePlan.swift")
+theos_snapshot = text("src/ios/Agent/Build/EmbeddedToolchainProjectSnapshot.swift")
 ld64_adapter = text("toolchain-build/scripts/build-ld64-inprocess.py")
 project = text("src/ios/Minis.xcodeproj/project.pbxproj")
 lock_path = ROOT / "toolchain-build/verified-toolchain-lock.json"
@@ -73,6 +75,15 @@ require("isArm64Object(at:" in provider and "containsSymlinkComponent" in provid
         "maxObjectCount" in provider and "maxTotalObjectBytes" in provider and
         "typeRegular" in provider and "@rpath/" in provider,
         "structured adapter policy must check Mach-O, symlinks, bounds and install names")
+require("EmbeddedTheosMaterializedHeader" in theos_plan and
+        "let entitlements: Data?" in theos_plan,
+        "Theos compile plans must bind headers and canonical entitlements")
+require("loadDeclaredTheosFiles" in theos_snapshot and
+        "O_NOFOLLOW" in theos_snapshot,
+        "Theos inputs must be read through bounded nofollow snapshot APIs")
+require("snapshot hash mismatch" in theos_executor and
+        "projectRoot.path" not in theos_executor,
+        "Theos executor must compile only verified private snapshots")
 require("context.executor" not in provider,
         "embedded provider must not invoke the shell executor")
 require('"-adhoc_codesign"' in theos_executor and

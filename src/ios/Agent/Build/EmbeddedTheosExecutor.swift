@@ -56,7 +56,7 @@ enum EmbeddedTheosExecutor {
     static let maxCompileUnits = 256
     static let maxOutputBytes = 32 * 1024 * 1024
 
-    static func execute(plans: [EmbeddedTheosTargetPlan], projectRoot: URL,
+    static func execute(plans: [EmbeddedTheosTargetPlan],
                         cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) throws -> EmbeddedTheosExecutionOutcome {
         let status = OMToolchain.capabilityStatus()
         guard status["compiler_linked"] == "yes", status["verification"] == "passed",
@@ -86,10 +86,21 @@ enum EmbeddedTheosExecutor {
             }
         }
 
+        func materialize(_ path: String, contents: String, expectedHash: String,
+                         under snapshotRoot: URL) throws -> URL {
+            let bytes = Data(contents.utf8)
+            guard EmbeddedAdapterArtifact.digest(bytes) == expectedHash else {
+                throw EmbeddedTheosExecutorError.invalidOutput("snapshot hash mismatch for \(path)")
+            }
+            let destination = snapshotRoot.appendingPathComponent(path, isDirectory: false)
+            try fileManager.createDirectory(at: destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            try bytes.write(to: destination, options: .withoutOverwriting)
+            return destination
+        }
+
         func compile(_ source: EmbeddedTheosMaterializedSource, arch: EmbeddedToolchainArchitecture,
-                     includeDirs: [String], objectURL: URL) throws {
-            let sourceURL = runRoot.appendingPathComponent(source.path.replacingOccurrences(of: "/", with: "_"))
-            try source.contents.data(using: .ascii)?.write(to: sourceURL, options: .withoutOverwriting)
+                     sourceURL: URL, includeDirs: [String], objectURL: URL) throws {
             var arguments = OMToolchain.cc1Arguments(
                 forSource: sourceURL.path, outputPath: objectURL.path,
                 sysroot: sysroot, resourceDir: resourceDir,
@@ -107,42 +118,43 @@ enum EmbeddedTheosExecutor {
 
         for plan in plans {
             guard !cancellation.isCancelled else { outcome.failure = "cancelled"; return outcome }
-            var includeDirs = Set<String>([projectRoot.path])
-            for header in plan.target.headerPaths {
-                let dir = projectRoot.appendingPathComponent(header).deletingLastPathComponent()
-                includeDirs.insert(dir.path)
+            let snapshotRoot = runRoot.appendingPathComponent("snapshot", isDirectory: true)
+                .appendingPathComponent(plan.target.name, isDirectory: true)
+            try fileManager.createDirectory(at: snapshotRoot, withIntermediateDirectories: true,
+                                            attributes: [.posixPermissions: 0o700])
+            var sourceURLs: [String: URL] = [:]
+            for source in plan.sources {
+                sourceURLs[source.path] = try materialize(source.path, contents: source.contents,
+                    expectedHash: source.sha256, under: snapshotRoot)
             }
-            for source in plan.target.sourcePaths {
-                let dir = projectRoot.appendingPathComponent(source).deletingLastPathComponent()
-                includeDirs.insert(dir.path)
+            for header in plan.headers {
+                _ = try materialize(header.path, contents: header.contents,
+                    expectedHash: header.sha256, under: snapshotRoot)
             }
+            let includeDirs = Set([snapshotRoot.path] +
+                (plan.sources.map(\.path) + plan.headers.map(\.path)).map { path in
+                    snapshotRoot.appendingPathComponent(path).deletingLastPathComponent().path
+                }).sorted()
             let entitlementURL: URL?
-            let entitlementBytes: Data?
-            if let relative = plan.target.entitlementsPath {
-                let entitlementData = try EmbeddedToolchainProjectSnapshotBuilder.readBoundedProjectFile(
-                    relative, root: projectRoot, limit: 16 * 1024)
-                let object = try PropertyListSerialization.propertyList(from: entitlementData,
-                    options: [], format: nil)
-                guard let dictionary = object as? [String: Any], !dictionary.isEmpty else {
-                    throw EmbeddedTheosExecutorError.invalidOutput("entitlements are not a non-empty dictionary")
-                }
-                let canonical = try PropertyListSerialization.data(fromPropertyList: dictionary,
-                    format: .xml, options: 0)
+            if let canonical = plan.entitlements {
                 let destination = runRoot.appendingPathComponent("\(plan.target.name)-entitlements.plist")
                 try canonical.write(to: destination, options: .withoutOverwriting)
                 entitlementURL = destination
-                entitlementBytes = canonical
             } else {
                 entitlementURL = nil
-                entitlementBytes = nil
             }
+            let entitlementBytes = plan.entitlements
             for arch in plan.architectures {
                 guard !cancellation.isCancelled else { outcome.failure = "cancelled"; return outcome }
                 var objects: [String] = []
                 for source in plan.sources {
                     let object = runRoot.appendingPathComponent(
                         "\(plan.target.name)-\(arch.rawValue)-\(EmbeddedTheosTargetPlan.objectName(for: source.path))")
-                    try compile(source, arch: arch, includeDirs: includeDirs.sorted(), objectURL: object)
+                    guard let sourceURL = sourceURLs[source.path] else {
+                        throw EmbeddedTheosExecutorError.invalidOutput("source missing from private snapshot: \(source.path)")
+                    }
+                    try compile(source, arch: arch, sourceURL: sourceURL,
+                        includeDirs: includeDirs, objectURL: object)
                     objects.append(object.path)
                 }
                 let outputName = plan.target.kind == .tweak ? "\(plan.target.name).dylib" : plan.target.name
