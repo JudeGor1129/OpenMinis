@@ -137,6 +137,144 @@ enum EmbeddedToolchainDebPackage {
     }
 }
 
+struct EmbeddedTheosDebEntry: Equatable, Sendable {
+    let path: String
+    let bytes: Data
+    let mode: Int
+}
+
+enum EmbeddedTheosDebPackageError: Error, Equatable, LocalizedError, Sendable {
+    case invalidMetadata
+    case unsafePath(String)
+    case emptyPayload
+    case tooLarge
+    case invalidPackage(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidMetadata: return "Theos package metadata is invalid or unbounded"
+        case .unsafePath(let path): return "Theos package payload path is not rootless-safe: \(path)"
+        case .emptyPayload: return "Theos package has no payload files"
+        case .tooLarge: return "Theos package exceeds the byte budget"
+        case .invalidPackage(let detail): return "Theos package structure is invalid: \(detail)"
+        }
+    }
+}
+
+/// Multi-target rootless DEB assembly for Theos-style projects: daemon executable,
+/// SpringBoard tweak dylib, filter plist, LaunchDaemon plist and optional maintainer
+/// scripts. It builds bytes only - nothing is installed, signed or executed, and
+/// maintainer scripts are packaged verbatim, never run inside the app.
+enum EmbeddedTheosDebPackage {
+    static let maxBytes = 48 * 1024 * 1024
+    static let rootlessPrefix = "var/jb/"
+
+    static func control(packageID: String, name: String, version: String,
+                        maintainer: String, description: String,
+                        depends: String) throws -> String {
+        func singleLine(_ value: String) -> Bool {
+            !value.isEmpty && value.utf8.count <= 256 &&
+                value.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) }
+        }
+        guard packageID.range(of: "^[a-z0-9][a-z0-9+.-]{1,127}$", options: .regularExpression) != nil,
+              version.range(of: "^[0-9][A-Za-z0-9.+~_-]{0,63}$", options: .regularExpression) != nil,
+              singleLine(name), singleLine(maintainer), singleLine(description),
+              singleLine(depends) else {
+            throw EmbeddedTheosDebPackageError.invalidMetadata
+        }
+        return "Package: \(packageID)\nName: \(name)\nVersion: \(version)\n" +
+            "Architecture: iphoneos-arm64\nMaintainer: \(maintainer)\n" +
+            "Description: \(description)\nSection: Tweaks\nPriority: optional\n" +
+            "Depends: \(depends)\n"
+    }
+
+    static func build(files: [EmbeddedTheosDebEntry], controlText: String,
+                      maintainerScripts: [String: String] = [:]) throws -> Data {
+        guard !files.isEmpty else { throw EmbeddedTheosDebPackageError.emptyPayload }
+        var seen = Set<String>()
+        for file in files {
+            try validate(file.path)
+            guard seen.insert(file.path).inserted, (0...0o777).contains(file.mode), !file.bytes.isEmpty else {
+                throw EmbeddedTheosDebPackageError.unsafePath(file.path)
+            }
+        }
+        for (name, body) in maintainerScripts {
+            guard ["postinst", "prerm"].contains(name), !body.isEmpty, body.utf8.count <= 64 * 1024 else {
+                throw EmbeddedTheosDebPackageError.invalidPackage("maintainer script \(name)")
+            }
+        }
+
+        var directories = Set<String>()
+        for file in files {
+            var components = file.path.split(separator: "/").dropLast()
+            while !components.isEmpty {
+                directories.insert(components.joined(separator: "/"))
+                components = components.dropLast()
+            }
+        }
+        var entries = directories.sorted().map {
+            PackageTarEntry(path: $0, bytes: Data(), directory: true, mode: 0o755)
+        }
+        entries.append(contentsOf: files.sorted { $0.path < $1.path }.map {
+            PackageTarEntry(path: $0.path, bytes: $0.bytes, directory: false, mode: $0.mode)
+        })
+
+        var controlEntries = [PackageTarEntry(path: "control", bytes: Data(controlText.utf8),
+                                             directory: false, mode: 0o644)]
+        for name in ["postinst", "prerm"] {
+            if let body = maintainerScripts[name] {
+                controlEntries.append(PackageTarEntry(path: name, bytes: Data(body.utf8),
+                                                      directory: false, mode: 0o755))
+            }
+        }
+
+        let control = try PackageArchive.tar(controlEntries)
+        let payload = try PackageArchive.tar(entries)
+        let deb = try PackageArchive.ar([("debian-binary", Data("2.0\n".utf8)),
+                                         ("control.tar", control), ("data.tar", payload)])
+        guard deb.count <= maxBytes else { throw EmbeddedTheosDebPackageError.tooLarge }
+        _ = try inspect(deb)
+        return deb
+    }
+
+    /// Structural read-back: verifies ar members, control layout and that every
+    /// payload file stays inside the rootless /var/jb prefix.
+    @discardableResult
+    static func inspect(_ deb: Data) throws -> [String] {
+        guard deb.count <= maxBytes else { throw EmbeddedTheosDebPackageError.tooLarge }
+        let archives = try PackageArchive.readAr(deb)
+        guard archives.map(\.0) == ["debian-binary", "control.tar", "data.tar"],
+              archives[0].1 == Data("2.0\n".utf8) else {
+            throw EmbeddedTheosDebPackageError.invalidPackage("ar members or version")
+        }
+        let control = try PackageArchive.readTar(archives[1].1)
+        guard control.first?.path == "control", control.first?.mode == 0o644, control.first?.directory == false,
+              control.dropFirst().allSatisfy({ ["postinst", "prerm"].contains($0.path) && $0.mode == 0o755 }),
+              control.count <= 3 else {
+            throw EmbeddedTheosDebPackageError.invalidPackage("control.tar layout")
+        }
+        let payload = try PackageArchive.readTar(archives[2].1)
+        guard !payload.isEmpty else { throw EmbeddedTheosDebPackageError.emptyPayload }
+        for entry in payload where !entry.directory {
+            guard entry.path.hasPrefix(rootlessPrefix), entry.mode == 0o755 || entry.mode == 0o644 else {
+                throw EmbeddedTheosDebPackageError.invalidPackage("payload file \(entry.path)")
+            }
+        }
+        return payload.map(\.path)
+    }
+
+    private static func validate(_ path: String) throws {
+        guard path.hasPrefix(rootlessPrefix), !path.hasSuffix("/"), !path.contains("//"),
+              path.utf8.count <= 200, !path.contains("\\") else {
+            throw EmbeddedTheosDebPackageError.unsafePath(path)
+        }
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard !parts.isEmpty, parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+            throw EmbeddedTheosDebPackageError.unsafePath(path)
+        }
+    }
+}
+
 private struct PackageTarEntry {
     let path: String
     let bytes: Data
@@ -210,7 +348,7 @@ private enum PackageArchive {
                 guard data.count - cursor >= 1024, data[cursor...].allSatisfy({ $0 == 0 }) else { throw invalid() }
                 return entries
             }
-            guard entries.count < 8, header[257..<263] == Data("ustar\0".utf8),
+            guard entries.count < 64, header[257..<263] == Data("ustar\0".utf8),
                   header[263..<265] == Data("00".utf8), [UInt8(48), 53].contains(header[156]),
                   header[157..<257].allSatisfy({ $0 == 0 }),
                   try parsedNumber(Data(header[108..<116]), radix: 8) == 0,

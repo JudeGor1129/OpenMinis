@@ -159,6 +159,37 @@ final class ProgrammingBuildToolsTests: XCTestCase {
             fileContents: ["daemon/main.m": "int x;\n"]))
     }
 
+    func testEmbeddedTheosDebPackageBuildsRootlessMultiTargetDeb() throws {
+        let control = try EmbeddedTheosDebPackage.control(packageID: "com.judegor.ictrl-native",
+            name: "iCTRL Native", version: "0.1.2", maintainer: "JudeGor",
+            description: "Local-only native bridge",
+            depends: "firmware (>= 15.4), mobilesubstrate")
+        let files = [
+            EmbeddedTheosDebEntry(path: "var/jb/usr/libexec/ictrld",
+                                  bytes: Data("daemon".utf8), mode: 0o755),
+            EmbeddedTheosDebEntry(path: "var/jb/Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.dylib",
+                                  bytes: Data("dylib".utf8), mode: 0o755),
+            EmbeddedTheosDebEntry(path: "var/jb/Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.plist",
+                                  bytes: Data("<plist/>".utf8), mode: 0o644),
+            EmbeddedTheosDebEntry(path: "var/jb/Library/LaunchDaemons/com.judegor.ictrl-native.plist",
+                                  bytes: Data("<daemon/>".utf8), mode: 0o644)
+        ]
+        let deb = try EmbeddedTheosDebPackage.build(files: files, controlText: control,
+            maintainerScripts: ["postinst": "#!/bin/sh\nexit 0\n"])
+        let paths = try EmbeddedTheosDebPackage.inspect(deb)
+        XCTAssertTrue(paths.contains("var/jb/usr/libexec/ictrld"))
+        XCTAssertTrue(paths.contains("var/jb/Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.dylib"))
+        XCTAssertTrue(paths.allSatisfy { $0.hasPrefix("var/jb/") })
+
+        XCTAssertThrowsError(try EmbeddedTheosDebPackage.build(
+            files: [EmbeddedTheosDebEntry(path: "Library/Tweak.dylib", bytes: Data("x".utf8), mode: 0o755)],
+            controlText: control))
+        XCTAssertThrowsError(try EmbeddedTheosDebPackage.build(files: files, controlText: control,
+            maintainerScripts: ["postrm": "#!/bin/sh\n"]))
+        XCTAssertThrowsError(try EmbeddedTheosDebPackage.control(packageID: "Bad ID",
+            name: "n", version: "1.0", maintainer: "m", description: "d", depends: "mobilesubstrate"))
+    }
+
     func testEmbeddedProviderRequiresNativeWorkspaceAndNeverRunsShell() async {
         final class CallCounter { var value = 0 }
         let shellCalls = CallCounter()
