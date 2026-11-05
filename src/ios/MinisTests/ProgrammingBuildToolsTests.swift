@@ -82,6 +82,47 @@ final class ProgrammingBuildToolsTests: XCTestCase {
         XCTAssertThrowsError(try singleTarget.validate())
     }
 
+    func testEmbeddedTheosManifestParserBuildsDualTargetGraphAndRejectsShell() throws {
+        let metadata = EmbeddedDebMetadata(packageID: "com.judegor.ictrl-native",
+            name: "iCTRL Native", version: "0.1.2", maintainer: "JudeGor",
+            description: "Local-only native bridge", tweakName: "iCTRLBridge",
+            bundleIDs: ["com.apple.springboard"])
+        let makefile = """
+        THEOS_PACKAGE_SCHEME = rootless
+        TOOL_NAME = ictrld
+        ictrld_FILES = daemon/main.m daemon/ICNAuth.m shared/ICNProtocol.m vendor/ictrl/util.c
+        ictrld_FRAMEWORKS = Foundation Security
+        ictrld_INSTALL_PATH = /usr/libexec
+        ictrld_CODESIGN_FLAGS = -Sdaemon/entitlements.plist
+        TWEAK_NAME = iCTRLBridge
+        iCTRLBridge_FILES = bridge/ICNBridge.m shared/ICNProtocol.m
+        iCTRLBridge_FRAMEWORKS = Foundation UIKit CoreFoundation
+        include $(THEOS)/makefiles/common.mk
+        before-package::
+        \tchmod 0755 $(THEOS_STAGING_DIR)/DEBIAN/postinst
+        """
+        let plan = try EmbeddedTheosManifestParser.parse(makefile: makefile, metadata: metadata)
+        XCTAssertEqual(plan.targets.count, 2)
+        let daemon = try XCTUnwrap(plan.targets.first { $0.kind == .daemon })
+        XCTAssertEqual(daemon.name, "ictrld")
+        XCTAssertEqual(daemon.installPath, "usr/libexec/ictrld")
+        XCTAssertEqual(daemon.entitlementsPath, "daemon/entitlements.plist")
+        XCTAssertTrue(daemon.frameworks.contains("Security"))
+        XCTAssertEqual(daemon.architectures, [.arm64, .arm64e])
+        let tweak = try XCTUnwrap(plan.targets.first { $0.kind == .tweak })
+        XCTAssertEqual(tweak.installPath, "Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.dylib")
+        XCTAssertEqual(tweak.installName, "@rpath/iCTRLBridge.dylib")
+        XCTAssertFalse(EmbeddedTheosManifestParser.ignoredRecipes(in: makefile).isEmpty)
+
+        let shellMakefile = """
+        THEOS_PACKAGE_SCHEME = rootless
+        TOOL_NAME = ictrld
+        ictrld_FILES = daemon/main.m
+        BAD = $(shell rm -rf /)
+        """
+        XCTAssertThrowsError(try EmbeddedTheosManifestParser.parse(makefile: shellMakefile, metadata: metadata))
+    }
+
     func testEmbeddedProviderRequiresNativeWorkspaceAndNeverRunsShell() async {
         final class CallCounter { var value = 0 }
         let shellCalls = CallCounter()

@@ -150,6 +150,135 @@ enum EmbeddedTheosPlanError: Error, Equatable, LocalizedError, Sendable {
     }
 }
 
+enum EmbeddedTheosManifestParser {
+    static let maxBytes = 128 * 1024
+    static let maxLines = 4096
+
+    static func parse(makefile: String, metadata: EmbeddedDebMetadata) throws -> EmbeddedTheosProjectPlan {
+        guard makefile.utf8.count <= maxBytes else { throw EmbeddedTheosManifestError.unsafeDirective("Makefile exceeds byte budget") }
+        var assignments: [String: String] = [:]
+        var targetNames: [String] = []
+        var toolName: String?
+        var tweakName: String?
+        var rootless = false
+        let lines = makefile.components(separatedBy: .newlines)
+        guard lines.count <= maxLines else { throw EmbeddedTheosManifestError.unsafeDirective("line budget") }
+
+        for raw in lines {
+            let line = String(raw)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+            if line.hasPrefix("\t") || trimmed.hasSuffix("::") || trimmed.hasPrefix("before-") || trimmed.hasPrefix("after-") {
+                // Recipes and package hooks are never executed. They are reported by
+                // ignoredRecipes(in:) so the native packager must reimplement any
+                // required staging (modes, ownership, plists) declaratively.
+                continue
+            }
+            if trimmed.hasPrefix("include ") || trimmed.hasPrefix("-include ") {
+                let include = trimmed.drop { $0 != " " }.trimmingCharacters(in: .whitespaces)
+                let allowed = include.contains("$(THEOS)/makefiles/") || include.contains("$(THEOS_MAKE_PATH)/")
+                guard allowed else { throw EmbeddedTheosManifestError.unsafeDirective(trimmed) }
+                continue
+            }
+            if trimmed.hasPrefix("ifeq") || trimmed.hasPrefix("ifneq") || trimmed == "else" || trimmed == "endif" {
+                continue
+            }
+            if trimmed.contains("$(shell") || trimmed.contains("`") || trimmed.contains("eval ") || trimmed.contains("\u{0}") {
+                throw EmbeddedTheosManifestError.unsafeDirective(trimmed)
+            }
+            guard let equals = trimmed.firstIndex(of: "=") else {
+                throw EmbeddedTheosManifestError.unsafeDirective(trimmed)
+            }
+            let key = String(trimmed[..<equals]).trimmingCharacters(in: .whitespaces)
+            let value = String(trimmed[trimmed.index(after: equals)...]).trimmingCharacters(in: .whitespaces)
+            guard key.range(of: "^[A-Za-z0-9_]+$", options: .regularExpression) != nil else {
+                throw EmbeddedTheosManifestError.unsafeDirective(trimmed)
+            }
+            assignments[key] = value
+            if key == "TOOL_NAME" { toolName = value }
+            if key == "TWEAK_NAME" { tweakName = value }
+            if key == "THEOS_PACKAGE_SCHEME" { rootless = value == "rootless" }
+            if key.hasSuffix("_FILES") {
+                let name = String(key.dropLast("_FILES".count))
+                if !name.isEmpty && !targetNames.contains(name) { targetNames.append(name) }
+            }
+        }
+
+        guard !targetNames.isEmpty else { throw EmbeddedTheosManifestError.noTargets }
+        guard rootless else { throw EmbeddedTheosManifestError.unsafeDirective("THEOS_PACKAGE_SCHEME must be rootless") }
+        var targets: [EmbeddedTheosTarget] = []
+        for name in targetNames.sorted() {
+            let files = split(assignments[name + "_FILES"] ?? "")
+            let frameworks = split(assignments[name + "_FRAMEWORKS"] ?? "")
+            let installPath = assignments[name + "_INSTALL_PATH"] ?? ""
+            let kind: EmbeddedTheosTargetKind = (name == tweakName || installPath.contains("DynamicLibraries") || frameworks.contains("UIKit")) ? .tweak : .daemon
+            let baseInstall = installPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let install: String
+            if baseInstall.isEmpty {
+                install = kind == .daemon ? "usr/libexec/\(name)" : "Library/MobileSubstrate/DynamicLibraries/\(name).dylib"
+            } else if kind == .tweak {
+                install = baseInstall.hasSuffix(".dylib") ? baseInstall : baseInstall + "/\(name).dylib"
+            } else {
+                install = baseInstall.hasSuffix("/\(name)") ? baseInstall : baseInstall + "/\(name)"
+            }
+            let codeSign = split(assignments[name + "_CODESIGN_FLAGS"] ?? "")
+            let entitlements = codeSign.first(where: { $0.hasPrefix("-S") }).map { token in
+                let path = String(token.dropFirst(2))
+                return path.isEmpty ? "daemon/entitlements.plist" : path
+            }
+            let target = EmbeddedTheosTarget(name: name, kind: kind,
+                sourcePaths: files.filter { !["h", "hh", "hpp"].contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) },
+                headerPaths: files.filter { ["h", "hh", "hpp"].contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) },
+                frameworks: frameworks, installPath: install,
+                installName: kind == .tweak ? "@rpath/\(name).dylib" : nil,
+                filterPlistPath: kind == .tweak ? "\(name).plist" : nil,
+                entitlementsPath: entitlements, architectures: [.arm64, .arm64e])
+            do { try target.validate() } catch { throw EmbeddedTheosManifestError.invalidTarget(name) }
+            targets.append(target)
+        }
+        guard toolName != nil || tweakName != nil else { throw EmbeddedTheosManifestError.noTargets }
+        let plan = EmbeddedTheosProjectPlan(schema: 1, packageID: metadata.packageID,
+            version: metadata.version, name: metadata.name, maintainer: metadata.maintainer,
+            description: metadata.description, bundleIDs: metadata.bundleIDs, targets: targets)
+        try plan.validate()
+        return plan
+    }
+
+    private static func split(_ value: String) -> [String] {
+        value.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+    }
+
+    /// Recipe/staging lines that were deliberately not executed. The native
+    /// packager must reimplement each one declaratively (file modes, ownership,
+    /// plist placement) or report the package as unverified.
+    static func ignoredRecipes(in makefile: String) -> [String] {
+        makefile.components(separatedBy: .newlines).compactMap { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let isRecipe = line.hasPrefix("\t")
+            let isHook = trimmed.hasPrefix("before-") || trimmed.hasPrefix("after-") ||
+                (trimmed.hasSuffix("::") && !trimmed.contains("="))
+            guard isRecipe || isHook else { return nil }
+            return trimmed.isEmpty ? nil : trimmed
+        }
+    }
+}
+
+enum EmbeddedTheosManifestError: Error, Equatable, LocalizedError, Sendable {
+    case unsafeDirective(String)
+    case unsupportedRecipe(String)
+    case noTargets
+    case invalidTarget(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsafeDirective(let detail): return "Theos manifest contains an unsafe directive: \(detail)"
+        case .unsupportedRecipe(let detail): return "Theos package recipe is not allowed: \(detail)"
+        case .noTargets: return "Theos manifest contains no supported targets"
+        case .invalidTarget(let name): return "Theos target is invalid: \(name)"
+        }
+    }
+}
+
 enum BuildDiagnosticSeverity: String, Codable, Sendable {
     case note
     case warning
