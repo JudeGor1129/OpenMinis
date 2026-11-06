@@ -159,8 +159,8 @@ struct RootfsManagementView: View {
                 } label: {
                     Label {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("编译工具与 SDK")
-                            Text("工具链状态、iPhoneOS SDK 和 Release 构建")
+                            Text("Theos 与 SDK")
+                            Text("内置编译器状态、iPhoneOS SDK 导入与下载")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -172,11 +172,8 @@ struct RootfsManagementView: View {
             } header: {
                 Text("设备与开发环境")
             } footer: {
-                Text("选择 SDK 后，构建命令会在内置 Alpine 终端中执行；不会修改 iOS 系统或自动安装软件。")
+                Text("编译在 App 进程内完成，不依赖 iSH 里的编译工具；SDK 只写入 App 容器，不修改 iOS 系统。")
             }
-
-            // [T-ios-toolchain-status] Detailed command-by-command probe.
-            ToolchainStatusView()
 
             Section("Info") {
                 VStack(alignment: .leading, spacing: 8) {
