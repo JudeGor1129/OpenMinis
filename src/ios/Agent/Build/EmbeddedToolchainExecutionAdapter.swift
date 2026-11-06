@@ -203,7 +203,12 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             } else if command == 0xc || command == 0xd || command == 0xe || command == 0x8000001c {
                 guard size >= 24 else { throw invalid() }
                 let offset = Int(word(cursor + 8))
-                guard offset >= 24, offset < size else { throw invalid() }
+                // Dylib commands (LC_LOAD_DYLIB/LC_ID_DYLIB, 0xc/0xd) have a 24-byte
+                // header before the path string. LC_LOAD_DYLINKER (0xe) and LC_RPATH
+                // (0x8000001c) are 12-byte commands whose string begins right after
+                // cmd/cmdsize, so accept their real minimum offset of 12.
+                let minStringOffset = (command == 0xe || command == 0x8000001c) ? 12 : 24
+                guard offset >= minStringOffset, offset < size else { throw invalid() }
                 let bytes = data[(cursor + offset)..<(cursor + size)]
                 guard let nul = bytes.firstIndex(of: 0),
                       let string = String(data: data[(cursor + offset)..<nul], encoding: .utf8) else { throw invalid() }
