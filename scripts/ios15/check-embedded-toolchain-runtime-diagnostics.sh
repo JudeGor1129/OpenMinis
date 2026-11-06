@@ -68,8 +68,8 @@ for cc1_flag in ("-fdefine-target-os-macros", "-target-cpu",
                  "-fblocks", "-fobjc-exceptions", "-fexceptions"):
     require(cc1_flag in toolchain_impl,
             "CC1 must receive clang Driver's SDK/builtin configuration: " + cc1_flag)
-require("Task.detached" in view and "最多重复 3 轮" in view,
-        "UI must run off-main and disclose the bounded repetition")
+require("EmbeddedToolchainDiagnosticsView" not in view,
+        "bring-up diagnostics UI must be gone; builds run from the chat compiler console")
 require("EmbeddedToolchainTweakManifest" in provider and "executeUniversal" in provider and
         "completedWithArtifacts" in provider and "publishRootlessDeb" in provider,
         "embedded provider must be manifest-gated, return verified packages and use the native adapter")
