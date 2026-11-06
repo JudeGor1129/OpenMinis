@@ -38,6 +38,19 @@ need('testEmbeddedProjectSnapshotBuildsDeterministicallyAndScansLocalHeaders' in
 need('@main' in harness and 'EmbeddedToolchainProjectSnapshotBuilder.build' in harness,'real snapshot Swift harness missing')
 for token in ('#include <stdio.h>','dependency depth','cycle','fingerprint','__asm__'):
  need(token in harness,'snapshot negative coverage missing '+token)
+resolver=snapshot[snapshot.index('static func resolveWorkspaceProject(guestPath:'):snapshot.index('static func validatedRoot(')]
+need('let project = try validatedRoot(requested)' in resolver and 'projectParts.starts(with: rootParts)' in resolver,
+     'workspace containment must compare validated physical paths')
+need('.standardizedFileURL' not in resolver,
+     'do not mix a standardized child with a physical workspace root')
+providers=Path('src/ios/Agent/Build/BuildProviders.swift').read_text()
+restricted=Path('src/ios/Agent/Build/EmbeddedToolchainBuildProvider.swift').read_text()
+for body in (providers, restricted):
+ need('try EmbeddedToolchainProjectSnapshotBuilder.resolveWorkspaceProject(' in body,
+      'both native providers must share the workspace resolver')
+for token in ('testWorkspaceResolution()', '/private/tmp', 'workspace-编译 测试-', 'outside-link', 'inside-link', 'nested-link'):
+ need(token in harness, 'real Darwin filesystem contract missing '+token)
+print('PASS: shared physical workspace resolver and real alias/symlink contract coverage present.')
 print('PASS: immutable project snapshot source policy, PBX wiring and test coverage are present.')
 PY
 if ! command -v swiftc >/dev/null 2>&1; then

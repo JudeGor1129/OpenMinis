@@ -30,7 +30,77 @@ struct SnapshotContracts {
             guard error.errorDescription != nil else { throw Failure(description: "missing error text: \(message)") }
         }
     }
+    // Real filesystem contracts, not provider/URL spies. Exercise the same shared
+    // resolver both native providers call, including Darwin /var and /tmp aliases.
+    static func testWorkspaceResolution() throws {
+        let fm = FileManager.default
+        let bases = [fm.temporaryDirectory.resolvingSymlinksInPath(),
+                     URL(fileURLWithPath: "/private/tmp", isDirectory: true)]
+        for base in bases {
+            let workspace = base.appendingPathComponent("workspace-编译 测试-" + UUID().uuidString, isDirectory: true)
+            let project = workspace.appendingPathComponent("theos-smoke", isDirectory: true)
+            let nested = workspace.appendingPathComponent("nested/smoke", isDirectory: true)
+            try fm.createDirectory(at: project, withIntermediateDirectories: true)
+            try fm.createDirectory(at: nested, withIntermediateDirectories: true)
+            defer { try? fm.removeItem(at: workspace) }
+            let bytes = Data("THEOS_PACKAGE_SCHEME = rootless\n".utf8)
+            try bytes.write(to: project.appendingPathComponent("Makefile"))
+            let physicalRoot = try EmbeddedToolchainProjectSnapshotBuilder.validatedRoot(workspace)
+            let physicalProject = try EmbeddedToolchainProjectSnapshotBuilder.validatedRoot(project)
+            var variants = [workspace, physicalRoot]
+            if physicalRoot.path.hasPrefix("/private/var/") || physicalRoot.path.hasPrefix("/private/tmp/") {
+                variants.append(URL(fileURLWithPath: String(physicalRoot.path.dropFirst("/private".count)), isDirectory: true))
+            }
+            let oldChild = physicalRoot.appendingPathComponent("theos-smoke", isDirectory: true).standardizedFileURL
+            let oldWouldReject = !oldChild.path.hasPrefix(physicalRoot.path + "/")
+            print("INFO: real Darwin workspace alias; mixed physical/standardized guard would reject=\(oldWouldReject)")
+            for variant in variants {
+                let resolved = try EmbeddedToolchainProjectSnapshotBuilder.resolveWorkspaceProject(
+                    guestPath: "/var/minis/workspace/theos-smoke", workspace: variant)
+                try require(resolved.path == physicalProject.path, "native resolver preserves physical project for Darwin aliases")
+                let readback = try EmbeddedToolchainProjectSnapshotBuilder.readBoundedProjectFile("Makefile", root: resolved, limit: 1024)
+                try require(readback == bytes, "resolved project still uses the actual nofollow file reader")
+                let nestedResult = try EmbeddedToolchainProjectSnapshotBuilder.resolveWorkspaceProject(
+                    guestPath: "/var/minis/workspace/nested/smoke", workspace: variant)
+                try require(nestedResult.pathComponents.starts(with: physicalRoot.pathComponents), "nested physical containment")
+            }
+            func rejectSelection(_ guest: String, root: URL? = nil) throws {
+                do {
+                    _ = try EmbeddedToolchainProjectSnapshotBuilder.resolveWorkspaceProject(guestPath: guest, workspace: root ?? workspace)
+                    throw Failure(description: "accepted unsafe workspace selection: \(guest)")
+                } catch let error as EmbeddedToolchainProjectSnapshotError {
+                    try require(error.errorDescription != nil, "workspace rejection has a concrete reason")
+                }
+            }
+            for path in ["/var/minis/workspace/", "/var/minis/workspace/../theos-smoke", "/var/minis/workspace//theos-smoke",
+                         "/var/minis/workspace/./theos-smoke", "/var/minis/workspace/theos-smoke/",
+                         "/var/minis/workspace/nested/../theos-smoke", "/var/minis/workspace/theos-smoke\0suffix",
+                         "/var/minis/workspace/\\theos-smoke", "/var/minis/workspace-sibling/theos-smoke",
+                         "/tmp/theos-smoke", "theos-smoke", "/var/minis/workspace/missing"] {
+                try rejectSelection(path)
+            }
+            let sibling = workspace.deletingLastPathComponent().appendingPathComponent(workspace.lastPathComponent + "-sibling", isDirectory: true)
+            try fm.createDirectory(at: sibling, withIntermediateDirectories: false)
+            defer { try? fm.removeItem(at: sibling) }
+            try rejectSelection("/var/minis/workspace/../" + sibling.lastPathComponent)
+            let outsideLink = workspace.appendingPathComponent("outside-link", isDirectory: true)
+            try fm.createSymbolicLink(at: outsideLink, withDestinationURL: sibling)
+            try rejectSelection("/var/minis/workspace/outside-link")
+            let insideLink = workspace.appendingPathComponent("inside-link", isDirectory: true)
+            try fm.createSymbolicLink(at: insideLink, withDestinationURL: project)
+            try rejectSelection("/var/minis/workspace/inside-link")
+            try rejectSelection("/var/minis/workspace/theos-smoke", root: insideLink)
+            try rejectSelection("/var/minis/workspace/inside-link/child")
+            let linkedAncestor = workspace.appendingPathComponent("nested-link", isDirectory: true)
+            try fm.createSymbolicLink(at: linkedAncestor, withDestinationURL: workspace.appendingPathComponent("nested"))
+            try rejectSelection("/var/minis/workspace/nested-link/smoke")
+            try bytes.write(to: workspace.appendingPathComponent("plain-file"))
+            try rejectSelection("/var/minis/workspace/plain-file")
+        }
+    }
+
     static func main() throws {
+        try testWorkspaceResolution()
         let files = [
             "src/main.c": "#include \"value.h\"\nint main_value(void) { return 7; }\n",
             "src/value.h": "#include \"nested.h\"\nint value(void);\n",

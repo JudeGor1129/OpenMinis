@@ -465,22 +465,8 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
     /// Resolves the same workspace-confined project root used by the restricted
     /// provider, so embedded_theos never reads outside the active session folder.
     private static func resolveWorkspaceProject(_ guestPath: String, workspace: URL) throws -> URL {
-        let prefix = "/var/minis/workspace/"
-        guard guestPath.hasPrefix(prefix), !guestPath.contains("\\"), !guestPath.contains("\0") else {
-            throw EmbeddedAdapterError.rejected("embedded_theos only builds a project under /var/minis/workspace")
-        }
-        let relative = String(guestPath.dropFirst(prefix.count))
-        let parts = relative.split(separator: "/", omittingEmptySubsequences: false)
-        guard !relative.isEmpty, parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
-            throw EmbeddedAdapterError.rejected("project path is not a safe workspace-relative directory")
-        }
-        let canonicalWorkspace = try EmbeddedToolchainProjectSnapshotBuilder.validatedRoot(workspace)
-        let candidate = canonicalWorkspace.appendingPathComponent(relative, isDirectory: true).standardizedFileURL
-        let base = canonicalWorkspace.path.hasSuffix("/") ? canonicalWorkspace.path : canonicalWorkspace.path + "/"
-        guard candidate.path.hasPrefix(base) else {
-            throw EmbeddedAdapterError.rejected("project path escapes the active session workspace")
-        }
-        return try EmbeddedToolchainProjectSnapshotBuilder.validatedRoot(candidate)
+        try EmbeddedToolchainProjectSnapshotBuilder.resolveWorkspaceProject(
+            guestPath: guestPath, workspace: workspace)
     }
 
     /// Reads only a bounded, symlink-free regular Makefile from the project root.

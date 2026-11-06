@@ -360,6 +360,35 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
         return try build(files: files, entrySources: entrySources)
     }
 
+    /// Resolve an explicitly selected guest project beneath one native workspace.
+    /// Compare physical paths on BOTH sides. On Darwin, standardizedFileURL can
+    /// rewrite /private/var to /var; mixing that with realpath's physical root
+    /// falsely rejected legitimate in-workspace projects on device (#264).
+    static func resolveWorkspaceProject(guestPath: String, workspace: URL) throws -> URL {
+        let prefix = "/var/minis/workspace/"
+        guard guestPath.hasPrefix(prefix), !guestPath.contains("\\"), !guestPath.contains("\0") else {
+            throw EmbeddedToolchainProjectSnapshotError.unsupportedPath(guestPath)
+        }
+        let relative = String(guestPath.dropFirst(prefix.count))
+        let parts = relative.split(separator: "/", omittingEmptySubsequences: false)
+        guard !relative.isEmpty, parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+            throw EmbeddedToolchainProjectSnapshotError.unsupportedPath(guestPath)
+        }
+        let root = try validatedRoot(workspace)
+        // All relative components have been checked above. Do not standardize
+        // only the child URL after establishing the physical workspace root.
+        let requested = root.appendingPathComponent(relative, isDirectory: true)
+        let project = try validatedRoot(requested)
+        let rootParts = root.pathComponents
+        let projectParts = project.pathComponents
+        guard projectParts.count > rootParts.count, projectParts.starts(with: rootParts) else {
+            throw EmbeddedToolchainProjectSnapshotError.unsupportedPath(guestPath)
+        }
+        // validatedRoot already rejects user symlinks, including symlinked
+        // ancestors. Existing file reads still walk O_NOFOLLOW directory FDs.
+        return project
+    }
+
     static func validatedRoot(_ root: URL) throws -> URL {
         guard root.isFileURL else { throw EmbeddedToolchainProjectSnapshotError.rootUnavailable }
         let requested = root
