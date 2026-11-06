@@ -75,5 +75,16 @@ for needle in ['locationWithColumn', 'locationWithoutColumn', 'makeDiagnostic', 
 m=Path('src/ios/Agent/Build/BuildModels.swift').read_text()
 assert 'case available' in m and 'case unavailable' in m
 assert 'case queued' in m and 'case notRun' in m
+engine=Path('src/ios/Agent/Build/ProgrammingBuildTools.swift').read_text()
+assert 'var isNativeEmbedded: Bool' in m
+assert engine.count('request.provider?.isNativeEmbedded == true') == 2
+assert engine.count('Self.nativeInspection(request: request, provider: providerID)') == 2
+assert '$0.id == request.provider' in engine
+chat=Path('src/ios/Agent/Chat/AIChatViewModel+BuildTools.swift').read_text()
+assert chat.count('request.provider?.isNativeEmbedded == true') == 2
+assert 'installName == "@rpath/\\(name).dylib"' in m
+workflow=Path('.github/workflows/ios15.yml').read_text()
+assert workflow.count('bash scripts/ios15/check-native-build-entry.sh --require-swift') == 2
+assert Path('toolchain-build/scripts/test-native-build-entry.swift').is_file()
 print('PASS: BuildProvider seam, high-level tools, exit-code truth gates, verification, cache persistence and remote metadata wiring.')
 PY

@@ -93,9 +93,16 @@ final class EmbeddedAdapterCancellation: @unchecked Sendable {
     }
 }
 
-enum EmbeddedAdapterError: Error {
+enum EmbeddedAdapterError: Error, LocalizedError, Sendable {
     case rejected(String)
     case poisoned(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .rejected(let reason): return "embedded adapter rejected: \(reason)"
+        case .poisoned(let reason): return "embedded adapter poisoned: \(reason)"
+        }
+    }
 }
 
 struct EmbeddedAdapterArtifact: Codable, Sendable {

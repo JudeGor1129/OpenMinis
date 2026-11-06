@@ -15,13 +15,10 @@ final class ProgrammingBuildTools {
         guard (1...request.maxAttempts).contains(request.attempt) else {
             throw BuildToolError.invalidArguments("attempt must be between 1 and max_attempts; the workflow stops after its configured repair budget.")
         }
-        let isEmbedded = request.provider == .embeddedToolchain
+        let isEmbedded = request.provider?.isNativeEmbedded == true
         let inspection: BuildProjectInspection
-        if isEmbedded {
-            inspection = BuildProjectInspection(canonicalPath: request.projectPath, kind: .embeddedTweak,
-                manifests: ["./MinisTweak.json"], languageStack: ["C", "Objective-C"],
-                gitBranch: nil, gitCommit: nil, gitIsDirty: true, gitRemote: nil,
-                suggestedProviders: [.embeddedToolchain], suggestedCommands: [])
+        if let providerID = request.provider, providerID.isNativeEmbedded {
+            inspection = Self.nativeInspection(request: request, provider: providerID)
         } else {
             inspection = try await BuildProjectDetector.inspect(path: request.projectPath, executor: executor)
         }
@@ -29,7 +26,7 @@ final class ProgrammingBuildTools {
                                                nativeWorkspaceRoot: isEmbedded ? nativeWorkspaceRoot : nil)
         var availability: [BuildProviderAvailability] = []
         let providersToProbe = isEmbedded
-            ? BuildProviderRegistry.providers.filter { $0.id == .embeddedToolchain }
+            ? BuildProviderRegistry.providers.filter { $0.id == request.provider }
             : BuildProviderRegistry.providers
         for provider in providersToProbe {
             availability.append(await provider.availability(for: baseContext))
@@ -190,13 +187,10 @@ final class ProgrammingBuildTools {
 
     func runTests(request: BuildRequest, executor: @escaping BuildShellExecutor,
                   nativeWorkspaceRoot: URL? = nil) async throws -> RunTestsResult {
-        let isEmbedded = request.provider == .embeddedToolchain
+        let isEmbedded = request.provider?.isNativeEmbedded == true
         let inspection: BuildProjectInspection
-        if isEmbedded {
-            inspection = BuildProjectInspection(canonicalPath: request.projectPath, kind: .embeddedTweak,
-                manifests: ["./MinisTweak.json"], languageStack: ["C", "Objective-C"],
-                gitBranch: nil, gitCommit: nil, gitIsDirty: true, gitRemote: nil,
-                suggestedProviders: [.embeddedToolchain], suggestedCommands: [])
+        if let providerID = request.provider, providerID.isNativeEmbedded {
+            inspection = Self.nativeInspection(request: request, provider: providerID)
         } else {
             inspection = try await BuildProjectDetector.inspect(path: request.projectPath, executor: executor)
         }
@@ -234,6 +228,17 @@ final class ProgrammingBuildTools {
 
     func verifyArtifact(path: String, kind: ArtifactKind?, executor: @escaping BuildShellExecutor) async -> ArtifactVerificationResult {
         await ArtifactVerifier.verify(path: path, requestedKind: kind, executor: executor)
+    }
+
+    /// Native providers perform their own bounded, workspace-confined preflight.
+    /// This descriptor is not a filesystem inspection and must not invoke iSH.
+    private static func nativeInspection(request: BuildRequest, provider: BuildProviderID) -> BuildProjectInspection {
+        let isTheos = provider == .embeddedTheos
+        return BuildProjectInspection(canonicalPath: request.projectPath,
+            kind: isTheos ? .theos : .embeddedTweak,
+            manifests: isTheos ? ["./Makefile", "./control"] : ["./MinisTweak.json"],
+            languageStack: ["C", "Objective-C"], gitBranch: nil, gitCommit: nil,
+            gitIsDirty: true, gitRemote: nil, suggestedProviders: [provider], suggestedCommands: [])
     }
 
     private func selectProvider(requested: BuildProviderID?, inspection: BuildProjectInspection, availability: [BuildProviderAvailability]) -> BuildProviderID? {

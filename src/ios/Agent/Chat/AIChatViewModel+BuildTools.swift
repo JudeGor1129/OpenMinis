@@ -80,7 +80,7 @@ extension AIChatViewModel {
             switch name {
             case "build_project":
                 let request = try buildRequest(from: args, forTestsOnly: false)
-                let nativeWorkspaceRoot = (request.provider == .embeddedToolchain || request.provider == .embeddedTheos) ? sessionWorkspaceDirectory : nil
+                let nativeWorkspaceRoot = request.provider?.isNativeEmbedded == true ? sessionWorkspaceDirectory : nil
                 let result = try await ProgrammingBuildTools.shared.build(
                     request: request, executor: executor, nativeWorkspaceRoot: nativeWorkspaceRoot)
                 let output = try encodeToolOutput(result, encoder: encoder)
@@ -89,7 +89,7 @@ extension AIChatViewModel {
                 return FileToolResult(output: output, success: result.buildState == .success && artifactRequirementMet && testRequirementMet && result.persistenceError == nil)
             case "run_tests":
                 let request = try buildRequest(from: args, forTestsOnly: true)
-                let nativeWorkspaceRoot = (request.provider == .embeddedToolchain || request.provider == .embeddedTheos) ? sessionWorkspaceDirectory : nil
+                let nativeWorkspaceRoot = request.provider?.isNativeEmbedded == true ? sessionWorkspaceDirectory : nil
                 let result = try await ProgrammingBuildTools.shared.runTests(
                     request: request, executor: executor, nativeWorkspaceRoot: nativeWorkspaceRoot)
                 return FileToolResult(output: try encodeToolOutput(result, encoder: encoder), success: result.state == .passed)

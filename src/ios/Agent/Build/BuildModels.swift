@@ -9,6 +9,12 @@ enum BuildProviderID: String, Codable, CaseIterable, Sendable {
     case macSSH = "mac_ssh"
     case embeddedToolchain = "embedded_toolchain"
     case embeddedTheos = "embedded_theos"
+
+    /// Both native providers require a session URL and must bypass shell probes,
+    /// shell artifact verification, and command-build cache reuse.
+    var isNativeEmbedded: Bool {
+        self == .embeddedToolchain || self == .embeddedTheos
+    }
 }
 
 enum BuildAvailabilityState: String, Codable, Sendable {
@@ -80,12 +86,14 @@ struct EmbeddedTheosTarget: Codable, Equatable, Sendable {
 
     func validate() throws {
         func safeName(_ value: String) -> Bool {
-            value.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", options: .regularExpression) != nil
+            guard let range = value.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", options: .regularExpression) else { return false }
+            return range == value.startIndex..<value.endIndex
         }
         func safeRelative(_ value: String) -> Bool {
-            !value.isEmpty && !value.hasPrefix("/") && !value.contains("\\") &&
-                !value.split(separator: "/").contains("..") &&
-                value.split(separator: "/").allSatisfy { !$0.isEmpty && $0 != "." }
+            !value.isEmpty && !value.hasPrefix("/") && !value.contains("\\") && !value.contains("\0") &&
+                value.split(separator: "/", omittingEmptySubsequences: false).allSatisfy {
+                    !$0.isEmpty && $0 != "." && $0 != ".."
+                }
         }
         guard safeName(name), !sourcePaths.isEmpty, sourcePaths.count <= 128,
               headerPaths.count <= 256, frameworks.count <= 32,
@@ -94,10 +102,14 @@ struct EmbeddedTheosTarget: Codable, Equatable, Sendable {
               architectures == [.arm64, .arm64e] else {
             throw EmbeddedTheosPlanError.invalidTarget(name)
         }
-        if let installName {
-            guard installName.hasPrefix("@rpath/"), safeName(String(installName.dropFirst(7))) else {
+        // Keep target names extension-free, but a tweak's LC_ID_DYLIB must be the
+        // canonical filename. Applying safeName to "<name>.dylib" rejected all tweaks.
+        if kind == .tweak {
+            guard installName == "@rpath/\(name).dylib" else {
                 throw EmbeddedTheosPlanError.invalidInstallName(name)
             }
+        } else if installName != nil {
+            throw EmbeddedTheosPlanError.invalidInstallName(name)
         }
         for optionalPath in [filterPlistPath, entitlementsPath].compactMap({ $0 }) {
             guard safeRelative(optionalPath) else { throw EmbeddedTheosPlanError.invalidTarget(name) }
