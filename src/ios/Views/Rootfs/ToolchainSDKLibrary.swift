@@ -165,7 +165,7 @@ final class ToolchainSDKLibrary: ObservableObject {
             do {
                 try await Task.detached(priority: .userInitiated) {
                     try BackupZipExtractor.extract(zipURL, to: staging)
-                    materializePlaceholderSymlinks(in: staging)
+                    Self.materializePlaceholderSymlinks(in: staging)
                 }.value
                 guard let found = Self.locateSDK(in: staging) else {
                     throw SDKLibraryError.noSDKInArchive
