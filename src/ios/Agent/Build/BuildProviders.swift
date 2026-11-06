@@ -417,11 +417,9 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
     }
 
     private static func summary(outcome: EmbeddedTheosExecutionOutcome, delivery: PackagedDelivery) -> String {
-        "targets=" + delivery.targetKinds.joined(separator: ",") +
-            "; compile_units=" + String(outcome.attempts) +
-            "; links=" + String(outcome.linkCount) +
-            "; payload_files=" + String(delivery.payloadPaths.count) +
-            "; temporary_outputs_removed=" + String(outcome.temporaryOutputsRemoved)
+        let targetKinds = delivery.targetKinds.joined(separator: ",")
+        let payloadFiles = delivery.payloadPaths.count
+        return "targets=\(targetKinds); compile_units=\(outcome.attempts); links=\(outcome.linkCount); payload_files=\(payloadFiles); temporary_outputs_removed=\(outcome.temporaryOutputsRemoved)"
     }
 
     private static func verifiedDEB(_ published: EmbeddedToolchainPublishedArtifact,
