@@ -555,7 +555,7 @@ struct ToolCapsuleView: View {
                 // task Live Activity refreshing in real time gets enabled too.
                 DeepLinkCoordinator.shared.setFocus(
                     rawQueryValue: "enhancedBackgroundExecution:true,backgroundSpeakEnabled:true,locationTrackingEnabled:true")
-                DeepLinkCoordinator.shared.pendingSettingsTarget = .background
+                DeepLinkCoordinator.shared.requestSettings(.background)
             }
             Button(AppLocalized("Maybe Later"), role: .cancel) {}
         } message: {

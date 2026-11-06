@@ -44,6 +44,21 @@ extension Notification.Name {
 /// strand the user.
 enum DeepLinkRouter {
 
+    /// Routes that resolve purely through app-level coordinators — settings
+    /// navigation, terminal, alarm list, session switching, share sheet — and
+    /// therefore need no chat-local view state. Used as the default
+    /// `\.openMinisURL` fallback (see MinisMediaViews) so links tapped inside
+    /// a nested hosting hierarchy still navigate.
+    static func isAppLevelRoute(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "minis", let host = url.host else { return false }
+        switch host {
+        case "settings", "views", "open_terminal", "session", "sessions", "share":
+            return true
+        default:
+            return false
+        }
+    }
+
     @MainActor
     static func handle(url: URL, shareCoordinator: ShareCoordinator) {
         guard url.scheme == "minis", let host = url.host else {
@@ -107,7 +122,7 @@ enum DeepLinkRouter {
             .map { String($0) }
         guard let head = segments.first else {
             // bare `minis://settings`
-            coord.pendingSettingsTarget = .home
+            coord.requestSettings(.home)
             return
         }
         let arg = segments.count > 1 ? segments[1] : nil
@@ -115,52 +130,46 @@ enum DeepLinkRouter {
 
         switch head {
         case "providers":
-            coord.pendingSettingsTarget = (arg?.isEmpty == false)
-                ? .providerDetail(instanceId: arg!)
-                : .providers
+            coord.requestSettings((arg?.isEmpty == false) ? .providerDetail(instanceId: arg!) : .providers)
 
         case "model-groups", "model_groups":
-            coord.pendingSettingsTarget = (arg?.isEmpty == false)
-                ? .modelGroupDetail(groupId: arg!)
-                : .modelGroups
+            coord.requestSettings((arg?.isEmpty == false) ? .modelGroupDetail(groupId: arg!) : .modelGroups)
 
         case "usage", "usage-stats", "usage_stats":
-            coord.pendingSettingsTarget = .usage
+            coord.requestSettings(.usage)
 
         case "skills":
-            coord.pendingSettingsTarget = .skills
+            coord.requestSettings(.skills)
 
         // [T-ios-assistant-header-open-soul] Previously fell through to the
         // `default` branch and landed on Settings home, even though the Soul
         // screen exists — so a `minis://settings/soul` link (or the agent
         // generating one) quietly under-delivered.
         case "soul":
-            coord.pendingSettingsTarget = .soul
+            coord.requestSettings(.soul)
 
         case "tools":
-            coord.pendingSettingsTarget = .tools
+            coord.requestSettings(.tools)
 
         // [T-mcp-oauth-deeplink] minis://settings/mcp-servers/<serverId> —
         // jump straight to the server's edit form (Authorize button). The
         // AUTH_REQUIRED error from minis-mcp-cli embeds this link. Server
         // names may be percent-encoded; url.path already decodes them.
         case "mcp-servers", "mcp_servers", "mcp":
-            coord.pendingSettingsTarget = (arg?.isEmpty == false)
-                ? .mcpServerDetail(serverId: arg!)
-                : .mcpIntegrations
+            coord.requestSettings((arg?.isEmpty == false) ? .mcpServerDetail(serverId: arg!) : .mcpIntegrations)
 
         case "memory":
-            coord.pendingSettingsTarget = .memory
+            coord.requestSettings(.memory)
 
         case "storage":
-            coord.pendingSettingsTarget = .storage
+            coord.requestSettings(.storage)
 
         case "mount-external", "mount_external", "mounts",
              "mounted-folders", "mounted_folders":
-            coord.pendingSettingsTarget = .mountedFolders
+            coord.requestSettings(.mountedFolders)
 
         case "shared-folders", "shared_folders":
-            coord.pendingSettingsTarget = .sharedFolders
+            coord.requestSettings(.sharedFolders)
 
         case "logs":
             // Optional ?tab=… selects the segmented control on the
@@ -168,10 +177,10 @@ enum DeepLinkRouter {
             // "config-audit". Unknown values fall back to the default.
             coord.pendingLogsTab = components?.queryItems?
                 .first(where: { $0.name == "tab" })?.value
-            coord.pendingSettingsTarget = .logs
+            coord.requestSettings(.logs)
 
         case "appearance":
-            coord.pendingSettingsTarget = .appearance
+            coord.requestSettings(.appearance)
 
         case "background":
             // [T-settings-focus-highlight] Optional `?focus=key=true,key2` —
@@ -179,13 +188,13 @@ enum DeepLinkRouter {
             // router (and every settings screen) stays free of `key=value` rules.
             coord.setFocus(rawQueryValue: components?.queryItems?
                 .first(where: { $0.name == "focus" })?.value)
-            coord.pendingSettingsTarget = .background
+            coord.requestSettings(.background)
 
         case "about":
-            coord.pendingSettingsTarget = .about
+            coord.requestSettings(.about)
 
         case "permissions":
-            coord.pendingSettingsTarget = .permissions
+            coord.requestSettings(.permissions)
 
         case "environments":
             // `create_key` is the only required param. Missing
@@ -199,7 +208,7 @@ enum DeepLinkRouter {
                 let note = components?.queryItems?.first(where: { $0.name == "create_note" })?.value ?? ""
                 coord.pendingEnvVarCreate = .init(key: key, value: value, note: note)
             }
-            coord.pendingSettingsTarget = .environments
+            coord.requestSettings(.environments)
 
         case "rootfs", "rootfs-management", "rootfs_management",
              "mirrors":
@@ -214,7 +223,7 @@ enum DeepLinkRouter {
             // so an LLM-generated link still gets the user *somewhere*
             // they can browse from. Mirrors Android.
             deepLinkLog.info("unknown settings path '\(head)' — falling back to Settings home")
-            coord.pendingSettingsTarget = .home
+            coord.requestSettings(.home)
         }
     }
 

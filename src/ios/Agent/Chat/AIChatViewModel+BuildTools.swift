@@ -81,12 +81,32 @@ extension AIChatViewModel {
             case "build_project":
                 let request = try buildRequest(from: args, forTestsOnly: false)
                 let nativeWorkspaceRoot = request.provider?.isNativeEmbedded == true ? sessionWorkspaceDirectory : nil
-                let result = try await ProgrammingBuildTools.shared.build(
-                    request: request, executor: executor, nativeWorkspaceRoot: nativeWorkspaceRoot)
-                let output = try encodeToolOutput(result, encoder: encoder)
-                let artifactRequirementMet = request.artifactPaths.isEmpty || result.artifacts.allSatisfy { $0.state == .available }
-                let testRequirementMet = request.testCommand == nil || result.testsState == .passed
-                return FileToolResult(output: output, success: result.buildState == .success && artifactRequirementMet && testRequirementMet && result.persistenceError == nil)
+                // [T-build-console] Mirror the run into the session's console so
+                // the "编译器" page can show what happened without re-running it.
+                let consoleSession = sessionId
+                let providerLabel = request.provider?.rawValue ?? "自动选择"
+                BuildConsoleStore.shared.begin(
+                    sessionID: consoleSession,
+                    title: "\(request.configuration) · \(providerLabel)",
+                    projectPath: request.projectPath)
+                do {
+                    let result = try await ProgrammingBuildTools.shared.build(
+                        request: request, executor: executor, nativeWorkspaceRoot: nativeWorkspaceRoot)
+                    BuildConsoleStore.shared.append(BuildConsoleStore.summary(of: result), sessionID: consoleSession)
+                    let output = try encodeToolOutput(result, encoder: encoder)
+                    let artifactRequirementMet = request.artifactPaths.isEmpty || result.artifacts.allSatisfy { $0.state == .available }
+                    let testRequirementMet = request.testCommand == nil || result.testsState == .passed
+                    let passed = result.buildState == .success && artifactRequirementMet && testRequirementMet && result.persistenceError == nil
+                    BuildConsoleStore.shared.finish(
+                        sessionID: consoleSession,
+                        status: passed ? .succeeded : .failed,
+                        artifactPath: result.artifacts.first?.path)
+                    return FileToolResult(output: output, success: passed)
+                } catch {
+                    BuildConsoleStore.shared.append("error: \(error.localizedDescription)", sessionID: consoleSession)
+                    BuildConsoleStore.shared.finish(sessionID: consoleSession, status: .failed)
+                    throw error
+                }
             case "run_tests":
                 let request = try buildRequest(from: args, forTestsOnly: true)
                 let nativeWorkspaceRoot = request.provider?.isNativeEmbedded == true ? sessionWorkspaceDirectory : nil

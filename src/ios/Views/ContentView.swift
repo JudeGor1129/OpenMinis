@@ -2468,8 +2468,12 @@ struct ModernContentView: View {
         // Open the SettingsSheet whenever a deep link sets a settings
         // target. SettingsSheet itself reads `deepLink.pendingSettingsTarget`
         // in onAppear/onChange to push the right destination, then clears it.
-        .onChange(of: deepLink.pendingSettingsTarget) { target in
-            guard target != nil else { return }
+        // [T-settings-deeplink-repeat] Driven by the request TOKEN, not the
+        // target value: tapping the same settings link twice must open the
+        // sheet again, and a link that targets the screen already showing
+        // still has to be honored.
+        .onChange(of: deepLink.settingsRequestToken) { _ in
+            guard deepLink.pendingSettingsTarget != nil else { return }
             if activeToolSheet != .settings {
                 activeToolSheet = .settings
             }
@@ -8650,7 +8654,7 @@ private struct SettingsSheet: View {
                     }
                 }
             }
-            .onChange(of: deepLink.pendingSettingsTarget) { _ in
+            .onChange(of: deepLink.settingsRequestToken) { _ in
                 applyPendingDeepLink()
             }
         }

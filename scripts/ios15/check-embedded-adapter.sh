@@ -132,10 +132,9 @@ require('swift_name("runCC1(_:stdout:stderr:)")' in header and
         'swift_name("runLinker(_:stdout:stderr:)")' in header,
         'bridge needs literal Swift names immune to nested Darwin stdio macro expansion')
 project = Path('src/ios/Minis.xcodeproj/project.pbxproj').read_text(encoding='utf-8')
-view = Path('src/ios/Views/Rootfs/EmbeddedAdapterDiagnosticsView.swift').read_text(encoding='utf-8')
 settings = Path('src/ios/Views/Rootfs/RootfsBuildSettingsView.swift').read_text(encoding='utf-8')
 workflow = Path('.github/workflows/ios15.yml').read_text(encoding='utf-8')
-for filename in ('EmbeddedToolchainExecutionAdapter.swift', 'EmbeddedAdapterDiagnosticsView.swift',
+for filename in ('EmbeddedToolchainExecutionAdapter.swift',
                  'EmbeddedToolchainUniversalArtifact.swift', 'EmbeddedToolchainDebPackage.swift'):
     require(project.count(filename + ' in Sources') == 2, filename + ' must be compiled by the main App')
 require('executeUniversal' in adapter and 'links <= 1' in adapter and 'architecture.accepts(subtype:' in adapter,
@@ -147,10 +146,8 @@ for module in ('EmbeddedToolchainUniversalArtifact.swift', 'EmbeddedToolchainDeb
     body = Path('src/ios/Agent/Build/' + module).read_text()
     for pattern in (r'\b(?:Process|system|popen|posix_spawn|execve|dlopen)\s*\(', r'context\.executor'):
         require(not re.search(pattern, body), 'packaging module must stay pure memory: ' + module)
-require('EmbeddedAdapterDiagnosticsView()' in settings and 'EmbeddedToolchainExecutionAdapter.shared' in view,
-        'fixed validation UI must use the lifetime shared adapter')
-require('TextEditor' not in view and 'TextField' not in view, 'validation UI must not accept arbitrary source/argv')
-require('onDisappear { token?.cancel() }' in view, 'leaving validation must request cancellation')
+require('EmbeddedAdapterDiagnosticsView' not in settings,
+        'bring-up diagnostics UI must be gone; builds are driven from the chat console')
 require(workflow.count('check-embedded-adapter.sh --require-swift') == 2,
         'both quick CI and full App build must require actual Swift contracts')
 require('EmbeddedAdapterProcessState' in adapter and 'bridge is EmbeddedNativeAdapterBridge ? .native' in adapter,

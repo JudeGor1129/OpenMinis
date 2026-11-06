@@ -9706,6 +9706,14 @@ private func resolveMinisFileURLForNativeText(url: URL) -> URL? {
         }
     }
 
+    // Guest-rootfs fallback shared with resolveMinisFileURL: files a shell
+    // wrote under /var/minis/workspace (no session fs-context) live here.
+    if let rootfsURL = resolveMinisRootfsPath(host: host, subPaths: subPaths) {
+        let size = (try? fm.attributesOfItem(atPath: rootfsURL.path)[.size] as? Int64) ?? -1
+        imgLogger.info("[MinisImage][Resolve] FOUND rootfs fallback path=\(rootfsURL.path) size=\(size)")
+        return rootfsURL
+    }
+
     imgLogger.warning("[MinisImage][Resolve] NOT FOUND in active session / global dirs url=\(url.absoluteString) host=\(host) subPaths=\(subPaths) (cross-session scan disabled for isolation)")
     return nil
 }

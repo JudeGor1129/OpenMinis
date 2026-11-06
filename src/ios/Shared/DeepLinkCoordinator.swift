@@ -64,6 +64,22 @@ final class DeepLinkCoordinator: ObservableObject {
     /// the sheet without pushing anything.
     @Published var pendingSettingsTarget: SettingsDeepLinkTarget?
 
+    /// Monotonic token bumped by every settings deep link.
+    ///
+    /// `pendingSettingsTarget` alone cannot drive navigation: `onChange` only
+    /// fires when the value *changes*, so tapping the same link twice (or a
+    /// link while the sheet is already on that screen) silently did nothing.
+    /// The token increments unconditionally, so each tapped link is a new
+    /// request even when the target is identical.
+    @Published private(set) var settingsRequestToken: Int = 0
+
+    /// Record a settings deep-link request. Callers must use this instead of
+    /// writing `pendingSettingsTarget` directly.
+    func requestSettings(_ target: SettingsDeepLinkTarget) {
+        pendingSettingsTarget = target
+        settingsRequestToken &+= 1
+    }
+
     /// Open the dedicated Rootfs Management sheet (separate from the
     /// SettingsSheet on iOS — RootfsManagementView is presented via the
     /// `activeToolSheet = .rootfsManagement` path). Mirrors Android's

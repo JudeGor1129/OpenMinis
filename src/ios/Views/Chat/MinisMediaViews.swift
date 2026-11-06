@@ -215,6 +215,34 @@ let minisDocumentExtensions: Set<String> = [
     "rtf", "rtfd",
 ]
 
+/// Host namespaces that also exist as plain directories inside the Alpine
+/// rootfs under `/var/minis/<host>`.
+///
+/// A write performed without a session fs-context (e.g. a build artifact
+/// produced by `shell_execute`, or anything a global shell creates under
+/// /var/minis/workspace/…) lands in that real rootfs directory, NOT in the
+/// session bucket the chat resolver checks. The file is genuinely there — the
+/// shell lists it — but a tapped `minis://` link reported "file not found".
+///
+/// Lookup is EXACT-PATH only: no directory scanning, and `..` components are
+/// rejected, so a link can never resolve to anything the link does not name.
+let minisRootfsFallbackHosts: Set<String> = ["workspace", "shared", "skills", "memory"]
+
+func resolveMinisRootfsPath(host: String, subPaths: [String]) -> URL? {
+    guard minisRootfsFallbackHosts.contains(host) else { return nil }
+    let fm = FileManager.default
+    let base = RootfsManager.shared.dataPath
+        .appendingPathComponent("var/minis", isDirectory: true)
+        .appendingPathComponent(host, isDirectory: true)
+    for subPath in subPaths {
+        guard !subPath.isEmpty,
+              !subPath.split(separator: "/").contains("..") else { continue }
+        let candidate = base.appendingPathComponent(subPath)
+        if fm.fileExists(atPath: candidate.path) { return candidate }
+    }
+    return nil
+}
+
 /// Resolve a minis:// URL to a host filesystem URL.
 /// Maps directly to persistent storage: Library/MinisChat/minis/<sessionId>/<subdir>/<path>
 /// No dependency on iSH boot or bind mounts.
@@ -315,6 +343,14 @@ func resolveMinisFileURL(url: URL, sessionId: String? = nil) -> URL? {
                 }
             }
         }
+    }
+
+    // Guest-rootfs fallback: files a shell created under /var/minis/<host>
+    // without a session fs-context (see resolveMinisRootfsPath). Exact path
+    // only, and limited to the shared namespaces.
+    if let rootfsURL = resolveMinisRootfsPath(host: host, subPaths: subPaths) {
+        minisLogger.info("[MinisImage][Resolve] \(url.absoluteString) → rootfs \(rootfsURL.path)")
+        return rootfsURL
     }
 
     // [T-ios-minisurl-cross-session-isolation] DO NOT scan other sessions.
@@ -579,7 +615,27 @@ struct OpenMinisURLAction {
 }
 
 private struct OpenMinisURLKey: EnvironmentKey {
-    static let defaultValue = OpenMinisURLAction { _ in .systemAction }
+    /// [T-deeplink-default-route] Fallback used wherever AIChatView's own
+    /// handler is not in the environment — most importantly a message cell
+    /// hosted in `UIHostingConfiguration`, which starts a fresh SwiftUI
+    /// hierarchy and therefore never sees `.environment(\.openMinisURL, …)`.
+    /// Without this, a `minis://settings/…` link tapped in such a cell hit the
+    /// system action (no registered handler) and did nothing at all. App-level
+    /// routes need no chat state, so they are handled here directly; anything
+    /// else still falls through to the system action.
+    static let defaultValue = OpenMinisURLAction { url in
+        guard DeepLinkRouter.isAppLevelRoute(url) else { return .systemAction }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                DeepLinkRouter.handle(url: url, shareCoordinator: ShareCoordinator.shared)
+            }
+        } else {
+            Task { @MainActor in
+                DeepLinkRouter.handle(url: url, shareCoordinator: ShareCoordinator.shared)
+            }
+        }
+        return .handled
+    }
 }
 
 extension EnvironmentValues {

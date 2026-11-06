@@ -344,6 +344,8 @@ struct AIChatView: View {
     @State private var totalSessionCount: Int? = nil
     @State private var showBrowserSheet = false
     @State private var showTerminal = false
+    /// In-app compiler console, opened from the "…" menu (编译器). Terminal-free.
+    @State private var showBuildConsole = false
     @State private var terminalInitCommand: String?
     @State private var showAttachmentMenu = false
     @State private var isDropTargeted = false
@@ -1238,6 +1240,14 @@ struct AIChatView: View {
                     }
             }
         }
+        // [T-build-console] Compiler console opened from the "…" menu. The page
+        // only mirrors BuildConsoleStore state, so presenting it never starts,
+        // replays or re-verifies a build.
+        .fullScreenCover(isPresented: $showBuildConsole) {
+            MinisNavigationContainer {
+                BuildConsoleView(sessionID: vm.sessionId)
+            }
+        }
         .fullScreenCover(isPresented: $showCamera, onDismiss: {
             minisLogger.info("[QuickAction] fullScreenCover(camera) onDismiss showCamera=\(showCamera)")
         }) {
@@ -2058,6 +2068,7 @@ struct AIChatView: View {
             onForceSync: { runForceSync() },
             onForcePull: { showForcePullConfirm = true },
             onOpenTerminal: { showTerminal = true },
+            onOpenCompiler: { showBuildConsole = true },
             onOpenBrowser: { showBrowserSheet = true },
             onBrowseFiles: { showFileBrowser = true },
             onSkills: { showSessionSkills = true },
@@ -2279,9 +2290,6 @@ struct AIChatView: View {
     /// titleView displays — must stay in lockstep with titleView's reads
     /// (see NavTitleKey doc). Cheap to compute per body pass.
     private var navTitleKey: NavTitleKey {
-        #if DEBUG
-        NavbarEvalStats.toolbarPass += 1
-        #endif
         let display = SessionModelDisplay(store: configStore, draftGroupId: vm.initialGroupId)
         let resolved = display.resolvedDetail(for: vm.sessionId)
         let sessionTitle: String? = (titlePillSession?.title?.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -5631,20 +5639,6 @@ struct NavBarStyleModifier: ViewModifier {
 /// inside `content` still fire on their own — only parent-driven invalidation
 /// is gated. Anything the content READS from the parent/vm must therefore be
 /// represented in `key`, or its changes will not render.
-#if DEBUG
-/// [T-ios-navbar-principal-streaming-stability] Eval counters proving (or
-/// disproving) that the toolbar equatable gates actually hold during
-/// streaming. toolbarPass ≈ one per streaming tick (counted in navTitleKey,
-/// which the toolbar builder computes every pass); titleEval / menuEval
-/// should stay ~1 while a stream runs IF the gates work. Grep: [NavbarEval].
-enum NavbarEvalStats {
-    static var toolbarPass = 0
-    static var titleEval = 0
-    static var menuEval = 0
-    static let logger = AppLogger(category: "NavbarEval")
-}
-#endif
-
 private struct EquatableByValue<Key: Equatable, Content: View>: View, Equatable {
     let key: Key
     @ViewBuilder let content: () -> Content
@@ -5653,12 +5647,6 @@ private struct EquatableByValue<Key: Equatable, Content: View>: View, Equatable 
 
     @ViewBuilder
     var body: some View {
-        #if DEBUG
-        let _ = {
-            NavbarEvalStats.titleEval += 1
-            NavbarEvalStats.logger.info("[NavbarEval] titleEval=\(NavbarEvalStats.titleEval) (toolbarPass=\(NavbarEvalStats.toolbarPass))")
-        }()
-        #endif
         content()
     }
 }
@@ -5738,51 +5726,10 @@ private struct ChatToolbarHost<Title: View, Trailing: View>: View, Equatable {
     @ViewBuilder let trailing: () -> Trailing
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        let eq = lhs.key == rhs.key
-        #if DEBUG
-        if !eq {
-            // Name the exact field that broke equality so a false-negative
-            // key can be pinned from device logs.
-            var diffs: [String] = []
-            if lhs.key.navTitle != rhs.key.navTitle {
-                let l = lhs.key.navTitle, r = rhs.key.navTitle
-                if l.sessionTitle != r.sessionTitle { diffs.append("sessionTitle") }
-                if l.canEditTitle != r.canEditTitle { diffs.append("canEditTitle") }
-                if l.soulName != r.soulName { diffs.append("soulName") }
-                if l.modelName != r.modelName { diffs.append("modelName") }
-                if l.isGroupBound != r.isGroupBound { diffs.append("isGroupBound") }
-                if l.resolvedText != r.resolvedText { diffs.append("resolvedText") }
-                if l.hasBinding != r.hasBinding { diffs.append("hasBinding") }
-                if l.hasProviders != r.hasProviders { diffs.append("hasProviders") }
-                if l.showThinkingBadge != r.showThinkingBadge { diffs.append("showThinkingBadge") }
-                if l.thinkingLevelName != r.thinkingLevelName { diffs.append("thinkingLevelName") }
-                if l.fallbackTrigger != r.fallbackTrigger { diffs.append("fallbackTrigger") }
-                if l.fallbackPulse != r.fallbackPulse { diffs.append("fallbackPulse") }
-                if l.titleLocked != r.titleLocked { diffs.append("titleLocked") }
-            }
-            if lhs.key.messagesEmpty != rhs.key.messagesEmpty { diffs.append("messagesEmpty") }
-            if lhs.key.hasSession != rhs.key.hasSession { diffs.append("hasSession") }
-            if lhs.key.isForcePulling != rhs.key.isForcePulling { diffs.append("isForcePulling") }
-            if lhs.key.iCloudSyncEnabled != rhs.key.iCloudSyncEnabled { diffs.append("iCloudSyncEnabled") }
-            if lhs.key.memoryEnabled != rhs.key.memoryEnabled { diffs.append("memoryEnabled") }
-            if lhs.key.speakEnabled != rhs.key.speakEnabled { diffs.append("speakEnabled") }
-            if lhs.key.showEnhancedCacheToggle != rhs.key.showEnhancedCacheToggle { diffs.append("showEnhancedCacheToggle") }
-            if lhs.key.enhancedCacheEnabled != rhs.key.enhancedCacheEnabled { diffs.append("enhancedCacheEnabled") }
-            if lhs.key.showFastModeToggle != rhs.key.showFastModeToggle { diffs.append("showFastModeToggle") }
-            if lhs.key.fastModeEnabled != rhs.key.fastModeEnabled { diffs.append("fastModeEnabled") }
-            NavbarEvalStats.logger.info("[NavbarEval] host == FALSE diffs=[\(diffs.joined(separator: ","))]")
-        }
-        #endif
-        return eq
+        lhs.key == rhs.key
     }
 
     var body: some View {
-        #if DEBUG
-        let _ = {
-            NavbarEvalStats.titleEval += 1
-            NavbarEvalStats.logger.info("[NavbarEval] toolbarHostEval=\(NavbarEvalStats.titleEval) (toolbarPass=\(NavbarEvalStats.toolbarPass))")
-        }()
-        #endif
         Color.clear
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
@@ -5841,6 +5788,8 @@ private struct ChatTrailingMenu: View, Equatable {
     let onForceSync: () -> Void
     let onForcePull: () -> Void
     let onOpenTerminal: () -> Void
+    /// Opens the compiler console (build log page).
+    let onOpenCompiler: () -> Void
     let onOpenBrowser: () -> Void
     let onBrowseFiles: () -> Void
     let onSkills: () -> Void
@@ -5871,12 +5820,6 @@ private struct ChatTrailingMenu: View, Equatable {
     }
 
     var body: some View {
-        #if DEBUG
-        let _ = {
-            NavbarEvalStats.menuEval += 1
-            NavbarEvalStats.logger.info("[NavbarEval] menuEval=\(NavbarEvalStats.menuEval) (toolbarPass=\(NavbarEvalStats.toolbarPass))")
-        }()
-        #endif
         return Menu {
             Button { onNewChat() } label: {
                 Label(AppLocalized("New Chat"), systemImage: "square.and.pencil")
@@ -5915,6 +5858,10 @@ private struct ChatTrailingMenu: View, Equatable {
 
             Button { onOpenTerminal() } label: {
                 Label(AppLocalized("Open Terminal"), systemImage: "terminal")
+            }
+
+            Button { onOpenCompiler() } label: {
+                Label("编译器", systemImage: "hammer")
             }
 
             Button { onOpenBrowser() } label: {
@@ -6039,6 +5986,8 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
     let onForceSync: () -> Void
     let onForcePull: () -> Void
     let onOpenTerminal: () -> Void
+    /// Opens the compiler console (build log page).
+    let onOpenCompiler: () -> Void
     let onOpenBrowser: () -> Void
     let onBrowseFiles: () -> Void
     let onSkills: () -> Void
@@ -6144,10 +6093,6 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
         guard context.coordinator.lastKey != key else { return }
         context.coordinator.lastKey = key
         button.menu = Self.buildMenu(key: key, coordinator: context.coordinator)
-        #if DEBUG
-        NavbarEvalStats.menuEval += 1
-        NavbarEvalStats.logger.info("[NavbarEval] uikitMenuRebuild=\(NavbarEvalStats.menuEval) (toolbarPass=\(NavbarEvalStats.toolbarPass))")
-        #endif
     }
 
     private static func buildMenu(key: Key, coordinator: Coordinator) -> UIMenu {
@@ -6199,6 +6144,8 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
         groups.append(UIMenu(options: .displayInline, children: [
             UIAction(title: AppLocalized("Open Terminal"),
                      image: UIImage(systemName: "terminal")) { _ in coordinator.parent.onOpenTerminal() },
+            UIAction(title: "编译器",
+                     image: UIImage(systemName: "hammer")) { _ in coordinator.parent.onOpenCompiler() },
             UIAction(title: AppLocalized("Open Browser"),
                      image: UIImage(systemName: "globe")) { _ in coordinator.parent.onOpenBrowser() },
             UIAction(title: AppLocalized("Browse Chat Files"),
