@@ -1,6 +1,6 @@
 name: iOS 15 port diagnostics
 
-# Rebuild request (updated 2026-11-05d, [ios15-full-build]): retry after
+# Rebuild request (updated 2026-11-06a, [ios15-full-build]): verifier fix needs a full app IPA for on-device retry after
 # macOS runner capacity recovered, without changing app source.
 on:
   push:
