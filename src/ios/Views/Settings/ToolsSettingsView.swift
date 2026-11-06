@@ -82,7 +82,7 @@ enum AgentToolSwitch: String, CaseIterable {
     nonisolated static func governing(_ toolName: String) -> AgentToolSwitch? {
         switch toolName {
         case "ask_user": return .interaction
-        case "frida_status", "frida_processes": return .frida
+        case "frida_status", "frida_processes", "frida_script": return .frida
         case "ictrl_call": return .ictrl
         case "browser_use": return .browser
         case SubAgentDefinition.toolName: return .agents
@@ -128,6 +128,16 @@ enum AgentToolSwitch: String, CaseIterable {
 }
 
 struct ToolsSettingsView: View {
+    /// What the Frida section can actually do in this build.
+    private var fridaDescription: String {
+        if OpenMinisFridaScriptAvailable() {
+            return "通过本机 frida-server 列进程并对已授权的运行中进程执行 JS；收集时间最长 30 秒，随后尝试卸载脚本并分离。运行稳定性和超时仍需实机验证。"
+        }
+        return OpenMinisFridaDiagnosticsAvailable()
+            ? "仅检查服务器文件和本机 27042 端口；当前构建未嵌入 Frida Core。"
+            : "当前构建不支持 Frida。"
+    }
+
     @AppStorage(AgentToolSwitch.interaction.key) private var interactionEnabled = AgentToolSwitch.interaction.defaultValue
     @AppStorage(AgentToolSwitch.browser.key) private var browserEnabled: Bool = AgentToolSwitch.browser.defaultValue
     @AppStorage(AgentToolSwitch.frida.key) private var fridaEnabled = AgentToolSwitch.frida.defaultValue
@@ -148,8 +158,8 @@ struct ToolsSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
-                toolRow("Frida 服务器诊断", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
-                Text(OpenMinisFridaDiagnosticsAvailable() ? "仅检查服务器文件和本机 27042 端口；不会初始化 Frida Core、枚举进程、连接协议或执行脚本。" : "当前构建不支持 Frida 诊断。")
+                toolRow("Frida 动态分析", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
+                Text(fridaDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

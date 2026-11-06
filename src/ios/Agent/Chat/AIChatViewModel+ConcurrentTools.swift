@@ -374,17 +374,38 @@ extension AIChatViewModel {
             toolSuccess = false
         } else {
         switch tu.name {
-        case "frida_status", "frida_processes":
+        case "frida_status", "frida_processes", "frida_script":
             guard AgentToolSwitch.frida.isEnabled else {
                 toolOutput = Self.toolsDisabledMessage
                 toolSuccess = false
                 break
             }
+            guard !Task.isCancelled else {
+                toolOutput = "Frida call cancelled."
+                toolSuccess = false
+                break
+            }
+            if tu.name == "frida_script" {
+                guard OpenMinisFridaScriptAvailable() else {
+                    toolOutput = "This build has no embedded Frida Core client; only frida_status diagnostics are available."
+                    toolSuccess = false
+                    break
+                }
+                let target = (toolArgs["target"] as? String) ?? ""
+                let source = (toolArgs["source"] as? String) ?? ""
+                let seconds = Double((toolArgs["timeout_seconds"] as? Int) ?? 5)
+                toolOutput = await withCheckedContinuation { continuation in
+                    OpenMinisFridaRunScriptAsync(target, source, seconds) { result in
+                        continuation.resume(returning: result)
+                    }
+                }
+                toolSuccess = !toolOutput.contains("ERROR:") && !toolOutput.contains("[error]") && !toolOutput.contains("no script was loaded") && !Task.isCancelled
+                break
+            }
             let listProcesses = tu.name == "frida_processes"
-            guard !Task.isCancelled,
-                  listProcesses ? OpenMinisFridaCoreAvailable() : OpenMinisFridaDiagnosticsAvailable() else {
+            guard listProcesses ? OpenMinisFridaScriptAvailable() : OpenMinisFridaDiagnosticsAvailable() else {
                 toolOutput = listProcesses
-                    ? "Frida process probing is disabled for device safety. Use frida_status for non-invasive server diagnostics."
+                    ? "This build has no embedded Frida Core client; only frida_status diagnostics are available."
                     : "Frida diagnostics unavailable or task cancelled."
                 toolSuccess = false
                 break

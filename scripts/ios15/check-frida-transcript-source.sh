@@ -11,12 +11,18 @@ grep -q 'frida_device_enumerate_processes_sync' "$bridge"
 grep -q 'dispatch_async(OpenMinisFridaQueue()' "$bridge"
 grep -q 'g_object_unref(processes)' "$bridge"
 grep -q 'name: "frida_status"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
-! grep -q 'name: "frida_processes"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
-grep -q 'case "frida_status", "frida_processes":' src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift
-grep -q 'case "frida_status", "frida_processes": return .frida' src/ios/Views/Settings/ToolsSettingsView.swift
-! grep -Eq 'frida_(device_attach|session_create_script|device_spawn)' "$bridge"
-grep -q 'Frida Core probing remains disabled' "$bridge"
+grep -q 'name: "frida_processes"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
+grep -q 'name: "frida_script"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
+grep -q 'case "frida_status", "frida_processes", "frida_script":' src/ios/Agent/Chat/AIChatViewModel+ConcurrentTools.swift
+grep -q 'case "frida_status", "frida_processes", "frida_script": return .frida' src/ios/Views/Settings/ToolsSettingsView.swift
+grep -q 'frida_device_manager_add_remote_device_sync' "$bridge"
+grep -q 'frida_device_attach_sync' "$bridge"
+grep -q 'frida_session_create_script_sync' "$bridge"
 grep -q 'OpenMinisFridaServerDiagnostics' "$bridge"
+if grep -Eq 'frida_device_spawn|frida_device_manager_enumerate_devices_sync|frida_device_manager_get_device_by_type_sync' "$bridge"; then
+    echo 'FAIL: bridge must not spawn or use device enumeration/local backend' >&2
+    exit 1
+fi
 grep -q 'VStack(alignment: message.role == .user ? .trailing : .leading' "$view"
 # Legacy transcript must render markdown through SelectableMarkdownView, not
 # Text(verbatim:), which showed raw ** / ` / - and blocked text selection.
@@ -32,17 +38,15 @@ grep -q 'precacheTail = 0' "$persist"
 grep -q 'LegacySessionDestination(sessionID: session.id)' src/ios/Views/LegacyContentView.swift
 grep -q 'if rawIndex.isMultiple(of: 20) { await Task.yield() }' "$persist"
 grep -q 'let isLast = aIdx == lastAssistantIndex' "$persist"
-printf 'PASS: Frida read-only tool wiring, transcript alignment and cooperative history reconstruction.\n'
-printf 'NOTE: not proof of Swift/ObjC compilation, device process visibility or scroll performance.\n'
+printf 'PASS: Frida remote tool wiring, transcript alignment and cooperative history reconstruction.\n'
+printf 'NOTE: source checks do not prove compilation, timeout enforcement, device stability or script execution.\n'
 
-# Diagnose backend visibility without attributing every empty list to sandboxing.
-grep -q 'g_strcmp0(deviceID, "local")' "$bridge"
-grep -q 'g_strcmp0(deviceID, "socket")' "$bridge"
-grep -q 'g_cancellable_cancel(cancel)' "$bridge"
-grep -q 'Empty result from this backend; cause undetermined' "$bridge"
-grep -q 'No built-in backend completed process enumeration' "$bridge"
-! grep -q 'frida_device_manager_get_device_by_type_sync' "$bridge"
-printf 'PASS: built-in backend allowlist, cooperative cancellation and empty-result diagnostics.\n'
+grep -q '127.0.0.1:27042' "$bridge"
+grep -q 'g_cancellable_cancel(heldCancel)' "$bridge"
+grep -q 'OpenMinisFridaMaxTranscriptBytes' "$bridge"
+grep -q 'g_main_context_push_thread_default' "$bridge"
+grep -q 'OpenMinisFridaOnMessage(FridaScript \*script' "$bridge"
+printf 'PASS: loopback endpoint, cooperative deadline, bounded transcript and callback wiring present.\n'
 
 # Re-entry should not rebuild full history; streaming tracks content size, not offset.
 ! grep -q 'if cached.isNew || (vm.messages.isEmpty' "$view"

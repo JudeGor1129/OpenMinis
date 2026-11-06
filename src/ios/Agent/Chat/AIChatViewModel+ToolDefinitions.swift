@@ -381,14 +381,35 @@ extension AIChatViewModel {
         if AgentToolSwitch.frida.isEnabled && OpenMinisFridaDiagnosticsAvailable() {
             tools.append(AgentToolDefinition(
                 name: "frida_status",
-                description: "Run non-invasive Frida server diagnostics only: check known server file paths, executable permission, and whether the loopback default port is open. Embedded Frida Core initialization, device/process enumeration, protocol requests, attach, spawn and scripts are disabled.",
+                description: "Report the local Frida server: binary paths, executable bit, whether 127.0.0.1:27042 is listening, and the embedded client version. Use this first when any Frida call fails. Never starts a server.",
                 parameters: [:],
                 required: [],
                 propertyOrdering: []
             ))
+            if OpenMinisFridaScriptAvailable() {
+                tools.append(AgentToolDefinition(
+                    name: "frida_processes",
+                    description: "List the processes the device's frida-server can see, as PID<TAB>name. Read-only; no attach. Use it to find the target for frida_script.",
+                    parameters: [
+                        "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary shown to the user.")
+                    ],
+                    required: ["tool_title"],
+                    propertyOrdering: ["tool_title"]
+                ))
+                tools.append(AgentToolDefinition(
+                    name: "frida_script",
+                    description: "Attach to an authorized running target through loopback frida-server, load one Frida JavaScript, collect console.log/send()/error messages, then attempt unload and detach. No spawn support. Frida calls have cooperative cancellation, not a guaranteed hard timeout. Returns a transcript; attach may fail.",
+                    parameters: [
+                        "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary shown to the user."),
+                        "target": AgentToolParam(type: .string, description: "PID (digits) or process name visible in frida_processes (exact case-insensitive match; use PID for ambiguous names)."),
+                        "source": AgentToolParam(type: .string, description: "Frida JavaScript source. Keep it short; use send()/console.log for results."),
+                        "timeout_seconds": AgentToolParam(type: .integer, description: "Message collection window in seconds (default 5, clamped to 1...30).")
+                    ],
+                    required: ["tool_title", "target", "source"],
+                    propertyOrdering: ["tool_title", "target", "source", "timeout_seconds"]
+                ))
+            }
         }
-        // Keep process enumeration absent from the schema until the disabled
-        // Frida Core path has passed device-specific reboot-safety validation.
         // [T-host-file-tools] iOS-side read-only filesystem tools. Ungated like
         // the existing file_read/file_write family, but they address the real
         // device filesystem instead of the iSH fakefs — `root` picks which.
