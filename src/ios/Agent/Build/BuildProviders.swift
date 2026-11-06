@@ -213,9 +213,9 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
         // so the build fails instead of silently shipping an incomplete DEB.
         let blocked = inspection.ignoredRecipes.filter { $0 != "all::" && $0 != "all:" }
         guard blocked.isEmpty else {
+            let detail = blocked.prefix(8).joined(separator: " | ")
             throw EmbeddedAdapterError.rejected(
-                "the native adapter never executes Makefile recipes or package hooks; move that staging into layout/ and delete: " +
-                blocked.prefix(8).joined(separator: " | "))
+                "the native adapter never executes Makefile recipes or package hooks; move that staging into layout/ and delete: \(detail)")
         }
         let control = try Self.readControl(root)
         var filterPlist: Data?
@@ -240,8 +240,7 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
             Array(Set(declared)).sorted(), root: root)
         let plans = try EmbeddedTheosCompilePlanner.plan(project: project, fileContents: contents)
         let layout = try EmbeddedTheosLayoutLoader.load(root: root)
-        let guestOutput = context.request.projectPath + "/" +
-            EmbeddedToolchainProjectPublisher.outputDirectory + "/" + control.filename
+        let guestOutput = "\(context.request.projectPath)/\(EmbeddedToolchainProjectPublisher.outputDirectory)/\(control.filename)"
         if !context.request.artifactPaths.isEmpty && context.request.artifactPaths != [guestOutput] {
             throw EmbeddedAdapterError.rejected("artifact_paths, when supplied, must name the generated DEB inside this project")
         }
@@ -282,16 +281,17 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
                     return failedExecution("published DEB does not match the verified in-memory package",
                                            runID: runID, started: started, outcome: outcome)
                 }
-                var metadata = ["native_provider": "embedded_theos", "full_log_persisted": "false",
-                                "artifact_path": prepared.artifactGuestPath,
-                                "artifact_sha256": published.sha256,
-                                "artifact_bytes": String(published.bytes),
-                                "directory_synced": String(published.directorySynced),
-                                "targets": delivery.targetKinds.joined(separator: ","),
-                                "layout_files": String(prepared.layout.count),
-                                "compile_attempts": String(outcome.attempts),
-                                "link_count": String(outcome.linkCount)]
-                metadata["payload_paths"] = delivery.payloadPaths.joined(separator: ";")
+                var metadata: [String: String] = ["native_provider": "embedded_theos",
+                                                  "full_log_persisted": "false",
+                                                  "artifact_path": prepared.artifactGuestPath,
+                                                  "artifact_sha256": published.sha256,
+                                                  "targets": delivery.targetKinds.joined(separator: ","),
+                                                  "payload_paths": delivery.payloadPaths.joined(separator: ";")]
+                metadata["artifact_bytes"] = String(published.bytes)
+                metadata["directory_synced"] = String(published.directorySynced)
+                metadata["layout_files"] = String(prepared.layout.count)
+                metadata["compile_attempts"] = String(outcome.attempts)
+                metadata["link_count"] = String(outcome.linkCount)
                 let execution = BuildCommandExecution(
                     command: "embedded-theos: arm64 + arm64e -> rootless DEB", exitCode: 0,
                     durationSeconds: Date().timeIntervalSince(started),
@@ -392,7 +392,7 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
             let installed = EmbeddedTheosDebPackage.rootlessPrefix + target.installPath
             entries.append(EmbeddedTheosDebEntry(path: installed, bytes: universal, mode: 0o755))
             payloadPaths.append(installed)
-            kinds.append(target.name + ":" + target.kind.rawValue + ":" + verified.architectures.joined(separator: "+"))
+            kinds.append("\(target.name):\(target.kind.rawValue):\(verified.architectures.joined(separator: "+"))")
             if target.kind == .tweak {
                 guard let filter = prepared.filterPlist else {
                     throw EmbeddedAdapterError.rejected("Theos tweak has no verified filter plist: \(target.name)")

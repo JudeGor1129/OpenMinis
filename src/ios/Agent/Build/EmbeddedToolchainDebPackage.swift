@@ -394,7 +394,7 @@ enum EmbeddedTheosLayoutLoader {
             guard url.path.hasPrefix(pathPrefix) else {
                 throw EmbeddedTheosDebPackageError.unsafePath(url.lastPathComponent)
             }
-            let relative = directory + "/" + String(url.path.dropFirst(pathPrefix.count))
+            let relative = "\(directory)/\(url.path.dropFirst(pathPrefix.count))"
             relatives.append(relative)
             guard relatives.count <= maxFiles else { throw EmbeddedTheosDebPackageError.tooLarge }
         }
