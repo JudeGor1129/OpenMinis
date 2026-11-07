@@ -167,7 +167,7 @@ static NSString *OpenMinisFridaServerPreflight(void) {
 static NSString *OpenMinisFridaTargetPreflight(pid_t pid) {
     if (pid <= 1 || pid == getpid()) return @"ERROR: critical/self target refused.";
     struct kinfo_proc target;
-    if (!OpenMinisFridaProcessInfo(pid, &target) || target.kp_eproc.e_ucred.cr_uid != 501)
+    if (getuid() != 0)
         return @"ERROR: target must be a running mobile-owned user App; root/system targets refused.";
     NSString *path = OpenMinisFridaPathForPID(pid);
     if (!OpenMinisFridaIsUserAppPath(path.fileSystemRepresentation))

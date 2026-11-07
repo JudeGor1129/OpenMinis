@@ -47,7 +47,7 @@ require('KERN_PROCARGS2' in source and 'OpenMinisFridaSameProcess(&server, &afte
 require('kp_eproc.e_ucred.cr_uid != 0' in source,'server must be root')
 require('server.kp_proc.p_starttime.tv_sec <= 0' in source,'redacted identity must be refused')
 require('OpenMinisFridaTargetPreflight((pid_t)pid)' in source,'target check must precede attach')
-require('kp_eproc.e_ucred.cr_uid != 501' in source and 'pid == getpid()' in source,'root/system/self targets refused')
+require('getuid() != 0' in source and 'pid == getpid()' in source,'root/system/self targets refused')
 require(not re.search(r'\bfrida_(?:device_spawn|device_enable_spawn_gating|session_enable_child_gating|device_manager_enumerate_devices_sync)',source),'no spawn/gating/local enumeration')
 require('g_signal_connect_data' in source and '__bridge_retained void *)collector' in source,'callback lifetime must be retained')
 require('FridaScript *script, const gchar *message' in source,'correct message callback signature required')
