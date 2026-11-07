@@ -616,6 +616,16 @@ struct ArgvStorage {
     [args addObject:@"-fdefine-target-os-macros"];
     [args addObject:@"-target-cpu"];
     [args addObject:[archName isEqualToString:@"arm64e"] ? @"apple-a12" : @"apple-a7"];
+    // Upstream clang does not turn on pointer authentication for an arm64e
+    // triple the way Apple's clang does, so an arm64e slice built without
+    // these flags is plain arm64 code with an arm64e cputype. dyld then loads
+    // it under the arm64e ABI, the system authenticates function pointers it
+    // receives (pthread start routines, block invokes, objc dispatch) and the
+    // process dies with a pointer-authentication fault. Keep both flags.
+    if ([archName isEqualToString:@"arm64e"]) {
+        [args addObject:@"-fptrauth-returns"];
+        [args addObject:@"-fptrauth-calls"];
+    }
     [args addObject:@"-fgnuc-version=4.2.1"];
     [args addObject:@"-D__GCC_HAVE_DWARF2_CFI_ASM=1"];
     [args addObject:@"-resource-dir"];

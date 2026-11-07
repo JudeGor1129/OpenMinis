@@ -207,5 +207,17 @@ ar -t "$TMP/contract.deb"
 xcrun lipo "$TMP/contract-fat.dylib" -verify_arch arm64 arm64e
 xcrun lipo "$TMP/contract-fat.dylib" -archs
 echo 'PASS: independent ar/ustar/plist readers and real lipo verified Swift-generated containers.'
+# arm64e must really be arm64e. Upstream clang leaves pointer authentication
+# off for an arm64e triple, which yields arm64 code labelled arm64e; on device
+# dyld loads it under the arm64e ABI and every function pointer handed to
+# system code fails authentication (observed as SIGSEGV in pthread/block/objc
+# paths in iCTRL Native 0.1.2/0.1.3). Both compile paths must pass the flags.
+grep -q '\-fptrauth-returns' src/ios/Vendor/OMToolchain/OMToolchain.mm \
+  || { echo 'FAIL: OMToolchain cc1Arguments must pass -fptrauth-returns for arm64e'; exit 1; }
+grep -q '\-fptrauth-calls' src/ios/Vendor/OMToolchain/OMToolchain.mm \
+  || { echo 'FAIL: OMToolchain cc1Arguments must pass -fptrauth-calls for arm64e'; exit 1; }
+grep -q '\-fptrauth-calls' src/ios/Agent/Build/EmbeddedToolchainExecutionAdapter.swift \
+  || { echo 'FAIL: toolchain adapter must pass -fptrauth-calls for arm64e'; exit 1; }
+echo 'PASS: arm64e pointer-authentication flags are wired into both compile paths.'
 echo 'PASS: actual Swift adapter compiled and fake-bridge contracts executed.'
 echo 'NOTE: native SHA-256/evidence checks were not changed; real LLVM, signing, loading and device RSS remain separate gates.'

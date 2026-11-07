@@ -834,7 +834,13 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
                                      "-emit-obj", "-ffreestanding", "-std=c11", "-O1",
                                      "-nostdsysteminc", "-nobuiltininc", "-ferror-limit", "16",
                                      "-o", partial.path, "-x", language.rawValue]
-                    if architecture == .arm64e { arguments += ["-fptrauth-returns"] }
+                    if architecture == .arm64e {
+                        // Upstream clang leaves pointer authentication off for
+                        // an arm64e triple; without these the slice is arm64
+                        // code labelled arm64e and any function pointer handed
+                        // to system code fails authentication at runtime.
+                        arguments += ["-fptrauth-returns", "-fptrauth-calls"]
+                    }
                     if language == .objectiveC { arguments += ["-fobjc-runtime=ios-15.0", "-fobjc-arc"] }
                     arguments.append(root.appendingPathComponent(source).path)
                     call = bridge.compile(arguments)
