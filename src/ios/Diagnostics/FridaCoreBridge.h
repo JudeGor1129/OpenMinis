@@ -2,30 +2,27 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// Whether the embedded Frida Core client is compiled into this build.
-/// All calls still go through a user-installed frida-server on loopback;
-/// Minis never uses the in-process backend.
+/// These availability queries are compile-time facts only, not server probes.
 FOUNDATION_EXPORT BOOL OpenMinisFridaCoreAvailable(void);
-/// Safe server-file and loopback-port diagnostics; does not initialize Frida Core.
 FOUNDATION_EXPORT BOOL OpenMinisFridaDiagnosticsAvailable(void);
-/// True if compiled with Frida Core; does not prove server connectivity or attach capability.
 FOUNDATION_EXPORT BOOL OpenMinisFridaScriptAvailable(void);
-/// Run only on the serialized worker through the async entry point.
+
+/// Pure local file/permission checks and client BUILD VERSION; no Frida API,
+/// process inspection, socket connection or server protocol request is made.
 FOUNDATION_EXPORT NSString *OpenMinisFridaCoreStatus(void);
+FOUNDATION_EXPORT NSArray<NSString *> *OpenMinisFridaServerDiagnostics(void);
+/// Async completions are dispatched to the main queue.
 FOUNDATION_EXPORT void OpenMinisFridaCoreStatusAsync(void (^completion)(NSString *result));
-/// Server-visible process list (remote device only; never the local backend).
+/// Runtime calls fail closed BEFORE initialization unless kernel-visible server
+/// identity and argv prove --ignore-crashes and loopback-only listen. Permission
+/// denial/unavailable metadata never falls back to trusting a saved launch plist.
 FOUNDATION_EXPORT void OpenMinisFridaProcessesAsync(void (^completion)(NSString *result));
-/// Attach to `target` (pid or process name), load `source`, collect script
-/// messages for `timeoutSeconds` (clamped to 1...30), then unload and detach.
-/// Operations run on a serial queue with cooperative cancellation; a blocked
-/// Frida call is not guaranteed to stop on time. Completion is on the main queue.
+/// Attach-only, user-installed mobile-owned App targets; critical/system/self
+/// targets are refused. Cancellation is cooperative, not a guaranteed deadline.
+/// Unload/detach/manager-close errors are returned rather than silently ignored.
 FOUNDATION_EXPORT void OpenMinisFridaRunScriptAsync(NSString *target,
                                                     NSString *source,
                                                     double timeoutSeconds,
                                                     void (^completion)(NSString *result));
-/// Filesystem/port facts about a user-installed Frida server: binary presence,
-/// executability and whether anything listens on the default port. Never
-/// starts a server.
-FOUNDATION_EXPORT NSArray<NSString *> *OpenMinisFridaServerDiagnostics(void);
 
 NS_ASSUME_NONNULL_END

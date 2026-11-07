@@ -30,8 +30,9 @@ PROJECT=src/ios/Minis.xcodeproj/project.pbxproj
 cp "$PROJECT" ci-logs/project-before-ios15.pbxproj
 sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 16\.0;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' "$PROJECT"
 grep -n 'IPHONEOS_DEPLOYMENT_TARGET' "$PROJECT" | tee ci-logs/deployment-targets.txt
-# Add Frida only to the app's existing iSH linker lists, not every extension.
-# Global OTHER_LDFLAGS overrides would also link iSH/Frida into share/widget targets.
+# Guarded Frida uses the pinned devkit, but local status contains no SDK calls
+# or socket probes. Native-metadata preflight must run before any initialization.
+# Do not globally override OTHER_LDFLAGS (extensions must not load Frida Core).
 [[ -f deps/include/frida-core.h && -f deps/libs/libfrida-core.a ]] || {
   echo 'error: verified Frida SDK missing' >&2; exit 1;
 }

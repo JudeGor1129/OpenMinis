@@ -31,7 +31,8 @@ import SwiftUI
 enum AgentToolSwitch: String, CaseIterable {
     case interaction = "agent.tools.interaction.enabled"
     case browser = "agent.tools.browser.enabled"
-    case frida = "agent.tools.frida.enabled"
+    // Fresh opt-in after the #272 restart: never reuse the prior enabled flag.
+    case frida = "agent.tools.frida.guarded.v1.enabled"
     case ictrl = "agent.tools.ictrl.enabled"
     case agents = "agent.tools.agents.enabled"
 
@@ -131,10 +132,10 @@ struct ToolsSettingsView: View {
     /// What the Frida section can actually do in this build.
     private var fridaDescription: String {
         if OpenMinisFridaScriptAvailable() {
-            return "通过本机 frida-server 列进程并对已授权的运行中进程执行 JS；收集时间最长 30 秒，随后尝试卸载脚本并分离。运行稳定性和超时仍需实机验证。"
+            return "仅对已授权的用户 App 执行 JS。连接前必须确认运行中的 frida-server 使用 --ignore-crashes 且仅监听 127.0.0.1:27042；无法读取真实启动参数则拒绝连接。状态工具不探测端口。系统进程和自身进程禁止 attach，升级后需重新开启。本模式仍需实机验收。"
         }
         return OpenMinisFridaDiagnosticsAvailable()
-            ? "仅检查服务器文件和本机 27042 端口；当前构建未嵌入 Frida Core。"
+            ? "仅检查已知服务器文件和权限，显示客户端构建版本；不初始化 Frida，也不连接或探测端口。"
             : "当前构建不支持 Frida。"
     }
 
@@ -158,7 +159,7 @@ struct ToolsSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
-                toolRow("Frida 动态分析", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
+                toolRow("Frida 动态分析（保护模式）", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
                 Text(fridaDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -381,7 +381,7 @@ extension AIChatViewModel {
         if AgentToolSwitch.frida.isEnabled && OpenMinisFridaDiagnosticsAvailable() {
             tools.append(AgentToolDefinition(
                 name: "frida_status",
-                description: "Report the local Frida server: binary paths, executable bit, whether 127.0.0.1:27042 is listening, and the embedded client version. Use this first when any Frida call fails. Never starts a server.",
+                description: "Local file/permission checks and a build-time client version only. Does NOT initialize Frida, enumerate processes, connect to or probe any port. Runtime server/protocol readiness is unknown.",
                 parameters: [:],
                 required: [],
                 propertyOrdering: []
@@ -389,7 +389,7 @@ extension AIChatViewModel {
             if OpenMinisFridaScriptAvailable() {
                 tools.append(AgentToolDefinition(
                     name: "frida_processes",
-                    description: "List the processes the device's frida-server can see, as PID<TAB>name. Read-only; no attach. Use it to find the target for frida_script.",
+                    description: "List server-visible processes only after verifying the actual running root server identity and argv (--ignore-crashes and loopback-only listen). Unknown/denied metadata fails closed before Core initialization. No target attach; no server start/restart. A saved plist alone is insufficient.",
                     parameters: [
                         "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary shown to the user.")
                     ],
@@ -398,7 +398,7 @@ extension AIChatViewModel {
                 ))
                 tools.append(AgentToolDefinition(
                     name: "frida_script",
-                    description: "Attach to an authorized running target through loopback frida-server, load one Frida JavaScript, collect console.log/send()/error messages, then attempt unload and detach. No spawn support. Frida calls have cooperative cancellation, not a guaranteed hard timeout. Returns a transcript; attach may fail.",
+                    description: "Guarded attach to an authorized running, mobile-owned user-installed App only. Verify live root server identity/argv (--ignore-crashes, loopback-only) before Core initialization; unavailable evidence is refused. Critical/system/self targets, spawn and gating are unsupported. Return console/send/errors and report unload/detach failures. Cancellation is cooperative; device safety remains unverified.",
                     parameters: [
                         "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary shown to the user."),
                         "target": AgentToolParam(type: .string, description: "PID (digits) or process name visible in frida_processes (exact case-insensitive match; use PID for ambiguous names)."),

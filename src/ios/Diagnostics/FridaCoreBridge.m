@@ -1,14 +1,13 @@
 #import "FridaCoreBridge.h"
-
-#include <arpa/inet.h>
+#import "FridaSafetyPolicy.h"
+#import <dispatch/dispatch.h>
+#include <sys/sysctl.h>
+#include <sys/proc.h>
+#include <dlfcn.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <string.h>
 #include <stdlib.h>
-#include <sys/select.h>
-#include <sys/socket.h>
 #include <unistd.h>
+#include <math.h>
 
 #if __has_include(<frida-core.h>)
 #import <frida-core.h>
@@ -17,127 +16,185 @@
 #define OPENMINIS_HAS_FRIDA_CORE 0
 #endif
 
-// [T-frida-remote-only]
-//
-// Minis talks to a user-installed frida-server over loopback. It never uses the
-// in-process ("local") backend: that path was disabled after reboot reports on
-// iOS 15 jailbreak devices, and it would need task_for_pid entitlements anyway.
-// The root-owned server performs injection, so this process only needs to be
-// able to open a TCP connection to 127.0.0.1:27042.
-//
-// Hard limits, all enforced here rather than in the UI:
-//   * exactly one endpoint (loopback, default port) — never a discovered or
-//     user-supplied host, so a tool call cannot be turned into a network probe;
-//   * one serial queue for every frida call, so sessions never interleave;
-//   * synchronous calls use a cooperative cancellation deadline; a blocked
-//     library call may not stop immediately;
-//   * script messages are bounded, and cleanup is attempted before completion.
+/* Availability is compile-time only: neither schema construction nor settings
+ * rendering may initialize Frida or inspect/connect to a running service.
+ */
+BOOL OpenMinisFridaDiagnosticsAvailable(void) { return YES; }
+BOOL OpenMinisFridaCoreAvailable(void) { return OPENMINIS_HAS_FRIDA_CORE; }
+BOOL OpenMinisFridaScriptAvailable(void) { return OPENMINIS_HAS_FRIDA_CORE; }
+
+/* Local status is deliberately independent of the Frida SDK and networking.
+ * #272 had a restart after status; causality remains unverified. The version
+ * below is a build constant, checked against the CI-pinned devkit version.
+ */
+NSArray<NSString *> *OpenMinisFridaServerDiagnostics(void) {
+    NSMutableArray<NSString *> *lines = [NSMutableArray array];
+    for (NSString *path in @[@"/var/jb/usr/sbin/frida-server", @"/var/jb/usr/bin/frida-server",
+                             @"/usr/sbin/frida-server", @"/usr/bin/frida-server"]) {
+        if (access(path.fileSystemRepresentation, F_OK) == 0) {
+            [lines addObject:[NSString stringWithFormat:@"Server file: %@ (%@)", path,
+                access(path.fileSystemRepresentation, X_OK) == 0 ? @"executable" : @"not executable"]];
+        }
+    }
+    if (lines.count == 0) [lines addObject:@"Server file: not found in known locations."];
+    [lines addObject:@"Port 127.0.0.1:27042: NOT PROBED. Listener/protocol status is unknown."];
+    [lines addObject:@"Runtime calls require a uniquely identified running root frida-server with --ignore-crashes and --listen=127.0.0.1:27042. Saved plist changes alone are not proof of the running mode."];
+    return lines;
+}
+
+NSString *OpenMinisFridaCoreStatus(void) {
+    NSLog(@"[FridaStage] local-status: no SDK initialization or network probe");
+    NSMutableArray<NSString *> *lines = [NSMutableArray arrayWithObject:
+        [NSString stringWithFormat:@"Frida client build version: %s (build constant; no Frida API called).",
+         OPENMINIS_FRIDA_CLIENT_VERSION]];
+    [lines addObject:OPENMINIS_HAS_FRIDA_CORE ? @"Client compiled in; runtime capability is unverified."
+                                            : @"Client not compiled in; local status only."];
+    [lines addObjectsFromArray:OpenMinisFridaServerDiagnostics()];
+    return [lines componentsJoinedByString:@"\n"];
+}
+
+static dispatch_queue_t OpenMinisFridaQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue = dispatch_queue_create("app.openminis.frida.guarded", DISPATCH_QUEUE_SERIAL); });
+    return queue;
+}
+
+void OpenMinisFridaCoreStatusAsync(void (^completion)(NSString *)) {
+    // Separate from runtime serialization: a blocked library call must not
+    // prevent purely local status from completing.
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        @autoreleasepool {
+            NSString *result = OpenMinisFridaCoreStatus();
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(result); });
+        }
+    });
+}
+
+static NSString *OpenMinisFridaPathForPID(pid_t pid) {
+    // proc_pidpath is exported by libSystem, but private libproc headers are
+    // absent from the iOS SDK. Resolve only this read-only metadata function.
+    typedef int (*PIDPathFunction)(int, void *, uint32_t);
+    PIDPathFunction function = (PIDPathFunction)dlsym(RTLD_DEFAULT, "proc_pidpath");
+    if (function == NULL) return nil;
+    char path[4096] = { 0 };
+    int count = function(pid, path, sizeof(path));
+    if (count <= 0 || memchr(path, 0, sizeof(path)) == NULL) return nil;
+    return [NSString stringWithUTF8String:path];
+}
+
+static BOOL OpenMinisFridaProcessInfo(pid_t pid, struct kinfo_proc *info) {
+    int mib[] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, pid };
+    size_t size = sizeof(*info);
+    memset(info, 0, sizeof(*info));
+    return sysctl(mib, 4, info, &size, NULL, 0) == 0 &&
+           size == sizeof(*info) && info->kp_proc.p_pid == pid;
+}
+
+static BOOL OpenMinisFridaSameProcess(const struct kinfo_proc *a, const struct kinfo_proc *b) {
+    return a->kp_proc.p_pid == b->kp_proc.p_pid &&
+           a->kp_proc.p_starttime.tv_sec == b->kp_proc.p_starttime.tv_sec &&
+           a->kp_proc.p_starttime.tv_usec == b->kp_proc.p_starttime.tv_usec &&
+           a->kp_eproc.e_ucred.cr_uid == b->kp_eproc.e_ucred.cr_uid;
+}
+
+/* Returns nil only with actual kernel-visible runtime evidence. Permissions,
+ * unavailable metadata, ambiguity, or changed PID identity fail closed BEFORE
+ * any Frida API. No server is launched/restarted; no socket is probed here.
+ */
+static NSString *OpenMinisFridaServerPreflight(void) {
+    if (![[NSUserDefaults standardUserDefaults] boolForKey:@OPENMINIS_FRIDA_GUARDED_PREFERENCE])
+        return @"ERROR: guarded Frida is off. Enable the new guarded-mode switch explicitly; the old #272 preference is not reused.";
+    int mib[] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0 };
+    size_t size = 0;
+    if (sysctl(mib, 4, NULL, &size, NULL, 0) != 0 || size == 0 || size > 4 * 1024 * 1024)
+        return @"ERROR: cannot inspect the running server; no Frida initialization performed.";
+    struct kinfo_proc *processes = calloc(1, size);
+    if (processes == NULL) return @"ERROR: server preflight allocation failed.";
+    if (sysctl(mib, 4, processes, &size, NULL, 0) != 0 || size % sizeof(*processes) != 0) {
+        free(processes);
+        return @"ERROR: process snapshot changed or access denied; no Frida initialization performed.";
+    }
+    struct kinfo_proc server = { 0 };
+    NSUInteger count = 0;
+    for (size_t i = 0; i < size / sizeof(*processes); i++) {
+        if (strncmp(processes[i].kp_proc.p_comm, "frida-server", sizeof(processes[i].kp_proc.p_comm)) == 0) {
+            server = processes[i];
+            count++;
+        }
+    }
+    free(processes);
+    if (count != 1 || server.kp_proc.p_pid <= 1 || server.kp_eproc.e_ucred.cr_uid != 0 ||
+        server.kp_proc.p_starttime.tv_sec <= 0)
+        return @"ERROR: require exactly one running root frida-server; unavailable/ambiguous identity is refused.";
+    NSString *path = OpenMinisFridaPathForPID(server.kp_proc.p_pid);
+    if (path == nil) return @"ERROR: server executable path cannot be verified; no Frida initialization performed.";
+    BOOL knownPath = NO;
+    for (NSString *candidate in @[@"/var/jb/usr/sbin/frida-server", @"/var/jb/usr/bin/frida-server",
+                                  @"/usr/sbin/frida-server", @"/usr/bin/frida-server"]) {
+        if ([[candidate stringByResolvingSymlinksInPath] isEqualToString:[path stringByResolvingSymlinksInPath]])
+            knownPath = YES;
+    }
+    if (!knownPath) return @"ERROR: server executable is outside known installed locations.";
+    int argsMIB[] = { CTL_KERN, KERN_PROCARGS2, server.kp_proc.p_pid };
+    size_t argsSize = OPENMINIS_FRIDA_MAX_PROCARGS_BYTES;
+    void *bytes = calloc(1, argsSize);
+    if (bytes == NULL) return @"ERROR: argument preflight allocation failed.";
+    const char *argv[OPENMINIS_FRIDA_MAX_ARGUMENTS] = { 0 };
+    int argc = 0;
+    int argsResult = sysctl(argsMIB, 3, bytes, &argsSize, NULL, 0);
+    int argsErrno = argsResult == 0 ? 0 : errno;
+    BOOL guarded = argsResult == 0 &&
+        OpenMinisFridaParseArguments(bytes, argsSize, argv, &argc) &&
+        OpenMinisFridaArgumentsAreGuarded(argc, argv);
+    if (guarded) {
+        NSString *kernelExecutable = [NSString stringWithUTF8String:(const char *)bytes + sizeof(int32_t)];
+        guarded = kernelExecutable != nil &&
+            [[kernelExecutable stringByResolvingSymlinksInPath] isEqualToString:[path stringByResolvingSymlinksInPath]];
+    }
+    free(bytes); // Never print argv/environment; they may contain credentials.
+    if (argsResult != 0) return [NSString stringWithFormat:
+        @"ERROR: live server argv read was denied/unavailable (errno=%d); no Frida initialization performed. Root metadata permission is required; a saved plist is not a substitute.", argsErrno];
+    struct kinfo_proc after;
+    if (!OpenMinisFridaProcessInfo(server.kp_proc.p_pid, &after) ||
+        !OpenMinisFridaSameProcess(&server, &after))
+        return @"ERROR: server exited or PID identity changed during preflight.";
+    if (!guarded) return @"ERROR: running server arguments could not prove --ignore-crashes plus loopback-only listen. Updating the launch plist without restarting the service is insufficient. No Frida initialization performed.";
+    NSLog(@"[FridaStage] preflight accepted pid=%d; crash integration off; listener identity not protocol-verified", server.kp_proc.p_pid);
+    return nil;
+}
+
+static NSString *OpenMinisFridaTargetPreflight(pid_t pid) {
+    if (pid <= 1 || pid == getpid()) return @"ERROR: critical/self target refused.";
+    struct kinfo_proc target;
+    if (!OpenMinisFridaProcessInfo(pid, &target) || target.kp_eproc.e_ucred.cr_uid != 501)
+        return @"ERROR: target must be a running mobile-owned user App; root/system targets refused.";
+    NSString *path = OpenMinisFridaPathForPID(pid);
+    if (!OpenMinisFridaIsUserAppPath(path.fileSystemRepresentation))
+        return @"ERROR: only user-installed App executables are allowed in this guarded release; system daemons and SpringBoard are refused.";
+    struct kinfo_proc after;
+    if (target.kp_proc.p_starttime.tv_sec <= 0 ||
+        !OpenMinisFridaProcessInfo(pid, &after) || !OpenMinisFridaSameProcess(&target, &after))
+        return @"ERROR: target PID identity changed or could not be verified; attach refused.";
+    return nil;
+}
+
+// Guarded runtime: metadata evidence is required before initializing Core.
 static NSString *const OpenMinisFridaEndpoint = @"127.0.0.1:27042";
 static const double OpenMinisFridaMaxTimeoutSeconds = 30.0;
 static const NSUInteger OpenMinisFridaMaxMessages = 400;
 static const NSUInteger OpenMinisFridaMaxMessageBytes = 16384;
 static const NSUInteger OpenMinisFridaMaxTranscriptBytes = 131072;
-
-/// Non-blocking connect probe with a 1 s budget. Used only to tell the user
-/// whether *their* frida-server is listening; it never speaks the Frida
-/// protocol, so a failure here is not proof that attach would fail and a
-/// success is not proof that attach would work.
-static BOOL OpenMinisTCPPortOpen(const char *host, int port) {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) return NO;
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons((uint16_t)port);
-    addr.sin_addr.s_addr = inet_addr(host);
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    BOOL open = NO;
-    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-        open = YES;
-    } else if (errno == EINPROGRESS) {
-        fd_set wset;
-        FD_ZERO(&wset);
-        FD_SET(fd, &wset);
-        struct timeval tv;
-        tv.tv_sec = 1;
-        tv.tv_usec = 0;
-        if (select(fd + 1, NULL, &wset, NULL, &tv) > 0) {
-            int soerr = 0;
-            socklen_t len = sizeof(soerr);
-            if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &len) == 0 && soerr == 0) open = YES;
-        }
-    }
-    close(fd);
-    return open;
-}
-
-/// Concrete, actionable server diagnostics. Reports the three facts that
-/// actually decide the outcome: is a server binary on disk, is it executable,
-/// and is anything listening on the default port.
-NSArray<NSString *> *OpenMinisFridaServerDiagnostics(void) {
-    NSMutableArray<NSString *> *lines = [NSMutableArray array];
-    NSArray<NSString *> *candidates = @[
-        @"/var/jb/usr/sbin/frida-server",
-        @"/var/jb/usr/bin/frida-server",
-        @"/usr/sbin/frida-server",
-        @"/usr/bin/frida-server",
-    ];
-    NSString *foundPath = nil;
-    for (NSString *path in candidates) {
-        if (access(path.fileSystemRepresentation, F_OK) == 0) {
-            BOOL executable = access(path.fileSystemRepresentation, X_OK) == 0;
-            [lines addObject:[NSString stringWithFormat:@"Server binary: %@%@",
-                              path, executable ? @" (executable)" : @" (NOT executable)"]];
-            if (foundPath == nil && executable) foundPath = path;
-        }
-    }
-    if (foundPath == nil) {
-        [lines addObject:@"Server binary: none found in /var/jb/usr/sbin, /var/jb/usr/bin, /usr/sbin, /usr/bin."];
-    }
-
-    BOOL listening = OpenMinisTCPPortOpen("127.0.0.1", 27042);
-    [lines addObject:[NSString stringWithFormat:@"Port 127.0.0.1:27042: %@",
-                      listening ? @"OPEN (listener detected; protocol unverified)" : @"CLOSED (nothing is listening)"]];
-    if (!listening) {
-        [lines addObject:@"A closed port means no listener, not a sandbox denial. Minis cannot start a root-owned server."];
-        [lines addObject:@"Start it from a root shell: launchctl bootstrap system /var/jb/Library/LaunchDaemons/re.frida.server.plist"];
-        [lines addObject:@"After a reboot the jailbreak launcher normally restarts it automatically."];
-    }
-    [lines addObject:@"Verify that client and server versions are compatible; a listening port does not prove this."];
-    return lines;
-}
-
-BOOL OpenMinisFridaDiagnosticsAvailable(void) {
-    return YES;
-}
-
-BOOL OpenMinisFridaCoreAvailable(void) {
-#if OPENMINIS_HAS_FRIDA_CORE
-    return YES;
-#else
-    return NO;
-#endif
-}
-
-/// True when this build may actually attach and run scripts.
-BOOL OpenMinisFridaScriptAvailable(void) {
-    return OpenMinisFridaCoreAvailable();
-}
-
 #if OPENMINIS_HAS_FRIDA_CORE
 static void OpenMinisFridaInitialize(void) {
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ frida_init(); });
+    dispatch_once(&once, ^{
+        NSLog(@"[FridaStage] init-begin (only after runtime argument proof)");
+        frida_init();
+        NSLog(@"[FridaStage] init-complete");
+    });
 }
 #endif
-
-static dispatch_queue_t OpenMinisFridaQueue(void) {
-    static dispatch_queue_t queue;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ queue = dispatch_queue_create("app.openminis.frida", DISPATCH_QUEUE_SERIAL); });
-    return queue;
-}
 
 #if OPENMINIS_HAS_FRIDA_CORE
 /// Cooperative cancellation deadline; Frida must honor GCancellable. This is
@@ -155,56 +212,43 @@ static GCancellable *OpenMinisFridaDeadline(double seconds) {
 }
 #endif
 
-NSString *OpenMinisFridaCoreStatus(void) {
-    NSMutableArray<NSString *> *lines = [NSMutableArray array];
-#if OPENMINIS_HAS_FRIDA_CORE
-    [lines addObject:[NSString stringWithFormat:@"Frida Core client %s embedded (remote-only backend).", frida_version_string()]];
-    [lines addObject:[NSString stringWithFormat:@"Endpoint: %@", OpenMinisFridaEndpoint]];
-#else
-    [lines addObject:@"Frida Core is not embedded in this build; only server diagnostics are available."];
-#endif
-    [lines addObjectsFromArray:OpenMinisFridaServerDiagnostics()];
-    return [lines componentsJoinedByString:@"\n"];
-}
-
-void OpenMinisFridaCoreStatusAsync(void (^completion)(NSString *)) {
-    dispatch_async(OpenMinisFridaQueue(), ^{
-        @autoreleasepool {
-            NSString *result = OpenMinisFridaCoreStatus();
-            dispatch_async(dispatch_get_main_queue(), ^{ completion(result); });
-        }
-    });
-}
-
 #if OPENMINIS_HAS_FRIDA_CORE
 
 /// Connects the loopback server only. Never enumerates devices: device
-/// enumeration is what exposes the in-process backend, and that backend is
-/// deliberately unavailable here.
+/// the actual server mode is rechecked before remote device creation.
+/// Remote-only is not itself sufficient: the server needs --ignore-crashes.
 static FridaDevice *OpenMinisFridaOpenServer(FridaDeviceManager **outManager,
                                              GCancellable *cancel,
                                              GError **error) {
+    if (OpenMinisFridaServerPreflight() != nil) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_PERMISSION_DENIED,
+                            "Guarded server runtime could not be reverified; refusing remote device creation");
+        return NULL;
+    }
+    NSLog(@"[FridaStage] manager-create -> remote-device (no local enumeration)");
     FridaDeviceManager *manager = frida_device_manager_new();
     if (manager == NULL) return NULL;
     FridaDevice *device = frida_device_manager_add_remote_device_sync(
         manager, OpenMinisFridaEndpoint.UTF8String, NULL, cancel, error);
     if (device == NULL) {
-        g_object_unref(manager);
+        frida_unref(manager);
         return NULL;
     }
     if (outManager != NULL) *outManager = manager;
     return device;
 }
 
-static NSString *OpenMinisFridaErrorLine(NSString *stage, GError *error) {
+static NSString *OpenMinisFridaErrorLine(NSString *stage, GError **errorPointer) {
+    GError *error = *errorPointer;
+    *errorPointer = NULL;
     if (error == NULL) return [NSString stringWithFormat:@"ERROR: %@ failed without a message.", stage];
     NSString *message = [NSString stringWithUTF8String:error->message] ?: @"unknown error";
     g_error_free(error);
     return [NSString stringWithFormat:@"ERROR: %@: %@", stage, message];
 }
 
-/// Resolves a pid from a numeric target or an exact (then case-insensitive)
-/// process-name match on the server's process list.
+/// Resolves numeric PID or unique case-insensitive exact process name.
+/// A separate native target check still runs before any attach.
 static BOOL OpenMinisFridaResolvePID(FridaDevice *device, NSString *target,
                                      GCancellable *cancel, guint *outPID,
                                      NSMutableArray<NSString *> *lines, NSString **errorLine) {
@@ -225,7 +269,7 @@ static BOOL OpenMinisFridaResolvePID(FridaDevice *device, NSString *target,
     GError *error = NULL;
     FridaProcessList *processes = frida_device_enumerate_processes_sync(device, NULL, cancel, &error);
     if (error != NULL) {
-        *errorLine = OpenMinisFridaErrorLine(@"enumerate processes", error);
+        *errorLine = OpenMinisFridaErrorLine(@"enumerate processes", &error);
         return NO;
     }
     if (processes == NULL) {
@@ -246,7 +290,7 @@ static BOOL OpenMinisFridaResolvePID(FridaDevice *device, NSString *target,
         }
         g_object_unref(process);
     }
-    g_object_unref(processes);
+    frida_unref(processes);
 
     if (matchCount == 1) {
         *outPID = match;
@@ -274,7 +318,7 @@ static BOOL OpenMinisFridaResolvePID(FridaDevice *device, NSString *target,
 
 static void OpenMinisFridaReleaseCollector(gpointer data, GClosure *closure) {
     (void)closure;
-    CFBridgingRelease(data);
+    (void)CFBridgingRelease(data);
 }
 
 static gboolean OpenMinisFridaStopLoop(gpointer userData) {
@@ -342,18 +386,22 @@ void OpenMinisFridaProcessesAsync(void (^completion)(NSString *)) {
         @autoreleasepool {
             NSMutableArray<NSString *> *lines = [NSMutableArray array];
 #if OPENMINIS_HAS_FRIDA_CORE
+            NSString *preflightError = OpenMinisFridaServerPreflight();
+            if (preflightError != nil) {
+                [lines addObject:preflightError];
+            } else {
             OpenMinisFridaInitialize();
             GCancellable *cancel = OpenMinisFridaDeadline(15);
             GError *error = NULL;
             FridaDeviceManager *manager = NULL;
             FridaDevice *device = OpenMinisFridaOpenServer(&manager, cancel, &error);
             if (device == NULL) {
-                [lines addObject:OpenMinisFridaErrorLine(@"connect 127.0.0.1:27042", error)];
+                [lines addObject:OpenMinisFridaErrorLine(@"connect 127.0.0.1:27042", &error)];
                 [lines addObjectsFromArray:OpenMinisFridaServerDiagnostics()];
             } else {
                 FridaProcessList *processes = frida_device_enumerate_processes_sync(device, NULL, cancel, &error);
                 if (error != NULL) {
-                    [lines addObject:OpenMinisFridaErrorLine(@"enumerate processes", error)];
+                    [lines addObject:OpenMinisFridaErrorLine(@"enumerate processes", &error)];
                 } else if (processes != NULL) {
                     gint count = frida_process_list_size(processes);
                     [lines addObject:[NSString stringWithFormat:@"Processes: %d (server-visible, output capped at 300)", count]];
@@ -367,17 +415,22 @@ void OpenMinisFridaProcessesAsync(void (^completion)(NSString *)) {
                     if (count == 0) {
                         [lines addObject:@"WARNING: the server returned an empty list; that is not proof about any specific process."];
                     }
-                    g_object_unref(processes);
+                    frida_unref(processes);
                 } else {
                     [lines addObject:@"ERROR: server returned no process list."];
                 }
-                g_object_unref(device);
+                frida_unref(device);
                 if (manager != NULL) {
-                    frida_device_manager_close_sync(manager, cancel, NULL);
-                    g_object_unref(manager);
+                    GCancellable *cleanup = OpenMinisFridaDeadline(5);
+                    GError *cleanupError = NULL;
+                    frida_device_manager_close_sync(manager, cleanup, &cleanupError);
+                    if (cleanupError != NULL) [lines addObject:OpenMinisFridaErrorLine(@"manager close", &cleanupError)];
+                    g_object_unref(cleanup);
+                    frida_unref(manager);
                 }
             }
             g_object_unref(cancel);
+            }
 #else
             [lines addObject:@"ERROR: Frida Core is not embedded in this build."];
             [lines addObjectsFromArray:OpenMinisFridaServerDiagnostics()];
@@ -394,20 +447,30 @@ void OpenMinisFridaRunScriptAsync(NSString *target,
                                   void (^completion)(NSString *)) {
     NSString *safeTarget = [target copy] ?: @"";
     NSString *safeSource = [source copy] ?: @"";
-    double bounded = MIN(MAX(timeoutSeconds, 1.0), OpenMinisFridaMaxTimeoutSeconds);
+    double bounded = isfinite(timeoutSeconds) ? MIN(MAX(timeoutSeconds, 1.0), OpenMinisFridaMaxTimeoutSeconds) : 5.0;
     dispatch_async(OpenMinisFridaQueue(), ^{
         @autoreleasepool {
             NSMutableArray<NSString *> *lines = [NSMutableArray array];
 #if OPENMINIS_HAS_FRIDA_CORE
-            if (safeTarget.length == 0 || safeSource.length == 0 ||
+            NSString *preflightError = nil;
+            BOOL unsafeTarget = [safeTarget caseInsensitiveCompare:@"launchd"] == NSOrderedSame ||
+                [safeTarget caseInsensitiveCompare:@"SpringBoard"] == NSOrderedSame ||
+                [safeTarget caseInsensitiveCompare:@"backboardd"] == NSOrderedSame ||
+                [safeTarget isEqualToString:@"1"] || [safeTarget intValue] == getpid();
+            if (unsafeTarget) {
+                [lines addObject:@"ERROR: critical/self target refused before Frida initialization."];
+            } else if (safeTarget.length == 0 || safeSource.length == 0 ||
                 [safeTarget lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 512 ||
                 [safeSource lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 262144) {
                 [lines addObject:@"ERROR: target and source required; maximum target 512 bytes and source 256 KiB."];
+            } else if ((preflightError = OpenMinisFridaServerPreflight()) != nil) {
+                [lines addObject:preflightError];
             } else {
+                NSLog(@"[FridaStage] script-request %@; source omitted", [NSUUID UUID].UUIDString);
                 OpenMinisFridaInitialize();
                 GMainContext *context = g_main_context_new();
                 g_main_context_push_thread_default(context);
-                [lines addObject:[NSString stringWithFormat:@"frida %s · %@ · attach", frida_version_string(), OpenMinisFridaEndpoint]];
+                [lines addObject:[NSString stringWithFormat:@"frida %s · %@ · attach", OPENMINIS_FRIDA_CLIENT_VERSION, OpenMinisFridaEndpoint]];
 
                 GCancellable *cancel = OpenMinisFridaDeadline(bounded + 15);
                 GError *error = NULL;
@@ -418,17 +481,22 @@ void OpenMinisFridaRunScriptAsync(NSString *target,
                 BOOL loaded = NO;
 
                 if (device == NULL) {
-                    [lines addObject:OpenMinisFridaErrorLine(@"connect 127.0.0.1:27042", error)];
+                    [lines addObject:OpenMinisFridaErrorLine(@"connect 127.0.0.1:27042", &error)];
                     [lines addObjectsFromArray:OpenMinisFridaServerDiagnostics()];
                 } else {
                     guint pid = 0;
                     NSString *resolveError = nil;
                     if (OpenMinisFridaResolvePID(device, safeTarget, cancel, &pid, lines, &resolveError)) {
                         [lines addObject:[NSString stringWithFormat:@"target: %@ (pid %u)", safeTarget, pid]];
-                        session = frida_device_attach_sync(device, pid, NULL, cancel, &error);
+                        NSString *targetError = OpenMinisFridaTargetPreflight((pid_t)pid);
+                        if (targetError != nil) {
+                            [lines addObject:targetError];
+                        } else {
+                            NSLog(@"[FridaStage] attach-begin pid=%u", pid);
+                            session = frida_device_attach_sync(device, pid, NULL, cancel, &error);
+                        }
                         if (session == NULL) {
-                            [lines addObject:OpenMinisFridaErrorLine(
-                                @"attach", error)];
+                            if (targetError == nil) [lines addObject:OpenMinisFridaErrorLine(@"attach", &error)];
                         } else {
                             FridaScriptOptions *options = frida_script_options_new();
                             frida_script_options_set_runtime(options, FRIDA_SCRIPT_RUNTIME_QJS);
@@ -436,7 +504,7 @@ void OpenMinisFridaRunScriptAsync(NSString *target,
                                 session, safeSource.UTF8String, options, cancel, &error);
                             g_clear_object(&options);
                             if (script == NULL) {
-                                [lines addObject:OpenMinisFridaErrorLine(@"create script", error)];
+                                [lines addObject:OpenMinisFridaErrorLine(@"create script", &error)];
                             } else {
                                 OpenMinisFridaMessageCollector *collector = [[OpenMinisFridaMessageCollector alloc] init];
                                 g_signal_connect_data(script, "message",
@@ -445,7 +513,7 @@ void OpenMinisFridaRunScriptAsync(NSString *target,
                                                       OpenMinisFridaReleaseCollector, 0);
                                 frida_script_load_sync(script, cancel, &error);
                                 if (error != NULL) {
-                                    [lines addObject:OpenMinisFridaErrorLine(@"load script", error)];
+                                    [lines addObject:OpenMinisFridaErrorLine(@"load script", &error)];
                                 } else {
                                     loaded = YES;
                                     [lines addObject:[NSString stringWithFormat:
@@ -458,32 +526,45 @@ void OpenMinisFridaRunScriptAsync(NSString *target,
                                     g_source_destroy(timer);
                                     g_source_unref(timer);
                                     g_main_loop_unref(loop);
-                                    @synchronized (collector) {
-                                        [lines addObjectsFromArray:collector.lines];
-                                    }
                                     [lines addObject:@"script finished collecting; detaching"];
                                 }
                                 // Stop delivery before tearing anything down: a
                                 // message must never race the freed collector.
                                 g_signal_handlers_disconnect_by_func(
                                     script, G_CALLBACK(OpenMinisFridaOnMessage), (__bridge void *)collector);
+                                @synchronized (collector) { [lines addObjectsFromArray:collector.lines]; }
+                                GCancellable *cleanup = OpenMinisFridaDeadline(5);
+                                GError *cleanupError = NULL;
                                 if (loaded) {
-                                    frida_script_unload_sync(script, cancel, NULL);
+                                    NSLog(@"[FridaStage] unload-begin");
+                                    frida_script_unload_sync(script, cleanup, &cleanupError);
+                                    if (cleanupError != NULL) [lines addObject:OpenMinisFridaErrorLine(@"unload", &cleanupError)];
                                 }
-                                g_object_unref(script);
+                                g_object_unref(cleanup);
+                                frida_unref(script);
                                 script = NULL;
                             }
-                            frida_session_detach_sync(session, cancel, NULL);
-                            g_object_unref(session);
+                            GCancellable *cleanup = OpenMinisFridaDeadline(5);
+                            GError *cleanupError = NULL;
+                            NSLog(@"[FridaStage] detach-begin");
+                            frida_session_detach_sync(session, cleanup, &cleanupError);
+                            if (cleanupError != NULL) [lines addObject:OpenMinisFridaErrorLine(@"detach", &cleanupError)];
+                            else [lines addObject:@"session detached"];
+                            g_object_unref(cleanup);
+                            frida_unref(session);
                             session = NULL;
                         }
                     } else if (resolveError != nil) {
                         [lines addObject:resolveError];
                     }
-                    g_object_unref(device);
+                    frida_unref(device);
                     if (manager != NULL) {
-                        frida_device_manager_close_sync(manager, cancel, NULL);
-                        g_object_unref(manager);
+                        GCancellable *cleanup = OpenMinisFridaDeadline(5);
+                        GError *cleanupError = NULL;
+                        frida_device_manager_close_sync(manager, cleanup, &cleanupError);
+                        if (cleanupError != NULL) [lines addObject:OpenMinisFridaErrorLine(@"manager close", &cleanupError)];
+                        g_object_unref(cleanup);
+                        frida_unref(manager);
                     }
                 }
                 g_object_unref(cancel);

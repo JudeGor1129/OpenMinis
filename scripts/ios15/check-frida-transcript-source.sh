@@ -9,7 +9,8 @@ grep -q 'OpenMinisFridaProcessesAsync' src/ios/Diagnostics/FridaCoreBridge.h
 grep -q 'OpenMinisFridaDiagnosticsAvailable' src/ios/Diagnostics/FridaCoreBridge.h
 grep -q 'frida_device_enumerate_processes_sync' "$bridge"
 grep -q 'dispatch_async(OpenMinisFridaQueue()' "$bridge"
-grep -q 'g_object_unref(processes)' "$bridge"
+grep -q 'frida_unref(processes)' "$bridge"
+bash scripts/ios15/check-frida-safety.sh
 grep -q 'name: "frida_status"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
 grep -q 'name: "frida_processes"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
 grep -q 'name: "frida_script"' src/ios/Agent/Chat/AIChatViewModel+ToolDefinitions.swift
