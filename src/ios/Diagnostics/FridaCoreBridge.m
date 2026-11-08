@@ -177,12 +177,11 @@ static NSString *OpenMinisFridaServerPreflight(void) {
             knownPath = YES;
     }
     if (!knownPath) return @"ERROR: server executable is outside known installed locations.";
-    struct OpenMinisFridaGuardedGrant grant = OpenMinisFridaReadGrant();
+    OpenMinisFridaGuardedGrant grant = OpenMinisFridaReadGrant();
     BOOL grantFresh = grant.valid && grant.pid == server.kp_proc.p_pid &&
         grant.startSec == server.kp_proc.p_starttime.tv_sec &&
         grant.startUsec == server.kp_proc.p_starttime.tv_usec &&
         (CFAbsoluteTimeGetCurrent() - grant.mintedAt) <= OpenMinisFridaGrantTTLSeconds;
-    BOOL guarded = grantFresh;
     if (!grantFresh) return @"ERROR: no fresh root-helper verdict for this exact server instance. Run the guarded verification again; an app-side argv read is impossible under mobile UID, and a saved launch plist is not proof.";
     struct kinfo_proc after;
     if (!OpenMinisFridaProcessInfo(server.kp_proc.p_pid, &after) ||
