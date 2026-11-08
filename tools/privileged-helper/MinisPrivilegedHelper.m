@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <CommonCrypto/CommonDigest.h>
 #include <errno.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
@@ -9,10 +10,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <sys/types.h>
+#include <dlfcn.h>
 #include <unistd.h>
 #include "HelperLease.h"
 #import "../../src/ios/Diagnostics/SessionSystemAccessPolicy.h"
+#include "../../src/ios/Diagnostics/FridaSafetyPolicy.h"
 
 #define READ_LIMIT (256u * 1024u)
 #define CONTENT_LIMIT (1024u * 1024u)
@@ -302,8 +306,9 @@ static NSString *RequiredMode(NSDictionary *request, NSString *action, BOOL writ
 
 static void DoIdentity(NSString *action) {
     NSMutableDictionary *result = [MutableCommon(action) mutableCopy];
-    result[@"helper_version"] = @"2.1";
-    result[@"capabilities"] = @[@"bounded_utf8_read", @"atomic_utf8_write", @"rollback"];
+    result[@"helper_version"] = @"2.2";
+    result[@"capabilities"] = @[@"bounded_utf8_read", @"atomic_utf8_write", @"rollback",
+                                @"frida_server_argument_verdict"];
     BOOL root = [result[@"root_verified"] boolValue];
     result[@"ok"] = @(root);
     if (!root) {
@@ -448,6 +453,139 @@ static void DoRollback(NSDictionary *request, NSString *base, NSString *action) 
     Emit(result, 0);
 }
 
+
+/* Read-only verdict for the running Frida server. This is the ONLY place able to
+ * read a root process's arguments: the App runs as mobile and gets EINVAL from
+ * KERN_PROCARGS2, so it cannot prove --ignore-crashes by itself. We return a
+ * verdict plus pid/starttime and never the argv/environment bytes, which may
+ * contain secrets. Nothing is started, stopped, signaled or attached here.
+ */
+static int FridaArgvRead(pid_t pid, void *buffer, size_t length) {
+    int mib[3] = { CTL_KERN, KERN_PROCARGS2, pid };
+    size_t size = length;
+    return sysctl(mib, 3, buffer, &size, NULL, 0) == 0 ? (int)size : -1;
+}
+
+static BOOL FridaProcessInfo(pid_t pid, struct kinfo_proc *info) {
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, pid };
+    size_t size = sizeof(*info);
+    memset(info, 0, sizeof(*info));
+    return sysctl(mib, 4, info, &size, NULL, 0) == 0 && size == sizeof(*info) &&
+           info->kp_proc.p_pid == pid;
+}
+
+static BOOL FridaSameProcess(const struct kinfo_proc *a, const struct kinfo_proc *b) {
+    return a->kp_proc.p_pid == b->kp_proc.p_pid &&
+           a->kp_proc.p_starttime.tv_sec == b->kp_proc.p_starttime.tv_sec &&
+           a->kp_proc.p_starttime.tv_usec == b->kp_proc.p_starttime.tv_usec &&
+           a->kp_eproc.e_ucred.cr_uid == b->kp_eproc.e_ucred.cr_uid;
+}
+
+static NSString *FridaPathForPID(pid_t pid) {
+    typedef int (*PIDPathFunction)(int, void *, uint32_t);
+    PIDPathFunction function = (PIDPathFunction)dlsym(RTLD_DEFAULT, "proc_pidpath");
+    if (function == NULL) return nil;
+    char path[4096] = { 0 };
+    if (function(pid, path, sizeof(path)) <= 0 || memchr(path, 0, sizeof(path)) == NULL) return nil;
+    return [NSString stringWithUTF8String:path];
+}
+
+static BOOL FridaPathIsKnownServer(NSString *path) {
+    if (path.length == 0) return NO;
+    char resolved[PATH_MAX];
+    if (!realpath(path.fileSystemRepresentation, resolved)) return NO;
+    NSString *canonical = [NSString stringWithUTF8String:resolved];
+    for (NSString *candidate in @[@"/var/jb/usr/sbin/frida-server", @"/var/jb/usr/bin/frida-server",
+                                  @"/usr/sbin/frida-server", @"/usr/bin/frida-server"]) {
+        char other[PATH_MAX];
+        if (realpath(candidate.fileSystemRepresentation, other) &&
+            [canonical isEqualToString:[NSString stringWithUTF8String:other]]) return YES;
+    }
+    return NO;
+}
+
+static void DoFridaVerdict(NSDictionary *request, NSString *action) {
+    NSString *sessionID = RequiredString(request, @"session_id", action);
+    if (!MinisSessionSystemAccessKey(sessionID)) Fail(action, @"session_id_invalid", @"A persisted session is required.");
+    NSString *mode = RequiredMode(request, action, NO);
+    NSString *refusal = MinisSessionSystemAccessRefusal(action, sessionID, mode, NSUserDefaults.standardUserDefaults, NO);
+    if (refusal != nil) Fail(action, @"session_permission_refused", refusal);
+
+    int mib[] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0 };
+    size_t size = 0;
+    if (sysctl(mib, 4, NULL, &size, NULL, 0) != 0 || size == 0 || size > 4 * 1024 * 1024)
+        Fail(action, @"process_snapshot_failed", @"Cannot enumerate processes for the server verdict.");
+    struct kinfo_proc *all = calloc(1, size);
+    if (all == NULL) Fail(action, @"allocation_failed", @"Cannot allocate the process snapshot.");
+    if (sysctl(mib, 4, all, &size, NULL, 0) != 0 || size % sizeof(*all) != 0) {
+        free(all);
+        Fail(action, @"process_snapshot_changed", @"Process snapshot changed while reading.");
+    }
+    struct kinfo_proc server = { 0 };
+    NSUInteger matches = 0;
+    for (size_t i = 0; i < size / sizeof(*all); i++) {
+        if (strncmp(all[i].kp_proc.p_comm, "frida-server", sizeof(all[i].kp_proc.p_comm)) == 0) {
+            server = all[i];
+            matches++;
+        }
+    }
+    free(all);
+    NSMutableDictionary *result = [MutableCommon(action) mutableCopy];
+    if (matches != 1 || server.kp_proc.p_pid <= 1 || server.kp_eproc.e_ucred.cr_uid != 0 ||
+        server.kp_proc.p_starttime.tv_sec <= 0) {
+        result[@"ok"] = @NO;
+        result[@"verdict"] = @"refused";
+        result[@"code"] = matches == 1 ? @"server_identity_unverified" : @"server_count_invalid";
+        result[@"error"] = matches == 1
+            ? @"The single frida-server does not have a verifiable root identity."
+            : @"Exactly one running root frida-server is required.";
+        Emit(result, 1);
+    }
+    NSString *path = FridaPathForPID(server.kp_proc.p_pid);
+    if (!FridaPathIsKnownServer(path)) {
+        result[@"ok"] = @NO;
+        result[@"verdict"] = @"refused";
+        result[@"code"] = @"server_path_unverified";
+        result[@"error"] = @"The server executable is not a known installed frida-server.";
+        Emit(result, 1);
+    }
+    void *argvBytes = calloc(1, OPENMINIS_FRIDA_MAX_PROCARGS_BYTES);
+    if (argvBytes == NULL) Fail(action, @"allocation_failed", @"Cannot allocate the argument buffer.");
+    const char *argv[OPENMINIS_FRIDA_MAX_ARGUMENTS] = { 0 };
+    int argc = 0;
+    int length = FridaArgvRead(server.kp_proc.p_pid, argvBytes, OPENMINIS_FRIDA_MAX_PROCARGS_BYTES);
+    BOOL guarded = length > 0 &&
+        OpenMinisFridaParseArguments(argvBytes, (size_t)length, argv, &argc) &&
+        OpenMinisFridaArgumentsAreGuarded(argc, argv);
+    if (guarded) {
+        NSString *kernelExecutable = [NSString stringWithUTF8String:(const char *)argvBytes + sizeof(int32_t)];
+        guarded = kernelExecutable != nil &&
+            [[kernelExecutable stringByResolvingSymlinksInPath] isEqualToString:[path stringByResolvingSymlinksInPath]];
+    }
+    free(argvBytes);
+    struct kinfo_proc after;
+    if (!FridaProcessInfo(server.kp_proc.p_pid, &after) || !FridaSameProcess(&server, &after)) {
+        result[@"ok"] = @NO;
+        result[@"verdict"] = @"refused";
+        result[@"code"] = @"server_identity_changed";
+        result[@"error"] = @"The server exited or its PID identity changed during verification.";
+        Emit(result, 1);
+    }
+    result[@"ok"] = @(guarded);
+    result[@"verdict"] = guarded ? @"guarded" : @"refused";
+    result[@"pid"] = @(server.kp_proc.p_pid);
+    result[@"starttime_sec"] = @(server.kp_proc.p_starttime.tv_sec);
+    result[@"starttime_usec"] = @(server.kp_proc.p_starttime.tv_usec);
+    if (!guarded) {
+        result[@"code"] = length > 0 ? @"server_arguments_unproven" : @"server_arguments_unavailable";
+        result[@"error"] = length > 0
+            ? @"The running server does not prove --ignore-crashes and loopback-only listen; restarting it with the reviewed launch configuration is required."
+            : @"The running server arguments could not be read; verdict refused.";
+        Emit(result, 1);
+    }
+    Emit(result, 0);
+}
+
 static void *LeaseMonitor(void *unused) { (void)unused; MinisHelperWaitForRevocation(STDIN_FILENO); return NULL; }
 
 static NSData *ConsumeFramedRequest(NSString *action) {
@@ -469,7 +607,7 @@ int main(int argc, char **argv) {
         // argv carries only the allowlisted verb; the request body arrives on FD 3.
         if (argc != 2 || !argv[1]) return 64;
         NSString *action = [NSString stringWithUTF8String:argv[1]];
-        NSSet *allowed = [NSSet setWithArray:@[@"identity", @"read", @"write", @"rollback"]];
+        NSSet *allowed = [NSSet setWithArray:@[@"identity", @"read", @"write", @"rollback", @"frida_verdict"]];
         if (![allowed containsObject:action]) Fail(action, @"action_denied", @"Action is not allowlisted.");
         if (!MinisHelperAwaitLaunchPermit(STDIN_FILENO)) return 125;
         alarm(20);
@@ -495,6 +633,7 @@ int main(int argc, char **argv) {
         if ([action isEqualToString:@"read"]) DoRead(request, action);
         if ([action isEqualToString:@"write"]) DoWrite(request, StateBase(action), action);
         if ([action isEqualToString:@"rollback"]) DoRollback(request, StateBase(action), action);
+        if ([action isEqualToString:@"frida_verdict"]) DoFridaVerdict(request, action);
         Fail(action, @"action_denied", @"Action is not implemented.");
     }
 }

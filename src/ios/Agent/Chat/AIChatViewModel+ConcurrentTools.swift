@@ -17,6 +17,29 @@ import UIKit
 private let ctLogger = AppLogger(category: "AIChatVM")
 
 extension AIChatViewModel {
+    /// Runs the root-helper verdict and, when it holds, mints a short-lived
+    /// in-process grant bound to that exact server pid+starttime. Returns nil on
+    /// success, or the refusal text to show the model/user.
+    private static func grantFridaServerVerdict(sessionID: String?) async -> String? {
+        let envelope = await SystemHelperClient.fridaServerVerdict(sessionID: sessionID)
+        guard envelope.ok else {
+            let code = envelope.value["code"] as? String ?? "unknown"
+            let detail = envelope.value["error"] as? String ?? "The root helper refused the Frida server verdict."
+            if code == "session_access_disabled" {
+                return "ERROR: Frida needs this session's system-access permission (read-only is enough) so the root helper can verify the live server arguments. Enable it in Settings > System Access, then retry. " + detail
+            }
+            return "ERROR: guarded Frida refused (" + code + "): " + detail
+        }
+        guard let pid = (envelope.value["pid"] as? NSNumber)?.int32Value, pid > 1,
+              let sec = (envelope.value["starttime_sec"] as? NSNumber)?.doubleValue,
+              let usec = (envelope.value["starttime_usec"] as? NSNumber)?.doubleValue,
+              (envelope.value["verdict"] as? String) == "guarded" else {
+            return "ERROR: the helper returned no usable guarded verdict for the running server."
+        }
+        OpenMinisFridaGrantGuardedVerdict(pid, sec, usec)
+        return nil
+    }
+
 
     /// Hard cap on simultaneous in-flight tool executions per agent turn.
     /// 10 is the requested ceiling; iSH itself can fan out further but
@@ -391,6 +414,12 @@ extension AIChatViewModel {
                     toolSuccess = false
                     break
                 }
+                let verdict = await Self.grantFridaServerVerdict(sessionID: sessionId)
+                if let refusal = verdict {
+                    toolOutput = refusal
+                    toolSuccess = false
+                    break
+                }
                 let target = (toolArgs["target"] as? String) ?? ""
                 let source = (toolArgs["source"] as? String) ?? ""
                 let seconds = Double((toolArgs["timeout_seconds"] as? Int) ?? 5)
@@ -410,12 +439,20 @@ extension AIChatViewModel {
                 toolSuccess = false
                 break
             }
+            if listProcesses {
+                if let refusal = await Self.grantFridaServerVerdict(sessionID: sessionId) {
+                    toolOutput = refusal
+                    toolSuccess = false
+                    break
+                }
+            }
             toolOutput = await withCheckedContinuation { continuation in
                 let completion: (String) -> Void = { result in continuation.resume(returning: result) }
                 if listProcesses { OpenMinisFridaProcessesAsync(completion) }
                 else { OpenMinisFridaCoreStatusAsync(completion) }
             }
             toolSuccess = !toolOutput.contains("ERROR:") && !Task.isCancelled
+
         case "host_list_files":
             let result = await executeHostListFiles(from: argsJson)
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {

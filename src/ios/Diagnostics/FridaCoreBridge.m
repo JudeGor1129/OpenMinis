@@ -83,6 +83,47 @@ static NSString *OpenMinisFridaPathForPID(pid_t pid) {
     return [NSString stringWithUTF8String:path];
 }
 
+#define OPENMINIS_FRIDA_GRANT_TTL 30.0
+static const double OpenMinisFridaGrantTTLSeconds = OPENMINIS_FRIDA_GRANT_TTL;
+
+typedef struct {
+    BOOL valid;
+    pid_t pid;
+    double startSec;
+    double startUsec;
+    CFAbsoluteTime mintedAt;
+} OpenMinisFridaGuardedGrant;
+
+static OpenMinisFridaGuardedGrant gFridaGrant;
+static NSLock *gFridaGrantLock(void) {
+    static NSLock *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSLock new]; });
+    return lock;
+}
+
+/* Minted ONLY after the root helper read the live server argv and proved
+ * --ignore-crashes plus the exact loopback listen address for this pid and
+ * starttime. The App never sees argv bytes. TTL bounds replay/staleness.
+ */
+void OpenMinisFridaGrantGuardedVerdict(int pid, double startSeconds, double startMicros) {
+    OpenMinisFridaGuardedGrant next = { YES, (pid_t)pid, startSeconds, startMicros,
+        CFAbsoluteTimeGetCurrent() };
+    NSLock *lock = gFridaGrantLock();
+    [lock lock];
+    gFridaGrant = next;
+    [lock unlock];
+    NSLog(@"[FridaStage] helper-verdict granted pid=%d ttl=%.0fs", pid, OPENMINIS_FRIDA_GRANT_TTL);
+}
+
+static OpenMinisFridaGuardedGrant OpenMinisFridaReadGrant(void) {
+    NSLock *lock = gFridaGrantLock();
+    [lock lock];
+    OpenMinisFridaGuardedGrant copy = gFridaGrant;
+    [lock unlock];
+    return copy;
+}
+
 static BOOL OpenMinisFridaProcessInfo(pid_t pid, struct kinfo_proc *info) {
     int mib[] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, pid };
     size_t size = sizeof(*info);
@@ -136,39 +177,28 @@ static NSString *OpenMinisFridaServerPreflight(void) {
             knownPath = YES;
     }
     if (!knownPath) return @"ERROR: server executable is outside known installed locations.";
-    int argsMIB[] = { CTL_KERN, KERN_PROCARGS2, server.kp_proc.p_pid };
-    size_t argsSize = OPENMINIS_FRIDA_MAX_PROCARGS_BYTES;
-    void *bytes = calloc(1, argsSize);
-    if (bytes == NULL) return @"ERROR: argument preflight allocation failed.";
-    const char *argv[OPENMINIS_FRIDA_MAX_ARGUMENTS] = { 0 };
-    int argc = 0;
-    int argsResult = sysctl(argsMIB, 3, bytes, &argsSize, NULL, 0);
-    int argsErrno = argsResult == 0 ? 0 : errno;
-    BOOL guarded = argsResult == 0 &&
-        OpenMinisFridaParseArguments(bytes, argsSize, argv, &argc) &&
-        OpenMinisFridaArgumentsAreGuarded(argc, argv);
-    if (guarded) {
-        NSString *kernelExecutable = [NSString stringWithUTF8String:(const char *)bytes + sizeof(int32_t)];
-        guarded = kernelExecutable != nil &&
-            [[kernelExecutable stringByResolvingSymlinksInPath] isEqualToString:[path stringByResolvingSymlinksInPath]];
-    }
-    free(bytes); // Never print argv/environment; they may contain credentials.
-    if (argsResult != 0) return [NSString stringWithFormat:
-        @"ERROR: live server argv read was denied/unavailable (errno=%d); no Frida initialization performed. Root metadata permission is required; a saved plist is not a substitute.", argsErrno];
+    struct OpenMinisFridaGuardedGrant grant = OpenMinisFridaReadGrant();
+    BOOL grantFresh = grant.valid && grant.pid == server.kp_proc.p_pid &&
+        grant.startSec == server.kp_proc.p_starttime.tv_sec &&
+        grant.startUsec == server.kp_proc.p_starttime.tv_usec &&
+        (CFAbsoluteTimeGetCurrent() - grant.mintedAt) <= OpenMinisFridaGrantTTLSeconds;
+    BOOL guarded = grantFresh;
+    if (!grantFresh) return @"ERROR: no fresh root-helper verdict for this exact server instance. Run the guarded verification again; an app-side argv read is impossible under mobile UID, and a saved launch plist is not proof.";
     struct kinfo_proc after;
     if (!OpenMinisFridaProcessInfo(server.kp_proc.p_pid, &after) ||
         !OpenMinisFridaSameProcess(&server, &after))
         return @"ERROR: server exited or PID identity changed during preflight.";
-    if (!guarded) return @"ERROR: running server arguments could not prove --ignore-crashes plus loopback-only listen. Updating the launch plist without restarting the service is insufficient. No Frida initialization performed.";
-    NSLog(@"[FridaStage] preflight accepted pid=%d; crash integration off; listener identity not protocol-verified", server.kp_proc.p_pid);
+    NSLog(@"[FridaStage] preflight accepted pid=%d with a fresh root-helper argv verdict; listener identity not protocol-verified", server.kp_proc.p_pid);
     return nil;
 }
 
 static NSString *OpenMinisFridaTargetPreflight(pid_t pid) {
     if (pid <= 1 || pid == getpid()) return @"ERROR: critical/self target refused.";
     struct kinfo_proc target;
-    if (getuid() != 0)
-        return @"ERROR: target must be a running mobile-owned user App; root/system targets refused.";
+    if (!OpenMinisFridaProcessInfo(pid, &target))
+        return @"ERROR: target process identity could not be verified.";
+    if (target.kp_eproc.e_ucred.cr_uid != getuid() || target.kp_proc.p_starttime.tv_sec <= 0)
+        return @"ERROR: target must be owned by this app's user; root/system targets refused.";
     NSString *path = OpenMinisFridaPathForPID(pid);
     if (!OpenMinisFridaIsUserAppPath(path.fileSystemRepresentation))
         return @"ERROR: only user-installed App executables are allowed in this guarded release; system daemons and SpringBoard are refused.";

@@ -27,7 +27,7 @@ static inline BOOL MinisSessionAuditOwnerMatches(NSDictionary *metadata, NSStrin
 static inline NSString * _Nullable MinisSessionSystemAccessRefusal(
     NSString *action, NSString * _Nullable sid, NSString * _Nullable requestedMode,
     NSUserDefaults *defaults, BOOL identityProbe) {
-    if (![@[@"identity", @"read", @"write", @"rollback"] containsObject:action])
+    if (![@[@"identity", @"read", @"write", @"rollback", @"frida_verdict"] containsObject:action])
         return @"Action is not allowlisted.";
     // Only the dedicated read-only identity factory may be unscoped.
     if (identityProbe)

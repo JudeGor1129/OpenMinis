@@ -13,9 +13,12 @@ FOUNDATION_EXPORT NSString *OpenMinisFridaCoreStatus(void);
 FOUNDATION_EXPORT NSArray<NSString *> *OpenMinisFridaServerDiagnostics(void);
 /// Async completions are dispatched to the main queue.
 FOUNDATION_EXPORT void OpenMinisFridaCoreStatusAsync(void (^completion)(NSString *result));
-/// Runtime calls fail closed BEFORE initialization unless kernel-visible server
-/// identity and argv prove --ignore-crashes and loopback-only listen. Permission
-/// denial/unavailable metadata never falls back to trusting a saved launch plist.
+/// Runtime calls fail closed BEFORE initialization. Identity/path/starttime are
+/// checked here; the decisive argv proof must come from the audited root helper
+/// (the App cannot read a root process's argv). A saved launch plist is never
+/// accepted as proof, and an unavailable/denied verdict refuses.
+FOUNDATION_EXPORT void OpenMinisFridaGrantGuardedVerdict(int pid, double startSeconds,
+                                                        double startMicros);
 FOUNDATION_EXPORT void OpenMinisFridaProcessesAsync(void (^completion)(NSString *result));
 /// Attach-only, user-installed mobile-owned App targets; critical/system/self
 /// targets are refused. Cancellation is cooperative, not a guaranteed deadline.
