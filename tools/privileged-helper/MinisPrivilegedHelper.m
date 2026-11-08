@@ -460,10 +460,15 @@ static void DoRollback(NSDictionary *request, NSString *base, NSString *action) 
  * verdict plus pid/starttime and never the argv/environment bytes, which may
  * contain secrets. Nothing is started, stopped, signaled or attached here.
  */
-static int FridaArgvRead(pid_t pid, void *buffer, size_t length) {
+static int FridaArgvRead(pid_t pid, void *buffer, size_t length, int *errorOut) {
     int mib[3] = { CTL_KERN, KERN_PROCARGS2, pid };
     size_t size = length;
-    return sysctl(mib, 3, buffer, &size, NULL, 0) == 0 ? (int)size : -1;
+    if (sysctl(mib, 3, buffer, &size, NULL, 0) == 0) {
+        if (errorOut) *errorOut = 0;
+        return (int)size;
+    }
+    if (errorOut) *errorOut = errno;
+    return -1;
 }
 
 static BOOL FridaProcessInfo(pid_t pid, struct kinfo_proc *info) {
@@ -555,7 +560,8 @@ static void DoFridaVerdict(NSDictionary *request, NSString *action) {
     if (argvBytes == NULL) Fail(action, @"allocation_failed", @"Cannot allocate the argument buffer.");
     const char *argv[OPENMINIS_FRIDA_MAX_ARGUMENTS] = { 0 };
     int argc = 0;
-    int length = FridaArgvRead(server.kp_proc.p_pid, argvBytes, OPENMINIS_FRIDA_MAX_PROCARGS_BYTES);
+    int argvErrno = 0;
+    int length = FridaArgvRead(server.kp_proc.p_pid, argvBytes, OPENMINIS_FRIDA_MAX_PROCARGS_BYTES, &argvErrno);
     BOOL guarded = length > 0 &&
         OpenMinisFridaParseArguments(argvBytes, (size_t)length, argv, &argc) &&
         OpenMinisFridaArgumentsAreGuarded(argc, argv);
@@ -582,7 +588,7 @@ static void DoFridaVerdict(NSDictionary *request, NSString *action) {
         result[@"code"] = length > 0 ? @"server_arguments_unproven" : @"server_arguments_unavailable";
         result[@"error"] = length > 0
             ? @"The running server does not prove --ignore-crashes and loopback-only listen; restarting it with the reviewed launch configuration is required."
-            : @"The running server arguments could not be read; verdict refused.";
+            : [NSString stringWithFormat:@"The running server arguments could not be read (errno=%d); verdict refused.", argvErrno];
         Emit(result, 1);
     }
     Emit(result, 0);
