@@ -19,9 +19,9 @@ FOUNDATION_EXPORT void OpenMinisFridaCoreStatusAsync(void (^completion)(NSString
 /// accepted as proof, and an unavailable/denied verdict refuses.
 // Session authorization for that helper request is enforced App-side, against
 // the App's per-session defaults; the root helper runs in a different process
-// and cannot read them, so it never repeats that check. Build 278+ also carries
-// the debug-class entitlements needed to read another process's arguments;
-// a denied read is reported with errno so the cause is distinguishable.
+// and cannot read them, so it never repeats that check. The helper's reviewed
+// entitlement set is unchanged: a denied argv read is reported with errno, and
+// the cause is investigated before any privilege expansion is proposed.
 FOUNDATION_EXPORT void OpenMinisFridaGrantGuardedVerdict(int pid, double startSeconds,
                                                         double startMicros);
 FOUNDATION_EXPORT void OpenMinisFridaProcessesAsync(void (^completion)(NSString *result));
