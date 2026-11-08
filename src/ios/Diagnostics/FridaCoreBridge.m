@@ -38,7 +38,7 @@ NSArray<NSString *> *OpenMinisFridaServerDiagnostics(void) {
     }
     if (lines.count == 0) [lines addObject:@"Server file: not found in known locations."];
     [lines addObject:@"Port 127.0.0.1:27042: NOT PROBED. Listener/protocol status is unknown."];
-    [lines addObject:@"Runtime calls require a uniquely identified running root frida-server with --ignore-crashes and --listen=127.0.0.1:27042. Saved plist changes alone are not proof of the running mode."];
+    [lines addObject:@"Runtime calls require exactly one running root frida-server started from the reviewed launchd job with --ignore-crashes and --listen=127.0.0.1:27042. When this kernel hides the live arguments, the root-owned job file is verified instead and the verdict names that evidence."];
     return lines;
 }
 

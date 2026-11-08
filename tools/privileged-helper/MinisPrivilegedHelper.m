@@ -460,6 +460,102 @@ static void DoRollback(NSDictionary *request, NSString *base, NSString *action) 
  * verdict plus pid/starttime and never the argv/environment bytes, which may
  * contain secrets. Nothing is started, stopped, signaled or attached here.
  */
+#define OPENMINIS_FRIDA_JOB_PLIST "/var/jb/Library/LaunchDaemons/re.frida.server.plist"
+#define OPENMINIS_FRIDA_JOB_LABEL "re.frida.server"
+#define OPENMINIS_FRIDA_JOB_BYTES (256u * 1024u)
+
+/* The kernel refuses KERN_PROCARGS2 for the running server on this platform:
+ * a mobile caller and a real root reader both get EINVAL, and root `ps` shows
+ * the executable without arguments. When the live argv cannot be read we fall
+ * back to the launchd job the server was started from, and apply the SAME pure
+ * policy (OpenMinisFridaArgumentsAreGuarded) to the array that job declares.
+ * This proves the declared launch configuration (and reports the observed
+ * parent pid), never the live argv, so callers must label the evidence as
+ * launchd_job.
+ * Requirements: root-owned regular file, not writable by group/others, last
+ * modified before the process started, Label/UserName/RunAtLoad reviewed, and
+ * the declared executable is the same file as the running server.
+ */
+static NSDictionary *FridaLaunchJobEvidence(NSString *serverPath, NSTimeInterval startedAt) {
+    NSMutableDictionary *evidence = [NSMutableDictionary dictionary];
+    char resolved[PATH_MAX];
+    if (realpath(OPENMINIS_FRIDA_JOB_PLIST, resolved) == NULL) {
+        evidence[@"code"] = @"launch_job_unavailable";
+        evidence[@"error"] = @"The reviewed frida-server launch job file is missing.";
+        return evidence;
+    }
+    NSString *jobPath = [NSString stringWithUTF8String:resolved];
+    struct stat info;
+    if (stat(jobPath.fileSystemRepresentation, &info) != 0 || !S_ISREG(info.st_mode)) {
+        evidence[@"code"] = @"launch_job_unavailable";
+        evidence[@"error"] = @"The reviewed frida-server launch job is not a regular file.";
+        return evidence;
+    }
+    if (info.st_uid != 0 || (info.st_mode & 022) != 0) {
+        evidence[@"code"] = @"launch_job_unsafe";
+        evidence[@"error"] = @"The launch job file must be root-owned and not writable by group or others.";
+        return evidence;
+    }
+    if ((NSTimeInterval)info.st_mtimespec.tv_sec > startedAt) {
+        evidence[@"code"] = @"launch_job_newer_than_process";
+        evidence[@"error"] = @"The launch job file changed after the server started; the running configuration is unknown.";
+        return evidence;
+    }
+    NSData *bytes = [NSData dataWithContentsOfFile:jobPath options:0 error:NULL];
+    if (bytes.length == 0 || bytes.length > OPENMINIS_FRIDA_JOB_BYTES) {
+        evidence[@"code"] = @"launch_job_unreadable";
+        evidence[@"error"] = @"The launch job file could not be read or is larger than the reviewed bound.";
+        return evidence;
+    }
+    id plist = [NSPropertyListSerialization propertyListWithData:bytes options:NSPropertyListImmutable format:NULL error:NULL];
+    if (![plist isKindOfClass:NSDictionary.class]) {
+        evidence[@"code"] = @"launch_job_invalid";
+        evidence[@"error"] = @"The launch job file is not a property list dictionary.";
+        return evidence;
+    }
+    NSDictionary *job = (NSDictionary *)plist;
+    NSString *label = [job[@"Label"] isKindOfClass:NSString.class] ? job[@"Label"] : nil;
+    NSString *userName = [job[@"UserName"] isKindOfClass:NSString.class] ? job[@"UserName"] : nil;
+    id runAtLoad = job[@"RunAtLoad"];
+    NSArray *declared = [job[@"ProgramArguments"] isKindOfClass:NSArray.class] ? job[@"ProgramArguments"] : nil;
+    if (![label isEqualToString:@OPENMINIS_FRIDA_JOB_LABEL] ||
+        ![userName isEqualToString:@"root"] ||
+        ![runAtLoad isKindOfClass:NSNumber.class] || ![runAtLoad boolValue] ||
+        declared.count < 1 || declared.count > OPENMINIS_FRIDA_MAX_ARGUMENTS) {
+        evidence[@"code"] = @"launch_job_unreviewed";
+        evidence[@"error"] = @"The launch job does not declare the reviewed label, root user, load-at-boot and argument array.";
+        return evidence;
+    }
+    const char *argv[OPENMINIS_FRIDA_MAX_ARGUMENTS] = { 0 };
+    for (NSUInteger index = 0; index < declared.count; index++) {
+        if (![declared[index] isKindOfClass:NSString.class] ||
+            (argv[index] = [declared[index] UTF8String]) == NULL) {
+            evidence[@"code"] = @"launch_job_unreviewed";
+            evidence[@"error"] = @"The launch job declares a non-string argument.";
+            return evidence;
+        }
+    }
+    if (!OpenMinisFridaArgumentsAreGuarded((int)declared.count, argv)) {
+        evidence[@"code"] = @"launch_arguments_unproven";
+        evidence[@"error"] = @"The launch job does not declare exactly --ignore-crashes and --listen=127.0.0.1:27042.";
+        return evidence;
+    }
+    NSString *program = [job[@"Program"] isKindOfClass:NSString.class] ? job[@"Program"] : declared[0];
+    char declaredPath[PATH_MAX];
+    char serverReal[PATH_MAX];
+    if (realpath(program.fileSystemRepresentation, declaredPath) == NULL ||
+        realpath(serverPath.fileSystemRepresentation, serverReal) == NULL ||
+        strcmp(declaredPath, serverReal) != 0) {
+        evidence[@"code"] = @"launch_program_mismatch";
+        evidence[@"error"] = @"The launch job declares a different executable than the running server.";
+        return evidence;
+    }
+    evidence[@"kind"] = @"launchd_job";
+    evidence[@"job_path"] = jobPath;
+    evidence[@"job_sha256"] = HexSHA(bytes);
+    return evidence;
+}
+
 static int FridaArgvRead(pid_t pid, void *buffer, size_t length, int *errorOut) {
     int mib[3] = { CTL_KERN, KERN_PROCARGS2, pid };
     size_t size = length;
@@ -571,6 +667,24 @@ static void DoFridaVerdict(NSDictionary *request, NSString *action) {
             [[kernelExecutable stringByResolvingSymlinksInPath] isEqualToString:[path stringByResolvingSymlinksInPath]];
     }
     free(argvBytes);
+    NSString *evidence = guarded ? @"live_argv" : nil;
+    NSString *jobSHA = nil;
+    NSDictionary *jobRefusal = nil;
+    if (!guarded) {
+        // Xina/iOS 15 hides the live argv of this daemon from every reader, so
+        // the reviewed launchd job is verified instead. Both paths apply the
+        // same pure-C argument policy; the response always names which one ran.
+        NSTimeInterval startedAt = (NSTimeInterval)server.kp_proc.p_starttime.tv_sec +
+            (NSTimeInterval)server.kp_proc.p_starttime.tv_usec / 1000000.0;
+        NSDictionary *job = FridaLaunchJobEvidence(path, startedAt);
+        if ([job[@"kind"] isEqualToString:@"launchd_job"]) {
+            guarded = YES;
+            evidence = @"launchd_job";
+            jobSHA = job[@"job_sha256"];
+        } else {
+            jobRefusal = job;
+        }
+    }
     struct kinfo_proc after;
     if (!FridaProcessInfo(server.kp_proc.p_pid, &after) || !FridaSameProcess(&server, &after)) {
         result[@"ok"] = @NO;
@@ -584,11 +698,16 @@ static void DoFridaVerdict(NSDictionary *request, NSString *action) {
     result[@"pid"] = @(server.kp_proc.p_pid);
     result[@"starttime_sec"] = @(server.kp_proc.p_starttime.tv_sec);
     result[@"starttime_usec"] = @(server.kp_proc.p_starttime.tv_usec);
+    result[@"ppid"] = @(server.kp_eproc.e_ppid);
+    if (guarded) {
+        result[@"evidence"] = evidence;
+        if (jobSHA != nil) result[@"launch_job_sha256"] = jobSHA;
+    }
     if (!guarded) {
-        result[@"code"] = length > 0 ? @"server_arguments_unproven" : @"server_arguments_unavailable";
-        result[@"error"] = length > 0
+        result[@"code"] = jobRefusal[@"code"] ?: (length > 0 ? @"server_arguments_unproven" : @"server_arguments_unavailable");
+        result[@"error"] = jobRefusal[@"error"] ?: (length > 0
             ? @"The running server does not prove --ignore-crashes and loopback-only listen; restarting it with the reviewed launch configuration is required."
-            : [NSString stringWithFormat:@"The running server arguments could not be read (errno=%d); verdict refused.", argvErrno];
+            : [NSString stringWithFormat:@"The running server arguments could not be read (errno=%d); verdict refused.", argvErrno]);
         Emit(result, 1);
     }
     Emit(result, 0);
