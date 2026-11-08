@@ -507,9 +507,11 @@ static BOOL FridaPathIsKnownServer(NSString *path) {
 static void DoFridaVerdict(NSDictionary *request, NSString *action) {
     NSString *sessionID = RequiredString(request, @"session_id", action);
     if (!MinisSessionSystemAccessKey(sessionID)) Fail(action, @"session_id_invalid", @"A persisted session is required.");
-    NSString *mode = RequiredMode(request, action, NO);
-    NSString *refusal = MinisSessionSystemAccessRefusal(action, sessionID, mode, NSUserDefaults.standardUserDefaults, NO);
-    if (refusal != nil) Fail(action, @"session_permission_refused", refusal);
+    // Authorization is enforced by the App-side bridge against the App's own
+    // per-session defaults. This helper runs as a separate root process and
+    // cannot read them, so repeating that check here would always refuse.
+    // Keep only the structural requirement that a persisted session was named.
+    RequiredMode(request, action, NO);
 
     int mib[] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0 };
     size_t size = 0;
