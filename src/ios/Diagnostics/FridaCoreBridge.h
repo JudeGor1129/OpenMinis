@@ -17,6 +17,9 @@ FOUNDATION_EXPORT void OpenMinisFridaCoreStatusAsync(void (^completion)(NSString
 /// checked here; the decisive argv proof must come from the audited root helper
 /// (the App cannot read a root process's argv). A saved launch plist is never
 /// accepted as proof, and an unavailable/denied verdict refuses.
+// Session authorization for that helper request is enforced App-side, against
+// the App's per-session defaults; the root helper runs in a different process
+// and cannot read them, so it never repeats that check.
 FOUNDATION_EXPORT void OpenMinisFridaGrantGuardedVerdict(int pid, double startSeconds,
                                                         double startMicros);
 FOUNDATION_EXPORT void OpenMinisFridaProcessesAsync(void (^completion)(NSString *result));
