@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Independent contract gate: compile the ACTUAL adapter, not a behavioural copy.
 # The stub only replaces OMToolchain/LLVM; this is not native runtime evidence.
+# [ios15-full-build] Re-run native toolchain and full-app checks for classic fixups.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
