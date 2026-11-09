@@ -159,6 +159,11 @@ enum MachOFixture {
         var data = u32(command) + u32(UInt32(size)) + u32(24) + u32(0) + u32(0x10000) + u32(0x10000)
         data.append(text); data.append(Data(repeating: 0, count: size - data.count)); return data
     }
+    static func classicDyldInfoCommand() -> Data {
+        var data = u32(0x80000022) + u32(48)
+        data.append(Data(repeating: 0, count: 40))
+        return data
+    }
     // Thin arm64, actual bounded LC_SEGMENT_64 + section_64 + ARM64 payload.
     // Dylibs also have the sole libSystem dependency and matching @rpath ID.
     static func image(filetype: UInt32, installName: String = "", includesObjC: Bool = false) -> Data {
@@ -170,7 +175,8 @@ enum MachOFixture {
         } else { extra = Data() }
         // Mirror the pinned iOS ld64: include cryptid=0 metadata even though
         // no file encryption is performed. Build210's fake omitted this.
-        let commandBytes = 152 + extra.count + (filetype == 6 ? 24 : 0)
+        let dyldInfo = filetype == 6 ? classicDyldInfoCommand() : Data()
+        let commandBytes = 152 + extra.count + dyldInfo.count + (filetype == 6 ? 24 : 0)
         let offset = UInt32(32 + commandBytes)
         var segment = u32(0x19) + u32(152) + name(filetype == 1 ? "" : "__TEXT")
         segment.append(u64(0)); segment.append(u64(UInt64(payload.count)))
@@ -180,9 +186,9 @@ enum MachOFixture {
         for value in [offset, 2, 0, 0, 0x80000400, 0, 0, 0] { section.append(u32(value)) }
         segment.append(section)
         var data = Data()
-        for value in [0xfeedfacf, 0x0100000c, 0, filetype, filetype == 6 ? (includesObjC ? 5 : 4) : 1,
+        for value in [0xfeedfacf, 0x0100000c, 0, filetype, filetype == 6 ? (includesObjC ? 6 : 5) : 1,
                               UInt32(commandBytes), filetype == 6 ? 0x85 : 0, 0] { data.append(u32(value)) }
-        data.append(segment); data.append(extra)
+        data.append(segment); data.append(extra); data.append(dyldInfo)
         if filetype == 6 { data.append(encryptionCommand(offset: offset, bytes: UInt32(payload.count))) }
         data.append(payload); return data
     }
@@ -417,6 +423,14 @@ private struct AdapterContracts {
             modern = MachOFixture.adding(MachOFixture.u32(command) + MachOFixture.u32(16) + MachOFixture.u64(0), to: modern)
         }
         _ = try EmbeddedAdapterArtifact.inspect(modern, name: "bad.dylib", filetype: 6)
+        do {
+            _ = try EmbeddedAdapterArtifact.inspect(modern, name: "bad.dylib", filetype: 6,
+                                                     requireClassicFixups: true)
+            throw ContractFailure(description: "chained-fixup dylib passed the classic-fixup policy")
+        } catch EmbeddedAdapterError.poisoned(let reason) {
+            try require(reason.contains("classic_dyld_info_required_and_chained_fixups_forbidden"),
+                        "wrong chained-fixup policy rejection: \(reason)")
+        }
         checks += 1
         let badLinkedit = MachOFixture.adding(MachOFixture.u32(0x26) + MachOFixture.u32(16) +
                                             MachOFixture.u32(.max) + MachOFixture.u32(.max), to: dylib)
@@ -547,7 +561,7 @@ private struct AdapterContracts {
         try require(cc == ["-triple", "arm64-apple-ios15.0", "-target-cpu", "apple-a7", "-emit-obj", "-ffreestanding",
                            "-std=c11", "-O1", "-nostdsysteminc", "-nobuiltininc", "-ferror-limit", "16",
                            "-o", compileOutput, "-x", "c", root.appendingPathComponent("answer.c").path], "compile argv was not the fixed reviewed argv")
-        try require(ld == ["-arch", "arm64", "-dylib", "-platform_version", "ios", "15.0", "16.5",
+        try require(ld == ["-arch", "arm64", "-no_fixup_chains", "-dylib", "-platform_version", "ios", "15.0", "16.5",
                            "-install_name", "@rpath/libanswer.dylib", "-o", linkOutput,
                            root.appendingPathComponent("answer.o").path, root.appendingPathComponent("libSystem.B.tbd").path],
                     "link argv was not the fixed reviewed argv")

@@ -74,7 +74,7 @@ enum EmbeddedToolchainUniversalBinary {
         let targets: [EmbeddedToolchainArchitecture] = [.arm64, .arm64e]
         for index in 0..<2 {
             _ = try EmbeddedAdapterArtifact.inspect(slices[index], name: name, filetype: filetype,
-                                                    architecture: targets[index])
+                architecture: targets[index], requireClassicFixups: filetype == EmbeddedUniversalFileType.dylib.rawValue)
         }
         let offsets = [align(48), align(align(48) + arm64.count)]
         let total = offsets[1] + arm64e.count
@@ -126,7 +126,7 @@ enum EmbeddedToolchainUniversalBinary {
             }
             let thin = Data(data[offset..<(offset + bytes)])
             let artifact = try EmbeddedAdapterArtifact.inspect(thin, name: name, filetype: filetype,
-                                                              architecture: targets[index])
+                architecture: targets[index], requireClassicFixups: filetype == EmbeddedUniversalFileType.dylib.rawValue)
             guard read32(thin, at: 8, bigEndian: false) == subtype else {
                 throw rejected("FAT table differs from thin slice header")
             }

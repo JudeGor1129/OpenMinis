@@ -119,7 +119,8 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
     /// Inspect one thin target slice. Never rewrite headers to claim a target.
     /// Validate command/segment bounds; never load or execute generated code.
     static func inspect(_ data: Data, name: String, filetype: UInt32,
-                        architecture: EmbeddedToolchainArchitecture = .arm64) throws -> Self {
+                        architecture: EmbeddedToolchainArchitecture = .arm64,
+                        requireClassicFixups: Bool = false) throws -> Self {
         func invalid(_ rule: String = "structure", line: Int = #line) -> EmbeddedAdapterError {
             .poisoned("Mach-O output rejected: \(rule) (check_line=\(line))")
         }
@@ -148,6 +149,8 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         var occupiedObjectRanges: [(UInt64, UInt64)] = []
         var textFileRanges: [(UInt64, UInt64)] = []
         var encryptionRange: (UInt64, UInt64)?
+        var hasClassicDyldInfo = false
+        var hasChainedFixups = false
         // ld64 may emit LC_LINKER_OPTIMIZATION_HINT on both MH_OBJECT and dylib outputs.
         let objectCommands: Set<UInt32> = [0x19, 0x2, 0xb, 0x32, 0x25, 0x29, 0x2e]
         // Pinned ld64 also emits LC_ENCRYPTION_INFO_64 for iOS dylibs by
@@ -273,16 +276,26 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
                 }
                 optimizationHintRange = (offset, bytes)
             } else if command == 0x80000022 {
-                guard size == 48 else { throw invalid() }
+                guard size == 48, !hasClassicDyldInfo else { throw invalid("classic_dyld_info_command_size_or_duplicate") }
                 for field in stride(from: 8, through: 40, by: 8) {
                     guard inFile(UInt64(word(cursor + field)), UInt64(word(cursor + field + 4))) else { throw invalid() }
                 }
+                hasClassicDyldInfo = true
+            } else if command == 0x80000034 {
+                guard size == 16, !hasChainedFixups else { throw invalid("chained_fixups_command_size_or_duplicate") }
+                guard inFile(UInt64(word(cursor + 8)), UInt64(word(cursor + 12))) else { throw invalid() }
+                hasChainedFixups = true
             } else { // allowlisted linkedit_data_command only
                 guard size == 16, inFile(UInt64(word(cursor + 8)), UInt64(word(cursor + 12))) else { throw invalid() }
             }
             cursor += size
         }
         guard cursor == end, hasSegment else { throw invalid() }
+        if requireClassicFixups {
+            guard hasClassicDyldInfo, !hasChainedFixups else {
+                throw invalid("classic_dyld_info_required_and_chained_fixups_forbidden")
+            }
+        }
         for (start, count) in symbolRanges {
             guard let total = symbolCount, start <= total, count <= total - start else { throw invalid() }
         }
@@ -875,8 +888,10 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
                     guard !cancellation.isCancelled else { result.state = "cancelled"; break operationLoop }
                     // Reserve the lifetime link budget before invoking ld64.
                     links += 1
-                    call = bridge.link(["-arch", architecture.rawValue, "-dylib", "-platform_version", "ios", "15.0", "16.5",
-                                        "-install_name", installName, "-o", partial.path] +
+                    let linkerArguments = ["-arch", architecture.rawValue, "-no_fixup_chains", "-dylib",
+                                           "-platform_version", "ios", "15.0", "16.5",
+                                           "-install_name", installName, "-o", partial.path]
+                    call = bridge.link(linkerArguments +
                                        objects.map { root.appendingPathComponent($0).path } + runtimeInputs)
                 }
                 if result.state == "cancelled" { break }
@@ -893,7 +908,8 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
                     result.reason = "compiler/linker rejected the bounded input"; break
                 }
                 let data = try boundedRead(partial)
-                let artifact = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: type, architecture: architecture)
+                let artifact = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: type,
+                    architecture: architecture, requireClassicFixups: type == 6)
                 if captureDylib && type == 6 { result.capturedDylibData = data }
                 try fm.moveItem(at: partial, to: root.appendingPathComponent(name))
                 produced[name] = artifact.sha256

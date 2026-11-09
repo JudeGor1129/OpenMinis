@@ -114,6 +114,9 @@ require('0x2c' in adapter and 'cryptid=0' in adapter and
         'command == 0x2c' in adapter and 'word(cursor + 16) == 0' in adapter and
         'word(cursor + 20) == 0' in adapter and '0x21]' not in adapter,
         'pinned iOS dylib must admit only bounded LC_ENCRYPTION_INFO_64 with cryptid=0')
+require('requireClassicFixups' in adapter and 'hasClassicDyldInfo' in adapter and
+        'hasChainedFixups' in adapter and 'classic_dyld_info_required_and_chained_fixups_forbidden' in adapter,
+        'generated dylibs must be checked for classic dyld info and reject chained fixups')
 for rule in ('encrypted_output_cryptid_nonzero', 'encryption_reserved_padding_nonzero',
              'encryption_range_outside_payload', 'encryption_range_outside_text_segment',
              'encryption_command_size_or_duplicate'):
@@ -218,6 +221,10 @@ grep -q '\-fptrauth-calls' src/ios/Vendor/OMToolchain/OMToolchain.mm \
   || { echo 'FAIL: OMToolchain cc1Arguments must pass -fptrauth-calls for arm64e'; exit 1; }
 grep -q '\-fptrauth-calls' src/ios/Agent/Build/EmbeddedToolchainExecutionAdapter.swift \
   || { echo 'FAIL: toolchain adapter must pass -fptrauth-calls for arm64e'; exit 1; }
-echo 'PASS: arm64e pointer-authentication flags are wired into both compile paths.'
+grep -q '"-no_fixup_chains"' src/ios/Agent/Build/EmbeddedTheosExecutor.swift \
+  || { echo 'FAIL: Theos linker must disable chained fixups'; exit 1; }
+grep -q '"-no_fixup_chains"' src/ios/Agent/Build/EmbeddedToolchainExecutionAdapter.swift \
+  || { echo 'FAIL: structured adapter linker must disable chained fixups'; exit 1; }
+echo 'PASS: arm64e pointer-authentication flags and classic fixup policy are wired.'
 echo 'PASS: actual Swift adapter compiled and fake-bridge contracts executed.'
 echo 'NOTE: native SHA-256/evidence checks were not changed; real LLVM, signing, loading and device RSS remain separate gates.'
