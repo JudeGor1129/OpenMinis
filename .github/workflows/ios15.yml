@@ -57,7 +57,6 @@ jobs:
           bash scripts/ios15/check-group-workspace.sh 2>&1 | tee ci-logs/group-workspace.txt
           bash scripts/ios15/check-structured-memory.sh 2>&1 | tee ci-logs/structured-memory.txt
           bash scripts/ios15/check-rootfs-build-settings.sh 2>&1 | tee ci-logs/rootfs-build-settings.txt
-          bash scripts/ios15/check-frida-transcript-source.sh 2>&1 | tee ci-logs/frida-transcript-source.txt
           bash scripts/ios15/check-host-file-tools.sh 2>&1 | tee ci-logs/host-file-tools.txt
           bash scripts/ios15/check-privileged-helper.sh 2>&1 | tee ci-logs/system-access.txt
           python3 scripts/ios15/check-embedded-toolchain-integration.py 2>&1 | tee ci-logs/embedded-toolchain-source-gate.txt
@@ -164,22 +163,6 @@ jobs:
             xcodebuild -downloadComponent MetalToolchain 2>&1 | tee ci-logs/metal-download.txt
           fi
           xcrun --sdk iphoneos metal --version 2>&1 | tee ci-logs/metal.txt
-      - name: Download verified Frida Core devkit
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          bash scripts/ios15/probe-frida.sh 2>&1 | tee ci-logs/frida-probe.txt
-          mkdir -p deps/include deps/libs
-          cp build/frida-probe/devkit/frida-core.h deps/include/frida-core.h
-          cp build/frida-probe/devkit/libfrida-core.a deps/libs/libfrida-core.a
-      - name: Type-check guarded Frida bridge without device execution
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash scripts/ios15/check-frida-safety.sh --require-compiler 2>&1 | tee ci-logs/frida-safety-policy.txt
-          bash scripts/ios15/check-frida-bridge-compile.sh 2>&1 | tee ci-logs/frida-guarded-compile.txt
       - name: Download and verify embedded toolchain
         shell: bash
         env:

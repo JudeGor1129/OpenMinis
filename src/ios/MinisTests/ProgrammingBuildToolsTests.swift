@@ -55,19 +55,19 @@ final class ProgrammingBuildToolsTests: XCTestCase {
     }
 
     func testEmbeddedTheosPlanAcceptsSingleTargetProjectsAndRejectsUnsafePaths() throws {
-        let daemon = EmbeddedTheosTarget(name: "ictrld", kind: .daemon,
+        let daemon = EmbeddedTheosTarget(name: "demod", kind: .daemon,
             sourcePaths: ["daemon/main.m"], headerPaths: ["daemon/ICNAuth.h"],
-            frameworks: ["Foundation", "Security"], installPath: "usr/libexec/ictrld",
+            frameworks: ["Foundation", "Security"], installPath: "usr/libexec/demod",
             installName: nil, filterPlistPath: nil, entitlementsPath: "daemon/entitlements.plist",
             architectures: [.arm64, .arm64e])
-        let tweak = EmbeddedTheosTarget(name: "iCTRLBridge", kind: .tweak,
+        let tweak = EmbeddedTheosTarget(name: "DemoBridge", kind: .tweak,
             sourcePaths: ["bridge/ICNBridge.m"], headerPaths: ["shared/ICNProtocol.h"],
             frameworks: ["Foundation", "UIKit", "CoreFoundation"],
-            installPath: "Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.dylib",
-            installName: "@rpath/iCTRLBridge.dylib", filterPlistPath: "iCTRLBridge.plist",
+            installPath: "Library/MobileSubstrate/DynamicLibraries/DemoBridge.dylib",
+            installName: "@rpath/DemoBridge.dylib", filterPlistPath: "DemoBridge.plist",
             entitlementsPath: nil, architectures: [.arm64, .arm64e])
-        let plan = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
-            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+        let plan = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.demo",
+            version: "1.0", name: "Demo", maintainer: "Test", description: "Native test",
             bundleIDs: ["com.apple.springboard"], targets: [daemon, tweak])
         XCTAssertNoThrow(try plan.validate())
 
@@ -78,42 +78,42 @@ final class ProgrammingBuildToolsTests: XCTestCase {
         XCTAssertThrowsError(try unsafe.validate())
 
         // A single-tweak or single-daemon project is a normal Theos project.
-        let daemonOnly = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
-            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+        let daemonOnly = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.demo",
+            version: "1.0", name: "Demo", maintainer: "Test", description: "Native test",
             bundleIDs: [], targets: [daemon])
         XCTAssertNoThrow(try daemonOnly.validate())
 
-        let tweakOnly = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
-            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+        let tweakOnly = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.demo",
+            version: "1.0", name: "Demo", maintainer: "Test", description: "Native test",
             bundleIDs: ["com.apple.springboard"], targets: [tweak])
         XCTAssertNoThrow(try tweakOnly.validate())
 
-        let noTargets = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
-            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+        let noTargets = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.demo",
+            version: "1.0", name: "Demo", maintainer: "Test", description: "Native test",
             bundleIDs: [], targets: [])
         XCTAssertThrowsError(try noTargets.validate())
 
-        let tweakWithoutFilter = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
-            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+        let tweakWithoutFilter = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.demo",
+            version: "1.0", name: "Demo", maintainer: "Test", description: "Native test",
             bundleIDs: [], targets: [tweak])
         XCTAssertThrowsError(try tweakWithoutFilter.validate())
     }
 
     func testEmbeddedTheosManifestParserBuildsDualTargetGraphAndRejectsShell() throws {
-        let metadata = EmbeddedDebMetadata(packageID: "com.judegor.ictrl-native",
-            name: "iCTRL Native", version: "0.1.2", maintainer: "JudeGor",
-            description: "Local-only native bridge", tweakName: "iCTRLBridge",
+        let metadata = EmbeddedDebMetadata(packageID: "com.example.demo-native",
+            name: "Demo Native", version: "0.1.2", maintainer: "JudeGor",
+            description: "Local-only native bridge", tweakName: "DemoBridge",
             bundleIDs: ["com.apple.springboard"])
         let makefile = """
         THEOS_PACKAGE_SCHEME = rootless
-        TOOL_NAME = ictrld
-        ictrld_FILES = daemon/main.m daemon/ICNAuth.m shared/ICNProtocol.m vendor/ictrl/util.c
-        ictrld_FRAMEWORKS = Foundation Security
-        ictrld_INSTALL_PATH = /usr/libexec
-        ictrld_CODESIGN_FLAGS = -Sdaemon/entitlements.plist
-        TWEAK_NAME = iCTRLBridge
-        iCTRLBridge_FILES = bridge/ICNBridge.m shared/ICNProtocol.m
-        iCTRLBridge_FRAMEWORKS = Foundation UIKit CoreFoundation
+        TOOL_NAME = demod
+        demod_FILES = daemon/main.m daemon/ICNAuth.m shared/ICNProtocol.m vendor/demo/util.c
+        demod_FRAMEWORKS = Foundation Security
+        demod_INSTALL_PATH = /usr/libexec
+        demod_CODESIGN_FLAGS = -Sdaemon/entitlements.plist
+        TWEAK_NAME = DemoBridge
+        DemoBridge_FILES = bridge/ICNBridge.m shared/ICNProtocol.m
+        DemoBridge_FRAMEWORKS = Foundation UIKit CoreFoundation
         include $(THEOS)/makefiles/common.mk
         before-package::
         \tchmod 0755 $(THEOS_STAGING_DIR)/DEBIAN/postinst
@@ -121,39 +121,39 @@ final class ProgrammingBuildToolsTests: XCTestCase {
         let plan = try EmbeddedTheosManifestParser.parse(makefile: makefile, metadata: metadata)
         XCTAssertEqual(plan.targets.count, 2)
         let daemon = try XCTUnwrap(plan.targets.first { $0.kind == .daemon })
-        XCTAssertEqual(daemon.name, "ictrld")
-        XCTAssertEqual(daemon.installPath, "usr/libexec/ictrld")
+        XCTAssertEqual(daemon.name, "demod")
+        XCTAssertEqual(daemon.installPath, "usr/libexec/demod")
         XCTAssertEqual(daemon.entitlementsPath, "daemon/entitlements.plist")
         XCTAssertTrue(daemon.frameworks.contains("Security"))
         XCTAssertEqual(daemon.architectures, [.arm64, .arm64e])
         let tweak = try XCTUnwrap(plan.targets.first { $0.kind == .tweak })
-        XCTAssertEqual(tweak.installPath, "Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.dylib")
-        XCTAssertEqual(tweak.installName, "@rpath/iCTRLBridge.dylib")
+        XCTAssertEqual(tweak.installPath, "Library/MobileSubstrate/DynamicLibraries/DemoBridge.dylib")
+        XCTAssertEqual(tweak.installName, "@rpath/DemoBridge.dylib")
         XCTAssertFalse(EmbeddedTheosManifestParser.ignoredRecipes(in: makefile).isEmpty)
 
         let shellMakefile = """
         THEOS_PACKAGE_SCHEME = rootless
-        TOOL_NAME = ictrld
-        ictrld_FILES = daemon/main.m
+        TOOL_NAME = demod
+        demod_FILES = daemon/main.m
         BAD = $(shell rm -rf /)
         """
         XCTAssertThrowsError(try EmbeddedTheosManifestParser.parse(makefile: shellMakefile, metadata: metadata))
     }
 
     func testEmbeddedTheosCompilePlannerBuildsPerTargetActions() throws {
-        let daemon = EmbeddedTheosTarget(name: "ictrld", kind: .daemon,
+        let daemon = EmbeddedTheosTarget(name: "demod", kind: .daemon,
             sourcePaths: ["daemon/main.m", "vendor/util.c"], headerPaths: ["daemon/include/Shared.h"],
-            frameworks: ["Foundation"], installPath: "usr/libexec/ictrld",
+            frameworks: ["Foundation"], installPath: "usr/libexec/demod",
             installName: nil, filterPlistPath: nil, entitlementsPath: "daemon/entitlements.plist",
             architectures: [.arm64, .arm64e])
-        let tweak = EmbeddedTheosTarget(name: "iCTRLBridge", kind: .tweak,
+        let tweak = EmbeddedTheosTarget(name: "DemoBridge", kind: .tweak,
             sourcePaths: ["bridge/ICNBridge.m"], headerPaths: [],
             frameworks: ["UIKit"],
-            installPath: "Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.dylib",
-            installName: "@rpath/iCTRLBridge.dylib", filterPlistPath: "iCTRLBridge.plist",
+            installPath: "Library/MobileSubstrate/DynamicLibraries/DemoBridge.dylib",
+            installName: "@rpath/DemoBridge.dylib", filterPlistPath: "DemoBridge.plist",
             entitlementsPath: nil, architectures: [.arm64, .arm64e])
-        let project = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.ictrl",
-            version: "1.0", name: "iCTRL", maintainer: "Test", description: "Native test",
+        let project = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.demo",
+            version: "1.0", name: "Demo", maintainer: "Test", description: "Native test",
             bundleIDs: ["com.apple.springboard"], targets: [daemon, tweak])
         let contents = [
             "daemon/main.m": "int main(void) { return 0; }\n",
@@ -189,25 +189,25 @@ final class ProgrammingBuildToolsTests: XCTestCase {
     }
 
     func testEmbeddedTheosDebPackageBuildsRootlessMultiTargetDeb() throws {
-        let control = try EmbeddedTheosDebPackage.control(packageID: "com.judegor.ictrl-native",
-            name: "iCTRL Native", version: "0.1.2", maintainer: "JudeGor",
+        let control = try EmbeddedTheosDebPackage.control(packageID: "com.example.demo-native",
+            name: "Demo Native", version: "0.1.2", maintainer: "JudeGor",
             description: "Local-only native bridge",
             depends: "firmware (>= 15.4), mobilesubstrate")
         let files = [
-            EmbeddedTheosDebEntry(path: "var/jb/usr/libexec/ictrld",
+            EmbeddedTheosDebEntry(path: "var/jb/usr/libexec/demod",
                                   bytes: Data("daemon".utf8), mode: 0o755),
-            EmbeddedTheosDebEntry(path: "var/jb/Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.dylib",
+            EmbeddedTheosDebEntry(path: "var/jb/Library/MobileSubstrate/DynamicLibraries/DemoBridge.dylib",
                                   bytes: Data("dylib".utf8), mode: 0o755),
-            EmbeddedTheosDebEntry(path: "var/jb/Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.plist",
+            EmbeddedTheosDebEntry(path: "var/jb/Library/MobileSubstrate/DynamicLibraries/DemoBridge.plist",
                                   bytes: Data("<plist/>".utf8), mode: 0o644),
-            EmbeddedTheosDebEntry(path: "var/jb/Library/LaunchDaemons/com.judegor.ictrl-native.plist",
+            EmbeddedTheosDebEntry(path: "var/jb/Library/LaunchDaemons/com.example.demo-native.plist",
                                   bytes: Data("<daemon/>".utf8), mode: 0o644)
         ]
         let deb = try EmbeddedTheosDebPackage.build(files: files, controlText: control,
             maintainerScripts: ["postinst": "#!/bin/sh\nexit 0\n"])
         let paths = try EmbeddedTheosDebPackage.inspect(deb)
-        XCTAssertTrue(paths.contains("var/jb/usr/libexec/ictrld"))
-        XCTAssertTrue(paths.contains("var/jb/Library/MobileSubstrate/DynamicLibraries/iCTRLBridge.dylib"))
+        XCTAssertTrue(paths.contains("var/jb/usr/libexec/demod"))
+        XCTAssertTrue(paths.contains("var/jb/Library/MobileSubstrate/DynamicLibraries/DemoBridge.dylib"))
         XCTAssertTrue(paths.allSatisfy { $0.hasPrefix("var/jb/") })
 
         XCTAssertThrowsError(try EmbeddedTheosDebPackage.build(

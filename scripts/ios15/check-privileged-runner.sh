@@ -1,5 +1,5 @@
 #!/bin/sh
-# Real unprivileged process tests. No Apple helper, shell fixture or Frida.
+# Real unprivileged process tests. No Apple helper or shell fixture.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 compiler=

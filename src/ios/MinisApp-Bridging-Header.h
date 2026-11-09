@@ -61,10 +61,6 @@
 // CppJieba Chinese word segmentation (ObjC++ wrapper)
 #import "JiebaWrapper.h"
 
-// Optional Frida Core probe. The implementation is linked only when the
-// verified Frida devkit is supplied by the build; otherwise it reports the
-// capability as unavailable without changing normal app behavior.
-#import "Diagnostics/FridaCoreBridge.h"
 #import "Diagnostics/PrivilegedHelperBridge.h"
 
 // In-process compiler capability bridge and fixed-fixture runtime diagnostics.

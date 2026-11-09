@@ -31,9 +31,6 @@ import SwiftUI
 enum AgentToolSwitch: String, CaseIterable {
     case interaction = "agent.tools.interaction.enabled"
     case browser = "agent.tools.browser.enabled"
-    // Fresh opt-in after the #272 restart: never reuse the prior enabled flag.
-    case frida = "agent.tools.frida.guarded.v1.enabled"
-    case ictrl = "agent.tools.ictrl.enabled"
     case agents = "agent.tools.agents.enabled"
 
     var key: String { rawValue }
@@ -60,11 +57,6 @@ enum AgentToolSwitch: String, CaseIterable {
         case .interaction: return true
         case .browser: return true
         case .agents: return true
-        // Embedded Frida Core can touch local/socket Frida backends. Keep it
-        // opt-in until the target device/server combination is verified; a
-        // malformed or incompatible frida-server must never be probed by default.
-        case .frida: return false
-        case .ictrl: return false
         }
     }
 
@@ -83,8 +75,6 @@ enum AgentToolSwitch: String, CaseIterable {
     nonisolated static func governing(_ toolName: String) -> AgentToolSwitch? {
         switch toolName {
         case "ask_user": return .interaction
-        case "frida_status", "frida_processes", "frida_script": return .frida
-        case "ictrl_call": return .ictrl
         case "browser_use": return .browser
         case SubAgentDefinition.toolName: return .agents
         default: return nil
@@ -129,20 +119,8 @@ enum AgentToolSwitch: String, CaseIterable {
 }
 
 struct ToolsSettingsView: View {
-    /// What the Frida section can actually do in this build.
-    private var fridaDescription: String {
-        if OpenMinisFridaScriptAvailable() {
-            return "仅对已授权的用户 App 执行 JS。连接前必须确认运行中的 frida-server 使用 --ignore-crashes 且仅监听 127.0.0.1:27042；无法读取真实启动参数则拒绝连接。状态工具不探测端口。系统进程和自身进程禁止 attach，升级后需重新开启。本模式仍需实机验收。"
-        }
-        return OpenMinisFridaDiagnosticsAvailable()
-            ? "仅检查已知服务器文件和权限，显示客户端构建版本；不初始化 Frida，也不连接或探测端口。"
-            : "当前构建不支持 Frida。"
-    }
-
     @AppStorage(AgentToolSwitch.interaction.key) private var interactionEnabled = AgentToolSwitch.interaction.defaultValue
     @AppStorage(AgentToolSwitch.browser.key) private var browserEnabled: Bool = AgentToolSwitch.browser.defaultValue
-    @AppStorage(AgentToolSwitch.frida.key) private var fridaEnabled = AgentToolSwitch.frida.defaultValue
-    @AppStorage(AgentToolSwitch.ictrl.key) private var ictrlEnabled = AgentToolSwitch.ictrl.defaultValue
 
     var body: some View {
         Form {
@@ -151,18 +129,6 @@ struct ToolsSettingsView: View {
                 toolRow(AppLocalized("Browser Use"), tool: "browser_use", icon: "globe", isOn: $browserEnabled)
             } footer: {
                 Text(AppLocalized("Browse the web in the in-app browser: open pages, read them, click and type. Stable and on by default. When off, the tool is removed from every conversation — the model does not see it at all."))
-            }
-            Section {
-                toolRow("iCTRL 手机控制", tool: "ictrl_call", icon: "iphone", isOn: $ictrlEnabled)
-                Text("通过已运行的 iCTRL XCTest runner 控制本机或已授权的私有局域网设备。默认关闭；启用前请确认目标设备归你所有并由你配对。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Section {
-                toolRow("Frida 动态分析（保护模式）", tool: "frida_status", icon: "ant", isOn: $fridaEnabled)
-                Text(fridaDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             Section {
                 NavigationLink {

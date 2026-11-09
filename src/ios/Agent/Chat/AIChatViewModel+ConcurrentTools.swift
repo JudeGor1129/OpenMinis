@@ -17,30 +17,6 @@ import UIKit
 private let ctLogger = AppLogger(category: "AIChatVM")
 
 extension AIChatViewModel {
-    /// Runs the root-helper verdict and, when it holds, mints a short-lived
-    /// in-process grant bound to that exact server pid+starttime. Returns nil on
-    /// success, or the refusal text to show the model/user.
-    private static func grantFridaServerVerdict(sessionID: String?) async -> String? {
-        let envelope = await SystemHelperClient.fridaServerVerdict(sessionID: sessionID)
-        guard envelope.ok else {
-            let code = envelope.value["code"] as? String ?? "unknown"
-            let detail = envelope.value["error"] as? String ?? "The root helper refused the Frida server verdict."
-            if code == "session_access_disabled" {
-                return "ERROR: Frida needs this session's system-access permission (read-only is enough) so the root helper can verify the live server arguments. Enable it in Settings > System Access, then retry. " + detail
-            }
-            return "ERROR: guarded Frida refused (" + code + "): " + detail
-        }
-        guard let pid = (envelope.value["pid"] as? NSNumber)?.int32Value, pid > 1,
-              let sec = (envelope.value["starttime_sec"] as? NSNumber)?.doubleValue,
-              let usec = (envelope.value["starttime_usec"] as? NSNumber)?.doubleValue,
-              (envelope.value["verdict"] as? String) == "guarded" else {
-            return "ERROR: the helper returned no usable guarded verdict for the running server."
-        }
-        OpenMinisFridaGrantGuardedVerdict(pid, sec, usec)
-        return nil
-    }
-
-
     /// Hard cap on simultaneous in-flight tool executions per agent turn.
     /// 10 is the requested ceiling; iSH itself can fan out further but
     /// concurrent shell forks on the emulator past this start to compete
@@ -392,67 +368,7 @@ extension AIChatViewModel {
         }()
 
         do {
-        if tu.name == "ictrl_call", !AgentToolSwitch.ictrl.isEnabled {
-            toolOutput = Self.toolsDisabledMessage
-            toolSuccess = false
-        } else {
         switch tu.name {
-        case "frida_status", "frida_processes", "frida_script":
-            guard AgentToolSwitch.frida.isEnabled else {
-                toolOutput = Self.toolsDisabledMessage
-                toolSuccess = false
-                break
-            }
-            guard !Task.isCancelled else {
-                toolOutput = "Frida call cancelled."
-                toolSuccess = false
-                break
-            }
-            if tu.name == "frida_script" {
-                guard OpenMinisFridaScriptAvailable() else {
-                    toolOutput = "This build has no embedded Frida Core client; only frida_status diagnostics are available."
-                    toolSuccess = false
-                    break
-                }
-                let verdict = await Self.grantFridaServerVerdict(sessionID: sessionId)
-                if let refusal = verdict {
-                    toolOutput = refusal
-                    toolSuccess = false
-                    break
-                }
-                let target = (toolArgs["target"] as? String) ?? ""
-                let source = (toolArgs["source"] as? String) ?? ""
-                let seconds = Double((toolArgs["timeout_seconds"] as? Int) ?? 5)
-                toolOutput = await withCheckedContinuation { continuation in
-                    OpenMinisFridaRunScriptAsync(target, source, seconds) { result in
-                        continuation.resume(returning: result)
-                    }
-                }
-                toolSuccess = !toolOutput.contains("ERROR:") && !toolOutput.contains("[error]") && !toolOutput.contains("no script was loaded") && !Task.isCancelled
-                break
-            }
-            let listProcesses = tu.name == "frida_processes"
-            guard listProcesses ? OpenMinisFridaScriptAvailable() : OpenMinisFridaDiagnosticsAvailable() else {
-                toolOutput = listProcesses
-                    ? "This build has no embedded Frida Core client; only frida_status diagnostics are available."
-                    : "Frida diagnostics unavailable or task cancelled."
-                toolSuccess = false
-                break
-            }
-            if listProcesses {
-                if let refusal = await Self.grantFridaServerVerdict(sessionID: sessionId) {
-                    toolOutput = refusal
-                    toolSuccess = false
-                    break
-                }
-            }
-            toolOutput = await withCheckedContinuation { continuation in
-                let completion: (String) -> Void = { result in continuation.resume(returning: result) }
-                if listProcesses { OpenMinisFridaProcessesAsync(completion) }
-                else { OpenMinisFridaCoreStatusAsync(completion) }
-            }
-            toolSuccess = !toolOutput.contains("ERROR:") && !Task.isCancelled
-
         case "host_list_files":
             let result = await executeHostListFiles(from: argsJson)
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
@@ -577,73 +493,6 @@ extension AIChatViewModel {
             }
             toolOutput = await MinisUserQuestionPresenter.shared.ask(question)
             toolSuccess = !Task.isCancelled
-        case "ictrl_call":
-            guard let data = argsJson.data(using: .utf8),
-                  let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                toolOutput = "Error: invalid iCTRL arguments."
-                toolSuccess = false
-                break
-            }
-            let action = (args["action"] as? String) ?? "call"
-            let host = (args["host"] as? String) ?? "127.0.0.1:8200"
-            let method = (args["method"] as? String) ?? "device_info"
-            let paramsJSON = (args["params_json"] as? String) ?? "{}"
-            let timeout = max(5, min(120, (args["timeout"] as? Int) ?? (action == "pair" ? 90 : 30)))
-            let hostWithoutPort: String = {
-                if host.hasPrefix("[") { return host.split(separator: "]").first.map { String($0.dropFirst()) } ?? host }
-                return host.split(separator: ":").first.map(String.init) ?? host
-            }()
-            let portIsValid: Bool = {
-                guard let colon = host.lastIndex(of: ":"), let port = Int(host[host.index(after: colon)...]) else { return false }
-                return (1...65535).contains(port) && !host.contains("/") && !host.contains("@")
-            }()
-            let ipv4Octets = hostWithoutPort.split(separator: ".").compactMap { Int($0) }
-            let ipv4Valid = hostWithoutPort.split(separator: ".").count == 4
-                && ipv4Octets.count == 4 && ipv4Octets.allSatisfy { (0...255).contains($0) }
-            let hostIsLoopback = hostWithoutPort == "127.0.0.1" || hostWithoutPort == "localhost" || hostWithoutPort == "::1"
-            let hostIsPrivate = ipv4Valid && (
-                ipv4Octets[0] == 10
-                || (ipv4Octets[0] == 192 && ipv4Octets[1] == 168)
-                || (ipv4Octets[0] == 172 && (16...31).contains(ipv4Octets[1]))
-            )
-            guard portIsValid && (hostIsLoopback || hostIsPrivate) else {
-                toolOutput = "Error: iCTRL host must be loopback or a private LAN address owned by the user."
-                toolSuccess = false
-                break
-            }
-            let shellQuote: (String) -> String = { value in
-                "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-            }
-            let base = "C=\"$HOME/.ictrl/bin\"; mkdir -p \"$C\"; "
-                + "[ -s \"$C/ictrl\" ] || wget -qO \"$C/ictrl\" http://\(host)/skill/clients/cli; "
-                + "[ -s \"$C/ictrl.sh\" ] || wget -qO \"$C/ictrl.sh\" http://\(host)/skill/clients/cli.sh; "
-            let command: String
-            if action == "pair" {
-                command = base + "sh \"$C/ictrl.sh\" --host " + shellQuote(host) + " pair --name Minis"
-            } else if action == "call" {
-                guard !method.isEmpty,
-                      let paramsData = paramsJSON.data(using: .utf8),
-                      (try? JSONSerialization.jsonObject(with: paramsData)) is [String: Any] else {
-                    toolOutput = "Error: params_json must be a JSON object and method must be non-empty."
-                    toolSuccess = false
-                    break
-                }
-                command = base + "sh \"$C/ictrl.sh\" --host " + shellQuote(host)
-                    + " call " + shellQuote(method) + " " + shellQuote(paramsJSON)
-            } else {
-                toolOutput = "Error: iCTRL action must be pair or call."
-                toolSuccess = false
-                break
-            }
-            do {
-                let result = try await executeCommand(command, timeout: TimeInterval(timeout), lineCallback: { _ in })
-                toolOutput = result.output
-                toolSuccess = result.exitCode == 0
-            } catch {
-                toolOutput = "Error: \(error.localizedDescription)"
-                toolSuccess = false
-            }
-
         case "shell_execute":
             let (command, timeout, delay) = parseToolInput(from: argsJson)
 
@@ -1286,7 +1135,6 @@ extension AIChatViewModel {
         default:
             toolOutput = "Error: Unknown tool '\(tu.name)'"
             toolSuccess = false
-        }
         }
         } catch is CancellationError {
             let cancelContent = "<system-reminder>The user cancelled this operation. The returned result may be incomplete.</system-reminder>"

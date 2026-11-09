@@ -256,7 +256,7 @@ struct ChatMessageRow: View {
             case .text:
                 if !block.content.isEmpty { parts.append(block.content) }
             case .shellTool(let command):
-                let cmd = command == "iCTRL" ? "iCTRL" : (command.isEmpty ? block.toolDescription : command)
+                let cmd = command.isEmpty ? block.toolDescription : command
                 var s = "$ \(cmd)"
                 if !block.content.isEmpty {
                     // content is "$ cmd\noutput…", strip the command line

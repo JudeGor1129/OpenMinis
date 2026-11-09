@@ -39,7 +39,7 @@ fi
 if grep -q 'com.apple.private.security.no-sandbox' src/ios/Minis.entitlements; then
   echo 'FAIL: common app entitlement set must stay sandboxed'; exit 1
 fi
-must_not_contain 'system\(|/bin/(sh|bash)|execl|execv|popen|frida_(init|shutdown|device_|session_|script_|manager_|spawn|resume|kill)' "$helper"
+must_not_contain 'system\(|/bin/(sh|bash)|execl|execv|popen' "$helper"
 grep -q 'set_persona_uid_np' "$runner"
 grep -q 'MINIS_HELPER_OUTPUT_LIMIT' "$runner"
 grep -q 'waitpid' "$runner"

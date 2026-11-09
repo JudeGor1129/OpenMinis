@@ -372,7 +372,6 @@ enum HelperAccent {
         case "file_read", "read_file": return "doc.text"
         case "file_write", "write_file": return "doc.text.fill"
         case "file_edit", "edit_file": return "square.and.pencil"
-        case "ictrl_call": return "iphone"
         case "browser_use": return "globe"
         case "read_image": return "photo"
         case "memory": return "brain.head.profile"

@@ -70,7 +70,7 @@ echo "  LC_UUID formatted from raw bytes"
 echo "== encryption state reported =="
 grep -q 'lcEncryptionInfo64' "$impl" || { echo "FAIL: no LC_ENCRYPTION_INFO_64 handling"; exit 1; }
 grep -q 'encrypted: YES' "$impl" || { echo "FAIL: encrypted binaries not flagged"; exit 1; }
-grep -q 'frida-ios-dump' "$impl" || { echo "FAIL: no dump guidance for encrypted binaries"; exit 1; }
+grep -q 'Clutch' "$impl" || { echo "FAIL: no dump guidance for encrypted binaries"; exit 1; }
 echo "  cryptid surface + dump guidance present"
 
 echo "== bounds-checked reads =="
@@ -105,5 +105,5 @@ echo "  build file, file reference and Sources membership present"
 
 echo "PASS: host_macho_info parses Mach-O headers with correct byte order and bounds."
 echo "NOTE: not proof of Swift compilation. Parser output was cross-checked against"
-echo "      /var/jb/usr/sbin/frida-server (fat arm64+arm64e) and"
+echo "      A dumpable arm64e system app and"
 echo "      /Applications/AAUIViewService.app/AAUIViewService (thin arm64e) in Python."

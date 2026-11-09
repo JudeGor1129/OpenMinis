@@ -2356,50 +2356,19 @@ final class DebugJSONRPC: @unchecked Sendable {
         // wrap the whole hop in a race against a 3s deadline so the client
         // ALWAYS gets a response within a bounded time.
         //
-        // First-line strategy for text/label/identifier: forward to iCTRL's
-        // find_and_tap RPC on 127.0.0.1:8200. iCTRL is a UI test bundle so
-        // it has XCUIElement.tap(), which drives the OS's real touch
-        // pipeline and works on SwiftUI Lists / hosting-view content that
-        // MinisApp's app-embedded synthesis can't reach. iCTRL's isLoopback
-        // check bypasses its bearer auth for us. If iCTRL isn't running (or
-        // returns "no element found") we fall through to the existing app-
-        // embedded escalation ladder — behaviour unchanged when the tool
-        // isn't installed.
-        // Order of preference for element-lookup taps:
-        // 1. App-embedded ladder FIRST. If it engages `accessibilityActivate`
-        //    (buttons, .button-trait AX nodes), `didSelectItemAt`, or
-        //    UIControl.sendActions, the button's REAL handler runs — this is
-        //    what worked for the "Default Models" toolbar chip.
-        // 2. Only if the local ladder falls back to synthesized coordinate
-        //    tap (`via` starts with "coordinate" or ends with
-        //    "→coordinate(...)"), we escalate to iCTRL's XCUIElement.tap.
-        //    That's the path for SwiftUI List rows / hosting-view content
-        //    whose activation isn't published via the accessibility API.
-        // 3. If iCTRL is unreachable or reports no matching element, the
-        //    local result (the synthesized-tap envelope) is returned as-is.
-        func localResultUsedCoordinateFallback(_ result: [String: Any]) -> Bool {
-            guard let via = result["via"] as? String else { return false }
-            if via == "coordinate" { return true }
-            if via.hasSuffix("→coordinate") { return true }
-            // Also matches "collectionCell:1-0→coordinate(207,541)" etc.
-            if via.contains("→coordinate(") { return true }
-            return false
-        }
-        func tryICTRLThenReturn(local: [String: Any]) async -> Any {
-            if localResultUsedCoordinateFallback(local),
-               let forwarded = await Self.forwardTapToICTRL(params: params) {
-                return forwarded
-            }
-            return local
-        }
-
+        // Element-lookup taps use the app-embedded ladder: if it engages
+        // `accessibilityActivate` (buttons, .button-trait AX nodes),
+        // `didSelectItemAt`, or UIControl.sendActions, the button's REAL
+        // handler runs — this is what worked for the "Default Models" toolbar
+        // chip. Anything that ends as a synthesized coordinate tap is
+        // returned as-is.
         if let identifier = params["identifier"] as? String, !identifier.isEmpty {
             let local = await Self.withMainActorTimeout(strategy: "identifier=\(identifier)") {
                 self.performTargetTap(strategy: "identifier=\(identifier)") {
                     self.inspector.findTarget(identifier: identifier)
                 }
             }
-            return await tryICTRLThenReturn(local: local)
+            return local
         }
         if let label = params["label"] as? String, !label.isEmpty {
             let local = await Self.withMainActorTimeout(strategy: "label=\(label)") {
@@ -2407,7 +2376,7 @@ final class DebugJSONRPC: @unchecked Sendable {
                     self.inspector.findTarget(text: label, partial: false)
                 }
             }
-            return await tryICTRLThenReturn(local: local)
+            return local
         }
         if let text = params["text"] as? String, !text.isEmpty {
             let partial = (params["partial"] as? Bool) ?? true
@@ -2416,7 +2385,7 @@ final class DebugJSONRPC: @unchecked Sendable {
                     self.inspector.findTarget(text: text, partial: partial)
                 }
             }
-            return await tryICTRLThenReturn(local: local)
+            return local
         }
 
         guard let x = params["x"] as? Double, let y = params["y"] as? Double else {
@@ -2439,106 +2408,6 @@ final class DebugJSONRPC: @unchecked Sendable {
             AutoTouch.simulateTap(at: point, in: nil)
         }
         return ["ok": true, "point": ["x": x, "y": y], "via": "coordinate"] as [String: Any]
-    }
-
-    /// URL of iCTRL's JSON-RPC endpoint on this device. iCTRL is a co-
-    /// installed XCTest automation service (bundle com.openminis.ictrl,
-    /// port 8200). It runs inside a UI test runner so it can drive
-    /// XCUIElement.tap() — which we can't from the app process.
-    /// Loopback auth exemption on iCTRL side means we don't send a token.
-    private static let ictrlRPCURL = URL(string: "http://127.0.0.1:8200/rpc")!
-
-    /// Try iCTRL's find_and_tap. Maps our tap params to iCTRL's schema:
-    ///   identifier / label → element_id + match:"exact"
-    ///   text[, partial]    → element_id + match:"contains" | "exact"
-    /// Returns iCTRL's result envelope when the call succeeded (with a
-    /// synthesised via:"ictrl" so callers can see the mechanism). Returns
-    /// nil when iCTRL isn't reachable or replied that no element matched
-    /// — so the caller falls through to the app-embedded escalation.
-    static func forwardTapToICTRL(params: [String: Any]) async -> [String: Any]? {
-        // Assemble find_and_tap params from whichever field was supplied.
-        var elementId: String = ""
-        var matchMode: String = "exact"
-        var strategy: String = ""
-        if let identifier = params["identifier"] as? String, !identifier.isEmpty {
-            elementId = identifier; strategy = "identifier=\(identifier)"
-        } else if let label = params["label"] as? String, !label.isEmpty {
-            elementId = label; strategy = "label=\(label)"
-        } else if let text = params["text"] as? String, !text.isEmpty {
-            let partial = (params["partial"] as? Bool) ?? true
-            elementId = text
-            matchMode = partial ? "contains" : "exact"
-            strategy = "text=\(text) partial=\(partial)"
-        } else {
-            return nil
-        }
-
-        // iCTRL defaults to querying whatever app is currently bound (or
-        // SpringBoard if none). Since debug.tap is called BY MinisApp asking
-        // to tap something in ITSELF, pin the query to our own bundle id
-        // unless the caller explicitly overrides via ictrl_bundle_id.
-        let bundleId = (params["ictrl_bundle_id"] as? String) ?? Bundle.main.bundleIdentifier ?? "com.openminis.app"
-        let rpcParams: [String: Any] = [
-            "element_id": elementId,
-            "match": matchMode,
-            "bundle_id": bundleId,
-        ]
-        let payload: [String: Any] = [
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "find_and_tap",
-            "params": rpcParams,
-        ]
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return nil }
-
-        var request = URLRequest(url: ictrlRPCURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-        // find_and_tap can take up to ~4s (locate + native XCUIElement.tap).
-        // Give it 8s total headroom; we still return an error envelope on
-        // timeout without hanging the client.
-        request.timeoutInterval = 8.0
-
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 8.0
-        config.timeoutIntervalForResource = 10.0
-        config.waitsForConnectivity = false
-        let session = URLSession(configuration: config)
-
-        do {
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else { return nil }
-            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-            // Success envelope from iCTRL. Return it verbatim with a stamp
-            // so debug.tap callers can see the mechanism.
-            if http.statusCode == 200, let result = obj["result"] as? [String: Any] {
-                var out = result
-                out["ok"] = true
-                out["via"] = "ictrl"
-                out["strategy"] = strategy
-                return out
-            }
-            // iCTRL replied but couldn't tap (bad token, no element, etc.).
-            // "No element matching" → nil so we retry with the app-embedded
-            // path. Anything else we surface so the caller sees why iCTRL
-            // rejected (auth failure, invalid params, method missing).
-            if let err = obj["error"] as? [String: Any],
-               let msg = err["message"] as? String {
-                if msg.contains("no element matching") || msg.contains("No element matching") {
-                    return nil
-                }
-                return [
-                    "ok": false, "via": "ictrl", "strategy": strategy,
-                    "error": "ictrl: \(msg)",
-                    "ictrl_status": http.statusCode,
-                ]
-            }
-            return nil
-        } catch {
-            // Connection refused / timeout / DNS — iCTRL isn't running.
-            return nil
-        }
     }
 
     /// Race a MainActor.run against a wall-clock deadline. If the main-actor
@@ -2835,8 +2704,8 @@ final class DebugJSONRPC: @unchecked Sendable {
     /// debug.helper.openSheet — open the read-only helper mirror sheet for a
     /// child session on whatever chat is on screen. [T-p1-delegate-task]
     /// The capsule and the delegate block are SwiftUI tap targets that the
-    /// synthesized-tap ladder cannot reach without iCTRL; this is the same
-    /// notification the P2 notification-tap path will post.
+    /// synthesized-tap ladder cannot reach; this is the same notification the
+    /// P2 notification-tap path will post.
     private func handleOpenHelperSheet(params: [String: Any]) async throws -> Any {
         guard let childId = params["childSessionId"] as? String, !childId.isEmpty else {
             throw RPCError(code: -32602, message: "Missing required param: childSessionId")

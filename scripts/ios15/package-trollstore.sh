@@ -85,7 +85,7 @@ persona, no-sandbox, AppDataContainers and AppBundles because a sandboxed GUI
 was verified on-device to fail persona spawn with EPERM. ContainerLocator
 resolves the existing bundle-ID data container explicitly; normal entitlements
 and extensions remain unchanged. GUI stays uid501; only the short-lived helper
-requests uid0. The helper has no shell/delete/chmod/chown/launchctl/Frida verbs.
+requests uid0. The helper has no shell/delete/chmod/chown/launchctl verbs.
 System access is default OFF, foreground-only, path-tiered, confirmed before
 write, backed up, audited and rollback-capable. Test launch and existing chat
 data before enabling read-only identity verification on the target device.

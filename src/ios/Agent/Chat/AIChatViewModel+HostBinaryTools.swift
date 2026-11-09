@@ -53,7 +53,7 @@ extension AIChatViewModel {
         // Mach-O cputype for 64-bit ARM is CPU_ARCH_ABI64 (0x01000000) OR'd
         // with CPU_TYPE_ARM (12) — NOT plain 12. Comparing against 0x0c never
         // matches a real arm64 binary and every architecture name silently
-        // degrades to "cputype 0x100000c". Verified against frida-server and
+        // degrades to "cputype 0x100000c". Verified against a jailbreak daemon and
         // AAUIViewService (both 0x0100000c).
         static let cputypeArm64: UInt32 = 0x0100_000c
 
@@ -400,7 +400,7 @@ extension AIChatViewModel {
                 lines.append("  encrypted: no (LC_ENCRYPTION_INFO_64 cryptid 0 — decrypted)")
             } else {
                 lines.append("  encrypted: YES (cryptid \(cryptid), cryptoff 0x\(String(cryptoff ?? 0, radix: 16)), cryptsize \(cryptsize ?? 0))"
-                             + " — dump with frida-ios-dump/Clutch before static analysis")
+                             + " — dump with Clutch or an equivalent decryption tool before static analysis")
             }
         } else {
             lines.append("  encrypted: no LC_ENCRYPTION_INFO_64 (typical for dylibs and frameworks)")

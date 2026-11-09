@@ -378,38 +378,6 @@ extension AIChatViewModel {
                 propertyOrdering: ["question"]
             ))
         }
-        if AgentToolSwitch.frida.isEnabled && OpenMinisFridaDiagnosticsAvailable() {
-            tools.append(AgentToolDefinition(
-                name: "frida_status",
-                description: "Local file/permission checks and a build-time client version only. Does NOT initialize Frida, enumerate processes, connect to or probe any port. Runtime server/protocol readiness is unknown.",
-                parameters: [:],
-                required: [],
-                propertyOrdering: []
-            ))
-            if OpenMinisFridaScriptAvailable() {
-                tools.append(AgentToolDefinition(
-                    name: "frida_processes",
-                    description: "List server-visible processes only after verifying the actual running root server identity and argv (--ignore-crashes and loopback-only listen). Unknown/denied metadata fails closed before Core initialization. No target attach; no server start/restart. A saved plist alone is insufficient.",
-                    parameters: [
-                        "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary shown to the user.")
-                    ],
-                    required: ["tool_title"],
-                    propertyOrdering: ["tool_title"]
-                ))
-                tools.append(AgentToolDefinition(
-                    name: "frida_script",
-                    description: "Guarded attach to an authorized running, mobile-owned user-installed App only. Verify live root server identity/argv (--ignore-crashes, loopback-only) before Core initialization; unavailable evidence is refused. Critical/system/self targets, spawn and gating are unsupported. Return console/send/errors and report unload/detach failures. Cancellation is cooperative; device safety remains unverified.",
-                    parameters: [
-                        "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary shown to the user."),
-                        "target": AgentToolParam(type: .string, description: "PID (digits) or process name visible in frida_processes (exact case-insensitive match; use PID for ambiguous names)."),
-                        "source": AgentToolParam(type: .string, description: "Frida JavaScript source. Keep it short; use send()/console.log for results."),
-                        "timeout_seconds": AgentToolParam(type: .integer, description: "Message collection window in seconds (default 5, clamped to 1...30).")
-                    ],
-                    required: ["tool_title", "target", "source"],
-                    propertyOrdering: ["tool_title", "target", "source", "timeout_seconds"]
-                ))
-            }
-        }
         // [T-host-file-tools] iOS-side read-only filesystem tools. Ungated like
         // the existing file_read/file_write family, but they address the real
         // device filesystem instead of the iSH fakefs — `root` picks which.
@@ -592,22 +560,6 @@ extension AIChatViewModel {
         if OpenMinisPrivilegedHelperPackaged(),
            SessionSystemAccessStore.shared.mode(for: sessionId) != .disabled {
             tools.append(contentsOf: systemAccessToolDefinitions())
-        }
-        if AgentToolSwitch.ictrl.isEnabled {
-        tools.append(AgentToolDefinition(
-            name: "ictrl_call",
-            description: "Control a paired iPhone through the local iCTRL runner. The runner must already be running on the target device, normally at 127.0.0.1:8200. Use action=pair once when pairing is needed (the user must approve the runner prompt), then action=call with a documented JSON-RPC method such as device_info, page_source, find_element, tap, type, swipe, screenshot, launch_app, or logs. This tool only calls iCTRL; it does not start XCTest, mount DDI, bypass pairing, or expose an arbitrary shell.",
-            parameters: [
-                "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of the iCTRL operation."),
-                "action": AgentToolParam(type: .string, description: "Pair once or call one JSON-RPC method.", enumValues: ["pair", "call"]),
-                "host": AgentToolParam(type: .string, description: "Runner host:port. Default is 127.0.0.1:8200. Use a LAN address only for a device the user owns and has explicitly enabled for remote access."),
-                "method": AgentToolParam(type: .string, description: "JSON-RPC method for action=call, for example device_info, page_source, find_element, tap, type, swipe, screenshot, launch_app, or logs."),
-                "params_json": AgentToolParam(type: .string, description: "A JSON object string containing the method parameters. Use {} when the method has no parameters."),
-                "timeout": AgentToolParam(type: .integer, description: "Maximum seconds for the local CLI call. Default 30."),
-            ],
-            required: ["tool_title", "action"],
-            propertyOrdering: ["tool_title", "action", "host", "method", "params_json", "timeout"]
-        ))
         }
         return tools
     }

@@ -54,14 +54,6 @@ enum SystemHelperClient {
         await perform(OpenMinisPrivilegedRequest.identityProbe())
     }
 
-    /// Ask the audited root helper whether the LIVE frida-server process proves
-    /// `--ignore-crashes` plus a loopback-only listener. The helper returns a
-    /// verdict with pid/starttime and never the argv bytes; the App cannot read a
-    /// root process's arguments itself (KERN_PROCARGS2 is refused under mobile).
-    static func fridaServerVerdict(sessionID: String?) async -> SystemAccessEnvelope {
-        await run(action: "frida_verdict", payload: [:], sessionID: sessionID)
-    }
-
     static func run(action: String, payload: [String: Any], sessionID: String?, requiredMode: SystemAccessMode? = nil) async -> SystemAccessEnvelope {
         guard let effectiveMode = SystemAccessSettings.mode(for: sessionID) else {
             return SystemAccessEnvelope(value: ["ok": false, "code": "session_access_disabled", "error": "本会话未开启系统目录访问。"])

@@ -220,7 +220,6 @@
 		E5CKB0001 /* CookieBackupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CKB0002 /* CookieBackupStore.swift */; };
 		E5CR00001 /* ShellCommandRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CR00011 /* ShellCommandRingBuffer.swift */; };
 		E5CR00002 /* CrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CR00012 /* CrashReporter.swift */; };
-		E5FR00001 /* FridaCoreBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = E5FR00011 /* FridaCoreBridge.m */; };
 		E5CR00003 /* CrashSignalHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = E5CR00013 /* CrashSignalHandler.m */; };
 		E5D00001 /* ProviderTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D00011 /* ProviderTypes.swift */; };
 		E5D00002 /* ProviderInstance.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D00012 /* ProviderInstance.swift */; };
@@ -261,7 +260,6 @@
 		D1C700000000000000000003 /* OrbEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000013 /* OrbEngine.swift */; };
 		D1C700000000000000000004 /* OrbPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000014 /* OrbPresets.swift */; };
 		D1C700000000000000000005 /* ThinkingOrb.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000015 /* ThinkingOrb.swift */; };
-		D1C700000000000000000006 /* BundledSkillCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000016 /* BundledSkillCatalog.swift */; };
 		D1C700000000000000000007 /* ThinkingOrbs-THIRD-PARTY-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = D1C700000000000000000017 /* ThinkingOrbs-THIRD-PARTY-LICENSE.txt */; };
 		E5F000001 /* ISHExecutionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F000011 /* ISHExecutionCoordinator.swift */; };
 		E5F000002 /* MinisFsRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F000012 /* MinisFsRouter.swift */; };
@@ -957,7 +955,6 @@
 		E5CKB0002 /* CookieBackupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CookieBackupStore.swift; sourceTree = "<group>"; };
 		E5CR00011 /* ShellCommandRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellCommandRingBuffer.swift; sourceTree = "<group>"; };
 		E5CR00012 /* CrashReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReporter.swift; sourceTree = "<group>"; };
-		E5FR00011 /* FridaCoreBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FridaCoreBridge.m; sourceTree = "<group>"; };
 		E5CR00013 /* CrashSignalHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CrashSignalHandler.m; sourceTree = "<group>"; };
 		E5CR00014 /* CrashSignalHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CrashSignalHandler.h; sourceTree = "<group>"; };
 		E5D00011 /* ProviderTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderTypes.swift; sourceTree = "<group>"; };
@@ -1000,7 +997,6 @@
 		D1C700000000000000000013 /* OrbEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbEngine.swift; sourceTree = "<group>"; };
 		D1C700000000000000000014 /* OrbPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbPresets.swift; sourceTree = "<group>"; };
 		D1C700000000000000000015 /* ThinkingOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingOrb.swift; sourceTree = "<group>"; };
-		D1C700000000000000000016 /* BundledSkillCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkillCatalog.swift; sourceTree = "<group>"; };
 		D1C700000000000000000017 /* ThinkingOrbs-THIRD-PARTY-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "ThinkingOrbs-THIRD-PARTY-LICENSE.txt"; sourceTree = "<group>"; };
 		E5F000011 /* ISHExecutionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ISHExecutionCoordinator.swift; sourceTree = "<group>"; };
 		E5F000012 /* MinisFsRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinisFsRouter.swift; sourceTree = "<group>"; };
@@ -1916,7 +1912,6 @@
 		E5CR00100 /* Diagnostics */ = {
 			isa = PBXGroup;
 			children = (
-				E5FR00011 /* FridaCoreBridge.m */,
 				A7F000000000000000000012 /* PrivilegedHelperBridge.m */,
 				A7F000000000000000000011 /* HelperProcessRunner.c */,
 				E5BRM0011 /* BrowserResourceMonitor.swift */,
@@ -2028,7 +2023,6 @@
 				D1C700000000000000000013 /* OrbEngine.swift */,
 				D1C700000000000000000014 /* OrbPresets.swift */,
 				D1C700000000000000000015 /* ThinkingOrb.swift */,
-				D1C700000000000000000016 /* BundledSkillCatalog.swift */,
 				D1C700000000000000000017 /* ThinkingOrbs-THIRD-PARTY-LICENSE.txt */,
 				AADDA9E02F6ECCF400B66649 /* ThumbnailCache.swift */,
 			);
@@ -2971,7 +2965,6 @@
 				D1C700000000000000000003 /* OrbEngine.swift in Sources */,
 				D1C700000000000000000004 /* OrbPresets.swift in Sources */,
 				D1C700000000000000000005 /* ThinkingOrb.swift in Sources */,
-				D1C700000000000000000006 /* BundledSkillCatalog.swift in Sources */,
 				E51000002 /* ContentView.swift in Sources */,
 				A15000000000000000000003 /* LegacyContentView.swift in Sources */,
 				E5SRS0001 /* SessionRefreshScheduler.swift in Sources */,
@@ -3169,7 +3162,6 @@
 				E5RSD0001 /* ResourceDiagnostics.swift in Sources */,
 				E5PPB0001 /* PerfProbe.swift in Sources */,
 				E5CR00002 /* CrashReporter.swift in Sources */,
-				E5FR00001 /* FridaCoreBridge.m in Sources */,
 				E5CR00003 /* CrashSignalHandler.m in Sources */,
 				E5KVC0003 /* SafeKVCSetTrue.m in Sources */,
 				E5F100001 /* NetworkMonitor.swift in Sources */,

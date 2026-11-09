@@ -391,15 +391,12 @@ Do not create extraneous files: README.md, INSTALLATION_GUIDE.md, CHANGELOG.md, 
             _ = try? importSkill(content: Self.skillCreatorContent, source: .bundled)
         }
 
-        let ictrlId = "ictrl-phone-control"
-        if let existing = skills.first(where: { $0.id == ictrlId }) {
-            // Never overwrite a user-imported skill with the bundled copy.
-            if existing.importSource == .bundled,
-               existing.version < BundledSkillCatalog.ictrlVersion {
-                _ = try? importSkill(content: BundledSkillCatalog.ictrlContent, source: .bundled)
-            }
-        } else {
-            _ = try? importSkill(content: BundledSkillCatalog.ictrlContent, source: .bundled)
+        // The bundled phone-control runner integration was removed. Drop the
+        // skill an earlier build installed; a user-imported copy with the
+        // same id is left untouched.
+        if let legacy = skills.first(where: { $0.id == "ictrl-phone-control" }),
+           legacy.importSource == .bundled {
+            deleteSkill(legacy.id)
         }
     }
 

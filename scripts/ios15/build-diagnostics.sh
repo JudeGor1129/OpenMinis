@@ -30,26 +30,6 @@ PROJECT=src/ios/Minis.xcodeproj/project.pbxproj
 cp "$PROJECT" ci-logs/project-before-ios15.pbxproj
 sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 16\.0;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' "$PROJECT"
 grep -n 'IPHONEOS_DEPLOYMENT_TARGET' "$PROJECT" | tee ci-logs/deployment-targets.txt
-# Guarded Frida uses the pinned devkit, but local status contains no SDK calls
-# or socket probes. Native-metadata preflight must run before any initialization.
-# Do not globally override OTHER_LDFLAGS (extensions must not load Frida Core).
-[[ -f deps/include/frida-core.h && -f deps/libs/libfrida-core.a ]] || {
-  echo 'error: verified Frida SDK missing' >&2; exit 1;
-}
-sed -i '' '/"-lfakefs",/a\
-                    "-lfrida-core",\
-                    "-lbsm",\
-                    "-ldl",\
-                    "-lm",\
-                    "-lresolv",\
-                    "-lpthread",\
-                    "-framework",\
-                    "Security",\
-                    "-framework",\
-                    "CoreFoundation",\
-                    "-framework",\
-                    "Foundation",\
-' "$PROJECT"
 
 # Disposable CI checkout: use the exact Run15 arm64 kit. The pinned, reviewed
 # fixed-fixture evidence authorizes the verification bit for this validation App
