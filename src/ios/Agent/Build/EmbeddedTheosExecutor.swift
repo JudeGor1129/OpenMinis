@@ -159,7 +159,9 @@ enum EmbeddedTheosExecutor {
                 }
                 let outputName = plan.target.kind == .tweak ? "\(plan.target.name).dylib" : plan.target.name
                 let output = runRoot.appendingPathComponent("\(arch.rawValue)-\(outputName)")
-                var linkArguments = ["-arch", arch.rawValue, "-no_fixup_chains", "-adhoc_codesign"]
+                var linkArguments = ["-arch", arch.rawValue]
+                if arch == .arm64 { linkArguments.append("-no_fixup_chains") }
+                linkArguments.append("-adhoc_codesign")
                 if let entitlementURL {
                     linkArguments += ["-adhoc_codesign_entitlements", entitlementURL.path]
                 }
@@ -197,7 +199,8 @@ enum EmbeddedTheosExecutor {
                 let signature: EmbeddedCodeSignatureReport
                 do {
                     artifact = try EmbeddedAdapterArtifact.inspect(data, name: outputName,
-                        filetype: filetype, architecture: arch, requireClassicFixups: filetype == 6)
+                        filetype: filetype, architecture: arch,
+                        fixupPolicy: filetype == 6 ? .xcodeCompatible : .any)
                     signature = try EmbeddedCodeSignature.verify(data,
                         expectedEntitlements: entitlementBytes)
                     guard signature.adHoc else {

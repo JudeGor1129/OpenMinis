@@ -64,7 +64,7 @@ enum EmbeddedToolchainProjectPublisher {
         guard safeDylibFilename(name) else { throw EmbeddedToolchainProjectPublisherError.unsafeName }
         guard data.count <= maxDylibBytes else { throw EmbeddedToolchainProjectPublisherError.outputTooLarge }
         guard !cancellation.isCancelled else { throw CancellationError() }
-        do { _ = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: 6, requireClassicFixups: true) }
+        do { _ = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: 6, fixupPolicy: .classic) }
         catch { throw EmbeddedToolchainProjectPublisherError.invalidMachO }
         return try publishVerifiedBytes(data, named: name, architecture: "arm64", filetype: 6,
             kind: "dylib", maximumBytes: maxDylibBytes, projectRoot: projectRoot,

@@ -116,11 +116,19 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Xcode's ld64 emits classic dyld info for arm64 and forces chained
+    /// fixups for arm64e. The embedded driver must match that split.
+    enum FixupPolicy: Sendable {
+        case any
+        case classic
+        case xcodeCompatible
+    }
+
     /// Inspect one thin target slice. Never rewrite headers to claim a target.
     /// Validate command/segment bounds; never load or execute generated code.
     static func inspect(_ data: Data, name: String, filetype: UInt32,
                         architecture: EmbeddedToolchainArchitecture = .arm64,
-                        requireClassicFixups: Bool = false) throws -> Self {
+                        fixupPolicy: FixupPolicy = .any) throws -> Self {
         func invalid(_ rule: String = "structure", line: Int = #line) -> EmbeddedAdapterError {
             .poisoned("Mach-O output rejected: \(rule) (check_line=\(line))")
         }
@@ -291,9 +299,20 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             cursor += size
         }
         guard cursor == end, hasSegment else { throw invalid() }
-        if requireClassicFixups {
+        switch fixupPolicy {
+        case .any:
+            break
+        case .classic:
             guard hasClassicDyldInfo, !hasChainedFixups else {
                 throw invalid("classic_dyld_info_required_and_chained_fixups_forbidden")
+            }
+        case .xcodeCompatible:
+            if architecture == .arm64e {
+                guard hasChainedFixups else { throw invalid("arm64e_chained_fixups_required") }
+            } else {
+                guard hasClassicDyldInfo, !hasChainedFixups else {
+                    throw invalid("arm64_classic_dyld_info_required")
+                }
             }
         }
         for (start, count) in symbolRanges {
@@ -888,9 +907,10 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
                     guard !cancellation.isCancelled else { result.state = "cancelled"; break operationLoop }
                     // Reserve the lifetime link budget before invoking ld64.
                     links += 1
-                    let linkerArguments = ["-arch", architecture.rawValue, "-no_fixup_chains", "-dylib",
-                                           "-platform_version", "ios", "15.0", "16.5",
-                                           "-install_name", installName, "-o", partial.path]
+                    var linkerArguments = ["-arch", architecture.rawValue]
+                    if architecture == .arm64 { linkerArguments.append("-no_fixup_chains") }
+                    linkerArguments += ["-dylib", "-platform_version", "ios", "15.0", "16.5",
+                                        "-install_name", installName, "-o", partial.path]
                     call = bridge.link(linkerArguments +
                                        objects.map { root.appendingPathComponent($0).path } + runtimeInputs)
                 }
@@ -909,7 +929,7 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
                 }
                 let data = try boundedRead(partial)
                 let artifact = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: type,
-                    architecture: architecture, requireClassicFixups: type == 6)
+                    architecture: architecture, fixupPolicy: type == 6 ? .xcodeCompatible : .any)
                 if captureDylib && type == 6 { result.capturedDylibData = data }
                 try fm.moveItem(at: partial, to: root.appendingPathComponent(name))
                 produced[name] = artifact.sha256

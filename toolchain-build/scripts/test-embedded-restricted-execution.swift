@@ -163,8 +163,9 @@ enum RestrictedExecutionContracts {
         // A distinct, valid old package makes accidental replacement observable.
         var oldArm64 = MachOFixture.image(filetype: 6, installName: "@rpath/" + metadata.dylibName)
         oldArm64[oldArm64.count - 1] = 0
-        var oldArm64e = oldArm64
-        MachOFixture.patch(&oldArm64e, 8, 0x80000002)
+        var oldArm64e = MachOFixture.image(filetype: 6, installName: "@rpath/" + metadata.dylibName,
+                                           arm64e: true)
+        oldArm64e[oldArm64e.count - 1] = 0
         let oldFat = try EmbeddedToolchainUniversalBinary.merge(
             arm64: oldArm64, arm64e: oldArm64e, name: metadata.dylibName)
         let oldDeb = try EmbeddedToolchainDebPackage.build(dylib: oldFat, metadata: metadata)

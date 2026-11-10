@@ -29,8 +29,8 @@ enum PackageContracts {
             version: "1.0", maintainer: "Contract tests", description: "Synthetic validation fixture, not installable evidence",
             tweakName: "ContractTweak", bundleIDs: ["com.minis.contracttarget"])
         let arm64 = MachOFixture.image(filetype: 6, installName: "@rpath/" + m.dylibName, includesObjC: true)
-        var arm64e = arm64
-        MachOFixture.patch(&arm64e, 8, 0x80000002)
+        let arm64e = MachOFixture.image(filetype: 6, installName: "@rpath/" + m.dylibName,
+                                        includesObjC: true, arm64e: true)
         _ = try EmbeddedAdapterArtifact.inspect(arm64e, name: m.dylibName, filetype: 6, architecture: .arm64e)
         checks += 1
         try rejects("arm64e silently downgraded") {
@@ -134,6 +134,8 @@ enum PackageContracts {
         try require(calls.count == 4 && calls[0].contains("arm64-apple-ios15.0") && calls[2].contains("arm64e-apple-ios15.0"), "CC1 triples bound to each target")
         try require(calls[0].contains("apple-a7") && calls[2].contains("apple-a12") && calls[2].contains("-fptrauth-returns"), "arm64e CPU/return authentication flags")
         try require(calls[1].contains("arm64") && calls[3].contains("arm64e") && fake.snapshot().objcStubs == 2, "ld64 targets and two ObjC stub copies")
+        try require(calls[1].contains("-no_fixup_chains") && !calls[3].contains("-no_fixup_chains"),
+                    "Xcode-compatible fixup split: arm64 classic, arm64e chained")
         try require(execution.reports.allSatisfy {
             !$0.providerExecutable && !$0.outputExecutionAttempted && $0.temporaryOutputsRemoved && $0.capturedDylibData == nil
         }, "completed reports expose no separate thin binary capability")

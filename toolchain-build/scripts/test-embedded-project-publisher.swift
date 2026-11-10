@@ -99,8 +99,7 @@ enum ProjectPublisherContracts {
         let metadata = EmbeddedDebMetadata(packageID: "com.minis.publisher", name: "Publisher contract",
             version: "1.0", maintainer: "Contract", description: "Synthetic rootless package",
             tweakName: "project", bundleIDs: ["com.example.target"])
-        var arm64e = MachOFixture.image(filetype: 6, installName: "@rpath/project.dylib")
-        MachOFixture.patch(&arm64e, 8, 0x80000002)
+        let arm64e = MachOFixture.image(filetype: 6, installName: "@rpath/project.dylib", arm64e: true)
         let fat = try EmbeddedToolchainUniversalBinary.merge(
             arm64: bytes, arm64e: arm64e, name: metadata.dylibName)
         let fatPublished = try EmbeddedToolchainProjectPublisher.publishVerifiedUniversalDylib(

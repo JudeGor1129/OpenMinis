@@ -164,19 +164,23 @@ enum MachOFixture {
         data.append(Data(repeating: 0, count: 40))
         return data
     }
+    static func chainedFixupsCommand(offset: UInt32, bytes: UInt32) -> Data {
+        [UInt32(0x80000034), 16, offset, bytes].reduce(into: Data()) { $0.append(u32($1)) }
+    }
     // Thin arm64, actual bounded LC_SEGMENT_64 + section_64 + ARM64 payload.
     // Dylibs also have the sole libSystem dependency and matching @rpath ID.
-    static func image(filetype: UInt32, installName: String = "", includesObjC: Bool = false) -> Data {
+    static func image(filetype: UInt32, installName: String = "", includesObjC: Bool = false,
+                      arm64e: Bool = false) -> Data {
         let payload = Data([0xc0, 0x03, 0x5f, 0xd6, 0x1f, 0x20, 0x03, 0xd5])
         let extra: Data
         if filetype == 6 {
             let objc = includesObjC ? dylibCommand(0xc, "/usr/lib/libobjc.A.dylib") : Data()
             extra = dylibCommand(0xc, "/usr/lib/libSystem.B.dylib") + objc + dylibCommand(0xd, installName)
         } else { extra = Data() }
-        // Mirror the pinned iOS ld64: include cryptid=0 metadata even though
-        // no file encryption is performed. Build210's fake omitted this.
-        let dyldInfo = filetype == 6 ? classicDyldInfoCommand() : Data()
-        let commandBytes = 152 + extra.count + dyldInfo.count + (filetype == 6 ? 24 : 0)
+        // Xcode ld64 emits classic dyld info for arm64 and chained fixups for arm64e.
+        let dyldInfo = filetype == 6 && !arm64e ? classicDyldInfoCommand() : Data()
+        let chained = filetype == 6 && arm64e ? chainedFixupsCommand(offset: 0, bytes: 8) : Data()
+        let commandBytes = 152 + extra.count + dyldInfo.count + chained.count + (filetype == 6 ? 24 : 0)
         let offset = UInt32(32 + commandBytes)
         var segment = u32(0x19) + u32(152) + name(filetype == 1 ? "" : "__TEXT")
         segment.append(u64(0)); segment.append(u64(UInt64(payload.count)))
@@ -186,9 +190,11 @@ enum MachOFixture {
         for value in [offset, 2, 0, 0, 0x80000400, 0, 0, 0] { section.append(u32(value)) }
         segment.append(section)
         var data = Data()
-        for value in [0xfeedfacf, 0x0100000c, 0, filetype, filetype == 6 ? (includesObjC ? 6 : 5) : 1,
-                              UInt32(commandBytes), filetype == 6 ? 0x85 : 0, 0] { data.append(u32(value)) }
+        for value in [0xfeedfacf, 0x0100000c, arm64e ? 0x80000002 : 0, filetype,
+                      filetype == 6 ? (includesObjC ? 6 : 5) : 1,
+                      UInt32(commandBytes), filetype == 6 ? 0x85 : 0, 0] { data.append(u32(value)) }
         data.append(segment); data.append(extra); data.append(dyldInfo)
+        if filetype == 6 && arm64e { data.append(chainedFixupsCommand(offset: offset, bytes: 8)) }
         if filetype == 6 { data.append(encryptionCommand(offset: offset, bytes: UInt32(payload.count))) }
         data.append(payload); return data
     }
@@ -289,11 +295,12 @@ final class FakeBridge: EmbeddedAdapterBridge, @unchecked Sendable {
             default:
                 let install = arguments.firstIndex(of: "-install_name").map { arguments[$0 + 1] } ?? ""
                 let hasObjC = linking && arguments.contains { $0.hasSuffix("/libobjc.A.tbd") }
-                var data = MachOFixture.image(filetype: linking ? 6 : 1, installName: install, includesObjC: hasObjC)
+                let isArm64e = linking ? arguments.contains("arm64e") : arguments.contains("arm64e-apple-ios15.0")
                 // Synthetic test fixtures only: the production adapter must
                 // actually compile/link each architecture, never patch headers.
-                let isArm64e = linking ? arguments.contains("arm64e") : arguments.contains("arm64e-apple-ios15.0")
-                if isArm64e && outcome != .downgraded { MachOFixture.patch(&data, 8, 0x80000002) }
+                let data = MachOFixture.image(filetype: linking ? 6 : 1, installName: install,
+                                              includesObjC: hasObjC,
+                                              arm64e: isArm64e && outcome != .downgraded)
                 try data.write(to: output)
             }
             return EmbeddedAdapterCall(status: 0, stdout: "fake output", stderr: "")
@@ -425,11 +432,34 @@ private struct AdapterContracts {
         _ = try EmbeddedAdapterArtifact.inspect(modern, name: "bad.dylib", filetype: 6)
         do {
             _ = try EmbeddedAdapterArtifact.inspect(modern, name: "bad.dylib", filetype: 6,
-                                                     requireClassicFixups: true)
+                                                     fixupPolicy: .classic)
             throw ContractFailure(description: "chained-fixup dylib passed the classic-fixup policy")
         } catch EmbeddedAdapterError.poisoned(let reason) {
             try require(reason.contains("classic_dyld_info_required_and_chained_fixups_forbidden"),
                         "wrong chained-fixup policy rejection: \(reason)")
+        }
+        let xcodeArm64e = MachOFixture.image(filetype: 6, installName: "@rpath/bad.dylib", arm64e: true)
+        _ = try EmbeddedAdapterArtifact.inspect(xcodeArm64e, name: "bad.dylib", filetype: 6,
+                                                 architecture: .arm64e, fixupPolicy: .xcodeCompatible)
+        var classicArm64e = MachOFixture.image(filetype: 6, installName: "@rpath/bad.dylib")
+        MachOFixture.patch(&classicArm64e, 8, 0x80000002)
+        do {
+            _ = try EmbeddedAdapterArtifact.inspect(classicArm64e, name: "bad.dylib", filetype: 6,
+                                                     architecture: .arm64e, fixupPolicy: .xcodeCompatible)
+            throw ContractFailure(description: "classic arm64e dylib passed the Xcode-compatible policy")
+        } catch EmbeddedAdapterError.poisoned(let reason) {
+            try require(reason.contains("arm64e_chained_fixups_required"),
+                        "wrong arm64e classic rejection: \(reason)")
+        }
+        var chainedArm64 = xcodeArm64e
+        MachOFixture.patch(&chainedArm64, 8, 0)
+        do {
+            _ = try EmbeddedAdapterArtifact.inspect(chainedArm64, name: "bad.dylib", filetype: 6,
+                                                     fixupPolicy: .xcodeCompatible)
+            throw ContractFailure(description: "chained arm64 dylib passed the Xcode-compatible policy")
+        } catch EmbeddedAdapterError.poisoned(let reason) {
+            try require(reason.contains("arm64_classic_dyld_info_required"),
+                        "wrong arm64 chained rejection: \(reason)")
         }
         checks += 1
         let badLinkedit = MachOFixture.adding(MachOFixture.u32(0x26) + MachOFixture.u32(16) +

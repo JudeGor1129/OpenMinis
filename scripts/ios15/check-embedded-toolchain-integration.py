@@ -94,11 +94,13 @@ require('"-adhoc_codesign"' in theos_executor and
         "EmbeddedCodeSignature.verify" in theos_executor,
         "embedded Theos executor must request and independently verify ad-hoc signatures")
 require('"-no_fixup_chains"' in theos_executor and
-        'requireClassicFixups: filetype == 6' in theos_executor,
-        "embedded Theos dylibs must request and verify classic dyld fixups")
+        'if arch == .arm64 { linkArguments.append("-no_fixup_chains") }' in theos_executor and
+        'fixupPolicy: filetype == 6 ? .xcodeCompatible : .any' in theos_executor,
+        "embedded Theos must follow the Xcode arm64-classic/arm64e-chained split")
 require('"-no_fixup_chains"' in adapter and
-        'requireClassicFixups: type == 6' in adapter,
-        "embedded adapter dylibs must request and verify classic dyld fixups")
+        'if architecture == .arm64 { linkerArguments.append("-no_fixup_chains") }' in adapter and
+        'fixupPolicy: type == 6 ? .xcodeCompatible : .any' in adapter,
+        "embedded adapter must follow the Xcode arm64-classic/arm64e-chained split")
 require("expectedEntitlements" in adapter and "entitlements special-slot hash mismatch" in adapter and
         "codeSlotMismatch" in adapter,
         "ad-hoc verification must cover code pages and entitlement special slots")
@@ -151,8 +153,8 @@ require("context.executor" not in theos_provider,
 require("EmbeddedUniversalFileType" in universal and "case executable = 2" in universal and
         "filetype: UInt32 = EmbeddedUniversalFileType.dylib.rawValue" in universal,
         "universal container must carry dylibs and daemon executables without faking slices")
-require("requireClassicFixups: filetype == EmbeddedUniversalFileType.dylib.rawValue" in universal,
-        "universal dylib slices must be checked for classic dyld fixups")
+require("fixupPolicy: filetype == EmbeddedUniversalFileType.dylib.rawValue ? .xcodeCompatible : .any" in universal,
+        "universal dylib slices must follow the Xcode fixup split")
 require("EmbeddedTheosControlMetadata" in deb_package and "EmbeddedTheosLayoutLoader" in deb_package and
         "readBoundedProjectFile" in deb_package and "isSymbolicLink" in deb_package,
         "Theos control/layout inputs must be read through bounded nofollow project reads")

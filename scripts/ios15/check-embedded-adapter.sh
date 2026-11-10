@@ -115,9 +115,10 @@ require('0x2c' in adapter and 'cryptid=0' in adapter and
         'command == 0x2c' in adapter and 'word(cursor + 16) == 0' in adapter and
         'word(cursor + 20) == 0' in adapter and '0x21]' not in adapter,
         'pinned iOS dylib must admit only bounded LC_ENCRYPTION_INFO_64 with cryptid=0')
-require('requireClassicFixups' in adapter and 'hasClassicDyldInfo' in adapter and
-        'hasChainedFixups' in adapter and 'classic_dyld_info_required_and_chained_fixups_forbidden' in adapter,
-        'generated dylibs must be checked for classic dyld info and reject chained fixups')
+require('fixupPolicy' in adapter and 'xcodeCompatible' in adapter and
+        'hasClassicDyldInfo' in adapter and 'hasChainedFixups' in adapter and
+        'arm64e_chained_fixups_required' in adapter and 'arm64_classic_dyld_info_required' in adapter,
+        'generated dylibs must follow the Xcode arm64-classic/arm64e-chained split')
 for rule in ('encrypted_output_cryptid_nonzero', 'encryption_reserved_padding_nonzero',
              'encryption_range_outside_payload', 'encryption_range_outside_text_segment',
              'encryption_command_size_or_duplicate'):
