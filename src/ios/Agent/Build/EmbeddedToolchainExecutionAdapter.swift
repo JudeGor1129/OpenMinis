@@ -909,7 +909,8 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
                     links += 1
                     var linkerArguments = ["-arch", architecture.rawValue]
                     if architecture == .arm64 { linkerArguments.append("-no_fixup_chains") }
-                    linkerArguments += ["-dylib", "-platform_version", "ios", "15.0", "16.5",
+                    linkerArguments += ["-dylib", "-platform_version", "ios",
+                                        architecture == .arm64e ? "14.0" : "15.0", "16.5",
                                         "-install_name", installName, "-o", partial.path]
                     call = bridge.link(linkerArguments +
                                        objects.map { root.appendingPathComponent($0).path } + runtimeInputs)

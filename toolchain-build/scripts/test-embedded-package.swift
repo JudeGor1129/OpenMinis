@@ -136,6 +136,8 @@ enum PackageContracts {
         try require(calls[1].contains("arm64") && calls[3].contains("arm64e") && fake.snapshot().objcStubs == 2, "ld64 targets and two ObjC stub copies")
         try require(calls[1].contains("-no_fixup_chains") && !calls[3].contains("-no_fixup_chains"),
                     "Xcode-compatible fixup split: arm64 classic, arm64e chained")
+        try require(calls[1].contains("15.0") && calls[3].contains("14.0"),
+                    "arm64e must link with 14.0 so ld64 selects ARM64E chain format 1")
         try require(execution.reports.allSatisfy {
             !$0.providerExecutable && !$0.outputExecutionAttempted && $0.temporaryOutputsRemoved && $0.capturedDylibData == nil
         }, "completed reports expose no separate thin binary capability")

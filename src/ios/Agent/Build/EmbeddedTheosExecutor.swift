@@ -159,6 +159,7 @@ enum EmbeddedTheosExecutor {
                 }
                 let outputName = plan.target.kind == .tweak ? "\(plan.target.name).dylib" : plan.target.name
                 let output = runRoot.appendingPathComponent("\(arch.rawValue)-\(outputName)")
+                let linkMinimumIOS = arch == .arm64e ? "14.0" : minimumIOS
                 var linkArguments = ["-arch", arch.rawValue]
                 if arch == .arm64 { linkArguments.append("-no_fixup_chains") }
                 linkArguments.append("-adhoc_codesign")
@@ -168,7 +169,7 @@ enum EmbeddedTheosExecutor {
                 linkArguments += plan.target.kind == .tweak
                     ? ["-dylib", "-install_name", plan.target.installName ?? "@rpath/\(plan.target.name).dylib"]
                     : ["-execute", "-e", "_main"]
-                linkArguments += ["-syslibroot", sysroot, "-platform_version", "ios", minimumIOS, "16.5",
+                linkArguments += ["-syslibroot", sysroot, "-platform_version", "ios", linkMinimumIOS, "16.5",
                                   "-o", output.path]
                 linkArguments += objects
                 for framework in plan.target.frameworks { linkArguments += ["-framework", framework] }

@@ -95,10 +95,12 @@ require('"-adhoc_codesign"' in theos_executor and
         "embedded Theos executor must request and independently verify ad-hoc signatures")
 require('"-no_fixup_chains"' in theos_executor and
         'if arch == .arm64 { linkArguments.append("-no_fixup_chains") }' in theos_executor and
+        'let linkMinimumIOS = arch == .arm64e ? "14.0" : minimumIOS' in theos_executor and
         'fixupPolicy: filetype == 6 ? .xcodeCompatible : .any' in theos_executor,
         "embedded Theos must follow the Xcode arm64-classic/arm64e-chained split")
 require('"-no_fixup_chains"' in adapter and
         'if architecture == .arm64 { linkerArguments.append("-no_fixup_chains") }' in adapter and
+        'architecture == .arm64e ? "14.0" : "15.0"' in adapter and
         'fixupPolicy: type == 6 ? .xcodeCompatible : .any' in adapter,
         "embedded adapter must follow the Xcode arm64-classic/arm64e-chained split")
 require("expectedEntitlements" in adapter and "entitlements special-slot hash mismatch" in adapter and
