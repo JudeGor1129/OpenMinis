@@ -21,6 +21,9 @@ def data_tar(members):
     if key.endswith(".xz"):
         import lzma
         return key, lzma.decompress(body)
+    if key.endswith(".lzma"):
+        import lzma
+        return key, lzma.decompress(body, format=lzma.FORMAT_ALONE)
     if key.endswith(".gz"):
         import gzip
         return key, gzip.decompress(body)
