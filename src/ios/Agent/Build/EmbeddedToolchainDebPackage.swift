@@ -143,6 +143,23 @@ struct EmbeddedTheosDebEntry: Equatable, Sendable {
     let mode: Int
 }
 
+/// Expected generated payloads, bound to the validated compile plans rather than
+/// inferred from build-report labels. Layout assets are outside this scope.
+struct EmbeddedTheosSigningRequirement: Equatable, Sendable {
+    let path: String
+    let name: String
+    let filetype: UInt32
+    let entitlements: Data?
+}
+
+struct EmbeddedTheosSignedSlice: Equatable, Sendable {
+    let path: String
+    let architecture: String
+    let identifier: String
+    let codeSlots: Int
+    let entitlementsPresent: Bool
+}
+
 enum EmbeddedTheosDebPackageError: Error, Equatable, LocalizedError, Sendable {
     case invalidMetadata
     case unsafePath(String)
@@ -261,6 +278,43 @@ enum EmbeddedTheosDebPackage {
             }
         }
         return payload.map(\.path)
+    }
+
+    /// Independently verifies the actual FAT slices read back from the finished
+    /// DEB. This proves generated Mach-O signatures, not a DEB-container signature,
+    /// developer identity, trust-cache admission or successful device loading.
+    static func verifySignatures(_ deb: Data,
+                                 requirements: [EmbeddedTheosSigningRequirement]) throws -> [EmbeddedTheosSignedSlice] {
+        _ = try inspect(deb)
+        guard !requirements.isEmpty, requirements.count <= 32,
+              Set(requirements.map(\.path)).count == requirements.count else {
+            throw EmbeddedTheosDebPackageError.invalidPackage("signature requirements are empty or duplicated")
+        }
+        let archives = try PackageArchive.readAr(deb)
+        let payload = try PackageArchive.readTar(archives[2].1)
+        var evidence: [EmbeddedTheosSignedSlice] = []
+        for requirement in requirements {
+            try validate(requirement.path)
+            let matches = payload.filter { !$0.directory && $0.path == requirement.path }
+            guard matches.count == 1 else {
+                throw EmbeddedTheosDebPackageError.invalidPackage("signed payload missing or duplicated: \(requirement.path)")
+            }
+            let bytes = matches[0].bytes
+            let universal = try EmbeddedToolchainUniversalBinary.inspect(bytes,
+                name: requirement.name, filetype: requirement.filetype)
+            for slice in universal.slices {
+                let thin = Data(bytes[slice.offset..<(slice.offset + slice.bytes)])
+                let signature = try EmbeddedCodeSignature.verify(thin,
+                    expectedEntitlements: requirement.entitlements)
+                guard signature.adHoc else {
+                    throw EmbeddedTheosDebPackageError.invalidPackage("generated payload is not ad-hoc signed: \(requirement.path)")
+                }
+                evidence.append(EmbeddedTheosSignedSlice(path: requirement.path,
+                    architecture: slice.architecture, identifier: signature.identifier,
+                    codeSlots: signature.codeSlots, entitlementsPresent: signature.entitlementsPresent))
+            }
+        }
+        return evidence
     }
 
     private static func validate(_ path: String) throws {

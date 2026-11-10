@@ -180,6 +180,8 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
         let architectures: [String]
         let payloadPaths: [String]
         let targetKinds: [String]
+        let signingRequirements: [EmbeddedTheosSigningRequirement]
+        let signedSlices: [EmbeddedTheosSignedSlice]
     }
 
     func availability(for context: BuildProviderContext) async -> BuildProviderAvailability {
@@ -271,7 +273,8 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
                 let published = try await Task.detached(priority: .userInitiated) {
                     try EmbeddedToolchainProjectPublisher.publishVerifiedTheosDeb(
                         delivery.deb, named: prepared.control.filename, projectRoot: prepared.root,
-                        verification: { _ = try EmbeddedTheosDebPackage.inspect(delivery.deb) },
+                        verification: { _ = try EmbeddedTheosDebPackage.verifySignatures(
+                            delivery.deb, requirements: delivery.signingRequirements) },
                         cancellation: cancellation)
                 }.value
                 // A committed rename wins a concurrent late cancellation; the publisher
@@ -292,6 +295,8 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
                 metadata["layout_files"] = String(prepared.layout.count)
                 metadata["compile_attempts"] = String(outcome.attempts)
                 metadata["link_count"] = String(outcome.linkCount)
+                metadata["payload_signature"] = "adhoc"
+                metadata["signed_slices"] = String(delivery.signedSlices.count)
                 let execution = BuildCommandExecution(
                     command: "embedded-theos: arm64 + arm64e -> rootless DEB", exitCode: 0,
                     durationSeconds: Date().timeIntervalSince(started),
@@ -372,6 +377,7 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
         var architectures: [String] = []
         var payloadPaths: [String] = []
         var kinds: [String] = []
+        var requirements: [EmbeddedTheosSigningRequirement] = []
         for target in prepared.project.targets {
             guard let byArchitecture = slicesByTarget[target.name],
                   let arm64 = byArchitecture["arm64"], let arm64e = byArchitecture["arm64e"] else {
@@ -392,6 +398,9 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
             let installed = EmbeddedTheosDebPackage.rootlessPrefix + target.installPath
             entries.append(EmbeddedTheosDebEntry(path: installed, bytes: universal, mode: 0o755))
             payloadPaths.append(installed)
+            requirements.append(EmbeddedTheosSigningRequirement(path: installed, name: containerName,
+                filetype: filetype,
+                entitlements: prepared.plans.first { $0.target.name == target.name }?.entitlements))
             kinds.append("\(target.name):\(target.kind.rawValue):\(verified.architectures.joined(separator: "+"))")
             if target.kind == .tweak {
                 guard let filter = prepared.filterPlist else {
@@ -413,7 +422,13 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
         }
         let deb = try EmbeddedTheosDebPackage.build(files: entries, controlText: prepared.control.controlText)
         _ = try EmbeddedTheosDebPackage.inspect(deb)
-        return PackagedDelivery(deb: deb, architectures: architectures, payloadPaths: payloadPaths, targetKinds: kinds)
+        let signedSlices = try EmbeddedTheosDebPackage.verifySignatures(deb, requirements: requirements)
+        guard signedSlices.count == requirements.count * 2,
+              Set(signedSlices.map { "\($0.path)|\($0.architecture)" }).count == signedSlices.count else {
+            throw EmbeddedAdapterError.rejected("final DEB signature evidence is incomplete")
+        }
+        return PackagedDelivery(deb: deb, architectures: architectures, payloadPaths: payloadPaths,
+            targetKinds: kinds, signingRequirements: requirements, signedSlices: signedSlices)
     }
 
     private static func summary(outcome: EmbeddedTheosExecutionOutcome, delivery: PackagedDelivery) -> String {
@@ -434,14 +449,18 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
             VerificationCapability(name: "deb_archive", state: .verified, detail: "ar/control.tar/data.tar inspected in memory; final file read back byte-for-byte"),
             VerificationCapability(name: "rootless_layout", state: .verified, detail: delivery.payloadPaths.joined(separator: ",")),
             VerificationCapability(name: "fat_architectures", state: .verified, detail: delivery.architectures.joined(separator: ",")),
-            VerificationCapability(name: "signature", state: .notApplicable, detail: "build does not sign packages")
+            VerificationCapability(name: "payload_signature", state: .verified,
+                detail: "generated Mach-O payloads verified ad-hoc: " + delivery.signedSlices
+                    .map { "\($0.path)#\($0.architecture)(\($0.codeSlots) slots)" }.joined(separator: ",")),
+            VerificationCapability(name: "deb_container_signature", state: .notApplicable,
+                detail: "the .deb container itself is not CMS or debsig signed; only its Mach-O payloads carry signatures")
         ]
         return ArtifactVerificationResult(path: guestPath, kind: .deb, state: .available,
             exists: true, sizeBytes: Int64(published.bytes), sha256: published.sha256,
             archiveEntries: ["debian-binary", "control.tar", "data.tar"] + delivery.payloadPaths,
             archiveEntryCount: delivery.payloadPaths.count + 3, architectures: delivery.architectures,
-            encryption: nil, signature: "unsigned", debControl: debControl, rootlessPaths: true,
-            rootlessViolations: [], capabilities: capabilities, errors: [])
+            encryption: nil, signature: "ad-hoc (generated Mach-O payloads only)", debControl: debControl,
+            rootlessPaths: true, rootlessViolations: [], capabilities: capabilities, errors: [])
     }
 
     private func failedExecution(_ reason: String, runID: String, started: Date,

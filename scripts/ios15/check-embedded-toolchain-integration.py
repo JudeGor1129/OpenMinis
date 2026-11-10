@@ -174,6 +174,20 @@ require("EmbeddedToolchainProjectPublisher.maxPublishedBytes + 1" in publisher_h
         "the over-budget read-back contract must track the named publication bound")
 require("!targets.contains { $0.kind == .tweak } || !bundleIDs.isEmpty" in models,
         "plan validation must allow daemon-only projects while still requiring tweak filters")
+require("static func verifySignatures(" in deb_package and
+        "EmbeddedCodeSignature.verify(thin" in deb_package and
+        "expectedEntitlements: requirement.entitlements" in deb_package and
+        "signed payload missing or duplicated" in deb_package,
+        "the finished DEB must be re-read and every generated slice signature re-verified")
+require("EmbeddedTheosSigningRequirement(path: installed, name: containerName" in theos_provider and
+        "let signedSlices = try EmbeddedTheosDebPackage.verifySignatures(deb, requirements: requirements)" in theos_provider and
+        "signedSlices.count == requirements.count * 2" in theos_provider and
+        "delivery.deb, requirements: delivery.signingRequirements" in theos_provider,
+        "signature requirements must bind validated compile plans to the published DEB bytes")
+require('signature: "unsigned"' not in theos_provider and
+        '"build does not sign packages"' not in theos_provider and
+        '"payload_signature", state: .verified' in theos_provider,
+        "the build report must describe verified payload signatures instead of claiming an unsigned build")
 print("PASS: embedded_theos product delivery is declarative, verified and publication-gated.")
 
 print("PASS: policy binds the disposable arm64 validation App to the locked kit and fixed-runtime evidence.")
