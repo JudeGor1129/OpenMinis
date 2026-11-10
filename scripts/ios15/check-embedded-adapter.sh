@@ -177,6 +177,23 @@ assert len(data) == fixture['bytes'] and hashlib.sha256(data).hexdigest() == fix
 Path(sys.argv[1]).write_bytes(data)
 print('PASS: nonexecuted real Clang/LLD fixture hash and decompression (not pinned native ld64 evidence).')
 PY
+# Signed fixture is bounded and hash-pinned independently before Swift reads it.
+# Its bytes are inspected only; no generated device code is executed or loaded.
+python3 - "$TMP/signed-fat-fixture.dylib" <<'PY'
+from pathlib import Path
+import base64, hashlib, json, sys, zlib
+fixture = json.loads(Path('toolchain-build/fixtures/adapter-ios15-adhoc-fat.json').read_text())
+expected = '2aabd3e54daaaf74d8c5fd2b9c3b19581ff0639bd0738fcc89b1b8610c03d11c'
+assert fixture['bytes'] == 148432 and fixture['sha256'] == expected
+compressed = base64.b64decode(fixture['data'], validate=True)
+assert len(compressed) <= 4096
+inflater = zlib.decompressobj()
+data = inflater.decompress(compressed, fixture['bytes'] + 1)
+assert inflater.eof and not inflater.unused_data and not inflater.unconsumed_tail
+assert len(data) == fixture['bytes'] and hashlib.sha256(data).hexdigest() == expected
+Path(sys.argv[1]).write_bytes(data)
+print('PASS: nonexecuted signed dual-slice fixture hash and decompression.')
+PY
 if ! command -v swiftc >/dev/null 2>&1; then
   echo 'SKIP: Swift fake-bridge execution (swiftc not found); source policy alone is NOT a behaviour test.'
   if [[ "$require_swift" -eq 1 ]]; then
