@@ -1,0 +1,46 @@
+name: Pet smoke Mach-O comparison
+
+on:
+  push:
+    paths:
+      - 'ci/pet-smoke/**'
+      - 'scripts/ios15/analyze-macho-deb.py'
+      - '.github/workflows/pet-smoke-compare.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Theos and ldid
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install ldid
+          THEOS="$RUNNER_TEMP/theos"
+          git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+          git clone --depth 1 https://github.com/theos/sdks.git "$RUNNER_TEMP/sdks"
+          cp -R "$RUNNER_TEMP"/sdks/iPhoneOS*.sdk "$THEOS/sdks/"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+          echo "$THEOS/bin" >> "$GITHUB_PATH"
+      - name: Build PetSmoke with Apple clang and ld64
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ci/pet-smoke
+          make package FINALPACKAGE=1
+          mkdir -p ../../ci-output
+          cp packages/*.deb ../../ci-output/
+          python3 ../../scripts/ios15/analyze-macho-deb.py ../../ci-output/*.deb \
+            > ../../ci-output/macho-report.json
+          sha256sum ../../ci-output/*.deb | tee ../../ci-output/sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pet-smoke-ci-${{ github.sha }}
+          path: ci-output/
+          if-no-files-found: error

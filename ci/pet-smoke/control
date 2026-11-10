@@ -1,0 +1,9 @@
+Package: com.minis.petsmoke
+Name: Minis Pet Smoke
+Version: 0.1.0-ci
+Architecture: iphoneos-arm64
+Description: Minimal dual-slice embedded-theos verification package.
+Maintainer: Minis Pet Project
+Author: Minis Pet Project
+Section: Tweaks
+Depends: firmware (>= 15.0)
