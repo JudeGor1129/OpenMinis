@@ -13,6 +13,21 @@ def ar_members(data):
         pos += 60 + size + (size & 1)
     return out
 
+def data_tar(members):
+    key = next((k for k in members if k.startswith("data.tar")), None)
+    if key is None:
+        raise SystemExit("missing data.tar member: " + ",".join(sorted(members)))
+    body = members[key]
+    if key.endswith(".xz"):
+        import lzma
+        return key, lzma.decompress(body)
+    if key.endswith(".gz"):
+        import gzip
+        return key, gzip.decompress(body)
+    if key.endswith(".tar"):
+        return key, body
+    raise SystemExit("unsupported archive member: " + key)
+
 def tar_file(tar, suffix):
     pos = 0
     while pos + 512 <= len(tar):
@@ -29,15 +44,23 @@ def tar_file(tar, suffix):
 def thin(sl):
     n = struct.unpack_from("<I", sl, 16)[0]
     cur, cmds = 32, []
+    dyld = None
     for _ in range(n):
         cmd, size = struct.unpack_from("<II", sl, cur)
         cmds.append({"cmd": hex(cmd), "size": size})
+        if cmd == 0x80000022 and size >= 48:
+            f = struct.unpack_from("<IIIIIIIIII", sl, cur + 8)
+            dyld = {"rebaseBytes": f[1], "bindBytes": f[3],
+                    "weakBindBytes": f[5], "lazyBindBytes": f[7],
+                    "exportBytes": f[9]}
         cur += size
     return {
         "subtype": hex(struct.unpack_from("<I", sl, 8)[0]),
         "bytes": len(sl),
         "sha256": hashlib.sha256(sl).hexdigest(),
         "loadCommands": cmds,
+        "classicDyldInfo": dyld,
+        "hasBindOpcodes": bool(dyld and dyld["bindBytes"]),
         "hasDyldInfoOnly": any(c["cmd"] == "0x80000022" for c in cmds),
         "hasChainedFixups": any(c["cmd"] == "0x80000034" for c in cmds),
         "pacibsp": sl.count(bytes.fromhex("7f2303d5")),
@@ -46,7 +69,7 @@ def thin(sl):
 
 def main(path):
     data = pathlib.Path(path).read_bytes()
-    tar = ar_members(data)["data.tar"]
+    tar = data_tar(ar_members(data))[1]
     name, dylib = tar_file(tar, "PetSmoke.dylib")
     magic = struct.unpack_from(">I", dylib, 0)[0]
     slices = []
