@@ -111,13 +111,13 @@ else
   exit 1
 fi
 
-# The lld backend is only needed if linking with lld; we link with ld64. Check it
-# but do not fail, so an ld64-only toolchain can still be produced.
-if [ -f lld/MachO/Arch/ARM64e.cpp ]; then
-  echo "   lld MachO: ARM64e.cpp present"
-else
-  echo "   note: lld MachO ARM64e.cpp absent (fine for ld64-only linking)"
+# LLD is a required library backend from this same patched checkout, not a
+# separately versioned binary. Never publish an ld64-only kit as LLD-capable.
+if [ ! -f lld/MachO/Arch/ARM64e.cpp ] || ! grep -q 'Arch/ARM64e.cpp' lld/MachO/CMakeLists.txt; then
+  echo "!! patched lld MachO arm64e backend missing" >&2
+  exit 1
 fi
+echo "   lld MachO: patched ARM64e.cpp is a build input"
 
 # ---------------------------------------------------------------------------
 # 3. Native tablegen (must exist before any cross build)
@@ -162,7 +162,12 @@ CROSS_CMAKE=(
   -DCMAKE_OSX_DEPLOYMENT_TARGET="$LLVM_MIN_IOS"
   -DLLVM_TABLEGEN="$HOST_TBLGEN"
   -DCLANG_TABLEGEN="$HOST_CLANG_TBLGEN"
-  -DLLVM_ENABLE_PROJECTS=clang
+  '-DLLVM_ENABLE_PROJECTS=clang;lld'
+  -DBUILD_SHARED_LIBS=OFF
+  -DLLVM_BUILD_LLVM_DYLIB=OFF
+  -DLLVM_LINK_LLVM_DYLIB=OFF
+  -DLLD_BUILD_TOOLS=OFF
+  -DLLD_INCLUDE_TESTS=OFF
   -DLLVM_TARGETS_TO_BUILD=AArch64
   -DLLVM_ENABLE_ASSERTIONS=OFF
   -DLLVM_ENABLE_PIC=ON
@@ -204,8 +209,11 @@ for ARCH in $ARCHS; do
   echo "==> configuring LLVM for $ARCH -> $ARCH_BUILD"
   cmake -S llvm -B "$ARCH_BUILD" "${CROSS_CMAKE[@]}" \
     -DCMAKE_OSX_ARCHITECTURES="$ARCH"
-  echo "==> building clang+LLVM for $ARCH (long step)"
+  echo "==> building clang+LLVM+LLD for $ARCH (long step)"
   cmake --build "$ARCH_BUILD" -j "$JOBS"
+  # Explicit targets are essential: LLVM_BUILD_TOOLS=OFF must never let an
+  # apparently successful build omit the libraries we promise in the kit.
+  cmake --build "$ARCH_BUILD" -j "$JOBS" --target lldMachO lldCommon
   SLICE_DIRS+=("$ARCH_BUILD")
   df -h "$WORK" || true
 done
@@ -251,24 +259,50 @@ fi
 # separate outputs; a fat archive of two same-cputype slices is ambiguous and
 # more trouble than it is worth for a library linked into one app.
 # ---------------------------------------------------------------------------
-LLVM_COMMIT="$LLVM_COMMIT" LLVM_MIN_IOS="$LLVM_MIN_IOS" \
+LLVM_COMMIT="$LLVM_COMMIT" LLVM_MIN_IOS="$LLVM_MIN_IOS" ARM64E_OK="$ARM64E_OK" SKIP_LD64="${SKIP_LD64:-false}" \
 python3 - "$BUILD" "$ARCHS" "$WORK" <<'PY'
-import hashlib, json, os, subprocess, sys
+import hashlib, json, os, re, runpy, subprocess, sys
+from pathlib import Path
 
 build, archs, work = sys.argv[1], sys.argv[2].split(), sys.argv[3]
+verifier = runpy.run_path(str(Path(work).parent / "scripts/verify-toolchain-manifest.py"))
 
 def component_libs(slice_dir):
-    """LLVM/clang archives, keyed by basename, in a stable link order."""
+    """Real built LLD/clang/LLVM archives; never synthesize a component name."""
     found = {}
     for root, _dirs, files in os.walk(slice_dir):
         for f in files:
-            if f.endswith(".a") and (f.startswith("libclang") or f.startswith("libLLVM")):
+            if f.endswith(".a") and (f.startswith("libclang") or f.startswith("libLLVM") or f in ("liblldMachO.a", "liblldCommon.a")):
+                if f in found:
+                    raise SystemExit(f"ambiguous component archive: {f} in {slice_dir}")
                 found[f] = os.path.join(root, f)
-    # libclang* before libLLVM*; within each, alphabetical. Static link order
-    # matters, and this keeps it deterministic between runs.
-    return [found[k] for k in sorted(found, key=lambda n: (not n.startswith("libclang"), n))]
+    for library in ("lldMachO", "lldCommon"):
+        name = f"lib{library}.a"
+        if name not in found or os.path.getsize(found[name]) == 0:
+            raise SystemExit(f"missing/empty required LLD component: {name} in {slice_dir}")
+        verifier["verify_lld_symbols"](found[name], (library,))
+    # LLD before clang before LLVM; only the two required LLD libraries.
+    return [found[k] for k in sorted(found, key=lambda n: (0 if n == "liblldMachO.a" else 1 if n == "liblldCommon.a" else 2 if n.startswith("libclang") else 3, n))]
 
-manifest = {"schema": 2, "architectures": archs, "artifacts": {}}
+manifest = {"schema": 2, "architectures": archs, "artifacts": {}, "linker_backends": {}}
+# Read the version from every completed cross build, not a hardcoded claim.
+versions = set()
+for arch in archs:
+    config = (Path(work) / f"build-ios-{arch}/include/llvm/Config/llvm-config.h").read_text()
+    parts = [re.search(r"^#define LLVM_VERSION_" + part + r"\s+(\d+)\s*$", config, re.M) for part in ("MAJOR", "MINOR", "PATCH")]
+    if not all(parts):
+        raise SystemExit(f"missing generated LLVM version: {arch}")
+    versions.add(".".join(part[1] for part in parts))
+if len(versions) != 1:
+    raise SystemExit("LLVM versions differ between architecture builds")
+manifest["linker_backends"]["lld_macho"] = {
+    "version": versions.pop(), "tool_lld": 4, "api": "lld::macho::link", "arm64e": True,
+    "llvm_commit": os.environ["LLVM_COMMIT"],
+    "component_libraries": ["lldMachO", "lldCommon"],
+    "archive_by_architecture": {arch: f"libomllvm-{arch}.a" for arch in archs},
+}
+patch_names = ["llvm-arm64e-twork.diff"] if os.environ["ARM64E_OK"] == "1" else ["llvm-pr-188378.diff", "llvm-pr-188638.diff"]
+manifest["llvm_patches"] = {name: hashlib.sha256((Path(work).parent / "deps/patches" / name).read_bytes()).hexdigest() for name in patch_names}
 
 def header_inventory(relative_root):
     base = os.path.join(build, relative_root)
@@ -306,6 +340,7 @@ for arch in archs:
     out = os.path.join(build, f"libomllvm-{arch}.a")
     print(f"[{arch}] merging {len(libs)} archives -> {out}")
     subprocess.run(["xcrun", "libtool", "-static", "-o", out, *libs], check=True)
+    verifier["verify_lld_symbols"](out)
 
     h = hashlib.sha256()
     with open(out, "rb") as fh:
@@ -318,7 +353,13 @@ for arch in archs:
     }
 
 ld64 = os.path.join(build, "libomld64.a")
-if os.path.isfile(ld64):
+if os.environ["SKIP_LD64"] != "true":
+    if not os.path.isfile(ld64) or os.path.getsize(ld64) == 0:
+        raise SystemExit("missing/empty freshly built ld64 archive")
+    cctools_commit = subprocess.check_output(["git", "-C", str(Path(work) / "cctools-port"), "rev-parse", "HEAD"], text=True).strip()
+    manifest["linker_backends"]["ld64"] = {
+        "archive": "libomld64.a", "cctools_commit": cctools_commit, "tapi_shim": True,
+    }
     h = hashlib.sha256()
     with open(ld64, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):

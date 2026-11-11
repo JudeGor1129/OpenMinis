@@ -20,10 +20,10 @@ for ARCH in $ARCHS; do
     [ -f "$WORK/build-ios-$ARCH/tools/clang/include/$HEADER" ] || { echo "Missing generated header: $ARCH/tools/clang/include/$HEADER" >&2; exit 1; }
   done
 done
-for HEADER in llvm/include/llvm/ADT/ArrayRef.h clang/include/clang/Frontend/CompilerInstance.h; do
+for HEADER in llvm/include/llvm/ADT/ArrayRef.h clang/include/clang/Frontend/CompilerInstance.h lld/include/lld/Common/Driver.h lld/include/lld/Common/Version.h lld/include/lld/Common/ErrorHandler.h lld/include/lld/Common/CommonLinkerContext.h; do
   [ -f "$SOURCE/$HEADER" ] || { echo "Missing source header: $HEADER" >&2; exit 1; }
 done
-for LICENSE in llvm/LICENSE.TXT clang/LICENSE.TXT; do
+for LICENSE in llvm/LICENSE.TXT clang/LICENSE.TXT lld/LICENSE.TXT; do
   [ -f "$SOURCE/$LICENSE" ] || { echo "Missing license: $LICENSE" >&2; exit 1; }
 done
 
@@ -57,12 +57,20 @@ trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/common/include" "$STAGE/licenses"
 cp -R "$SOURCE/llvm/include/." "$STAGE/common/include/"
 cp -R "$SOURCE/clang/include/." "$STAGE/common/include/"
+# Copy the whole public LLD include tree: Driver.h's transitive Common headers
+# must match these libraries and LLVM's source/generated headers.
+cp -R "$SOURCE/lld/include/." "$STAGE/common/include/"
 cp "$SOURCE/llvm/LICENSE.TXT" "$STAGE/licenses/LLVM-LICENSE.txt"
 cp "$SOURCE/clang/LICENSE.TXT" "$STAGE/licenses/Clang-LICENSE.txt"
+cp "$SOURCE/lld/LICENSE.TXT" "$STAGE/licenses/LLD-LICENSE.txt"
 for ARCH in $ARCHS; do
   mkdir -p "$STAGE/$ARCH/include"
   cp -R "$WORK/build-ios-$ARCH/include/." "$STAGE/$ARCH/include/"
   cp -R "$WORK/build-ios-$ARCH/tools/clang/include/." "$STAGE/$ARCH/include/"
+  # LLD may configure Version.inc into its build-tree include directory.
+  if [ -d "$WORK/build-ios-$ARCH/tools/lld/include" ]; then
+    cp -R "$WORK/build-ios-$ARCH/tools/lld/include/." "$STAGE/$ARCH/include/"
+  fi
 done
 # Only the export destination is replaced, never the upstream source/build tree.
 rm -rf "$BUILD/dev-headers"

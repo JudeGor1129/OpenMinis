@@ -125,6 +125,30 @@ typedef struct {
 #ifndef OM_TOOLCHAIN_ENABLED
 #define OM_TOOLCHAIN_ENABLED 0
 #endif
+// Separate opt-ins: old LLVM/ld64 kits must not acquire new static references.
+#ifndef OM_TOOLCHAIN_COMPILER_DRIVER_ENABLED
+#define OM_TOOLCHAIN_COMPILER_DRIVER_ENABLED 0
+#endif
+#ifndef OM_TOOLCHAIN_LLD_ENABLED
+#define OM_TOOLCHAIN_LLD_ENABLED 0
+#endif
+#if (OM_TOOLCHAIN_COMPILER_DRIVER_ENABLED || OM_TOOLCHAIN_LLD_ENABLED) && !OM_TOOLCHAIN_ENABLED
+#error "New bridge APIs require OM_TOOLCHAIN_ENABLED and a matching statically linked kit"
+#endif
+
+#if OM_TOOLCHAIN_COMPILER_DRIVER_ENABLED
+#include "clang/Driver/Action.h"
+#include "clang/Driver/Compilation.h"
+#include "clang/Driver/Driver.h"
+#include "clang/Driver/Job.h"
+#include "clang/Driver/Tool.h"
+#include "clang/FrontendTool/Utils.h"
+#endif
+#if OM_TOOLCHAIN_LLD_ENABLED
+#include "lld/Common/Driver.h"
+#include "llvm/Support/CrashRecoveryContext.h"
+LLD_HAS_DRIVER(macho)
+#endif
 
 #if OM_TOOLCHAIN_ENABLED
 #include <exception>
@@ -168,14 +192,23 @@ extern "C" void om_ld64_reset_threads(void);
 
 namespace {
 
-/// Guards every LLVM/ld64 entry point. Both runtimes are process-global.
+/// Guards every LLVM/ld64/LLD entry point. Never synchronously re-enter a runtime.
+static char OMQueueKey;
 dispatch_queue_t OMQueue() {
     static dispatch_queue_t q;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         q = dispatch_queue_create("com.openminis.toolchain", DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_set_specific(q, &OMQueueKey, &OMQueueKey, nullptr);
     });
     return q;
+}
+
+// Re-entry is rejected, not executed inline: LLVM/LLD are not recursively safe.
+// The Driver executes its cc1 job directly on OMQueue, never by calling runCC1.
+bool OMOnRuntimeQueue() {
+    (void)OMQueue();
+    return dispatch_get_specific(&OMQueueKey) != nullptr;
 }
 
 /// `text` is moved into `*slot` if the caller asked for it.
@@ -215,6 +248,105 @@ struct ArgvStorage {
     }
 };
 
+#if OM_TOOLCHAIN_COMPILER_DRIVER_ENABLED || OM_TOOLCHAIN_LLD_ENABLED
+// Bounded, lossless UTF-8 argv only. Never let NUL truncate a validated option.
+bool OMValidArguments(NSArray<NSString *> *args) {
+    if (![args isKindOfClass:[NSArray class]] || args.count == 0 || args.count > 4096) return false;
+    size_t bytes = 0;
+    for (id value in args) {
+        if (![value isKindOfClass:[NSString class]]) return false;
+        NSString *s = value;
+        const char *p = s.UTF8String;
+        if (!p || !*p || strlen(p) != [s lengthOfBytesUsingEncoding:NSUTF8StringEncoding]) return false;
+        bytes += strlen(p);
+        if (bytes > 1024 * 1024 || [s hasPrefix:@"@"] || [s rangeOfCharacterFromSet:
+                [NSCharacterSet controlCharacterSet]].location != NSNotFound) return false;
+    }
+    return true;
+}
+
+bool OMAbsolutePath(NSString *s) {
+    return [s hasPrefix:@"/"] && ![s hasPrefix:@"/dev/"] && ![s isEqualToString:@"/dev"];
+}
+#endif
+
+#if OM_TOOLCHAIN_COMPILER_DRIVER_ENABLED
+// Fail closed before BuildCompilation can load configs/expand hidden options.
+// This is a shape guard, not a workspace authorization or filesystem sandbox.
+bool OMValidateDriver(NSArray<NSString *> *args) {
+    if (!OMValidArguments(args)) return false;
+    NSSet *flags = [NSSet setWithArray:@[@"-c", @"-fobjc-arc", @"-fno-objc-arc",
+        @"-fobjc-weak", @"-fno-objc-weak", @"-fblocks", @"-fno-blocks", @"-fPIC", @"-fpic",
+        @"-fno-common", @"-fexceptions", @"-fno-exceptions", @"-fcxx-exceptions",
+        @"-fno-rtti", @"-frtti", @"-fvisibility=hidden", @"-fvisibility=default",
+        @"-fvisibility-inlines-hidden", @"-fomit-frame-pointer", @"-fno-omit-frame-pointer",
+        @"-fno-stack-protector", @"-fstack-protector-strong", @"-ffunction-sections",
+        @"-fdata-sections", @"-fno-strict-aliasing", @"-fstrict-aliasing",
+        @"-O0", @"-O1", @"-O2", @"-O3", @"-Os", @"-Oz", @"-g", @"-g0",
+        @"-Wall", @"-Wextra", @"-Werror", @"-w", @"-nostdinc", @"-nostdinc++"]];
+    NSSet *pathOptions = [NSSet setWithArray:@[@"-o", @"-isysroot", @"-resource-dir",
+        @"-I", @"-F", @"-isystem", @"-iquote", @"-include", @"-iframework"]];
+    NSUInteger inputs = 0, outputs = 0, compile = 0, targets = 0, sysroots = 0, resources = 0;
+    for (NSUInteger i = 0; i < args.count; ++i) {
+        NSString *s = args[i];
+        if ([flags containsObject:s]) { if ([s isEqualToString:@"-c"]) ++compile; continue; }
+        if ([pathOptions containsObject:s]) {
+            if (++i >= args.count || !OMAbsolutePath(args[i])) return false;
+            if ([s isEqualToString:@"-o"]) { ++outputs; if (![args[i] hasSuffix:@".o"]) return false; }
+            if ([s isEqualToString:@"-isysroot"]) ++sysroots;
+            if ([s isEqualToString:@"-resource-dir"]) ++resources;
+            continue;
+        }
+        if ([s isEqualToString:@"-target"] || [s isEqualToString:@"--target"]) {
+            if (++i >= args.count) return false;
+            NSString *t = args[i];
+            if (![t hasPrefix:@"arm64-apple-ios"] && ![t hasPrefix:@"arm64e-apple-ios"]) return false;
+            if ([t containsString:@"simulator"] || [t containsString:@"macabi"]) return false;
+            ++targets; continue;
+        }
+        if ([s isEqualToString:@"-x"]) {
+            if (++i >= args.count || ![@[@"c", @"c++", @"objective-c", @"objective-c++"] containsObject:args[i]]) return false;
+            continue;
+        }
+        if (([s hasPrefix:@"-D"] || [s hasPrefix:@"-U"]) && s.length > 2) continue;
+        if ([s isEqualToString:@"-D"] || [s isEqualToString:@"-U"]) { if (++i >= args.count) return false; continue; }
+        if (([s hasPrefix:@"-I"] || [s hasPrefix:@"-F"]) && s.length > 2 && OMAbsolutePath([s substringFromIndex:2])) continue;
+        if ([s hasPrefix:@"-std="] || [s hasPrefix:@"-miphoneos-version-min="]) continue;
+        if ([s isEqualToString:@"-Xclang"]) {
+            // No generic frontend pass-through: only reviewed, non-loading switches.
+            if (++i >= args.count || ![@[@"-fdebug-compilation-dir=."] containsObject:args[i]]) return false;
+            continue;
+        }
+        if ([s hasPrefix:@"-"] || !OMAbsolutePath(s)) return false;
+        if (![@[@"c", @"cc", @"cpp", @"cxx", @"m", @"mm"] containsObject:s.pathExtension.lowercaseString]) return false;
+        ++inputs;
+    }
+    return inputs == 1 && outputs == 1 && compile == 1 && targets == 1 && sysroots == 1 && resources == 1;
+}
+#endif
+
+#if OM_TOOLCHAIN_LLD_ENABLED
+// Shared LLVM state may be damaged by a failed LLD recovery. Fence all runtimes.
+static bool OMRuntimePoisoned = false;
+
+// lldMain needs recovery enabled: otherwise fatal() can terminate the host even
+// with exitEarly=false. Probe without changing policy; restore only if we own it.
+// Upstream Enable/Disable save/restore POSIX dispositions. Host policy changes
+// outside OMQueue during this scope are unsupported (LLVM exposes no refcount).
+class OMScopedLLDRecovery {
+    bool owns = false;
+public:
+    OMScopedLLDRecovery() {
+        bool enabled = false;
+        llvm::CrashRecoveryContext probe;
+        probe.RunSafely([&] { enabled = llvm::CrashRecoveryContext::GetCurrent() != nullptr; });
+        owns = !enabled;
+        if (owns) llvm::CrashRecoveryContext::Enable();
+    }
+    ~OMScopedLLDRecovery() { if (owns) llvm::CrashRecoveryContext::Disable(); }
+};
+#endif
+
 } // namespace
 #endif // OM_TOOLCHAIN_ENABLED
 
@@ -247,6 +379,11 @@ struct ArgvStorage {
     arch = @"x86_64";
 #endif
     return @{@"compiler_linked": linked ? @"yes" : @"no",
+             // Macro=1 causes direct strong symbol references, so a missing
+             // archive fails static linking instead of claiming availability.
+             @"compiler_driver_linked": OM_TOOLCHAIN_COMPILER_DRIVER_ENABLED ? @"yes" : @"no",
+             @"lld_linked": OM_TOOLCHAIN_LLD_ENABLED ? @"yes" : @"no",
+             @"linker_backend": OM_TOOLCHAIN_LLD_ENABLED ? @"lld-macho+ld64" : (linked ? @"ld64" : @"unavailable"),
              @"verification": verified ? @"passed" : @"missing",
              @"state": linked && verified && headersReady && sdkReady ? @"ready" : @"unavailable",
              @"host_architecture": arch,
@@ -285,6 +422,11 @@ struct ArgvStorage {
         HandOut(@"OMToolchain: empty cc1 argument list\n", errText);
         return OMToolchainStatusBadArguments;
     }
+    if (OMOnRuntimeQueue()) {
+        HandOut(@"", outText);
+        HandOut(@"OMToolchain: recursive runtime entry is not supported\n", errText);
+        return OMToolchainStatusInternalError;
+    }
     [self initializeRuntimes];
 
     __block OMToolchainStatus status = OMToolchainStatusInternalError;
@@ -293,6 +435,9 @@ struct ArgvStorage {
 
     dispatch_sync(OMQueue(), ^{
         @try {
+#if OM_TOOLCHAIN_LLD_ENABLED
+            if (OMRuntimePoisoned) { errString = @"OMToolchain: runtime poisoned by LLD; restart the app\n"; return; }
+#endif
             // CreateFromArgs takes cc1 options only; argv[0] is a separate
             // argument. Accept an optional leading -cc1 from legacy callers.
             NSArray<NSString *> *frontendArguments = [cc1Arguments.firstObject isEqualToString:@"-cc1"]
@@ -394,6 +539,11 @@ struct ArgvStorage {
         HandOut(@"OMToolchain: empty linker argument list\n", errText);
         return OMToolchainStatusBadArguments;
     }
+    if (OMOnRuntimeQueue()) {
+        HandOut(@"", outText);
+        HandOut(@"OMToolchain: recursive runtime entry is not supported\n", errText);
+        return OMToolchainStatusInternalError;
+    }
     [self initializeRuntimes];
 
     __block OMToolchainStatus status = OMToolchainStatusInternalError;
@@ -405,7 +555,11 @@ struct ArgvStorage {
     static BOOL linkerPoisoned = NO;
 
     dispatch_sync(OMQueue(), ^{
-        if (linkerPoisoned) {
+        if (linkerPoisoned
+#if OM_TOOLCHAIN_LLD_ENABLED
+            || OMRuntimePoisoned
+#endif
+        ) {
             errString = @"OMToolchain: linker disabled after an internal assertion; restart the app before linking again\n";
             return;
         }
@@ -473,6 +627,208 @@ struct ArgvStorage {
     return OMToolchainStatusUnavailable;
 }
 #endif // OM_TOOLCHAIN_ENABLED
+
+#pragma mark - Opt-in compiler driver
+
++ (OMToolchainStatus)runCompilerDriver:(NSArray<NSString *> *)driverArguments
+                              stdout:(NSString *_Nullable *_Nullable)outText
+                              stderr:(NSString *_Nullable *_Nullable)errText {
+    if (outText) *outText = @"";
+    if (errText) *errText = @"";
+#if OM_TOOLCHAIN_COMPILER_DRIVER_ENABLED
+    if (OMOnRuntimeQueue()) {
+        HandOut(@"OMToolchain: recursive runtime entry is not supported\n", errText);
+        return OMToolchainStatusInternalError;
+    }
+    // Snapshot before validating, so NSMutableArray cannot change job shape.
+    NSArray<NSString *> *arguments = [driverArguments copy];
+    if (!OMValidateDriver(arguments)) {
+        HandOut(@"OMToolchain: expected one trusted -c input, absolute .o/sysroot/resource paths and an iOS arm64 target; unsupported option or job shape\n", errText);
+        return OMToolchainStatusBadArguments;
+    }
+    __block OMToolchainStatus status = OMToolchainStatusInternalError;
+    __block NSString *reported = @"";
+    dispatch_sync(OMQueue(), ^{
+#if OM_TOOLCHAIN_LLD_ENABLED
+        if (OMRuntimePoisoned) { reported = @"OMToolchain: runtime poisoned by LLD; restart the app\n"; return; }
+#endif
+        [self initializeRuntimes];
+        std::string diagnostics;
+        llvm::raw_string_ostream errors(diagnostics);
+        @try {
+            try {
+                clang::DiagnosticOptions diagOpts;
+                auto ids = clang::DiagnosticIDs::create();
+                clang::DiagnosticsEngine diags(ids, diagOpts,
+                    new clang::TextDiagnosticPrinter(errors, diagOpts), true);
+                clang::driver::Driver driver("clang", "arm64-apple-ios15.4", diags);
+                driver.setCheckInputsExist(true);
+                // Disable implicit .cfg loading, but keep all actual target and
+                // codegen option derivation in Clang's driver (no cc1 flag emulation).
+                NSMutableArray<NSString *> *safeArgs = [NSMutableArray arrayWithObject:@"--no-default-config"];
+                [safeArgs addObjectsFromArray:arguments];
+                ArgvStorage argv(safeArgs, true);
+                std::unique_ptr<clang::driver::Compilation> compilation(driver.BuildCompilation(argv.arrayRef()));
+                if (!compilation || diags.hasErrorOccurred()) {
+                    status = OMToolchainStatusDiagnostics;
+                } else if (compilation->getJobs().size() != 1) {
+                    errors << "OMToolchain: driver must produce exactly one cc1 object job\n";
+                    status = OMToolchainStatusBadArguments;
+                } else {
+                    const clang::driver::Command &job = *compilation->getJobs().begin();
+                    const auto &cc1 = job.getArguments();
+                    bool safe = !job.getCreator().isLinkJob() &&
+                        llvm::StringRef(job.getCreator().getName()) == "clang" &&
+                        job.getSource().getKind() == clang::driver::Action::AssembleJobClass &&
+                        !cc1.empty() && llvm::StringRef(cc1.front()) == "-cc1";
+                    for (const char *a : cc1) {
+                        llvm::StringRef option(a);
+                        if (option.starts_with("@") || option == "-load" || option == "-plugin" ||
+                            option == "-add-plugin" || option == "-mllvm" || option == "-cc1as") safe = false;
+                    }
+                    if (!safe) {
+                        errors << "OMToolchain: refused non-integrated, plugin or external driver job\n";
+                        status = OMToolchainStatusBadArguments;
+                    } else {
+                        auto invocation = std::make_shared<clang::CompilerInvocation>();
+                        bool parsed = clang::CompilerInvocation::CreateFromArgs(*invocation,
+                            llvm::ArrayRef<const char *>(cc1.data() + 1, cc1.size() - 1), diags, "clang");
+                        const auto &frontend = invocation->getFrontendOpts();
+                        bool objectOnly = frontend.ProgramAction == clang::frontend::EmitObj &&
+                            frontend.Inputs.size() == 1 && frontend.Inputs.front().isFile() &&
+                            !frontend.OutputFile.empty() && frontend.OutputFile != "-" &&
+                            frontend.Plugins.empty() && frontend.AddPluginActions.empty() &&
+                            frontend.PluginArgs.empty();
+                        if (!parsed) status = OMToolchainStatusDiagnostics;
+                        else if (!objectOnly) {
+                            errors << "OMToolchain: refused unsafe frontend invocation\n";
+                            status = OMToolchainStatusBadArguments;
+                        } else {
+                            clang::CompilerInstance instance(invocation);
+                            instance.createVirtualFileSystem(llvm::vfs::getRealFileSystem());
+                            instance.createDiagnostics(new clang::TextDiagnosticPrinter(errors, diagOpts), true);
+                            const bool success = clang::ExecuteCompilerInvocation(&instance);
+                            status = success ? OMToolchainStatusOK : OMToolchainStatusDiagnostics;
+                        }
+                    }
+                }
+            } catch (const std::exception &e) {
+                errors << "OMToolchain: compiler driver exception: " << e.what() << "\n";
+            } catch (...) { errors << "OMToolchain: compiler driver unknown exception\n"; }
+        } @catch (NSException *e) {
+            errors << "OMToolchain: compiler driver ObjC exception: " << ToStdString(e.reason) << "\n";
+        }
+        errors.flush();
+        reported = ToNSString(diagnostics);
+    });
+    HandOut(reported, errText);
+    return status;
+#else
+    (void)driverArguments;
+    if (errText) *errText = @"OMToolchain: compiler driver is not enabled/linked in this build\n";
+    return OMToolchainStatusUnavailable;
+#endif
+}
+
+#pragma mark - Opt-in LLD Mach-O
+
++ (OMToolchainStatus)runLLD:(NSArray<NSString *> *)lldArguments
+                    stdout:(NSString *_Nullable *_Nullable)outText
+                    stderr:(NSString *_Nullable *_Nullable)errText {
+    if (outText) *outText = @"";
+    if (errText) *errText = @"";
+#if OM_TOOLCHAIN_LLD_ENABLED
+    if (OMOnRuntimeQueue()) {
+        HandOut(@"OMToolchain: recursive runtime entry is not supported\n", errText);
+        return OMToolchainStatusInternalError;
+    }
+    NSArray<NSString *> *arguments = [lldArguments copy];
+    bool valid = OMValidArguments(arguments);
+    NSSet *flags = [NSSet setWithArray:@[@"-dylib", @"-bundle", @"-dead_strip", @"-no_dead_strip_inits_and_terms",
+        @"-no_adhoc_codesign", @"-adhoc_codesign", @"-fixup_chains", @"-no_fixup_chains",
+        @"-fatal_warnings", @"-ObjC", @"-all_load", @"-no_uuid", @"-no_function_starts",
+        @"-no_data_in_code_info", @"-application_extension", @"-no_warn_inits"]];
+    NSSet *paths = [NSSet setWithArray:@[@"-o", @"-syslibroot", @"-L", @"-F", @"-force_load", @"-install_name", @"-rpath"]];
+    NSSet *values = [NSSet setWithArray:@[@"-arch", @"-framework", @"-weak_framework", @"-undefined",
+        @"-compatibility_version", @"-current_version", @"-exported_symbol", @"-u"]];
+    NSUInteger outputs = 0, inputs = 0, archs = 0, platforms = 0;
+    bool versionOnly = arguments.count == 1 && [arguments.firstObject isEqualToString:@"--version"];
+    if (!versionOnly) for (NSUInteger i = 0; valid && i < arguments.count; ++i) {
+        NSString *s = arguments[i];
+        if ([flags containsObject:s]) continue;
+        if ([paths containsObject:s]) {
+            valid = ++i < arguments.count && OMAbsolutePath(arguments[i]);
+            if ([s isEqualToString:@"-o"]) ++outputs;
+            if ([s isEqualToString:@"-force_load"]) ++inputs;
+            continue;
+        }
+        if ([values containsObject:s]) {
+            valid = ++i < arguments.count && ![arguments[i] hasPrefix:@"-"];
+            if (valid && [s isEqualToString:@"-arch"]) {
+                ++archs; valid = [@[@"arm64", @"arm64e"] containsObject:arguments[i]];
+            }
+            continue;
+        }
+        if ([s isEqualToString:@"-platform_version"]) {
+            valid = i + 3 < arguments.count && [arguments[i + 1] isEqualToString:@"ios"];
+            i += 3; ++platforms; continue;
+        }
+        if (([s hasPrefix:@"-L"] || [s hasPrefix:@"-F"]) && s.length > 2 && OMAbsolutePath([s substringFromIndex:2])) continue;
+        if ([s hasPrefix:@"-l"] && s.length > 2 &&
+            ![s hasPrefix:@"-lto"] && ![s hasPrefix:@"-load"] && ![s hasPrefix:@"-lazy"] &&
+            ![s containsString:@"_"] && ![s containsString:@"/"] &&
+            ![s containsString:@"="] && ![s containsString:@","]) { ++inputs; continue; }
+        valid = OMAbsolutePath(s) && [@[@"o", @"a", @"dylib", @"tbd"] containsObject:s.pathExtension.lowercaseString];
+        if (valid) ++inputs;
+    }
+    if (!valid || (!versionOnly && (outputs != 1 || inputs == 0 || archs != 1 || platforms != 1))) {
+        HandOut(@"OMToolchain: unsupported LLD option/job; response files, plugins, filelists and arbitrary LLVM forwarding are forbidden\n", errText);
+        return OMToolchainStatusBadArguments;
+    }
+    __block OMToolchainStatus status = OMToolchainStatusInternalError;
+    __block NSString *output = @"", *reported = @"";
+    dispatch_sync(OMQueue(), ^{
+        if (OMRuntimePoisoned) { reported = @"OMToolchain: runtime poisoned by LLD; restart the app\n"; return; }
+        std::string stdoutBuffer, stderrBuffer;
+        llvm::raw_string_ostream stdoutStream(stdoutBuffer), stderrStream(stderrBuffer);
+        @try {
+            try {
+                OMScopedLLDRecovery recovery;
+                // Program name selects Darwin without exposing -flavor. Only
+                // Mach-O is linked/registered; never register all LLD drivers.
+                NSMutableArray<NSString *> *safeArgs = [NSMutableArray arrayWithObjects:@"ld64.lld", @"--threads=1", nil];
+                [safeArgs addObjectsFromArray:arguments];
+                ArgvStorage argv(safeArgs, false);
+                const lld::DriverDef drivers[] = {{lld::Darwin, &lld::macho::link}};
+                // Public library entry calls the driver with exitEarly=false,
+                // performs CommonLinkerContext::destroy() and guarded cleanup.
+                const lld::Result result = lld::lldMain(argv.arrayRef(), stdoutStream, stderrStream, drivers);
+                if (!result.canRunAgain) {
+                    OMRuntimePoisoned = true;
+                    stderrStream << "OMToolchain: LLD recovery/cleanup failed; runtime poisoned, restart the app\n";
+                } else status = result.retCode == 0 ? OMToolchainStatusOK : OMToolchainStatusDiagnostics;
+            } catch (const std::exception &e) {
+                OMRuntimePoisoned = true;
+                stderrStream << "OMToolchain: LLD exception; runtime poisoned: " << e.what() << "\n";
+            } catch (...) {
+                OMRuntimePoisoned = true;
+                stderrStream << "OMToolchain: unknown LLD exception; runtime poisoned\n";
+            }
+        } @catch (NSException *e) {
+            OMRuntimePoisoned = true;
+            stderrStream << "OMToolchain: LLD ObjC exception; runtime poisoned: " << ToStdString(e.reason) << "\n";
+        }
+        stdoutStream.flush(); stderrStream.flush();
+        output = ToNSString(stdoutBuffer); reported = ToNSString(stderrBuffer);
+    });
+    HandOut(output, outText); HandOut(reported, errText);
+    return status;
+#else
+    (void)lldArguments;
+    if (errText) *errText = @"OMToolchain: LLD Mach-O is not enabled/linked in this build\n";
+    return OMToolchainStatusUnavailable;
+#endif
+}
 
 #pragma mark - Output inspection
 

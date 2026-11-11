@@ -14,7 +14,14 @@
 #include "clang/Frontend/TextDiagnosticBuffer.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Lex/Preprocessor.h"
+#include "lld/Common/Driver.h"
+#include "lld/Common/Version.h"
+#include "lld/Common/CommonLinkerContext.h"
+#ifdef LLD_HAS_DRIVER
+LLD_HAS_DRIVER(macho)
+#endif
 
+static_assert(sizeof(decltype(&lld::macho::link)) > 0, "LLD MachO library API missing");
 static_assert(LLVM_VERSION_MAJOR > 0, "LLVM generated config missing");
 void OMDevHeaderProbe(llvm::raw_ostream &output) {
     output << LLVM_VERSION_MAJOR << '\n';

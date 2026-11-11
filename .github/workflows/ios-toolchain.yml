@@ -6,7 +6,7 @@ name: Build embedded iOS toolchain
 # Rebuild request: retry after SafePath fix and repeated macOS runner capacity cancellations; Run3 never started.
 on:
   push:
-    branches: [ios15-port]
+    branches: [ios15-port, twork-parity-lld-20261111]
     paths:
       - 'toolchain-build/scripts/**'
       - 'toolchain-build/deps/**'
@@ -75,7 +75,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: toolchain-build/build/ios
-          key: om-kit-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.OM_KIT_PLATFORM }}-${{ inputs.llvm_min_ios || '14.0' }}-${{ hashFiles('toolchain-build/scripts/build-ios-toolchain.sh', 'toolchain-build/scripts/build-ld64-inprocess.py', 'toolchain-build/scripts/build-ld64-inprocess.sh', 'toolchain-build/scripts/export-dev-headers.sh', 'toolchain-build/scripts/fetch-sources.sh', 'toolchain-build/deps/**') }}
+          key: om-kit-lld-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.OM_KIT_PLATFORM }}-${{ inputs.llvm_min_ios || '14.0' }}-${{ hashFiles('toolchain-build/scripts/**', 'toolchain-build/verify-artifacts.sh', 'toolchain-build/src/**', 'toolchain-build/deps/**', 'scripts/ios15/check-tapi-shim.sh', '.github/workflows/ios-toolchain.yml') }}
 
       - name: Fetch pinned sources
         if: steps.restore-kit.outputs.cache-hit != 'true'

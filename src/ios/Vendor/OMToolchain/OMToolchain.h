@@ -20,6 +20,11 @@
 
 #import <Foundation/Foundation.h>
 
+// Protect literal Objective-C selectors from Darwin stdio object-like macros.
+#pragma push_macro("stdout")
+#pragma push_macro("stderr")
+#undef stdout
+#undef stderr
 NS_ASSUME_NONNULL_BEGIN
 
 typedef NS_ENUM(NSInteger, OMToolchainStatus) {
@@ -60,6 +65,28 @@ typedef NS_ENUM(NSInteger, OMOutputArch) {
 + (OMToolchainStatus)runCC1:(NSArray<NSString *> *)cc1Arguments
                      stdout:(NSString *_Nullable *_Nullable)outText
                      stderr:(NSString *_Nullable *_Nullable)errText __attribute__((swift_name("runCC1(_:stdout:stderr:)")));
+
+/// Runs one trusted driver-level `clang -c` compilation, excluding argv[0].
+/// Uses Driver::BuildCompilation and ExecuteCompilerInvocation in-process.
+/// Only one integrated cc1 object job is accepted; response/config files,
+/// plugins, arbitrary -Xclang/-mllvm forwarding and linker jobs are rejected.
+/// Paths must be absolute and authorized by the caller's structured plan.
+/// Opt-in: OM_TOOLCHAIN_COMPILER_DRIVER_ENABLED=1 with a matching linked kit.
++ (OMToolchainStatus)runCompilerDriver:(NSArray<NSString *> *)driverArguments
+                              stdout:(NSString *_Nullable *_Nullable)outText
+                              stderr:(NSString *_Nullable *_Nullable)errText __attribute__((swift_name("runCompilerDriver(_:stdout:stderr:)")));
+
+/// Runs the statically linked LLD Mach-O library, excluding argv[0].
+/// Opt-in: OM_TOOLCHAIN_LLD_ENABLED=1 (default 0); never loads a dylib.
+/// lldMain owns context teardown/reset and reports whether re-entry is safe.
+/// Ordinary diagnostics permit retry. Failed recovery/cleanup or an exception
+/// poisons this bridge until app restart. Process stdio fds are never redirected.
+/// LLVM crash handlers are scoped/restored; other host LLVM crash-policy changes
+/// must be serialized with this runtime. An actual memory-corrupting crash
+/// cannot be contained by an in-process API; poisoning is not memory repair.
++ (OMToolchainStatus)runLLD:(NSArray<NSString *> *)lldArguments
+                    stdout:(NSString *_Nullable *_Nullable)outText
+                    stderr:(NSString *_Nullable *_Nullable)errText __attribute__((swift_name("runLLD(_:stdout:stderr:)")));
 
 /// Runs the in-process Mach-O linker.
 ///
