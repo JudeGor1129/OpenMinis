@@ -4,6 +4,7 @@ name: Build embedded iOS toolchain
 # workflows, so a push to the pinned build inputs also starts this build.
 # Bump the request line below to request a rebuild without code changes.
 # Rebuild request: retry after SafePath fix and repeated macOS runner capacity cancellations; Run3 never started.
+# Rebuild request 2: include lldMachO/lldCommon in the kit (experimental branch).
 on:
   push:
     branches: [ios15-port, twork-parity-lld-20261111]
