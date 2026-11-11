@@ -30,7 +30,8 @@ for ARCH in arm64 arm64e; do
   # exceptions enabled, since the linker reports errors via exceptions.
   xcrun --sdk iphoneos clang++ -target "$ARCH-apple-ios16.0" \
     -isysroot "$SDK" -std=c++17 -fno-rtti -fexceptions -fobjc-arc \
-    -DOM_TOOLCHAIN_ENABLED=1 -Wall -Wextra \
+    -DOM_TOOLCHAIN_ENABLED=1 -DOM_TOOLCHAIN_COMPILER_DRIVER_ENABLED=1 \
+    -DOM_TOOLCHAIN_LLD_ENABLED=1 -Wall -Wextra \
     -I "$GENERATED" -I "$COMMON" -I "$BRIDGE" \
     -c "$BRIDGE/OMToolchain.mm" -o "$OUT/bridge-$ARCH.o" \
     > "$OUT/compile-$ARCH.log" 2>&1 || { cat "$OUT/compile-$ARCH.log" >&2; exit 1; }

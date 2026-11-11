@@ -52,6 +52,8 @@ sed -i '' '/OTHER_SWIFT_FLAGS = "";/a\
                     OTHER_CPLUSPLUSFLAGS = (\
                         "$(inherited)",\
                         "-DOM_TOOLCHAIN_ENABLED=1",\
+                        "-DOM_TOOLCHAIN_COMPILER_DRIVER_ENABLED=1",\
+                        "-DOM_TOOLCHAIN_LLD_ENABLED=1",\
                         "-DOM_TOOLCHAIN_VERIFIED=1",\
                         "-fno-rtti",\
                         "-fexceptions",\
