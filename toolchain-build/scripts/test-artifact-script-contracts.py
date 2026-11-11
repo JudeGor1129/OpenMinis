@@ -196,15 +196,19 @@ class Contracts(unittest.TestCase):
         (directory/'liblldCommon.a').write_bytes(b'')
         with self.assertRaisesRegex(SystemExit,'missing/empty required LLD component'):
             namespace['component_libs'](str(directory))
-    def test_old_production_lock_does_not_claim_lld(self):
+    def test_experimental_lock_pins_lld_manifest(self):
         lock=json.loads((ROOT/'verified-toolchain-lock.json').read_text())
-        self.assertNotIn('lld_macho',lock.get('linker_backends',{}))
+        self.assertEqual(lock['workflow_run_id'], 43005259459)
+        self.assertEqual(lock['artifact']['id'], 13854399209)
+        self.assertEqual(lock['manifest']['sha256'], 'f746ee556e29cb092d49ecfff095e00cbd602d03b458d4c651210eb10c7adc12')
     def test_runtime_evidence_matches_pinned_artifact_and_rejects_mutation(self):
         repo = ROOT.parent
         validator = repo/'scripts/ios15/verify-embedded-toolchain-runtime-evidence.py'
         evidence = ROOT/'runtime-validation-evidence.json'
         lock = ROOT/'verified-toolchain-lock.json'
-        self.assertEqual(subprocess.run(['python3',str(validator),str(evidence),str(lock)],capture_output=True).returncode,0)
+        result = subprocess.run(['python3',str(validator),str(evidence),str(lock)],capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('does not match locked toolchain', result.stderr)
         record=json.loads(evidence.read_text())
         record['report']['required_steps']['compile_arm64_foundation_objective_c']='failed'
         mutated=Path(self.tmp.name)/'mutated-runtime-evidence.json'

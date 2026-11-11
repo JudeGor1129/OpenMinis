@@ -25,16 +25,9 @@ theos_snapshot = text("src/ios/Agent/Build/EmbeddedToolchainProjectSnapshot.swif
 ld64_adapter = text("toolchain-build/scripts/build-ld64-inprocess.py")
 project = text("src/ios/Minis.xcodeproj/project.pbxproj")
 lock_path = ROOT / "toolchain-build/verified-toolchain-lock.json"
-evidence_path = ROOT / "toolchain-build/runtime-validation-evidence.json"
 lock = json.loads(lock_path.read_text(encoding="utf-8"))
-require(evidence_path.is_file(), "reviewed fixed-runtime evidence record is missing")
-verification = subprocess.run(
-    [sys.executable, str(ROOT / "scripts/ios15/verify-embedded-toolchain-runtime-evidence.py"),
-     str(evidence_path), str(lock_path)],
-    capture_output=True, text=True, check=False)
-require(verification.returncode == 0,
-        "fixed-runtime evidence does not match the pinned toolchain: " +
-        (verification.stderr or verification.stdout).strip())
+require(lock["workflow_run_id"] == 43005259459, "experimental LLD kit lock is stale")
+require(lock["artifact"]["id"] == 13854399209, "experimental LLD artifact is not pinned")
 require(project.count('LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../deps/libs";') == 2,
         "expected exactly two main-App library search path anchors")
 require(project.count('"-lfakefs",') == 2,
@@ -46,10 +39,10 @@ for value in ('embedded-toolchain/libomllvm-arm64.a', 'embedded-toolchain/liboml
               "dev-headers/arm64/include", "ARCHS=arm64"):
     require(value in build, f"missing App build setting: {value}")
 require("libomllvm-arm64e.a" not in build, "arm64 App must not link the arm64e LLVM archive")
-require("OM_TOOLCHAIN_VERIFIED=1" in build, "evidence-validated App must expose the runtime-verification bit")
-require("verify-embedded-toolchain-runtime-evidence.py" in build and
-        "runtime-validation-evidence.json" in build,
-        "verification bit must be bound to the reviewed runtime evidence record")
+require("OM_TOOLCHAIN_VERIFIED=1" not in build, "experimental LLD App must not claim runtime verification")
+require("OM_TOOLCHAIN_COMPILER_DRIVER_ENABLED=1" in build and
+        "OM_TOOLCHAIN_LLD_ENABLED=1" in build,
+        "experimental App must opt into Driver and LLD compile/link only")
 require("OM_TOOLCHAIN_VERIFIED" not in project,
         "committed Xcode project must not globally enable runtime verification")
 require("mapfile" not in prepare, "prepare script must remain compatible with macOS Bash 3.2")
@@ -63,6 +56,8 @@ require("verify-artifacts.sh" in prepare, "prepare script must rerun manifest an
 require("-verify_arch arm64 arm64e" in prepare, "universal ld64 slices must be rechecked")
 require("OM_TOOLCHAIN_VERIFIED remains intentionally unset" in prepare,
         "prepare script must state that runtime verification is absent")
+require("Experimental LLD build" in build,
+        "experimental LLD build must identify its compile/link-only boundary")
 require("EmbeddedToolchainTweakManifest" in provider and
         "completedWithArtifacts" in provider and
         "publishRootlessDeb" in provider,

@@ -35,9 +35,9 @@ grep -n 'IPHONEOS_DEPLOYMENT_TARGET' "$PROJECT" | tee ci-logs/deployment-targets
 # fixed-fixture evidence authorizes the verification bit for this validation App
 # only. BuildProvider stays unavailable until its execution adapter is reviewed.
 TOOLCHAIN_ROOT=build/ios15/embedded-toolchain
-EVIDENCE=toolchain-build/runtime-validation-evidence.json
-python3 scripts/ios15/verify-embedded-toolchain-runtime-evidence.py \
-  "$EVIDENCE" toolchain-build/verified-toolchain-lock.json
+# Experimental LLD build: lock verifies the archive/manifest and enabled
+# bridge compile/link only. No runtime fixture is bound to this new kit.
+echo 'Experimental LLD build: compile/link only; runtime verification intentionally absent.' | tee ci-logs/embedded-link-boundary.txt
 [[ -f "$TOOLCHAIN_ROOT/libomllvm-arm64.a" && -f "$TOOLCHAIN_ROOT/libomld64.a" ]] || {
   echo 'error: verified embedded toolchain archives missing' >&2; exit 1;
 }
@@ -54,14 +54,13 @@ sed -i '' '/OTHER_SWIFT_FLAGS = "";/a\
                         "-DOM_TOOLCHAIN_ENABLED=1",\
                         "-DOM_TOOLCHAIN_COMPILER_DRIVER_ENABLED=1",\
                         "-DOM_TOOLCHAIN_LLD_ENABLED=1",\
-                        "-DOM_TOOLCHAIN_VERIFIED=1",\
                         "-fno-rtti",\
                         "-fexceptions",\
                         "-I$(SRCROOT)/../../build/ios15/embedded-toolchain/dev-headers/arm64/include",\
                         "-I$(SRCROOT)/../../build/ios15/embedded-toolchain/dev-headers/common/include",\
                     );\
 ' "$PROJECT"
-printf '%s\n' 'OM_TOOLCHAIN_ENABLED=1; OM_TOOLCHAIN_VERIFIED=1 after pinned fixed-runtime evidence validation; BuildProvider remains unavailable (no execution adapter).' | tee ci-logs/embedded-link-settings.txt
+printf '%s\n' 'OM_TOOLCHAIN_ENABLED=1; Clang Driver/LLD opt-in compile/link validation only; runtime verification intentionally absent.' | tee ci-logs/embedded-link-settings.txt
 plutil -lint "$PROJECT"
 rm -rf build/ios15/Minis.xcresult
 xcodebuild -project src/ios/Minis.xcodeproj \
