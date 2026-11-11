@@ -107,6 +107,20 @@ class Contracts(unittest.TestCase):
     def test_old_kit_has_no_lld_capability(self):
         self.mutate_manifest(lambda m:m.pop('linker_backends'))
         r=self.run_script('verify-artifacts.sh'); self.assertNotEqual(r.returncode,0); self.assertIn('LLD',r.stderr)
+    def test_legacy_kit_integrity_and_explicit_lld_requirement(self):
+        self.mutate_manifest(lambda m: (m.pop('linker_backends'), m.pop('llvm_patches')))
+        for header in ['Driver.h', 'Version.h', 'ErrorHandler.h', 'CommonLinkerContext.h']:
+            self.remove_header_record('dev-headers/common/include', 'lld/Common/' + header)
+        self.remove_header_record('dev-headers/licenses', 'LLD-LICENSE.txt')
+        for arch in ['arm64', 'arm64e']:
+            self.remove_header_record('dev-headers/' + arch + '/include', 'lld/Common/Version.inc')
+        cmd = ['python3', str(ROOT/'scripts/verify-toolchain-manifest.py'), str(self.kit), '--integrity-only']
+        legacy = subprocess.run(cmd, env=self.env, capture_output=True, text=True)
+        self.assertEqual(legacy.returncode, 0, legacy.stdout + legacy.stderr)
+        self.assertIn('ld64-only', legacy.stdout)
+        self.assertIn('Not kit acceptance', legacy.stdout)
+        strict = subprocess.run(cmd + ['--require-lld'], env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(strict.returncode, 0)
     def test_wrong_lld_version_and_backend_are_rejected(self):
         for key,value in [('version','23.0.0'),('api','ld64'),('component_libraries',['lldMachO']),('tool_lld',3),('arm64e',False)]:
             with self.subTest(key=key):

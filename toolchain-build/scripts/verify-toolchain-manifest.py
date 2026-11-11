@@ -147,9 +147,10 @@ def main(directory, integrity_only=False, require_lld=False):
             verify_file(safe_file(base, name), record)
     for header in ("stddef.h", "stdarg.h", "stdint.h", "ptrauth.h", "arm_neon.h"):
         safe_file(root, "clang-resource/include/" + header)
-    lld_headers = ("llvm/ADT/ArrayRef.h", "clang/Frontend/CompilerInstance.h", "lld/Common/Driver.h", "lld/Common/Version.h", "lld/Common/ErrorHandler.h", "lld/Common/CommonLinkerContext.h")
-    for header in lld_headers:
-        if lld_verified:
+    for header in ("llvm/ADT/ArrayRef.h", "clang/Frontend/CompilerInstance.h"):
+        safe_file(root, "dev-headers/common/include/" + header)
+    if lld_verified:
+        for header in ("lld/Common/Driver.h", "lld/Common/Version.h", "lld/Common/ErrorHandler.h", "lld/Common/CommonLinkerContext.h"):
             safe_file(root, "dev-headers/common/include/" + header)
     common = root / "dev-headers/common/include"
     for arch in ("arm64", "arm64e"):
@@ -169,8 +170,10 @@ def main(directory, integrity_only=False, require_lld=False):
                 for include in re.findall(r'^\s*#\s*include\s*[<"]((?:lld|llvm)/[^">]+)[">]', path.read_text(), re.M):
                     if not (generated / include).is_file() and not (common / include).is_file():
                         fail("missing LLD transitive include: " + include + " for " + arch)
-    for license in ("LLVM-LICENSE.txt", "Clang-LICENSE.txt", "LLD-LICENSE.txt"):
+    for license in ("LLVM-LICENSE.txt", "Clang-LICENSE.txt"):
         safe_file(root, "dev-headers/licenses/" + license)
+    if lld_verified:
+        safe_file(root, "dev-headers/licenses/LLD-LICENSE.txt")
     if not re.fullmatch(r"\d+\.\d+(?:\.\d+)?", manifest.get("minimum_ios", "")):
         fail("invalid minimum iOS")
     if integrity_only:
