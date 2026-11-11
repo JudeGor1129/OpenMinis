@@ -20,11 +20,6 @@
 
 #import <Foundation/Foundation.h>
 
-// Protect literal Objective-C selectors from Darwin stdio object-like macros.
-#pragma push_macro("stdout")
-#pragma push_macro("stderr")
-#undef stdout
-#undef stderr
 NS_ASSUME_NONNULL_BEGIN
 
 typedef NS_ENUM(NSInteger, OMToolchainStatus) {
