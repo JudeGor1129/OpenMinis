@@ -207,6 +207,31 @@ struct NativeEntryContracts {
                     "parser lost smoke files")
         try require(graph.targets[0].installName == "@rpath/MinisSmoke.dylib", "parser changed installation name")
         try require(graph.ignoredRecipes.isEmpty, "smoke unexpectedly contains recipes")
+        let architectureCases: [(String, [EmbeddedToolchainArchitecture])] = [
+            ("arm64", [.arm64]), ("arm64e", [.arm64e]),
+            ("arm64 arm64e", [.arm64, .arm64e]), ("arm64e arm64", [.arm64, .arm64e])
+        ]
+        for (declaration, expected) in architectureCases {
+            let input = makefile.replacingOccurrences(of: "ARCHS = arm64 arm64e", with: "ARCHS = " + declaration)
+            let result = try EmbeddedTheosManifestParser.inspect(makefile: input)
+            try require(result.targets[0].architectures == expected, "parser lost ARCHS: " + declaration)
+            try result.targets[0].validate()
+        }
+        let defaultGraph = try EmbeddedTheosManifestParser.inspect(makefile:
+            makefile.replacingOccurrences(of: "ARCHS = arm64 arm64e", with: ""))
+        try require(defaultGraph.targets[0].architectures == [.arm64, .arm64e], "missing ARCHS changed legacy default")
+        let overrideGraph = try EmbeddedTheosManifestParser.inspect(makefile: makefile + "\nMinisSmoke_ARCHS = arm64e\n")
+        try require(overrideGraph.targets[0].architectures == [.arm64e], "target ARCHS did not override global ARCHS")
+        for declaration in ["", "armv7", "arm64 armv7", "arm64 arm64", "arm64e arm64e", "$(ARCHS)"] {
+            let input = makefile.replacingOccurrences(of: "ARCHS = arm64 arm64e", with: "ARCHS = " + declaration)
+            do {
+                _ = try EmbeddedTheosManifestParser.inspect(makefile: input)
+            } catch is EmbeddedTheosManifestError {
+                try require(true, "invalid ARCHS rejected")
+                continue
+            }
+            try require(false, "invalid ARCHS accepted: " + declaration)
+        }
     }
     private static func testLocalizedErrors() throws {
         for error in [EmbeddedAdapterError.rejected("no native workspace"), .poisoned("Mach-O signature mismatch")] {

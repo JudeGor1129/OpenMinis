@@ -188,6 +188,25 @@ final class ProgrammingBuildToolsTests: XCTestCase {
                            "bridge/ICNBridge.m": "@interface X @end\n"]))
     }
 
+    func testEmbeddedTheosCompilePlannerPreservesDeclaredArchitectures() throws {
+        let cases: [[EmbeddedToolchainArchitecture]] = [[.arm64], [.arm64e], [.arm64, .arm64e]]
+        for architectures in cases {
+            let target = EmbeddedTheosTarget(name: "ArchProbe", kind: .tweak,
+                sourcePaths: ["Probe.m"], headerPaths: [], frameworks: ["Foundation"],
+                installPath: "Library/MobileSubstrate/DynamicLibraries/ArchProbe.dylib",
+                installName: "@rpath/ArchProbe.dylib", filterPlistPath: "ArchProbe.plist",
+                entitlementsPath: nil, architectures: architectures)
+            let project = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.arch-probe",
+                version: "1.0", name: "Arch Probe", maintainer: "Test", description: "Compile-only contract",
+                bundleIDs: ["com.example.compile-only"], targets: [target])
+            let plans = try EmbeddedTheosCompilePlanner.plan(project: project,
+                fileContents: ["Probe.m": "int probe(void) { return 42; }\n"])
+            XCTAssertEqual(plans.count, 1)
+            XCTAssertEqual(plans[0].architectures, architectures)
+            XCTAssertEqual(plans[0].target.architectures, architectures)
+        }
+    }
+
     func testEmbeddedTheosDebPackageBuildsRootlessMultiTargetDeb() throws {
         let control = try EmbeddedTheosDebPackage.control(packageID: "com.example.demo-native",
             name: "Demo Native", version: "0.1.2", maintainer: "JudeGor",

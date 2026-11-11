@@ -181,9 +181,20 @@ require("static func verifySignatures(" in deb_package and
         "the finished DEB must be re-read and every generated slice signature re-verified")
 require("EmbeddedTheosSigningRequirement(path: installed, name: containerName" in theos_provider and
         "let signedSlices = try EmbeddedTheosDebPackage.verifySignatures(deb, requirements: requirements)" in theos_provider and
-        "signedSlices.count == requirements.count * 2" in theos_provider and
+        "requirements.reduce(0) { $0 + $1.architectures.count }" in theos_provider and
+        "signedSlices.count == expectedSignedSlices" in theos_provider and
+        "architectures: target.architectures" in theos_provider and
+        "expectedArchitectures: requirement.architectures" in deb_package and
         "delivery.deb, requirements: delivery.signingRequirements" in theos_provider,
-        "signature requirements must bind validated compile plans to the published DEB bytes")
+        "signature requirements must bind every declared target architecture to the published DEB bytes")
+planner = text("src/ios/Agent/Build/EmbeddedTheosCompilePlan.swift")
+require('assignments[name + "_ARCHS"] ?? assignments["ARCHS"]' in models and
+        "architectures: target.architectures" in planner and
+        "Set(byArchitecture.keys) == Set(target.architectures.map" in theos_provider and
+        "inspectPayload(payload" in theos_provider and
+        "unexpected or duplicate Theos target slice" in theos_provider and
+        "static func inspectPayload(" in universal,
+        "Theos ARCHS must survive parsing, planning, exact slice selection and signed payload verification")
 require('signature: "unsigned"' not in theos_provider and
         '"build does not sign packages"' not in theos_provider and
         '"payload_signature", state: .verified' in theos_provider,

@@ -100,6 +100,30 @@ enum EmbeddedToolchainUniversalBinary {
         return data
     }
 
+    /// Inspect a payload against its validated target declaration. Single-arch
+    /// outputs remain thin; a FAT is never silently thinned or accepted for them.
+    static func inspectPayload(_ data: Data, name: String, filetype: UInt32,
+                               expectedArchitectures: [EmbeddedToolchainArchitecture]) throws -> EmbeddedUniversalArtifact {
+        if expectedArchitectures == [.arm64, .arm64e] {
+            return try inspect(data, name: name, filetype: filetype)
+        }
+        guard expectedArchitectures == [.arm64] || expectedArchitectures == [.arm64e],
+              [EmbeddedUniversalFileType.executable.rawValue,
+               EmbeddedUniversalFileType.dylib.rawValue].contains(filetype),
+              data.count >= 32, data.count <= 16 * 1024 * 1024,
+              read32(data, at: 0, bigEndian: false) == 0xfeedfacf else {
+            throw rejected("requires one declared thin slice or canonical arm64 + arm64e")
+        }
+        let artifact = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: filetype,
+            architecture: expectedArchitectures[0],
+            fixupPolicy: filetype == EmbeddedUniversalFileType.dylib.rawValue ? .xcodeCompatible : .any)
+        let slice = EmbeddedUniversalSlice(architecture: artifact.architecture,
+            cpuSubtype: read32(data, at: 8, bigEndian: false), offset: 0,
+            bytes: data.count, sha256: artifact.sha256)
+        return EmbeddedUniversalArtifact(name: name, bytes: data.count,
+            sha256: artifact.sha256, filetype: filetype, slices: [slice])
+    }
+
     static func inspect(_ data: Data, name: String,
                         filetype: UInt32 = EmbeddedUniversalFileType.dylib.rawValue) throws -> EmbeddedUniversalArtifact {
         guard data.count >= 48, data.count <= maxBytes,

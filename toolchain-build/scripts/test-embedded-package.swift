@@ -204,6 +204,42 @@ enum PackageContracts {
             throw PackageContractFailure(description: "accepted invalid signature case: " + label)
         }
         let signedInfo = try EmbeddedToolchainUniversalBinary.inspect(signedFat, name: "PetSmoke.dylib", filetype: 6)
+        func rejectsPayload(_ label: String, _ body: () throws -> Void) throws {
+            do { try body() }
+            catch is EmbeddedAdapterError { try require(true, label); return }
+            throw PackageContractFailure(description: "accepted invalid architecture payload: " + label)
+        }
+        for (index, architecture) in [EmbeddedToolchainArchitecture.arm64, .arm64e].enumerated() {
+            let slice = signedInfo.slices[index]
+            let thin = Data(signedFat[slice.offset..<(slice.offset + slice.bytes)])
+            let thinInfo = try EmbeddedToolchainUniversalBinary.inspectPayload(thin,
+                name: "PetSmoke.dylib", filetype: 6, expectedArchitectures: [architecture])
+            try require(thinInfo.architectures == [architecture.rawValue] && thinInfo.slices[0].offset == 0 &&
+                        thinInfo.sha256 == EmbeddedAdapterArtifact.digest(thin), "declared thin slice must be preserved")
+            let thinDeb = try EmbeddedTheosDebPackage.build(files: [
+                EmbeddedTheosDebEntry(path: signedPath, bytes: thin, mode: 0o755)], controlText: controlText)
+            let requirement = EmbeddedTheosSigningRequirement(path: signedPath, name: "PetSmoke.dylib",
+                filetype: 6, entitlements: nil, architectures: [architecture])
+            let evidence = try EmbeddedTheosDebPackage.verifySignatures(thinDeb, requirements: [requirement])
+            try require(evidence.map(\.architecture) == [architecture.rawValue], "one declared slice needs one signature")
+            let wrongArchitecture: EmbeddedToolchainArchitecture = architecture == .arm64 ? .arm64e : .arm64
+            try rejectsPayload("wrong thin architecture") {
+                _ = try EmbeddedToolchainUniversalBinary.inspectPayload(thin,
+                    name: "PetSmoke.dylib", filetype: 6, expectedArchitectures: [wrongArchitecture])
+            }
+            try rejectsPayload("FAT must not satisfy one declared architecture") {
+                _ = try EmbeddedTheosDebPackage.verifySignatures(signedDeb, requirements: [requirement])
+            }
+            try rejectsPayload("thin must not satisfy dual architecture") {
+                _ = try EmbeddedTheosDebPackage.verifySignatures(thinDeb, requirements: [signedRequirement])
+            }
+        }
+        for invalid in [[EmbeddedToolchainArchitecture](), [.arm64, .arm64], [.arm64e, .arm64]] {
+            try rejectsPayload("empty, duplicate or noncanonical architecture list") {
+                _ = try EmbeddedToolchainUniversalBinary.inspectPayload(signedFat,
+                    name: "PetSmoke.dylib", filetype: 6, expectedArchitectures: invalid)
+            }
+        }
         let unsignedArm64 = Data(signedFat[signedInfo.slices[0].offset..<(signedInfo.slices[0].offset + signedInfo.slices[0].bytes)])
         let unsignedArm64e = MachOFixture.image(filetype: 6, installName: "@rpath/PetSmoke.dylib", arm64e: true)
         let partlyUnsigned = try EmbeddedToolchainUniversalBinary.merge(

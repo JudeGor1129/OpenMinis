@@ -99,7 +99,8 @@ struct EmbeddedTheosTarget: Codable, Equatable, Sendable {
               headerPaths.count <= 256, frameworks.count <= 32,
               sourcePaths.allSatisfy(safeRelative), headerPaths.allSatisfy(safeRelative),
               frameworks.allSatisfy(safeName), safeRelative(installPath),
-              architectures == [.arm64, .arm64e] else {
+              (architectures == [.arm64] || architectures == [.arm64e] ||
+               architectures == [.arm64, .arm64e]) else {
             throw EmbeddedTheosPlanError.invalidTarget(name)
         }
         // Keep target names extension-free, but a tweak's LC_ID_DYLIB must be the
@@ -237,6 +238,14 @@ enum EmbeddedTheosManifestParser {
         guard rootless else { throw EmbeddedTheosManifestError.unsafeDirective("THEOS_PACKAGE_SCHEME must be rootless") }
         var targets: [EmbeddedTheosTarget] = []
         for name in targetNames.sorted() {
+            let requested = split(assignments[name + "_ARCHS"] ?? assignments["ARCHS"] ?? "arm64 arm64e")
+            guard !requested.isEmpty, Set(requested).count == requested.count,
+                  requested.allSatisfy({ $0 == "arm64" || $0 == "arm64e" }) else {
+                throw EmbeddedTheosManifestError.unsafeDirective("unsupported or duplicate ARCHS for \(name)")
+            }
+            let architectures: [EmbeddedToolchainArchitecture] = [.arm64, .arm64e].filter {
+                requested.contains($0.rawValue)
+            }
             let files = split(assignments[name + "_FILES"] ?? "")
             let frameworks = split(assignments[name + "_FRAMEWORKS"] ?? "")
             let installPath = assignments[name + "_INSTALL_PATH"] ?? ""
@@ -261,7 +270,7 @@ enum EmbeddedTheosManifestParser {
                 frameworks: frameworks, installPath: install,
                 installName: kind == .tweak ? "@rpath/\(name).dylib" : nil,
                 filterPlistPath: kind == .tweak ? "\(name).plist" : nil,
-                entitlementsPath: entitlements, architectures: [.arm64, .arm64e])
+                entitlementsPath: entitlements, architectures: architectures)
             do { try target.validate() } catch { throw EmbeddedTheosManifestError.invalidTarget(name) }
             targets.append(target)
         }

@@ -150,6 +150,16 @@ struct EmbeddedTheosSigningRequirement: Equatable, Sendable {
     let name: String
     let filetype: UInt32
     let entitlements: Data?
+    let architectures: [EmbeddedToolchainArchitecture]
+
+    init(path: String, name: String, filetype: UInt32, entitlements: Data?,
+         architectures: [EmbeddedToolchainArchitecture] = [.arm64, .arm64e]) {
+        self.path = path
+        self.name = name
+        self.filetype = filetype
+        self.entitlements = entitlements
+        self.architectures = architectures
+    }
 }
 
 struct EmbeddedTheosSignedSlice: Equatable, Sendable {
@@ -300,8 +310,9 @@ enum EmbeddedTheosDebPackage {
                 throw EmbeddedTheosDebPackageError.invalidPackage("signed payload missing or duplicated: \(requirement.path)")
             }
             let bytes = matches[0].bytes
-            let universal = try EmbeddedToolchainUniversalBinary.inspect(bytes,
-                name: requirement.name, filetype: requirement.filetype)
+            let universal = try EmbeddedToolchainUniversalBinary.inspectPayload(bytes,
+                name: requirement.name, filetype: requirement.filetype,
+                expectedArchitectures: requirement.architectures)
             for slice in universal.slices {
                 let thin = Data(bytes[slice.offset..<(slice.offset + slice.bytes)])
                 let signature = try EmbeddedCodeSignature.verify(thin,

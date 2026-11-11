@@ -298,7 +298,7 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
                 metadata["payload_signature"] = "adhoc"
                 metadata["signed_slices"] = String(delivery.signedSlices.count)
                 let execution = BuildCommandExecution(
-                    command: "embedded-theos: arm64 + arm64e -> rootless DEB", exitCode: 0,
+                    command: "embedded-theos: \(delivery.architectures.joined(separator: " + ")) -> rootless DEB", exitCode: 0,
                     durationSeconds: Date().timeIntervalSince(started),
                     stdoutSummary: Self.summary(outcome: outcome, delivery: delivery),
                     stderrSummary: "", fullLogPath: "", diagnosticExcerpt: "",
@@ -365,12 +365,17 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
         return try EmbeddedTheosControlMetadata.parse(text)
     }
 
-    /// Merges each target's verified thin slices into a canonical FAT container and
+    /// Preserves a single target slice or merges two verified slices, then
     /// assembles the rootless payload. Nothing is written, signed or executed here.
     private static func package(outcome: EmbeddedTheosExecutionOutcome,
                                 prepared: PreparedRequest) throws -> PackagedDelivery {
         var slicesByTarget: [String: [String: EmbeddedTheosBuiltArtifact]] = [:]
+        let expectedTargets = Set(prepared.project.targets.map(\.name))
         for artifact in outcome.artifacts {
+            guard expectedTargets.contains(artifact.targetName),
+                  slicesByTarget[artifact.targetName]?[artifact.architecture] == nil else {
+                throw EmbeddedAdapterError.rejected("unexpected or duplicate Theos target slice")
+            }
             slicesByTarget[artifact.targetName, default: [:]][artifact.architecture] = artifact
         }
         var entries: [EmbeddedTheosDebEntry] = []
@@ -379,28 +384,38 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
         var kinds: [String] = []
         var requirements: [EmbeddedTheosSigningRequirement] = []
         for target in prepared.project.targets {
+            try target.validate()
             guard let byArchitecture = slicesByTarget[target.name],
-                  let arm64 = byArchitecture["arm64"], let arm64e = byArchitecture["arm64e"] else {
-                throw EmbeddedAdapterError.rejected("Theos target did not produce both arm64 and arm64e slices: \(target.name)")
+                  Set(byArchitecture.keys) == Set(target.architectures.map(\.rawValue)) else {
+                throw EmbeddedAdapterError.rejected("Theos slices differ from declared ARCHS: \(target.name)")
+            }
+            let slices = try target.architectures.map { arch -> Data in
+                guard let artifact = byArchitecture[arch.rawValue] else {
+                    throw EmbeddedAdapterError.rejected("Theos target slice is missing: \(target.name)")
+                }
+                return artifact.data
             }
             let filetype = target.kind == .tweak
                 ? EmbeddedUniversalFileType.dylib.rawValue : EmbeddedUniversalFileType.executable.rawValue
-            // The Mach-O inspector derives a dylib's expected @rpath install name from
-            // this container name, so a tweak must be named exactly like its install name.
             let containerName = target.kind == .tweak ? target.name + ".dylib" : target.name
-            let universal = try EmbeddedToolchainUniversalBinary.merge(
-                arm64: arm64.data, arm64e: arm64e.data, name: containerName, filetype: filetype)
-            let verified = try EmbeddedToolchainUniversalBinary.inspect(universal, name: containerName, filetype: filetype)
-            guard verified.slices.count == 2, verified.filetype == filetype else {
-                throw EmbeddedAdapterError.rejected("Theos universal output is not a verified two-slice container: \(target.name)")
+            let payload: Data
+            if slices.count == 1 {
+                payload = slices[0]
+            } else {
+                payload = try EmbeddedToolchainUniversalBinary.merge(
+                    arm64: slices[0], arm64e: slices[1], name: containerName, filetype: filetype)
             }
-            architectures = verified.architectures
+            let verified = try EmbeddedToolchainUniversalBinary.inspectPayload(payload,
+                name: containerName, filetype: filetype, expectedArchitectures: target.architectures)
+            let foundArchitectures = Set(architectures + verified.architectures)
+            architectures = ["arm64", "arm64e"].filter { foundArchitectures.contains($0) }
             let installed = EmbeddedTheosDebPackage.rootlessPrefix + target.installPath
-            entries.append(EmbeddedTheosDebEntry(path: installed, bytes: universal, mode: 0o755))
+            entries.append(EmbeddedTheosDebEntry(path: installed, bytes: payload, mode: 0o755))
             payloadPaths.append(installed)
             requirements.append(EmbeddedTheosSigningRequirement(path: installed, name: containerName,
                 filetype: filetype,
-                entitlements: prepared.plans.first { $0.target.name == target.name }?.entitlements))
+                entitlements: prepared.plans.first { $0.target.name == target.name }?.entitlements,
+                architectures: target.architectures))
             kinds.append("\(target.name):\(target.kind.rawValue):\(verified.architectures.joined(separator: "+"))")
             if target.kind == .tweak {
                 guard let filter = prepared.filterPlist else {
@@ -423,7 +438,8 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
         let deb = try EmbeddedTheosDebPackage.build(files: entries, controlText: prepared.control.controlText)
         _ = try EmbeddedTheosDebPackage.inspect(deb)
         let signedSlices = try EmbeddedTheosDebPackage.verifySignatures(deb, requirements: requirements)
-        guard signedSlices.count == requirements.count * 2,
+        let expectedSignedSlices = requirements.reduce(0) { $0 + $1.architectures.count }
+        guard signedSlices.count == expectedSignedSlices,
               Set(signedSlices.map { "\($0.path)|\($0.architecture)" }).count == signedSlices.count else {
             throw EmbeddedAdapterError.rejected("final DEB signature evidence is incomplete")
         }
@@ -448,7 +464,7 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
             VerificationCapability(name: "sha256", state: .verified, detail: "final file readback: " + published.sha256),
             VerificationCapability(name: "deb_archive", state: .verified, detail: "ar/control.tar/data.tar inspected in memory; final file read back byte-for-byte"),
             VerificationCapability(name: "rootless_layout", state: .verified, detail: delivery.payloadPaths.joined(separator: ",")),
-            VerificationCapability(name: "fat_architectures", state: .verified, detail: delivery.architectures.joined(separator: ",")),
+            VerificationCapability(name: "macho_architectures", state: .verified, detail: delivery.architectures.joined(separator: ",")),
             VerificationCapability(name: "payload_signature", state: .verified,
                 detail: "generated Mach-O payloads verified ad-hoc: " + delivery.signedSlices
                     .map { "\($0.path)#\($0.architecture)(\($0.codeSlots) slots)" }.joined(separator: ",")),

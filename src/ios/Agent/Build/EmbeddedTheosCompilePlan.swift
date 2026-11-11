@@ -152,7 +152,7 @@ enum EmbeddedTheosCompilePlanner {
                 entitlements = nil
             }
             plans.append(EmbeddedTheosTargetPlan(target: target, sources: sources, headers: headers,
-                                                 entitlements: entitlements, architectures: [.arm64, .arm64e]))
+                                                 entitlements: entitlements, architectures: target.architectures))
         }
         return plans
     }
