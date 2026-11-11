@@ -19,7 +19,7 @@ done
 command -v python3 >/dev/null 2>&1 || { echo "Python 3 required for manifest/hash verification" >&2; exit 2; }
 # The Python gate checks mandatory LLD metadata, complete header hashes and
 # defined MachO/Common/arm64e symbols. No silent acceptance without nm/Xcode.
-python3 "$ROOT/scripts/verify-toolchain-manifest.py" "$DIR"
+python3 "$ROOT/scripts/verify-toolchain-manifest.py" "$DIR" --require-lld
 if command -v xcrun >/dev/null 2>&1; then
   xcrun lipo -info "$DIR/libomllvm-arm64.a"
   xcrun lipo "$DIR/libomllvm-arm64.a" -verify_arch arm64

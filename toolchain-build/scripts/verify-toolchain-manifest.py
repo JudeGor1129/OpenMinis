@@ -7,6 +7,8 @@ import sys
 import shutil
 import subprocess
 
+deps = Path(__file__).resolve().parents[1] / "deps"
+
 
 # Darwin's nm prepends '_' to Itanium C++ names. These must be definitions,
 # not undefined references or arbitrary strings embedded in an old archive.
@@ -63,19 +65,28 @@ def verify_file(path, record):
         fail("sha256 mismatch: " + str(path))
 
 
-def verify_backend_metadata(manifest):
+def verify_backend_metadata(manifest, require_lld):
+    backends = manifest.get("linker_backends", {})
+    lld = backends.get("lld_macho", {})
+    # An older kit is verified as a legacy ld64-only kit and must never be
+    # described as LLD-capable. Requiring LLD is an explicit kit-acceptance
+    # decision, so the App's locked Run7 artifact can still be verified.
+    if not lld and not require_lld:
+        cctools = json.loads((deps / "cctools-source.json").read_text())["commit"]
+        ld64 = backends.get("ld64", {})
+        if ld64 and ld64 != {"archive": "libomld64.a", "cctools_commit": cctools, "tapi_shim": True}:
+            fail("missing/invalid pinned ld64/TAPI backend")
+        print("LEGACY: ld64-only kit verified; LLD MachO not required or claimed")
+        return False
     if manifest.get("llvm_commit") != "40f30ea173b50c130c01d843b612f9563ca63930":
         fail("LLD kit requires the currently pinned LLVM commit")
     patches = manifest.get("llvm_patches", {})
     allowed = ({"llvm-arm64e-twork.diff"}, {"llvm-pr-188378.diff", "llvm-pr-188638.diff"})
     if set(patches) not in allowed:
         fail("LLD kit requires the pinned arm64e patch inventory")
-    deps = Path(__file__).resolve().parents[1] / "deps"
     for name, digest in patches.items():
         if digest != hashlib.sha256((deps / "patches" / name).read_bytes()).hexdigest():
             fail("LLVM patch hash differs from pinned input: " + name)
-    backends = manifest.get("linker_backends", {})
-    lld = backends.get("lld_macho", {})
     expected_archives = {arch: f"libomllvm-{arch}.a" for arch in manifest["architectures"]}
     if (lld.get("version") != "24.0.0" or lld.get("llvm_commit") != manifest["llvm_commit"]
             or lld.get("tool_lld") != 4 or lld.get("api") != "lld::macho::link"
@@ -87,9 +98,10 @@ def verify_backend_metadata(manifest):
     ld64 = backends.get("ld64", {})
     if ld64 != {"archive": "libomld64.a", "cctools_commit": cctools, "tapi_shim": True}:
         fail("missing/invalid pinned ld64/TAPI backend")
+    return True
 
 
-def main(directory, integrity_only=False):
+def main(directory, integrity_only=False, require_lld=False):
     root = Path(directory).resolve()
     with (root / "toolchain.json").open(encoding="utf-8") as file:
         manifest = json.load(file)
@@ -97,7 +109,7 @@ def main(directory, integrity_only=False):
         fail("schema 2 required: rebuild artifacts with development header export")
     if manifest.get("architectures") != ["arm64", "arm64e"]:
         fail("full kit requires architectures in order: arm64 arm64e")
-    verify_backend_metadata(manifest)
+    lld_verified = verify_backend_metadata(manifest, require_lld)
     artifacts = manifest.get("artifacts", {})
     for arch in ("arm64", "arm64e"):
         name = f"libomllvm-{arch}.a"
@@ -135,8 +147,10 @@ def main(directory, integrity_only=False):
             verify_file(safe_file(base, name), record)
     for header in ("stddef.h", "stdarg.h", "stdint.h", "ptrauth.h", "arm_neon.h"):
         safe_file(root, "clang-resource/include/" + header)
-    for header in ("llvm/ADT/ArrayRef.h", "clang/Frontend/CompilerInstance.h", "lld/Common/Driver.h", "lld/Common/Version.h", "lld/Common/ErrorHandler.h", "lld/Common/CommonLinkerContext.h"):
-        safe_file(root, "dev-headers/common/include/" + header)
+    lld_headers = ("llvm/ADT/ArrayRef.h", "clang/Frontend/CompilerInstance.h", "lld/Common/Driver.h", "lld/Common/Version.h", "lld/Common/ErrorHandler.h", "lld/Common/CommonLinkerContext.h")
+    for header in lld_headers:
+        if lld_verified:
+            safe_file(root, "dev-headers/common/include/" + header)
     common = root / "dev-headers/common/include"
     for arch in ("arm64", "arm64e"):
         generated = root / f"dev-headers/{arch}/include"
@@ -161,14 +175,18 @@ def main(directory, integrity_only=False):
         fail("invalid minimum iOS")
     if integrity_only:
         print("Metadata/header/hash integrity only; LLD symbols and architecture NOT verified. Not kit acceptance.")
-    else:
+    elif lld_verified:
         for arch in ("arm64", "arm64e"):
             verify_lld_symbols(root / f"libomllvm-{arch}.a")
         print("Schema-2 LLD kit archive/header hashes + MachO/Common/arm64e defined symbols verified.")
+    else:
+        print("LEGACY: ld64-only kit with no LLD symbols claimed; LLD MachO not verified.")
     print("This does not establish ABI, PAC, signing or runtime compatibility.")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--integrity-only"):
-        fail("usage: verify-toolchain-manifest.py KIT [--integrity-only]")
-    main(sys.argv[1], integrity_only=len(sys.argv) == 3)
+    arguments = sys.argv[1:]
+    if not arguments or any(a not in ("--integrity-only", "--require-lld") for a in arguments[1:]):
+        fail("usage: verify-toolchain-manifest.py KIT [--integrity-only] [--require-lld]")
+    main(arguments[0], integrity_only="--integrity-only" in arguments,
+         require_lld="--require-lld" in arguments)
