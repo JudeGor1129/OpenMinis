@@ -87,7 +87,8 @@ jobs:
     # source guards elsewhere in this workflow.
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.full_build) ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/ios15-port' &&
+      (github.event_name == 'push' && (github.ref == 'refs/heads/ios15-port' ||
+        github.ref == 'refs/heads/twork-parity-lld-20261111') &&
        contains(github.event.head_commit.message, '[ios15-full-build]'))
     needs: []
     # Cross-compiles the same arm64 iOS App; avoid the hosted arm64 queue outage.
