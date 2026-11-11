@@ -105,8 +105,14 @@ class Contracts(unittest.TestCase):
     def mutate_manifest(self, change):
         path=self.kit/'toolchain.json'; m=json.loads(path.read_text()); change(m); path.write_text(json.dumps(m))
     def test_old_kit_has_no_lld_capability(self):
-        self.mutate_manifest(lambda m:m.pop('linker_backends'))
-        r=self.run_script('verify-artifacts.sh'); self.assertNotEqual(r.returncode,0); self.assertIn('LLD',r.stderr)
+        self.mutate_manifest(lambda m: m.pop('linker_backends'))
+        r = self.run_script('verify-artifacts.sh')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('LEGACY', r.stdout)
+        r = subprocess.run(['bash', str(ROOT/'verify-artifacts.sh'), str(self.kit), '--require-lld'],
+                           env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('LLD', r.stderr)
     def test_legacy_kit_integrity_and_explicit_lld_requirement(self):
         self.mutate_manifest(lambda m: (m.pop('linker_backends'), m.pop('llvm_patches')))
         for header in ['Driver.h', 'Version.h', 'ErrorHandler.h', 'CommonLinkerContext.h']:

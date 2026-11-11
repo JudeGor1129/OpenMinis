@@ -66,7 +66,19 @@ mkdir -p "$TMP"
 unzip -q "$ARCHIVE" -d "$TMP"
 python3 "$VERIFY" "$LOCK" --archive "$ARCHIVE" --root "$TMP"
 
-bash "$REPO_ROOT/toolchain-build/verify-artifacts.sh" "$TMP"
+VERIFY_FLAGS=()
+if python3 - "$TMP/toolchain.json" <<'PY'
+import json,sys
+with open(sys.argv[1], encoding='utf-8') as handle:
+    manifest = json.load(handle)
+raise SystemExit(0 if 'lld_macho' in manifest.get('linker_backends', {}) else 1)
+PY
+then
+  VERIFY_FLAGS+=(--require-lld)
+else
+  VERIFY_FLAGS+=(--integrity-only)
+fi
+bash "$REPO_ROOT/toolchain-build/verify-artifacts.sh" "$TMP" "${VERIFY_FLAGS[@]}"
 command -v xcrun >/dev/null 2>&1 || {
   echo 'error: xcrun is required for locked archive architecture checks' >&2
   exit 2
