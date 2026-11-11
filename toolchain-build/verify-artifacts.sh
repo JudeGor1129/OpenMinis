@@ -2,8 +2,11 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIR="${1:-$ROOT/build/ios}"
-shift || true
-VERIFY_FLAGS=("$@")
+VERIFY_FLAG="${2:-}"
+case "$VERIFY_FLAG" in
+  ""|--integrity-only|--require-lld) ;;
+  *) echo "unsupported verification mode: $VERIFY_FLAG" >&2; exit 2 ;;
+esac
 fail=0
 for file in libomllvm-arm64.a libomllvm-arm64e.a libomld64.a toolchain.json; do
   if [ ! -f "$DIR/$file" ]; then
@@ -22,7 +25,7 @@ command -v python3 >/dev/null 2>&1 || { echo "Python 3 required for manifest/has
 # The Python gate checks declared capabilities, complete header hashes and
 # defined MachO/Common/arm64e symbols when LLD is required. Calling without a
 # flag verifies a legacy ld64-only kit but never claims LLD.
-python3 "$ROOT/scripts/verify-toolchain-manifest.py" "$DIR" "${VERIFY_FLAGS[@]}"
+python3 "$ROOT/scripts/verify-toolchain-manifest.py" "$DIR" $VERIFY_FLAG
 if command -v xcrun >/dev/null 2>&1; then
   xcrun lipo -info "$DIR/libomllvm-arm64.a"
   xcrun lipo "$DIR/libomllvm-arm64.a" -verify_arch arm64
