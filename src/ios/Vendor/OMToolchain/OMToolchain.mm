@@ -772,8 +772,10 @@ public:
             NSString *value = arguments[i];
             // dylib rpaths may legitimately use dyld placeholders; every other
             // path-valued option remains absolute-only.
-            BOOL rpathPlaceholder = [s isEqualToString:@"-rpath"] &&
-                ([value hasPrefix:@"@loader_path/"] || [value hasPrefix:@"@executable_path/"]);
+            BOOL rpathPlaceholder = ([s isEqualToString:@"-rpath"] ||
+                [s isEqualToString:@"-install_name"]) &&
+                ([value hasPrefix:@"@rpath/"] || [value hasPrefix:@"@loader_path/"] ||
+                 [value hasPrefix:@"@executable_path/"]);
             valid = OMAbsolutePath(value) || rpathPlaceholder;
             if ([s isEqualToString:@"-o"]) ++outputs;
             if ([s isEqualToString:@"-force_load"]) ++inputs;
