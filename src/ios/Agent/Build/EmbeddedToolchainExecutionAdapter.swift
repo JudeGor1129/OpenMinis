@@ -516,15 +516,26 @@ enum EmbeddedCodeSignature {
         guard seenTypes == expectedTypes else {
             throw EmbeddedCodeSignatureError.malformed("unexpected or missing signature blob type")
         }
+        // lld and ld64 align every blob to 8 bytes, so the index table and the
+        // first blob are separated by up to 7 zero bytes. Accept that filler,
+        // but reject overlap, non-zero filler and any uncovered tail.
         indexedBlobs.sort { $0.offset < $1.offset }
         var nextBlobOffset = indexEnd
         for blob in indexedBlobs {
-            guard blob.offset == nextBlobOffset else {
-                throw EmbeddedCodeSignatureError.malformed("signature blobs overlap or leave gaps")
+            guard blob.offset >= nextBlobOffset else {
+                throw EmbeddedCodeSignatureError.malformed("signature blobs overlap")
             }
-            nextBlobOffset += blob.length
+            if blob.offset > nextBlobOffset {
+                guard let filler = slice(base + nextBlobOffset, blob.offset - nextBlobOffset),
+                      filler.allSatisfy({ $0 == 0 }) else {
+                    throw EmbeddedCodeSignatureError.malformed("signature blob alignment filler is not zero")
+                }
+            }
+            nextBlobOffset = blob.offset + blob.length
         }
-        guard nextBlobOffset == Int(length) else {
+        guard nextBlobOffset <= Int(length),
+              let blobTail = slice(base + nextBlobOffset, Int(length) - nextBlobOffset),
+              blobTail.allSatisfy({ $0 == 0 }) else {
             throw EmbeddedCodeSignatureError.malformed("signature blobs do not cover the SuperBlob")
         }
         guard let codeDirectoryEntry = indexedBlobs.first(where: { $0.type == slotCodeDirectory }),
@@ -556,9 +567,18 @@ enum EmbeddedCodeSignature {
         guard identStart < cd + Int(cdLength), let identData = slice(identStart, cd + Int(cdLength) - identStart),
               let nul = identData.firstIndex(of: 0),
               let identifier = String(data: identData[identData.startIndex..<nul], encoding: .utf8),
-              !identifier.isEmpty, identifier.utf8.count <= 256,
-              Int(hashOffset) == Int(identOffset) + identifier.utf8.count + 1 + Int(specialSlots) * 32,
-              hashArray + Int(codeSlots) * 32 == cd + Int(cdLength) else {
+              !identifier.isEmpty, identifier.utf8.count <= 256 else {
+            throw EmbeddedCodeSignatureError.malformed("CodeDirectory identifier")
+        }
+        // The hash array follows the identifier and its special slots. lld pads
+        // that region up to a 32-byte boundary, so only the minimum is fixed and
+        // the filler between the NUL terminator and the special slots is checked.
+        let identTerminator = Int(identOffset) + identifier.utf8.count + 1
+        let specialSlotsStart = Int(hashOffset) - Int(specialSlots) * 32
+        guard specialSlotsStart >= identTerminator,
+              hashArray + Int(codeSlots) * 32 == cd + Int(cdLength),
+              let hashFiller = slice(identStart + identTerminator, specialSlotsStart - identTerminator),
+              hashFiller.allSatisfy({ $0 == 0 }) else {
             throw EmbeddedCodeSignatureError.malformed("CodeDirectory identifier or hash layout")
         }
         let pageBytes = 1 << Int(pageShift)

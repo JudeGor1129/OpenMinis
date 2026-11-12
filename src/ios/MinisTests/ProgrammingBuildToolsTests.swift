@@ -381,6 +381,82 @@ final class ProgrammingBuildToolsTests: XCTestCase {
             expectedEntitlements: entitlements))
     }
 
+    func testEmbeddedAdHocSignatureAcceptsLLDAlignment() throws {
+        func little(_ value: UInt32) -> Data {
+            Data([UInt8(truncatingIfNeeded: value), UInt8(truncatingIfNeeded: value >> 8),
+                  UInt8(truncatingIfNeeded: value >> 16), UInt8(truncatingIfNeeded: value >> 24)])
+        }
+        func big(_ value: UInt32) -> Data {
+            Data([UInt8(truncatingIfNeeded: value >> 24), UInt8(truncatingIfNeeded: value >> 16),
+                  UInt8(truncatingIfNeeded: value >> 8), UInt8(truncatingIfNeeded: value)])
+        }
+        func put(_ bytes: Data, at offset: Int, in data: inout Data) {
+            data.replaceSubrange(offset..<(offset + bytes.count), with: bytes)
+        }
+
+        // Mirrors the layout the in-process lld emits: the single blob starts on
+        // the next 8-byte boundary after the index table, and the identifier
+        // region is rounded up to 32 bytes before the hash array.
+        let identifier = Data("MinisSmoke\0".utf8)
+        let fixedHeader = 0x58
+        let hashOffset = fixedHeader + 32
+        let codeDirectoryLength = hashOffset + 32
+        let codeDirectoryOffset = 24
+        let superBlobLength = codeDirectoryOffset + codeDirectoryLength
+        let signatureSize = (superBlobLength + 7) & ~7
+        let codeLimit = 4096
+
+        var image = Data(repeating: 0, count: codeLimit)
+        put(little(0xfeedfacf), at: 0, in: &image)
+        put(little(0x0100000c), at: 4, in: &image)
+        put(little(2), at: 12, in: &image)
+        put(little(1), at: 16, in: &image)
+        put(little(16), at: 20, in: &image)
+        put(little(0x1d), at: 32, in: &image)
+        put(little(16), at: 36, in: &image)
+        put(little(UInt32(codeLimit)), at: 40, in: &image)
+        put(little(UInt32(signatureSize)), at: 44, in: &image)
+
+        var codeDirectory = Data(repeating: 0, count: codeDirectoryLength)
+        put(big(EmbeddedCodeSignature.magicCodeDirectory), at: 0, in: &codeDirectory)
+        put(big(UInt32(codeDirectoryLength)), at: 4, in: &codeDirectory)
+        put(big(0x20400), at: 8, in: &codeDirectory)
+        put(big(0x2), at: 12, in: &codeDirectory)
+        put(big(UInt32(hashOffset)), at: 16, in: &codeDirectory)
+        put(big(UInt32(fixedHeader)), at: 20, in: &codeDirectory)
+        put(big(0), at: 24, in: &codeDirectory)
+        put(big(1), at: 28, in: &codeDirectory)
+        put(big(UInt32(codeLimit)), at: 32, in: &codeDirectory)
+        codeDirectory[36] = 32
+        codeDirectory[37] = 2
+        codeDirectory[39] = 12
+        put(identifier, at: fixedHeader, in: &codeDirectory)
+        put(Data(SHA256.hash(data: image)), at: hashOffset, in: &codeDirectory)
+
+        var superBlob = big(EmbeddedCodeSignature.magicEmbeddedSignature)
+        superBlob.append(big(UInt32(superBlobLength)))
+        superBlob.append(big(1))
+        superBlob.append(big(EmbeddedCodeSignature.slotCodeDirectory))
+        superBlob.append(big(UInt32(codeDirectoryOffset)))
+        superBlob.append(codeDirectory)
+        superBlob.append(Data(repeating: 0, count: signatureSize - superBlob.count))
+        image.append(superBlob)
+
+        let report = try EmbeddedCodeSignature.verify(image)
+        XCTAssertTrue(report.adHoc)
+        XCTAssertEqual(report.identifier, "MinisSmoke")
+        XCTAssertEqual(report.codeSlots, 1)
+        XCTAssertFalse(report.entitlementsPresent)
+
+        var nonZeroBlobFiller = image
+        nonZeroBlobFiller[codeLimit + 20] = 0x7f
+        XCTAssertThrowsError(try EmbeddedCodeSignature.verify(nonZeroBlobFiller))
+
+        var nonZeroIdentifierFiller = image
+        nonZeroIdentifierFiller[codeLimit + codeDirectoryOffset + fixedHeader + identifier.count] = 0x7f
+        XCTAssertThrowsError(try EmbeddedCodeSignature.verify(nonZeroIdentifierFiller))
+    }
+
     func testEmbeddedProviderRequiresNativeWorkspaceAndNeverRunsShell() async {
         final class CallCounter { var value = 0 }
         let shellCalls = CallCounter()
