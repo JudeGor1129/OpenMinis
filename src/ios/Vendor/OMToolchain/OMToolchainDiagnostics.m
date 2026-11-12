@@ -623,4 +623,84 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
     }
 }
 
++ (NSDictionary<NSString *, id> *)runDriverLLDSuiteWithIterations:(NSUInteger)iterations {
+    @autoreleasepool {
+        NSUInteger rounds = MAX((NSUInteger)1, MIN(iterations, (NSUInteger)3));
+        NSDictionary<NSString *, NSString *> *capability = [OMToolchain capabilityStatus];
+        BOOL ready = [capability[@"compiler_driver_linked"] isEqualToString:@"yes"] &&
+            [capability[@"lld_linked"] isEqualToString:@"yes"] &&
+            [capability[@"sdk"] isEqualToString:@"present"] &&
+            [capability[@"resource_headers"] isEqualToString:@"present"];
+        NSMutableDictionary *report = [@{
+            @"schema": @1,
+            @"evidence_kind": @"driver_lld_fixed_fixtures",
+            @"runtime_unverified": @YES,
+            @"om_toolchain_verified_defined": @NO,
+            @"provider_executable": @NO,
+            @"output_execution_attempted": @NO,
+            @"runtime_verification_gate": capability[@"verification"] ?: @"not_granted",
+            @"requested_iterations": @(iterations),
+            @"bounded_iterations": @(rounds),
+            @"capability": capability,
+        } mutableCopy];
+        if (!ready) {
+            report[@"passed"] = @NO;
+            report[@"skipped"] = @YES;
+            report[@"reason"] = @"fixed Driver/LLD fixture requires linked Driver, LLD, SDK and resource headers";
+            report[@"steps"] = @[];
+            return report;
+        }
+        NSString *identifier = [NSString stringWithFormat:@"om-driver-lld-%@", NSUUID.UUID.UUIDString];
+        NSURL *root = [[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
+                                                               inDomains:NSUserDomainMask].firstObject
+            URLByAppendingPathComponent:@"MinisToolchain/Diagnostics" isDirectory:YES];
+        root = [root URLByAppendingPathComponent:identifier isDirectory:YES];
+        NSURL *fixtures = [root URLByAppendingPathComponent:@"fixtures" isDirectory:YES];
+        NSURL *artifacts = [root URLByAppendingPathComponent:@"artifacts" isDirectory:YES];
+        NSFileManager *fm = [NSFileManager defaultManager];
+        NSError *error = nil;
+        if (![fm createDirectoryAtURL:fixtures withIntermediateDirectories:YES attributes:nil error:&error] ||
+            ![fm createDirectoryAtURL:artifacts withIntermediateDirectories:YES attributes:nil error:&error]) {
+            report[@"passed"] = @NO; report[@"reason"] = error.localizedDescription ?: @"cannot create fixture directory"; return report;
+        }
+        NSString *source = @"#import <Foundation/Foundation.h>\n\n@interface JMSParityObject : NSObject\n+ (int)parityValue;\n@end\n\n@implementation JMSParityObject\n+ (int)parityValue { return 42; }\n@end\n";
+        NSURL *sourceURL = [fixtures URLByAppendingPathComponent:@"Probe.m"];
+        [source writeToURL:sourceURL atomically:YES encoding:NSUTF8StringEncoding error:&error];
+        if (error) { report[@"passed"] = @NO; report[@"reason"] = error.localizedDescription; return report; }
+        NSString *sysroot = capability[@"sysroot"] ?: @"";
+        NSString *resource = capability[@"resource_dir"] ?: @"";
+        NSURL *objectURL = [artifacts URLByAppendingPathComponent:@"driver-arm64.o"];
+        NSArray *driver = @[@"-target", @"arm64-apple-ios15.4", @"-isysroot", sysroot,
+            @"-resource-dir", resource, @"-fobjc-arc", @"-c", sourceURL.path, @"-o", objectURL.path];
+        NSString *out = nil, *err = nil;
+        NSDate *started = [NSDate date];
+        OMToolchainStatus driverStatus = [OMToolchain runCompilerDriver:driver stdout:&out stderr:&err];
+        BOOL driverPassed = driverStatus == OMToolchainStatusOK && [fm fileExistsAtPath:objectURL.path] &&
+            OMFileBytes(objectURL.path) > 0;
+        NSMutableArray *steps = [NSMutableArray arrayWithObject:OMStep(@"driver_arm64_object", driverStatus,
+            driverPassed, -started.timeIntervalSinceNow, out, err, @{ @"arguments": driver, @"output": objectURL.path })];
+        if (driverPassed) {
+            NSString *stub = OMLibSystemStub(sysroot);
+            NSURL *dylibURL = [artifacts URLByAppendingPathComponent:@"lld-arm64.dylib"];
+            NSArray *link = @[@"-arch", @"arm64", @"-platform_version", @"ios", @"15.4", @"16.4",
+                @"-dylib", @"-install_name", @"/var/jb/Library/MobileSubstrate/DynamicLibraries/ObjCParity.dylib",
+                @"-o", dylibURL.path, objectURL.path, stub ?: @""];
+            out = nil; err = nil; started = [NSDate date];
+            OMToolchainStatus lldStatus = [OMToolchain runLLD:link stdout:&out stderr:&err];
+            BOOL linkPassed = lldStatus == OMToolchainStatusOK && [fm fileExistsAtPath:dylibURL.path] && OMFileBytes(dylibURL.path) > 0;
+            [steps addObject:OMStep(@"lld_arm64_dylib", lldStatus, linkPassed, -started.timeIntervalSinceNow,
+                out, err, @{ @"arguments": link, @"output": dylibURL.path, @"libsystem_stub": stub ?: @"missing" })];
+            report[@"passed"] = @(driverPassed && linkPassed);
+            report[@"artifacts"] = @[objectURL.path, dylibURL.path];
+        } else { report[@"passed"] = @NO; }
+        report[@"steps"] = steps;
+        report[@"artifact_directory"] = artifacts.path;
+        report[@"fixture_source"] = sourceURL.path;
+        NSURL *reportURL = [artifacts URLByAppendingPathComponent:@"report.json"];
+        NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:nil];
+        [data writeToURL:reportURL options:NSDataWritingAtomic error:nil];
+        return report;
+    }
+}
+
 @end

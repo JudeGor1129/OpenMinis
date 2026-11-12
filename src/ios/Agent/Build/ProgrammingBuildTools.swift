@@ -7,6 +7,51 @@ final class ProgrammingBuildTools {
 
     private init() {}
 
+    /// Fixed Driver/LLD diagnostic. The caller supplies no source, arguments or
+    /// output path; only the internally resolved session workspace is used.
+    func runToolchainFixtures(iterations: Int, workspace: URL) async throws -> [String: Any] {
+        let bounded = max(1, min(3, iterations))
+        let data = try await Task.detached(priority: .userInitiated) {
+            let report = OMToolchainDiagnostics.runDriverLLD(iterations: UInt(bounded))
+            return try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+        }.value
+        guard var report = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw BuildToolError.invalidArguments("Fixed fixture returned invalid report JSON.")
+        }
+        guard let directory = report["artifact_directory"] as? String, !directory.isEmpty else {
+            return report
+        }
+        let source = URL(fileURLWithPath: directory, isDirectory: true).standardizedFileURL
+        let allowedBase = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MinisToolchain/Diagnostics", isDirectory: true).standardizedFileURL
+        guard source.path.hasPrefix(allowedBase.path + "/"), source.lastPathComponent == "artifacts" else {
+            throw BuildToolError.invalidArguments("Fixed fixture returned an unsafe output directory.")
+        }
+        let destination = workspace.appendingPathComponent("toolchain-fixtures", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        var exported: [[String: Any]] = []
+        for name in ["driver-arm64.o", "lld-arm64.dylib", "report.json"] {
+            let input = source.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: input.path) else { continue }
+            let attrs = try FileManager.default.attributesOfItem(atPath: input.path)
+            guard (attrs[.type] as? FileAttributeType) == .typeRegular,
+                  let count = attrs[.size] as? NSNumber, count.intValue > 0,
+                  count.intValue <= 16 * 1024 * 1024 else {
+                throw BuildToolError.invalidArguments("Fixed fixture produced an unsafe or oversized file.")
+            }
+            let bytes = try Data(contentsOf: input, options: .mappedIfSafe)
+            let output = destination.appendingPathComponent(name)
+            try bytes.write(to: output, options: .withoutOverwriting)
+            let sha = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            exported.append(["name": name, "bytes": bytes.count, "sha256": sha])
+        }
+        report["exported_files"] = exported
+        report["workspace_directory"] = destination.path
+        report["guest_directory"] = "/var/minis/workspace/toolchain-fixtures/" + destination.lastPathComponent
+        return report
+    }
+
     func build(request: BuildRequest, executor: @escaping BuildShellExecutor,
                nativeWorkspaceRoot: URL? = nil) async throws -> BuildToolResult {
         guard (1...5).contains(request.maxAttempts) else {
