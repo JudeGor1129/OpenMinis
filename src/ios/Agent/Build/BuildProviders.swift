@@ -405,10 +405,12 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
                 payload = slices[0]
             } else {
                 payload = try EmbeddedToolchainUniversalBinary.merge(
-                    arm64: slices[0], arm64e: slices[1], name: containerName, filetype: filetype)
+                    arm64: slices[0], arm64e: slices[1], name: containerName, filetype: filetype,
+                    fixupPolicy: .lldCompatible)
             }
             let verified = try EmbeddedToolchainUniversalBinary.inspectPayload(payload,
-                name: containerName, filetype: filetype, expectedArchitectures: target.architectures)
+                name: containerName, filetype: filetype, expectedArchitectures: target.architectures,
+                fixupPolicy: .lldCompatible)
             let foundArchitectures = Set(architectures + verified.architectures)
             architectures = ["arm64", "arm64e"].filter { foundArchitectures.contains($0) }
             let installed = EmbeddedTheosDebPackage.rootlessPrefix + target.installPath

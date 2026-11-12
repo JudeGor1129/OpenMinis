@@ -93,7 +93,8 @@ require('"-no_fixup_chains"' in theos_executor and
         'OMToolchain.runCompilerDriver(arguments' in theos_executor and
         'OMToolchain.runLLD(linkArguments' in theos_executor and
         'let linkMinimumIOS = arch == .arm64e ? "14.0" : minimumIOS' in theos_executor and
-        'fixupPolicy: filetype == 6 ? .xcodeCompatible : .any' in theos_executor,
+        'let fixupPolicy: EmbeddedAdapterArtifact.FixupPolicy' in theos_executor and
+        '.lldCompatible' in theos_executor,
         "embedded Theos must follow the Xcode arm64-classic/arm64e-chained split")
 require('"-no_fixup_chains"' in adapter and
         'if architecture == .arm64 { linkerArguments.append("-no_fixup_chains") }' in adapter and
@@ -152,7 +153,8 @@ require("context.executor" not in theos_provider,
 require("EmbeddedUniversalFileType" in universal and "case executable = 2" in universal and
         "filetype: UInt32 = EmbeddedUniversalFileType.dylib.rawValue" in universal,
         "universal container must carry dylibs and daemon executables without faking slices")
-require("fixupPolicy: filetype == EmbeddedUniversalFileType.dylib.rawValue ? .xcodeCompatible : .any" in universal,
+require("fixupPolicy: EmbeddedAdapterArtifact.FixupPolicy = .xcodeCompatible" in universal and
+        "fixupPolicy: fixupPolicy" in universal,
         "universal dylib slices must follow the Xcode fixup split")
 require("EmbeddedTheosControlMetadata" in deb_package and "EmbeddedTheosLayoutLoader" in deb_package and
         "readBoundedProjectFile" in deb_package and "isSymbolicLink" in deb_package,

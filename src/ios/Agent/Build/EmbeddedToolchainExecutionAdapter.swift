@@ -122,6 +122,9 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         case any
         case classic
         case xcodeCompatible
+        /// Xcode's ld64 uses classic for arm64; LLD uses chained form. Both are
+        /// valid, while arm64e must still carry chained fixups.
+        case lldCompatible
     }
 
     /// Inspect one thin target slice. Never rewrite headers to claim a target.
@@ -165,7 +168,7 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         // default, with cryptid=0. This is metadata, not encrypted content.
         // Admit only its bounded, unencrypted form; never bypass inspection.
         let dylibCommands = objectCommands.union([0xc, 0xd, 0x1b, 0x2e, 0x80000022, 0x26, 0x1d,
-                                                  0x2a, 0x80000033, 0x80000034, 0x2c])
+                                                  0x2a, 0x80000033, 0x80000034, 0x2c, 0x8000001c])
         // MH_EXECUTE (daemon/tool): system dylibs, a dyld stub, rpaths and LC_MAIN.
         let executableCommands = dylibCommands.union([0xe, 0x8000001c, 0x80000028])
         var hasMain = false
@@ -312,6 +315,14 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
             } else {
                 guard hasClassicDyldInfo, !hasChainedFixups else {
                     throw invalid("arm64_classic_dyld_info_required")
+                }
+            }
+        case .lldCompatible:
+            if architecture == .arm64e {
+                guard hasChainedFixups else { throw invalid("arm64e_chained_fixups_required") }
+            } else {
+                guard hasClassicDyldInfo || hasChainedFixups else {
+                    throw invalid("arm64_dyld_info_or_chained_fixups_required")
                 }
             }
         }

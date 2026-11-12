@@ -89,7 +89,7 @@ enum EmbeddedToolchainDebPackage {
                       cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) throws -> Data {
         try metadata.validate()
         guard !cancellation.isCancelled else { throw CancellationError() }
-        _ = try EmbeddedToolchainUniversalBinary.inspect(dylib, name: metadata.dylibName)
+        _ = try EmbeddedToolchainUniversalBinary.inspect(dylib, name: metadata.dylibName, fixupPolicy: .lldCompatible)
         let prefix = metadata.payloadDirectory
         let directories = ["var", "var/jb", "var/jb/Library", "var/jb/Library/MobileSubstrate", prefix]
         var entries = directories.map { PackageTarEntry(path: $0, bytes: Data(), directory: true, mode: 0o755) }
@@ -131,7 +131,7 @@ enum EmbeddedToolchainDebPackage {
               payload[6].bytes == expectedFilter else {
             throw EmbeddedAdapterError.rejected("DEB payload/filter/path/permissions mismatch")
         }
-        let universal = try EmbeddedToolchainUniversalBinary.inspect(payload[5].bytes, name: metadata.dylibName)
+        let universal = try EmbeddedToolchainUniversalBinary.inspect(payload[5].bytes, name: metadata.dylibName, fixupPolicy: .lldCompatible)
         return EmbeddedDebArtifact(filename: metadata.filename, bytes: deb.count,
             sha256: EmbeddedAdapterArtifact.digest(deb), payloadPath: expectedPaths[5], universal: universal)
     }
@@ -312,7 +312,7 @@ enum EmbeddedTheosDebPackage {
             let bytes = matches[0].bytes
             let universal = try EmbeddedToolchainUniversalBinary.inspectPayload(bytes,
                 name: requirement.name, filetype: requirement.filetype,
-                expectedArchitectures: requirement.architectures)
+                expectedArchitectures: requirement.architectures, fixupPolicy: .lldCompatible)
             for slice in universal.slices {
                 let thin = Data(bytes[slice.offset..<(slice.offset + slice.bytes)])
                 let signature = try EmbeddedCodeSignature.verify(thin,

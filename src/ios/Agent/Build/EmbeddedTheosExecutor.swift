@@ -225,12 +225,14 @@ enum EmbeddedTheosExecutor {
                     throw EmbeddedTheosExecutorError.invalidOutput(outputName)
                 }
                 let filetype: UInt32 = plan.target.kind == .tweak ? 6 : 2
+                let fixupPolicy: EmbeddedAdapterArtifact.FixupPolicy = driverReady
+                    ? .lldCompatible : (filetype == 6 ? .xcodeCompatible : .any)
                 let artifact: EmbeddedAdapterArtifact
                 let signature: EmbeddedCodeSignatureReport
                 do {
                     artifact = try EmbeddedAdapterArtifact.inspect(data, name: outputName,
                         filetype: filetype, architecture: arch,
-                        fixupPolicy: filetype == 6 ? .xcodeCompatible : .any)
+                        fixupPolicy: fixupPolicy)
                     signature = try EmbeddedCodeSignature.verify(data,
                         expectedEntitlements: entitlementBytes)
                     guard signature.adHoc else {

@@ -77,7 +77,7 @@ enum EmbeddedToolchainProjectPublisher {
         guard safeDylibFilename(name) else { throw EmbeddedToolchainProjectPublisherError.unsafeName }
         guard data.count <= EmbeddedToolchainUniversalBinary.maxBytes else { throw EmbeddedToolchainProjectPublisherError.outputTooLarge }
         guard !cancellation.isCancelled else { throw CancellationError() }
-        do { _ = try EmbeddedToolchainUniversalBinary.inspect(data, name: name) }
+        do { _ = try EmbeddedToolchainUniversalBinary.inspect(data, name: name, fixupPolicy: .lldCompatible) }
         catch { throw EmbeddedToolchainProjectPublisherError.invalidMachO }
         return try publishVerifiedBytes(data, named: name, architecture: "arm64+arm64e", filetype: 6,
             kind: "universal_dylib", maximumBytes: EmbeddedToolchainUniversalBinary.maxBytes,

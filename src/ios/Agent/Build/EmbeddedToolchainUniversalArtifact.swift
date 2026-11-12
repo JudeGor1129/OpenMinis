@@ -64,6 +64,7 @@ enum EmbeddedToolchainUniversalBinary {
 
     static func merge(arm64: Data, arm64e: Data, name: String,
                       filetype: UInt32 = EmbeddedUniversalFileType.dylib.rawValue,
+                      fixupPolicy: EmbeddedAdapterArtifact.FixupPolicy = .xcodeCompatible,
                       cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) throws -> Data {
         guard !cancellation.isCancelled else { throw CancellationError() }
         guard [EmbeddedUniversalFileType.executable.rawValue,
@@ -75,7 +76,7 @@ enum EmbeddedToolchainUniversalBinary {
         for index in 0..<2 {
             _ = try EmbeddedAdapterArtifact.inspect(slices[index], name: name, filetype: filetype,
                 architecture: targets[index],
-                fixupPolicy: filetype == EmbeddedUniversalFileType.dylib.rawValue ? .xcodeCompatible : .any)
+                fixupPolicy: fixupPolicy)
         }
         let offsets = [align(48), align(align(48) + arm64.count)]
         let total = offsets[1] + arm64e.count
@@ -95,7 +96,7 @@ enum EmbeddedToolchainUniversalBinary {
             data.append(Data(repeating: 0, count: offsets[index] - data.count))
             data.append(slices[index])
         }
-        _ = try inspect(data, name: name, filetype: filetype)
+        _ = try inspect(data, name: name, filetype: filetype, fixupPolicy: fixupPolicy)
         guard !cancellation.isCancelled else { throw CancellationError() }
         return data
     }
@@ -103,9 +104,10 @@ enum EmbeddedToolchainUniversalBinary {
     /// Inspect a payload against its validated target declaration. Single-arch
     /// outputs remain thin; a FAT is never silently thinned or accepted for them.
     static func inspectPayload(_ data: Data, name: String, filetype: UInt32,
-                               expectedArchitectures: [EmbeddedToolchainArchitecture]) throws -> EmbeddedUniversalArtifact {
+                               expectedArchitectures: [EmbeddedToolchainArchitecture],
+                               fixupPolicy: EmbeddedAdapterArtifact.FixupPolicy = .xcodeCompatible) throws -> EmbeddedUniversalArtifact {
         if expectedArchitectures == [.arm64, .arm64e] {
-            return try inspect(data, name: name, filetype: filetype)
+            return try inspect(data, name: name, filetype: filetype, fixupPolicy: fixupPolicy)
         }
         guard expectedArchitectures == [.arm64] || expectedArchitectures == [.arm64e],
               [EmbeddedUniversalFileType.executable.rawValue,
@@ -116,7 +118,7 @@ enum EmbeddedToolchainUniversalBinary {
         }
         let artifact = try EmbeddedAdapterArtifact.inspect(data, name: name, filetype: filetype,
             architecture: expectedArchitectures[0],
-            fixupPolicy: filetype == EmbeddedUniversalFileType.dylib.rawValue ? .xcodeCompatible : .any)
+            fixupPolicy: fixupPolicy)
         let slice = EmbeddedUniversalSlice(architecture: artifact.architecture,
             cpuSubtype: read32(data, at: 8, bigEndian: false), offset: 0,
             bytes: data.count, sha256: artifact.sha256)
@@ -125,7 +127,8 @@ enum EmbeddedToolchainUniversalBinary {
     }
 
     static func inspect(_ data: Data, name: String,
-                        filetype: UInt32 = EmbeddedUniversalFileType.dylib.rawValue) throws -> EmbeddedUniversalArtifact {
+                        filetype: UInt32 = EmbeddedUniversalFileType.dylib.rawValue,
+                        fixupPolicy: EmbeddedAdapterArtifact.FixupPolicy = .xcodeCompatible) throws -> EmbeddedUniversalArtifact {
         guard data.count >= 48, data.count <= maxBytes,
               read32(data, at: 0) == 0xcafebabe, read32(data, at: 4) == 2 else {
             throw rejected("requires canonical FAT32 with exactly two slices")
@@ -152,7 +155,7 @@ enum EmbeddedToolchainUniversalBinary {
             let thin = Data(data[offset..<(offset + bytes)])
             let artifact = try EmbeddedAdapterArtifact.inspect(thin, name: name, filetype: filetype,
                 architecture: targets[index],
-                fixupPolicy: filetype == EmbeddedUniversalFileType.dylib.rawValue ? .xcodeCompatible : .any)
+                fixupPolicy: fixupPolicy)
             guard read32(thin, at: 8, bigEndian: false) == subtype else {
                 throw rejected("FAT table differs from thin slice header")
             }
