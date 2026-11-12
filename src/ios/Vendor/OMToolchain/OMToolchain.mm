@@ -266,7 +266,8 @@ bool OMValidArguments(NSArray<NSString *> *args) {
         bytes += strlen(p);
         // Response files are rejected, but dyld rpath placeholders are legal
         // values and are admitted only in that exact form.
-        BOOL dyldPlaceholder = [s hasPrefix:@"@loader_path/"] || [s hasPrefix:@"@executable_path/"];
+        BOOL dyldPlaceholder = [s hasPrefix:@"@rpath/"] ||
+            [s hasPrefix:@"@loader_path/"] || [s hasPrefix:@"@executable_path/"];
         if (bytes > 1024 * 1024 || ([s hasPrefix:@"@"] && !dyldPlaceholder) ||
             [s rangeOfCharacterFromSet:[NSCharacterSet controlCharacterSet]].location != NSNotFound) return false;
     }
