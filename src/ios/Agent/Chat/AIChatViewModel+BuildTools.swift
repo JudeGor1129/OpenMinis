@@ -67,10 +67,9 @@ extension AIChatViewModel {
                 description: "Run fixed Clang Driver and LLD Mach-O fixtures only. No caller source, flags, paths, installation, generated-code execution, or runtime verification.",
                 parameters: [
                     "tool_title": title,
-                    "iterations": AgentToolParam(type: .integer, description: "Bounded fixed-fixture rounds, 1 through 3 (default 1)."),
                 ],
                 required: ["tool_title"],
-                propertyOrdering: ["tool_title", "iterations"]
+                propertyOrdering: ["tool_title"]
             ),
         ]
     }
@@ -132,9 +131,8 @@ extension AIChatViewModel {
                 let result = await ProgrammingBuildTools.shared.verifyArtifact(path: path, kind: kind, executor: executor)
                 return FileToolResult(output: try encodeToolOutput(result, encoder: encoder), success: result.state == .available)
             case "run_toolchain_fixtures":
-                let iterations = max(1, min(3, args["iterations"] as? Int ?? 1))
                 let result = try await ProgrammingBuildTools.shared.runToolchainFixtures(
-                    iterations: iterations, workspace: sessionWorkspaceDirectory)
+                    workspace: sessionWorkspaceDirectory)
                 let resultData = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
                 guard let output = String(data: resultData, encoding: .utf8) else {
                     throw BuildToolError.invalidArguments("Fixed fixture output is not UTF-8.")

@@ -13,8 +13,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// Fixed-source Clang Driver and LLD Mach-O compile/link diagnostics.
 /// No caller source, flags, input paths, or output paths are accepted.
 /// This never executes generated code and never authorizes BuildProvider execution.
-+ (NSDictionary<NSString *, id> *)runDriverLLDSuiteWithIterations:(NSUInteger)iterations
-    NS_SWIFT_NAME(runDriverLLD(iterations:));
++ (NSDictionary<NSString *, id> *)runDriverLLDSuite
+    NS_SWIFT_NAME(runDriverLLD());
 
 @end
 

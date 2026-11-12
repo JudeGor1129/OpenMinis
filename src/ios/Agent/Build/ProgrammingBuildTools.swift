@@ -9,10 +9,9 @@ final class ProgrammingBuildTools {
 
     /// Fixed Driver/LLD diagnostic. The caller supplies no source, arguments or
     /// output path; only the internally resolved session workspace is used.
-    func runToolchainFixtures(iterations: Int, workspace: URL) async throws -> [String: Any] {
-        let bounded = max(1, min(3, iterations))
+    func runToolchainFixtures(workspace: URL) async throws -> [String: Any] {
         let data = try await Task.detached(priority: .userInitiated) {
-            let report = OMToolchainDiagnostics.runDriverLLD(iterations: UInt(bounded))
+            let report = OMToolchainDiagnostics.runDriverLLD()
             return try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
         }.value
         guard var report = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -30,7 +29,7 @@ final class ProgrammingBuildTools {
             .appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         var exported: [[String: Any]] = []
-        for name in ["driver-arm64.o", "lld-arm64.dylib", "report.json"] {
+        for name in ["Probe.m", "driver-arm64.o", "lld-arm64.dylib", "report.json"] {
             let input = source.appendingPathComponent(name)
             guard FileManager.default.fileExists(atPath: input.path) else { continue }
             let attrs = try FileManager.default.attributesOfItem(atPath: input.path)

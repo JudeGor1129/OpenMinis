@@ -207,13 +207,13 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
 + (NSDictionary<NSString *, id> *)runSuiteWithIterations:(NSUInteger)iterations {
     @try {
         @autoreleasepool {
+        NSUInteger rounds = MAX((NSUInteger)1, MIN(iterations, (NSUInteger)3));
         NSDictionary<NSString *, NSString *> *capability = [OMToolchain capabilityStatus];
         BOOL runtimeEvidenceAuthorized = [capability[@"verification"] isEqualToString:@"passed"];
         NSMutableDictionary<NSString *, id> *report = [@{
             @"schema": @1,
             @"suite": @"fixed in-process Clang/ld64 runtime diagnostics",
-            @"requested_iterations": @(iterations),
-            @"bounded_iterations": @1,
+            @"fixed_fixture_rounds": @1,
             @"capability": capability,
             @"provider_executable": @NO,
             @"runtime_verification_gate": runtimeEvidenceAuthorized ? @"fixed_fixture_evidence_verified" : @"not_granted",
@@ -622,7 +622,7 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
     }
 }
 
-+ (NSDictionary<NSString *, id> *)runDriverLLDSuiteWithIterations:(NSUInteger)iterations {
++ (NSDictionary<NSString *, id> *)runDriverLLDSuite {
     @autoreleasepool {
         NSDictionary<NSString *, NSString *> *capability = [OMToolchain capabilityStatus];
         BOOL ready = [capability[@"compiler_driver_linked"] isEqualToString:@"yes"] &&
@@ -637,8 +637,7 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
             @"provider_executable": @NO,
             @"output_execution_attempted": @NO,
             @"runtime_verification_gate": capability[@"verification"] ?: @"not_granted",
-            @"requested_iterations": @(iterations),
-            @"bounded_iterations": @1,
+            @"fixed_fixture_rounds": @1,
             @"capability": capability,
         } mutableCopy];
         if (!ready) {
@@ -677,6 +676,16 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
             driverPassed, -started.timeIntervalSinceNow, out, err, @{ @"arguments": driver, @"output": objectURL.path })];
         if (driverPassed) {
             NSString *stub = OMLibSystemStub(sysroot);
+            if (!stub) {
+                report[@"passed"] = @NO;
+                report[@"reason"] = @"libSystem.B.tbd is missing from the selected SDK";
+                [steps addObject:OMStep(@"lld_arm64_dylib", OMToolchainStatusBadArguments, NO, 0.0,
+                    nil, @"libSystem.B.tbd missing", @{ @"libsystem_stub": @"missing" })];
+                report[@"steps"] = steps;
+                report[@"artifact_directory"] = artifacts.path;
+                report[@"fixture_source"] = sourceURL.path;
+                return report;
+            }
             NSURL *dylibURL = [artifacts URLByAppendingPathComponent:@"lld-arm64.dylib"];
             NSMutableArray *link = [@[@"-arch", @"arm64", @"-platform_version", @"ios", @"15.4", @"16.4",
                 @"-dylib", @"-install_name", @"/var/jb/Library/MobileSubstrate/DynamicLibraries/ObjCParity.dylib",
@@ -684,7 +693,7 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
                 @"-F", [sysroot stringByAppendingPathComponent:@"System/Library/Frameworks"],
                 @"-L", [sysroot stringByAppendingPathComponent:@"usr/lib"],
                 @"-framework", @"Foundation", @"-lobjc"] mutableCopy];
-            if (stub) [link addObject:stub];
+            [link addObject:stub];
             out = nil; err = nil; started = [NSDate date];
             OMToolchainStatus lldStatus = [OMToolchain runLLD:link stdout:&out stderr:&err];
             BOOL linkPassed = lldStatus == OMToolchainStatusOK && [fm fileExistsAtPath:dylibURL.path] && OMFileBytes(dylibURL.path) > 0;
@@ -696,6 +705,7 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
         report[@"steps"] = steps;
         report[@"artifact_directory"] = artifacts.path;
         report[@"fixture_source"] = sourceURL.path;
+        [fm copyItemAtPath:sourceURL.path toPath:[artifacts URLByAppendingPathComponent:@"Probe.m"].path error:nil];
         NSURL *reportURL = [artifacts URLByAppendingPathComponent:@"report.json"];
         NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:nil];
         [data writeToURL:reportURL options:NSDataWritingAtomic error:nil];
