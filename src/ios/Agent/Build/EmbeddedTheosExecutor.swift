@@ -101,14 +101,25 @@ enum EmbeddedTheosExecutor {
 
         func compile(_ source: EmbeddedTheosMaterializedSource, arch: EmbeddedToolchainArchitecture,
                      sourceURL: URL, includeDirs: [String], objectURL: URL) throws {
-            var arguments = OMToolchain.cc1Arguments(
-                forSource: sourceURL.path, outputPath: objectURL.path,
-                sysroot: sysroot, resourceDir: resourceDir,
-                archName: arch.rawValue, minimumIOS: minimumIOS)
+            let driverReady = status["compiler_driver_linked"] == "yes" &&
+                status["lld_linked"] == "yes" && !(resourceDir ?? "").isEmpty
+            var arguments: [String]
+            if driverReady {
+                arguments = ["-target", "\(arch.rawValue)-apple-ios\(minimumIOS)",
+                    "-isysroot", sysroot, "-resource-dir", resourceDir ?? "",
+                    "-fobjc-arc", "-O2", "-c", sourceURL.path, "-o", objectURL.path]
+            } else {
+                arguments = OMToolchain.cc1Arguments(
+                    forSource: sourceURL.path, outputPath: objectURL.path,
+                    sysroot: sysroot, resourceDir: resourceDir,
+                    archName: arch.rawValue, minimumIOS: minimumIOS)
+            }
             for dir in includeDirs { arguments.append(contentsOf: ["-I", dir]) }
             var out: NSString?
             var err: NSString?
-            let status = OMToolchain.runCC1(arguments, stdout: &out, stderr: &err)
+            let status = driverReady
+                ? OMToolchain.runCompilerDriver(arguments, stdout: &out, stderr: &err)
+                : OMToolchain.runCC1(arguments, stdout: &out, stderr: &err)
             outcome.attempts += 1
             guard status.rawValue == 0 else {
                 throw EmbeddedTheosExecutorError.compileFailed(source.path, Int32(status.rawValue),
@@ -160,24 +171,42 @@ enum EmbeddedTheosExecutor {
                 let outputName = plan.target.kind == .tweak ? "\(plan.target.name).dylib" : plan.target.name
                 let output = runRoot.appendingPathComponent("\(arch.rawValue)-\(outputName)")
                 let linkMinimumIOS = arch == .arm64e ? "14.0" : minimumIOS
+                let driverReady = status["compiler_driver_linked"] == "yes" &&
+                    status["lld_linked"] == "yes" && !(resourceDir ?? "").isEmpty
                 var linkArguments = ["-arch", arch.rawValue]
-                if arch == .arm64 { linkArguments.append("-no_fixup_chains") }
+                if !driverReady && arch == .arm64 { linkArguments.append("-no_fixup_chains") }
                 linkArguments.append("-adhoc_codesign")
+                if driverReady {
+                    linkArguments += ["-rpath", "/var/jb/Library/Frameworks",
+                        "-rpath", "/var/jb/usr/lib",
+                        "-rpath", "@loader_path/.jbroot/Library/Frameworks",
+                        "-rpath", "@loader_path/.jbroot/usr/lib"]
+                }
                 if let entitlementURL {
                     linkArguments += ["-adhoc_codesign_entitlements", entitlementURL.path]
                 }
                 linkArguments += plan.target.kind == .tweak
                     ? ["-dylib", "-install_name", plan.target.installName ?? "@rpath/\(plan.target.name).dylib"]
                     : ["-execute", "-e", "_main"]
-                linkArguments += ["-syslibroot", sysroot, "-platform_version", "ios", linkMinimumIOS, "16.5",
+                linkArguments += ["-syslibroot", sysroot, "-platform_version", "ios", linkMinimumIOS, "16.4",
                                   "-o", output.path]
                 linkArguments += objects
+                if driverReady {
+                    linkArguments += ["-F", sysroot + "/System/Library/Frameworks",
+                        "-L", sysroot + "/usr/lib"]
+                }
                 for framework in plan.target.frameworks { linkArguments += ["-framework", framework] }
-                linkArguments += ["-lSystem"]
+                if driverReady {
+                    linkArguments += ["-lobjc", "-lc++", sysroot + "/usr/lib/libSystem.B.tbd"]
+                } else {
+                    linkArguments += ["-lSystem"]
+                }
                 var linkOut: NSString?
                 var linkErr: NSString?
                 outcome.linkCount += 1
-                let status = OMToolchain.runLinker(linkArguments, stdout: &linkOut, stderr: &linkErr)
+                let status = driverReady
+                    ? OMToolchain.runLLD(linkArguments, stdout: &linkOut, stderr: &linkErr)
+                    : OMToolchain.runLinker(linkArguments, stdout: &linkOut, stderr: &linkErr)
                 guard status.rawValue == 0 else {
                     throw EmbeddedTheosExecutorError.linkFailed(plan.target.name, Int32(status.rawValue),
                                                                 String(((linkErr as String?) ?? "").prefix(2000)))

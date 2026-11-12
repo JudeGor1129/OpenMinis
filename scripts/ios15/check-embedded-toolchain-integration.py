@@ -89,7 +89,9 @@ require('"-adhoc_codesign"' in theos_executor and
         "EmbeddedCodeSignature.verify" in theos_executor,
         "embedded Theos executor must request and independently verify ad-hoc signatures")
 require('"-no_fixup_chains"' in theos_executor and
-        'if arch == .arm64 { linkArguments.append("-no_fixup_chains") }' in theos_executor and
+        'if !driverReady && arch == .arm64 { linkArguments.append("-no_fixup_chains") }' in theos_executor and
+        'OMToolchain.runCompilerDriver(arguments' in theos_executor and
+        'OMToolchain.runLLD(linkArguments' in theos_executor and
         'let linkMinimumIOS = arch == .arm64e ? "14.0" : minimumIOS' in theos_executor and
         'fixupPolicy: filetype == 6 ? .xcodeCompatible : .any' in theos_executor,
         "embedded Theos must follow the Xcode arm64-classic/arm64e-chained split")
