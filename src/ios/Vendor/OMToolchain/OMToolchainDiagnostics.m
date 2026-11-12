@@ -658,7 +658,7 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
             ![fm createDirectoryAtURL:artifacts withIntermediateDirectories:YES attributes:nil error:&error]) {
             report[@"passed"] = @NO; report[@"reason"] = error.localizedDescription ?: @"cannot create fixture directory"; return report;
         }
-        NSString *source = @"#import <Foundation/Foundation.h>\n\n@interface JMSParityObject : NSObject\n+ (int)parityValue;\n@end\n\n@implementation JMSParityObject\n+ (int)parityValue { return 42; }\n@end\n";
+        NSString *source = @"#import <Foundation/Foundation.h>\n#import <UIKit/UIKit.h>\n#import <dispatch/dispatch.h>\n\n@interface JMSParityObject : NSObject\n+ (int)parityValue;\n@end\n\n@implementation JMSParityObject\n+ (int)parityValue { return 42; }\n@end\n\n__attribute__((constructor)) static void JMSParityShow(void) {\n    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{\n        UIWindow *window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];\n        window.windowLevel = UIWindowLevelAlert + 1;\n        UIViewController *root = [UIViewController new];\n        window.rootViewController = root;\n        [window makeKeyAndVisible];\n        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@\"Minis LLD\" message:@\"LLD compile test OK\" preferredStyle:UIAlertControllerStyleAlert];\n        [alert addAction:[UIAlertAction actionWithTitle:@\"OK\" style:UIAlertActionStyleDefault handler:nil]];\n        [root presentViewController:alert animated:YES completion:nil];\n        static UIWindow *keepWindow; static UIAlertController *keepAlert;\n        keepWindow = window; keepAlert = alert;\n    });\n}\n";
         NSURL *sourceURL = [fixtures URLByAppendingPathComponent:@"Probe.m"];
         [source writeToURL:sourceURL atomically:YES encoding:NSUTF8StringEncoding error:&error];
         if (error) { report[@"passed"] = @NO; report[@"reason"] = error.localizedDescription; return report; }
@@ -697,7 +697,9 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
                 @"-syslibroot", sysroot, @"-o", dylibURL.path, objectURL.path,
                 @"-F", [sysroot stringByAppendingPathComponent:@"System/Library/Frameworks"],
                 @"-L", [sysroot stringByAppendingPathComponent:@"usr/lib"],
-                @"-framework", @"Foundation", @"-lobjc", @"-lc++"] mutableCopy];
+                @"-framework", @"Foundation", @"-framework", @"UIKit",
+                @"-framework", @"CoreGraphics", @"-framework", @"QuartzCore",
+                @"-lobjc", @"-lc++"] mutableCopy];
             [link addObject:stub];
             out = nil; err = nil; started = [NSDate date];
             OMToolchainStatus lldStatus = [OMToolchain runLLD:link stdout:&out stderr:&err];
