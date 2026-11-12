@@ -666,7 +666,7 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
         NSString *resource = capability[@"resource_dir"] ?: @"";
         NSURL *objectURL = [artifacts URLByAppendingPathComponent:@"driver-arm64.o"];
         NSArray *driver = @[@"-target", @"arm64-apple-ios15.4", @"-isysroot", sysroot,
-            @"-resource-dir", resource, @"-fobjc-arc", @"-c", sourceURL.path, @"-o", objectURL.path];
+            @"-resource-dir", resource, @"-fobjc-arc", @"-O2", @"-c", sourceURL.path, @"-o", objectURL.path];
         NSString *out = nil, *err = nil;
         NSDate *started = [NSDate date];
         OMToolchainStatus driverStatus = [OMToolchain runCompilerDriver:driver stdout:&out stderr:&err];
@@ -689,10 +689,15 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
             NSURL *dylibURL = [artifacts URLByAppendingPathComponent:@"lld-arm64.dylib"];
             NSMutableArray *link = [@[@"-arch", @"arm64", @"-platform_version", @"ios", @"15.4", @"16.4",
                 @"-dylib", @"-install_name", @"/var/jb/Library/MobileSubstrate/DynamicLibraries/ObjCParity.dylib",
+                @"-adhoc_codesign",
+                @"-rpath", @"/var/jb/Library/Frameworks",
+                @"-rpath", @"/var/jb/usr/lib",
+                @"-rpath", @"@loader_path/.jbroot/Library/Frameworks",
+                @"-rpath", @"@loader_path/.jbroot/usr/lib",
                 @"-syslibroot", sysroot, @"-o", dylibURL.path, objectURL.path,
                 @"-F", [sysroot stringByAppendingPathComponent:@"System/Library/Frameworks"],
                 @"-L", [sysroot stringByAppendingPathComponent:@"usr/lib"],
-                @"-framework", @"Foundation", @"-lobjc"] mutableCopy];
+                @"-framework", @"Foundation", @"-lobjc", @"-lc++"] mutableCopy];
             [link addObject:stub];
             out = nil; err = nil; started = [NSDate date];
             OMToolchainStatus lldStatus = [OMToolchain runLLD:link stdout:&out stderr:&err];

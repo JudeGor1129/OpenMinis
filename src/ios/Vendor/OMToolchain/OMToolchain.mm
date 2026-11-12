@@ -757,7 +757,13 @@ public:
         NSString *s = arguments[i];
         if ([flags containsObject:s]) continue;
         if ([paths containsObject:s]) {
-            valid = ++i < arguments.count && OMAbsolutePath(arguments[i]);
+            if (++i >= arguments.count) { valid = false; break; }
+            NSString *value = arguments[i];
+            // dylib rpaths may legitimately use dyld placeholders; every other
+            // path-valued option remains absolute-only.
+            BOOL rpathPlaceholder = [s isEqualToString:@"-rpath"] &&
+                ([value hasPrefix:@"@loader_path/"] || [value hasPrefix:@"@executable_path/"]);
+            valid = OMAbsolutePath(value) || rpathPlaceholder;
             if ([s isEqualToString:@"-o"]) ++outputs;
             if ([s isEqualToString:@"-force_load"]) ++inputs;
             continue;
