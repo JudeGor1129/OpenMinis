@@ -338,11 +338,13 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
 
     private func toolchainAvailability() -> BuildProviderAvailability {
         let status = OMToolchain.capabilityStatus()
+        let verificationOK = status["verification"] == "passed" || status["experimental_build"] == "yes"
         let required: [(String, String)] = [
-            ("compiler_linked", "yes"), ("verification", "passed"),
+            ("compiler_linked", "yes"),
             ("resource_headers", "present"), ("sdk", "present"), ("state", "ready")
         ]
-        let missing = required.compactMap { key, value in status[key] == value ? nil : key + "=" + value }
+        var missing = required.compactMap { key, value in status[key] == value ? nil : key + "=" + value }
+        if !verificationOK { missing.append("verification=" + (status["verification"] ?? "missing")) }
         guard status["host_architecture"] == "arm64" || status["host_architecture"] == "arm64e" else {
             return unavailable("The in-process compiler host architecture is unsupported.",
                                missing + ["arm64 or arm64e host"])

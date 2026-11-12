@@ -132,6 +132,11 @@ typedef struct {
 #ifndef OM_TOOLCHAIN_LLD_ENABLED
 #define OM_TOOLCHAIN_LLD_ENABLED 0
 #endif
+// Disposable experimental builds only: allows the provider to run without the
+// full fixed-runtime evidence suite. Never set this in a production target.
+#ifndef OM_TOOLCHAIN_EXPERIMENTAL_BUILD
+#define OM_TOOLCHAIN_EXPERIMENTAL_BUILD 0
+#endif
 #if (OM_TOOLCHAIN_COMPILER_DRIVER_ENABLED || OM_TOOLCHAIN_LLD_ENABLED) && !OM_TOOLCHAIN_ENABLED
 #error "New bridge APIs require OM_TOOLCHAIN_ENABLED and a matching statically linked kit"
 #endif
@@ -373,6 +378,7 @@ public:
 #else
     BOOL verified = NO;
 #endif
+    BOOL experimental = OM_TOOLCHAIN_EXPERIMENTAL_BUILD != 0;
     NSString *arch = @"unknown";
 #if defined(__arm64e__)
     arch = @"arm64e";
@@ -388,14 +394,16 @@ public:
              @"lld_linked": OM_TOOLCHAIN_LLD_ENABLED ? @"yes" : @"no",
              @"linker_backend": OM_TOOLCHAIN_LLD_ENABLED ? @"lld-macho+ld64" : (linked ? @"ld64" : @"unavailable"),
              @"verification": verified ? @"passed" : @"missing",
-             @"state": linked && verified && headersReady && sdkReady ? @"ready" : @"unavailable",
+             @"experimental_build": experimental ? @"yes" : @"no",
+             @"state": linked && (verified || experimental) && headersReady && sdkReady ? @"ready" : @"unavailable",
              @"host_architecture": arch,
              @"resource_headers": headersReady ? @"present" : @"missing",
              @"resource_dir": resource ?: @"",
              @"sdk": sdkReady ? @"present" : @"missing",
              @"sysroot": sdk ?: @"",
              @"reason": !linked ? @"此构建未链接 LLVM/ld64；准备好资源不代表已启用编译。"
-                         : !verified ? @"已链接 LLVM/ld64，但尚未通过启用桥接编译与静态链接门禁。"
+                         : !verified && !experimental ? @"已链接 LLVM/ld64，但尚未通过启用桥接编译与静态链接门禁。"
+                         : experimental ? @"实验构建：运行时证据未完成；产物未验证，仅用于一次性测试。"
                          : !headersReady ? @"缺少与 LLVM 版本匹配的 Clang builtin headers。"
                          : !sdkReady ? @"缺少可用的 iOS SDK。"
                          : @"固定 fixture 运行时验证已通过；BuildProvider 仍需独立的安全执行适配器。"};

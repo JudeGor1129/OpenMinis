@@ -67,7 +67,7 @@ struct RootfsBuildSettingsView: View {
                 } label: {
                     Label("编译受限 C / Objective-C 工程", systemImage: "hammer")
                 }
-                .disabled(embeddedStatus["verification"] != "passed" || embeddedStatus["sdk"] != "present")
+                .disabled(!(embeddedStatus["verification"] == "passed" || embeddedStatus["experimental_build"] == "yes") || embeddedStatus["sdk"] != "present")
                 Text(embeddedStatus["reason"] ?? "正在检查内置资源。")
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -34,7 +34,7 @@ grep -q 'completedWithArtifacts' "$build/EmbeddedToolchainBuildProvider.swift" |
 grep -q 'publishRootlessDeb' "$build/EmbeddedToolchainBuildProvider.swift" || { echo 'FAIL: native provider DEB publication missing'; exit 1; }
 if grep -q 'context.executor' "$build/EmbeddedToolchainBuildProvider.swift"; then echo 'FAIL: native provider must not run shell commands'; exit 1; fi
 grep -q '"verification": verified ? @"passed" : @"missing"' src/ios/Vendor/OMToolchain/OMToolchain.mm || { echo 'FAIL: bridge verification status missing'; exit 1; }
-grep -q 'linked && verified && headersReady && sdkReady' src/ios/Vendor/OMToolchain/OMToolchain.mm || { echo 'FAIL: bridge readiness does not require verification gate'; exit 1; }
+grep -q 'linked && (verified || experimental) && headersReady && sdkReady' src/ios/Vendor/OMToolchain/OMToolchain.mm || { echo 'FAIL: bridge readiness does not require verification gate'; exit 1; }
 grep -q '^protocol BuildProvider' "$build/BuildProviders.swift" || { echo 'FAIL: BuildProvider seam missing'; exit 1; }
 grep -q 'state: available ? .available : .unavailable' "$build/BuildProviders.swift" || { echo 'FAIL: providers do not expose structured availability'; exit 1; }
 

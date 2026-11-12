@@ -59,7 +59,7 @@ enum EmbeddedTheosExecutor {
     static func execute(plans: [EmbeddedTheosTargetPlan],
                         cancellation: EmbeddedAdapterCancellation = EmbeddedAdapterCancellation()) throws -> EmbeddedTheosExecutionOutcome {
         let status = OMToolchain.capabilityStatus()
-        guard status["compiler_linked"] == "yes", status["verification"] == "passed",
+        guard status["compiler_linked"] == "yes", (status["verification"] == "passed" || status["experimental_build"] == "yes"),
               status["state"] == "ready" else {
             throw EmbeddedTheosExecutorError.missingToolchain(
                 "compiler_linked=\(status["compiler_linked"] ?? "unknown") verification=\(status["verification"] ?? "unknown") state=\(status["state"] ?? "unknown")")

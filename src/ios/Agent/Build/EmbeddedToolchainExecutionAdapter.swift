@@ -802,7 +802,7 @@ final class EmbeddedToolchainExecutionAdapter: @unchecked Sendable {
         }
         guard !cancellation.isCancelled else { result.state = "cancelled"; return finish() }
         let status = bridge.capability()
-        guard status["compiler_linked"] == "yes", status["verification"] == "passed",
+        guard status["compiler_linked"] == "yes", (status["verification"] == "passed" || status["experimental_build"] == "yes"),
               status["resource_headers"] == "present", status["sdk"] == "present",
               status["state"] == "ready", status["host_architecture"] == "arm64" else {
             result.state = "unavailable"; result.reason = "fixed-runtime toolchain gates are not ready"; return finish()

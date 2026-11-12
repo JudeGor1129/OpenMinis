@@ -70,7 +70,7 @@ struct EmbeddedProjectBuildView: View {
     private var canBuild: Bool {
         projectRoot != nil && !isChoosing && !isBuilding &&
         toolchain["compiler_linked"] == "yes" &&
-        toolchain["verification"] == "passed" &&
+        (toolchain["verification"] == "passed" || toolchain["experimental_build"] == "yes") &&
         toolchain["resource_headers"] == "present" &&
         toolchain["sdk"] == "present" && toolchain["state"] == "ready"
     }

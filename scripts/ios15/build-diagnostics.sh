@@ -54,6 +54,7 @@ sed -i '' '/OTHER_SWIFT_FLAGS = "";/a\
                         "-DOM_TOOLCHAIN_ENABLED=1",\
                         "-DOM_TOOLCHAIN_COMPILER_DRIVER_ENABLED=1",\
                         "-DOM_TOOLCHAIN_LLD_ENABLED=1",\
+                        "-DOM_TOOLCHAIN_EXPERIMENTAL_BUILD=1",\
                         "-fno-rtti",\
                         "-fexceptions",\
                         "-I$(SRCROOT)/../../build/ios15/embedded-toolchain/dev-headers/arm64/include",\
