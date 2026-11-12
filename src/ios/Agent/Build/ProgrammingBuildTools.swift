@@ -22,8 +22,7 @@ final class ProgrammingBuildTools {
             return report
         }
         let source = URL(fileURLWithPath: directory, isDirectory: true).standardizedFileURL
-        let allowedBase = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MinisToolchain/Diagnostics", isDirectory: true).standardizedFileURL
+        let allowedBase = FileManager.default.temporaryDirectory.standardizedFileURL
         guard source.path.hasPrefix(allowedBase.path + "/"), source.lastPathComponent == "artifacts" else {
             throw BuildToolError.invalidArguments("Fixed fixture returned an unsafe output directory.")
         }

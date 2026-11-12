@@ -38,7 +38,7 @@ grep -q 'linked && verified && headersReady && sdkReady' src/ios/Vendor/OMToolch
 grep -q '^protocol BuildProvider' "$build/BuildProviders.swift" || { echo 'FAIL: BuildProvider seam missing'; exit 1; }
 grep -q 'state: available ? .available : .unavailable' "$build/BuildProviders.swift" || { echo 'FAIL: providers do not expose structured availability'; exit 1; }
 
-for tool in build_project run_tests analyze_build_log verify_artifact; do
+for tool in build_project run_tests analyze_build_log verify_artifact run_toolchain_fixtures; do
   grep -q "name: \"$tool\"" "$chat" || { echo "FAIL: $tool definition missing"; exit 1; }
   grep -q "\"$tool\"" "$dispatch" || { echo "FAIL: $tool dispatch missing"; exit 1; }
 done

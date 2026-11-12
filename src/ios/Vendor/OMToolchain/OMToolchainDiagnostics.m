@@ -207,14 +207,13 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
 + (NSDictionary<NSString *, id> *)runSuiteWithIterations:(NSUInteger)iterations {
     @try {
         @autoreleasepool {
-        NSUInteger rounds = MAX((NSUInteger)1, MIN(iterations, (NSUInteger)3));
         NSDictionary<NSString *, NSString *> *capability = [OMToolchain capabilityStatus];
         BOOL runtimeEvidenceAuthorized = [capability[@"verification"] isEqualToString:@"passed"];
         NSMutableDictionary<NSString *, id> *report = [@{
             @"schema": @1,
             @"suite": @"fixed in-process Clang/ld64 runtime diagnostics",
             @"requested_iterations": @(iterations),
-            @"bounded_iterations": @(rounds),
+            @"bounded_iterations": @1,
             @"capability": capability,
             @"provider_executable": @NO,
             @"runtime_verification_gate": runtimeEvidenceAuthorized ? @"fixed_fixture_evidence_verified" : @"not_granted",
@@ -625,7 +624,6 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
 
 + (NSDictionary<NSString *, id> *)runDriverLLDSuiteWithIterations:(NSUInteger)iterations {
     @autoreleasepool {
-        NSUInteger rounds = MAX((NSUInteger)1, MIN(iterations, (NSUInteger)3));
         NSDictionary<NSString *, NSString *> *capability = [OMToolchain capabilityStatus];
         BOOL ready = [capability[@"compiler_driver_linked"] isEqualToString:@"yes"] &&
             [capability[@"lld_linked"] isEqualToString:@"yes"] &&
@@ -640,7 +638,7 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
             @"output_execution_attempted": @NO,
             @"runtime_verification_gate": capability[@"verification"] ?: @"not_granted",
             @"requested_iterations": @(iterations),
-            @"bounded_iterations": @(rounds),
+            @"bounded_iterations": @1,
             @"capability": capability,
         } mutableCopy];
         if (!ready) {
@@ -651,10 +649,8 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
             return report;
         }
         NSString *identifier = [NSString stringWithFormat:@"om-driver-lld-%@", NSUUID.UUID.UUIDString];
-        NSURL *root = [[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
-                                                               inDomains:NSUserDomainMask].firstObject
-            URLByAppendingPathComponent:@"MinisToolchain/Diagnostics" isDirectory:YES];
-        root = [root URLByAppendingPathComponent:identifier isDirectory:YES];
+        NSURL *root = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
+            URLByAppendingPathComponent:identifier isDirectory:YES];
         NSURL *fixtures = [root URLByAppendingPathComponent:@"fixtures" isDirectory:YES];
         NSURL *artifacts = [root URLByAppendingPathComponent:@"artifacts" isDirectory:YES];
         NSFileManager *fm = [NSFileManager defaultManager];
@@ -682,9 +678,13 @@ static NSDictionary<NSString *, id> *OMStep(NSString *name, OMToolchainStatus st
         if (driverPassed) {
             NSString *stub = OMLibSystemStub(sysroot);
             NSURL *dylibURL = [artifacts URLByAppendingPathComponent:@"lld-arm64.dylib"];
-            NSArray *link = @[@"-arch", @"arm64", @"-platform_version", @"ios", @"15.4", @"16.4",
+            NSMutableArray *link = [@[@"-arch", @"arm64", @"-platform_version", @"ios", @"15.4", @"16.4",
                 @"-dylib", @"-install_name", @"/var/jb/Library/MobileSubstrate/DynamicLibraries/ObjCParity.dylib",
-                @"-o", dylibURL.path, objectURL.path, stub ?: @""];
+                @"-syslibroot", sysroot, @"-o", dylibURL.path, objectURL.path,
+                @"-F", [sysroot stringByAppendingPathComponent:@"System/Library/Frameworks"],
+                @"-L", [sysroot stringByAppendingPathComponent:@"usr/lib"],
+                @"-framework", @"Foundation", @"-lobjc"] mutableCopy];
+            if (stub) [link addObject:stub];
             out = nil; err = nil; started = [NSDate date];
             OMToolchainStatus lldStatus = [OMToolchain runLLD:link stdout:&out stderr:&err];
             BOOL linkPassed = lldStatus == OMToolchainStatusOK && [fm fileExistsAtPath:dylibURL.path] && OMFileBytes(dylibURL.path) > 0;
