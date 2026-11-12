@@ -11,7 +11,14 @@ final class ProgrammingBuildTools {
     /// output path; only the internally resolved session workspace is used.
     func runToolchainFixtures(workspace: URL) async throws -> [String: Any] {
         let data = try await Task.detached(priority: .userInitiated) {
-            let report = OMToolchainDiagnostics.runDriverLLD()
+            guard let diagnosticClass = NSClassFromString("OMToolchainDiagnostics") as? NSObject.Type else {
+                throw BuildToolError.invalidArguments("Fixed fixture bridge is unavailable in this build.")
+            }
+            let selector = NSSelectorFromString("runDriverLLDSuite")
+            guard let boxed = (diagnosticClass as AnyObject).perform(selector)?.takeUnretainedValue(),
+                  let report = boxed as? [String: Any] else {
+                throw BuildToolError.invalidArguments("Fixed fixture bridge returned no report.")
+            }
             return try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
         }.value
         guard var report = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
