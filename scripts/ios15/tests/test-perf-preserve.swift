@@ -11,7 +11,7 @@ import Foundation
                             parameters: [key: AgentToolParam(type: type, description: detail, enumValues: values)],
                             required: required, propertyOrdering: order)
     }
-    static func main() {
+    @MainActor static func main() async {
         var checks = 0
         var cache = FixedContextTokenCache()
         let original = tool()
@@ -76,6 +76,18 @@ import Foundation
         require(AppLogger.lines.count == 1 && AppLogger.lines[0].contains("n=2000 avg_ms=2.000 max_ms=2.000"), "concurrent recording")
         AppLogger.reset(); PerfProbe.flush(); require(AppLogger.lines.isEmpty, "flush reset, idle silent")
         require(PerfProbe.PipelinePhase.allCases.count == 12, "bounded cardinality")
+        let value = await PerfProbe.measureRequestOpen { 42 }
+        require(value == 42, "request return preserved")
+        enum Expected: Error { case failure }
+        let failed: Int? = try? await PerfProbe.measureRequestOpen { throw Expected.failure }
+        require(failed == nil, "request error preserved")
+        PerfProbe.flush()
+        require(AppLogger.lines.count == 1 && AppLogger.lines[0].contains("phase=request_open n=2"), "failed and successful requests recorded")
+        AppLogger.reset()
+        for pair in [(393.0, 3.0), (430.0, 2.0)] {
+            let plan = BrowserSnapshotPolicy.plan(width: pair.0, scale: pair.1)!
+            require(Int((Double(plan.pixelWidth) / (pair.1 * plan.widthRatio)).rounded()) == Int(pair.0), "fractional UIImage scale does not truncate CSS metadata")
+        }
         print("PASS: production source cache, raster policy, concurrent timers; \(checks) assertions")
 
         let prompt = String(repeating: "Preserve every capability 中文安全验证 1234\n", count: 8000)

@@ -88,13 +88,15 @@ extension AIChatViewModel {
                 if let entry = resolveCurrentEntry() {
                     thinkLvl = min(thinkLvl, entry.effectiveMaxThinkingLevel)
                 }
-                let stream = try await currentProvider.streamAgentMessage(
-                    messages: messages,
-                    systemPrompt: systemPrompt,
-                    tools: tools,
-                    maxTokens: maxTokens,
-                    thinkingLevel: thinkLvl
-                )
+                let stream = try await PerfProbe.measureRequestOpen {
+                    try await currentProvider.streamAgentMessage(
+                        messages: messages,
+                        systemPrompt: systemPrompt,
+                        tools: tools,
+                        maxTokens: maxTokens,
+                        thinkingLevel: thinkLvl
+                    )
+                }
                 self.autoRetryAttempt = 0
                 return stream
             } catch let error as LLMError where error.isRetryable {
@@ -186,13 +188,15 @@ extension AIChatViewModel {
                 if let eid = currentEntryId, let entry = ProviderConfigStore.shared.entry(for: eid) {
                     thinkLvl = min(thinkLvl, entry.effectiveMaxThinkingLevel)
                 }
-                let stream = try await currentProvider.streamAgentMessage(
-                    messages: messages,
-                    systemPrompt: currentSystemPrompt,
-                    tools: tools,
-                    maxTokens: maxTok,
-                    thinkingLevel: thinkLvl
-                )
+                let stream = try await PerfProbe.measureRequestOpen {
+                    try await currentProvider.streamAgentMessage(
+                        messages: messages,
+                        systemPrompt: currentSystemPrompt,
+                        tools: tools,
+                        maxTokens: maxTok,
+                        thinkingLevel: thinkLvl
+                    )
+                }
                 // Success — update binding if we fell back to a different entry
                 let prevEntryId = activeEntryId
                 if currentEntryId != activeEntryId, let currentEntryId,
@@ -451,6 +455,7 @@ extension AIChatViewModel {
         var emptyResponseEntries: Set<String> = []
 
         while true {
+            let fallbackStarted = PerfProbe.pipelineTick()
             let fbStream = try await streamWithGroupFallback(
                 provider: provider,
                 messages: messages,
@@ -466,7 +471,7 @@ extension AIChatViewModel {
             let result = try await processStreamEvents(
                 stream: fbStream,
                 msgIdx: msgIdx,
-                provider: provider
+                provider: provider, requestStarted: fallbackStarted
             )
 
             // Empty-response detection: HTTP 200 + stream finished, but no text,

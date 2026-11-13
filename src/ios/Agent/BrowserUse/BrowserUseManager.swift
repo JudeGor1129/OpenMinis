@@ -975,7 +975,8 @@ final class BrowserUseManager: NSObject, ObservableObject {
         try jpegData.write(to: fileURL)
 
         let base64 = jpegData.base64EncodedString()
-        let size = image.size
+        // Use the exact requested CSS size; scale correction can be 392.9999999999.
+        let size = targetSize
         let totalSsMs = Int((CFAbsoluteTimeGetCurrent() - ssStart) * 1000)
         logger.info("[ScreenshotTiming] total elapsed=\(totalSsMs)ms \(Int(size.width))x\(Int(size.height)) \(jpegData.count) bytes fullPage=\(fullPage) truncated=\(truncated)")
 

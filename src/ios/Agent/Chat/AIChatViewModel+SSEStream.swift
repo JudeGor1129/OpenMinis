@@ -271,7 +271,7 @@ extension AIChatViewModel {
         stream: AsyncThrowingStream<AgentStreamEvent, Error>,
         msgIdx: Int,
         provider: any AgentProvider,
-        requestStarted: UInt64? = nil
+        requestStarted: UInt64
     ) async throws -> StreamResult {
         var result = StreamResult()
         var currentTextBlockIdx: Int? = nil
@@ -382,7 +382,7 @@ extension AIChatViewModel {
             }
             guard let event = maybeEvent else { break }
             try Task.checkCancellation()
-            if eventSeq == 0, let requestStarted {
+            if eventSeq == 0 {
                 PerfProbe.recordPipeline(.requestToFirstEvent, since: requestStarted)
             }
             // [StreamDiag] Per-event timeline. Throttled: the first 5 events of

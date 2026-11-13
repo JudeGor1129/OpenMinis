@@ -6727,7 +6727,6 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // [T-agent-model-identity] activeEntryId is now the entry this
             // turn is served on (group fallback inside the call above may
             // have moved it) — record it before any event is consumed.
-            PerfProbe.recordPipeline(.requestOpen, since: requestStarted)
             noteEffectiveEntry(activeEntryId)
             // [StreamDiag] (#181) The stream object now exists. Note this is
             // "request accepted / stream handle obtained", NOT first byte — the
@@ -6933,6 +6932,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         logger.warning("🔁STREAM empty-reminder: msgIdx resynced → \(resynced) (count=\(messages.count))")
                         msgIdx = resynced
                     }
+                    let reminderStarted = PerfProbe.pipelineTick()
                     let reminderStream = try await streamWithAutoRetry(
                         provider: provider,
                         messages: applyRequestImageBudget(tailIsToolResult ? historyWithEmptyToolResultReminder() : historyWithEmptyCallbackReminder()),
@@ -6944,7 +6944,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     let reminderResult = try await processStreamEvents(
                         stream: reminderStream,
                         msgIdx: msgIdx,
-                        provider: provider
+                        provider: provider, requestStarted: reminderStarted
                     )
                     if isEmptyResponse(reminderResult) {
                         // Still empty after the nudge — a genuine failure, not a
@@ -7044,6 +7044,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     }
                     msgIdx = resynced
                     do {
+                        let retryStarted = PerfProbe.pipelineTick()
                         let retryStream = try await streamWithAutoRetry(
                             provider: provider,
                             messages: applyRequestImageBudget(effectiveAgentHistory()),
@@ -7055,7 +7056,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                         let retryResult = try await processStreamEvents(
                             stream: retryStream,
                             msgIdx: msgIdx,
-                            provider: provider
+                            provider: provider, requestStarted: retryStarted
                         )
                         // If the retried stream is also empty, the provider is persistently
                         // failing (e.g. Anthropic overloaded).  Trigger group fallback.

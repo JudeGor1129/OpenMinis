@@ -154,6 +154,15 @@ enum PerfProbe {
         lock.unlock()
     }
 
+    /// Time each real provider attempt, including failures, without changing its
+    /// error/return value or adding a task. Kept on the caller's existing actor.
+    @MainActor
+    static func measureRequestOpen<T>(_ operation: () async throws -> T) async rethrows -> T {
+        let started = pipelineTick()
+        defer { recordPipeline(.requestOpen, since: started) }
+        return try await operation()
+    }
+
     /// Begin periodic flushing. Idempotent; safe to call from anywhere.
     static func start() {
         lock.lock()
