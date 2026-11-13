@@ -2760,8 +2760,7 @@ struct ToolLiveSheet: View {
     private func takeBrowserSnapshot() {
         guard let manager = browserPool?.activeManager else { return }
         Task { @MainActor in
-            let config = WKSnapshotConfiguration()
-            if let img = try? await manager.webView.takeSnapshot(configuration: config) {
+            if let img = try? await manager.captureBrowserSnapshot() {
                 browserSnapshot = img
             }
         }
@@ -3088,8 +3087,7 @@ private struct ToolPreviewThumbnail: View {
     private func takeBrowserSnapshot() {
         guard let manager = browserPool?.activeManager else { return }
         Task { @MainActor in
-            let config = WKSnapshotConfiguration()
-            if let img = try? await manager.webView.takeSnapshot(configuration: config) {
+            if let img = try? await manager.captureBrowserSnapshot() {
                 browserSnapshot = img
             }
         }

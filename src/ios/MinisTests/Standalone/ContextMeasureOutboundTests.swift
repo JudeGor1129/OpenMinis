@@ -418,8 +418,10 @@ do {
     check("…and the served model is stamped with the pair", vm.contains("turnUsage.calibrationModelId = servedModelId"))
     check("…and the pair is stamped for persistence",
           vm.contains("turnUsage.estimatedRequestTokens = lastDispatchEstimate"))
-    check("the fixed share is measured every iteration",
-          vm.contains("contextFixedTokens = ContextSizeMeter.estimateFixedTokens(systemPrompt: userSystemPrompt, tools: tools)"))
+    check("the fixed share is measured every iteration with exact run-local invalidation",
+          vm.contains("contextFixedTokens = fixedContextCache.measure(systemPrompt: userSystemPrompt, tools: tools)")
+          && vm.contains("var fixedContextCache = FixedContextTokenCache()")
+          && source("Agent/Chat/ContextPolicy.swift").contains("let estimate = ContextSizeMeter.estimateFixedTokens(systemPrompt: systemPrompt, tools: tools)"))
 
     // Every size consumer in the loop reads the same number.
     check("offload is judged on the measurement",

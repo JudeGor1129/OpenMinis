@@ -6230,9 +6230,12 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // exact request just rejected. It is re-armed only by evidence: an
         // accepted response below, or a different session's calibration.
         // [T-p1-delegate-task] Helpers get a much tighter ceiling (design §4.3).
+        var fixedContextCache = FixedContextTokenCache()
+        var lastToolBatchEnded: UInt64?
         let turnCap = helperConfig?.maxTurns ?? Self.maxAgentTurns
         loopLabel: while turnCount < turnCap {
             defer { turnCount += 1 }
+            let preparationStarted = PerfProbe.pipelineTick()
             // [T-ios-switch-model-next-request] The user picked another model
             // while this turn was running. Apply it HERE, before the next
             // request — the stream / tool call that was in flight when they
@@ -6431,7 +6434,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // on every request; measure them exactly for this iteration (they
             // can change mid-loop, e.g. the helper wrap-up path) so the guards
             // below and the calibration pair see the real fixed share.
-            contextFixedTokens = ContextSizeMeter.estimateFixedTokens(systemPrompt: userSystemPrompt, tools: tools)
+            let fixedStarted = PerfProbe.pipelineTick()
+            contextFixedTokens = fixedContextCache.measure(systemPrompt: userSystemPrompt, tools: tools)
+            PerfProbe.recordPipeline(.fixedEstimate, since: fixedStarted)
 
             let activeModelForBudget = ProviderConfigStore.shared.entry(for: activeEntryId ?? "")?.model ?? activeModel
             lastTokenBudgetSnapshot = TokenBudgetManager.snapshot(
@@ -6701,6 +6706,12 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 logger.warning("🔀STREAM round-start: msgIdx resynced → \(resynced) (count=\(messages.count))")
                 msgIdx = resynced
             }
+            let requestStarted = PerfProbe.pipelineTick()
+            PerfProbe.recordPipeline(.requestPreparation, since: preparationStarted, until: requestStarted)
+            if let ended = lastToolBatchEnded {
+                PerfProbe.recordPipeline(.toolToRequest, since: ended, until: requestStarted)
+                lastToolBatchEnded = nil
+            }
             let stream = try await streamWithGroupFallback(
                 provider: provider,
                 messages: contextHistory,
@@ -6716,6 +6727,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // [T-agent-model-identity] activeEntryId is now the entry this
             // turn is served on (group fallback inside the call above may
             // have moved it) — record it before any event is consumed.
+            PerfProbe.recordPipeline(.requestOpen, since: requestStarted)
             noteEffectiveEntry(activeEntryId)
             // [StreamDiag] (#181) The stream object now exists. Note this is
             // "request accepted / stream handle obtained", NOT first byte — the
@@ -6867,7 +6879,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 let result = try await processStreamEvents(
                     stream: stream,
                     msgIdx: msgIdx,
-                    provider: provider
+                    provider: provider, requestStarted: requestStarted
                 )
                 // Detect empty responses — the stream completed without producing any
                 // content blocks or a stop reason.  This happens when the Anthropic API
@@ -7102,6 +7114,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             }
 
             let streamEnd = Date()
+            let streamFinished = PerfProbe.pipelineTick()
             let assistantText = streamResult.assistantText
             let toolEntries = streamResult.toolEntries
             let stopReason = streamResult.stopReason
@@ -7526,6 +7539,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // the originating tool_use blocks, so we tag each child task
             // with its source index and stitch results back in order after
             // every task completes.
+            let batchStarted = PerfProbe.pipelineTick()
+            PerfProbe.recordPipeline(.streamToDispatch, since: streamFinished, until: batchStarted)
             let toolsSnapshot = tools
             var outcomesByIndex: [Int: ToolExecOutcome] = [:]
             await withTaskGroup(of: (Int, ToolExecOutcome).self) { group in
@@ -7553,7 +7568,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                             ))
                         }
                         let outcome = await self.executeSingleToolUse(
-                            tu: tu, msgIdx: msgIdx, tools: toolsSnapshot, batchBudget: imageBudgetActor
+                            tu: tu, msgIdx: msgIdx, tools: toolsSnapshot, batchBudget: imageBudgetActor, queuedAt: batchStarted
                         )
                         return (idx, outcome)
                     }
@@ -7565,6 +7580,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     harvested += 1
                 }
             }
+
+            let batchEnded = PerfProbe.pipelineTick()
+            PerfProbe.recordPipeline(.toolBatch, since: batchStarted, until: batchEnded)
+            lastToolBatchEnded = batchEnded
 
             // Stitch outcomes back in original tool_use order so the
             // tool_result blocks pair correctly with the assistant
@@ -7632,6 +7651,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 await ChatStore.shared.appendMessage(assistantRaw)
                 // (assistantAgentIdx was already populated above via deferredAssistantRaw path)
             }
+
+            PerfProbe.recordPipeline(.toolCommit, since: batchEnded)
 
             // Signal that tools are done and we're waiting for the model's next response.
             guard msgIdx < messages.count else { break }

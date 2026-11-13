@@ -159,6 +159,67 @@ struct ContextPolicy {
     }
 }
 
+/// [T-perf-preserve-fixed-context] One-entry, run-local memo of the fixed estimate.
+/// It never changes request content, sizing rules or calibration. Compare ALL
+/// fields, including UTF-8 bytes: Swift String equality is canonically equivalent,
+/// but the existing meter can count composed/decomposed Unicode differently.
+/// Value snapshots share String/Array storage (COW); nothing is persisted or logged.
+struct FixedContextTokenCache {
+    private var previousPrompt: String?
+    private var previousTools: [AgentToolDefinition] = []
+    private var previousEstimate = 0
+    private(set) var recomputations = 0
+
+    mutating func measure(systemPrompt: String, tools: [AgentToolDefinition]) -> Int {
+        if let previousPrompt,
+           Self.sameBytes(previousPrompt, systemPrompt),
+           Self.sameTools(previousTools, tools) {
+            return previousEstimate
+        }
+        let estimate = ContextSizeMeter.estimateFixedTokens(systemPrompt: systemPrompt, tools: tools)
+        previousPrompt = systemPrompt
+        previousTools = tools
+        previousEstimate = estimate
+        recomputations += 1
+        return estimate
+    }
+
+    private static func sameBytes(_ lhs: String, _ rhs: String) -> Bool {
+        var left = lhs, right = rhs
+        return left.withUTF8 { a in right.withUTF8 { b in a.count == b.count && (a.baseAddress == b.baseAddress || a.elementsEqual(b)) } }
+    }
+
+    private static func sameStrings(_ lhs: [String]?, _ rhs: [String]?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): return true
+        case let (a?, b?):
+            return a.count == b.count && zip(a, b).allSatisfy { sameBytes($0.0, $0.1) }
+        default: return false
+        }
+    }
+
+    private static func sameTools(_ lhs: [AgentToolDefinition], _ rhs: [AgentToolDefinition]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        for (a, b) in zip(lhs, rhs) {
+            guard sameBytes(a.name, b.name), sameBytes(a.description, b.description),
+                  sameStrings(a.required, b.required),
+                  sameStrings(a.propertyOrdering, b.propertyOrdering),
+                  a.parameters.count == b.parameters.count else { return false }
+            // Dictionary equality also treats canonically equivalent keys as equal.
+            // Sorted real keys retain their original byte spellings for comparison.
+            let aKeys = a.parameters.keys.sorted(), bKeys = b.parameters.keys.sorted()
+            for (aKey, bKey) in zip(aKeys, bKeys) {
+                guard sameBytes(aKey, bKey),
+                      let x = a.parameters[aKey], let y = b.parameters[bKey],
+                      x.type == y.type, sameBytes(x.description, y.description),
+                      sameStrings(x.enumValues, y.enumValues) else { return false }
+            }
+        }
+        return true
+    }
+}
+
+
 // MARK: - Outbound context measurement [T-ctx-measure-outbound]
 
 /// Sizes the request that is ABOUT to be sent, so every capacity decision
@@ -185,6 +246,7 @@ struct ContextPolicy {
 /// of the ratio describe ONE request, so it stays valid across compaction,
 /// offload, revert and relaunch; whatever changes the outbound history changes
 /// `estimate(outbound history)`, and the decision follows automatically.
+
 enum ContextSizeMeter {
 
     /// Token estimate for a string, by character class.

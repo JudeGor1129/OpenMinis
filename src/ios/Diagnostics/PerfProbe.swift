@@ -103,6 +103,56 @@ enum PerfProbe {
     nonisolated(unsafe) private static var flushTimer: DispatchSourceTimer?
     private static let flushQueue = DispatchQueue(label: "com.openminis.perfprobe", qos: .utility)
     nonisolated(unsafe) private static var didStart = false
+    // Fixed cardinality: no session ids, model names, arguments or content.
+    nonisolated(unsafe) private static var pipelineBuckets: [PipelinePhase: PipelineBucket] = [:]
+
+    enum PipelinePhase: String, CaseIterable {
+        case fixedEstimate = "fixed_estimate"
+        case requestPreparation = "request_preparation"
+        case requestOpen = "request_open"
+        case requestToFirstEvent = "request_to_first_event"
+        case streamToDispatch = "stream_to_dispatch"
+        case toolQueue = "tool_queue"
+        case toolPreflight = "tool_preflight"
+        case toolExecution = "tool_execution"
+        case toolPostprocess = "tool_postprocess"
+        case toolBatch = "tool_batch"
+        case toolCommit = "tool_commit"
+        case toolToRequest = "tool_to_request"
+    }
+
+    struct PipelineBucket {
+        private(set) var count = 0
+        private(set) var sum: Double = 0
+        private(set) var maximum: Double = 0
+
+        mutating func record(seconds: Double) {
+            guard seconds.isFinite, seconds >= 0 else { return }
+            count += 1
+            sum += seconds
+            maximum = max(maximum, seconds)
+        }
+
+        var metrics: String {
+            let average = count > 0 ? sum / Double(count) : 0
+            return "n=\(count) avg_ms=\(String(format: "%.3f", average * 1000)) max_ms=\(String(format: "%.3f", maximum * 1000))"
+        }
+    }
+
+    /// [T-perf-preserve-pipeline] Monotonic, per-invocation start tokens. Never
+    /// a global current request (concurrent sessions/subagents may overlap).
+    static func pipelineTick() -> UInt64 { DispatchTime.now().uptimeNanoseconds }
+
+    static func recordPipeline(_ phase: PipelinePhase, since started: UInt64,
+                               until ended: UInt64 = pipelineTick()) {
+        guard ended >= started else { return }
+        let seconds = Double(ended - started) / 1_000_000_000
+        lock.lock()
+        var bucket = pipelineBuckets[phase] ?? PipelineBucket()
+        bucket.record(seconds: seconds)
+        pipelineBuckets[phase] = bucket
+        lock.unlock()
+    }
 
     /// Begin periodic flushing. Idempotent; safe to call from anywhere.
     static func start() {
@@ -123,8 +173,10 @@ enum PerfProbe {
         lock.lock()
         let tools = toolBuckets
         let agents = agentBuckets
+        let pipeline = pipelineBuckets
         toolBuckets.removeAll(keepingCapacity: true)
         agentBuckets.removeAll(keepingCapacity: true)
+        pipelineBuckets.removeAll(keepingCapacity: true)
         lock.unlock()
 
         for (key, b) in tools.sorted(by: { $0.value.cpuMax > $1.value.cpuMax }) {
@@ -133,6 +185,11 @@ enum PerfProbe {
             let tool = parts.first ?? key
             let caller = parts.count > 1 ? parts[1] : "?"
             logger.info("[ToolCallPerf] tool=\(tool) caller=\(caller) \(b.metrics)")
+        }
+        for phase in PipelinePhase.allCases {
+            if let bucket = pipeline[phase] {
+                logger.info("[AgentPipelinePerf] phase=\(phase.rawValue) \(bucket.metrics)")
+            }
         }
         for (agent, b) in agents.sorted(by: { $0.value.cpuMax > $1.value.cpuMax }) {
             logger.info("[SubAgentPerf] agent=\(agent) \(b.metrics) "

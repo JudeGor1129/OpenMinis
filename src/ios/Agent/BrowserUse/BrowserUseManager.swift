@@ -25,6 +25,31 @@ final class BrowserUseManager: NSObject, ObservableObject {
     @Published var canGoForward: Bool = false
     @Published var lastScreenshot: UIImage?
 
+    /// Shared by saved screenshots, navigation previews and live thumbnails.
+    /// snapshotWidth changes raster sampling only, not webView.frame, DOM layout,
+    /// scroll position or the configured logical viewport. No second bitmap copy.
+    func captureBrowserSnapshot(rect: CGRect? = nil, diagnostic: Bool = false) async throws -> UIImage {
+        let captureRect = rect ?? webView.bounds
+        let scale = webView.window?.screen.scale ?? UIScreen.main.scale
+        guard let plan = BrowserSnapshotPolicy.plan(width: Double(captureRect.width), scale: Double(scale)) else {
+            throw NSError(domain: "BrowserSnapshot", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Invalid snapshot dimensions"])
+        }
+        let config = WKSnapshotConfiguration()
+        if let rect { config.rect = rect }
+        config.snapshotWidth = NSNumber(value: plan.snapshotWidth)
+        let raw = try await webView.takeSnapshot(configuration: config)
+        if diagnostic, let cg = raw.cgImage {
+            // Dimensions/format only. No URL, pixels, arguments or request data.
+            logger.info("[BrowserSnapshotFormat] css_w=\(captureRect.width) css_h=\(captureRect.height) requested_px=\(plan.pixelWidth) px_w=\(cg.width) px_h=\(cg.height) bpc=\(cg.bitsPerComponent) bpp=\(cg.bitsPerPixel) bpr=\(cg.bytesPerRow) bitmap=\(cg.bitmapInfo.rawValue) scale=\(raw.scale)")
+        }
+        guard let cg = raw.cgImage else { return raw }
+        // Preserve logical image dimensions in metadata/UI. JPEG retains the
+        // slightly higher pixel count, while the page's CSS coordinates stay put.
+        return UIImage(cgImage: cg, scale: raw.scale * CGFloat(plan.widthRatio),
+                       orientation: raw.imageOrientation)
+    }
+
     // MARK: - Internal
 
     private(set) var webView: WKWebView
@@ -392,9 +417,8 @@ final class BrowserUseManager: NSObject, ObservableObject {
             try? await Task.sleep(nanoseconds: 120_000_000)
         }
         do {
-            let config = WKSnapshotConfiguration()
-            config.rect = CGRect(origin: .zero, size: targetSize)
-            let image = try await webView.takeSnapshot(configuration: config)
+            let image = try await captureBrowserSnapshot(
+                rect: CGRect(origin: .zero, size: targetSize), diagnostic: true)
             lastScreenshot = image
             if let jpegData = image.jpegData(compressionQuality: 0.7) {
                 let filename = "snapshot_\(Int(Date().timeIntervalSince1970 * 1000)).jpg"
@@ -934,10 +958,9 @@ final class BrowserUseManager: NSObject, ObservableObject {
             try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
         }
 
-        let config = WKSnapshotConfiguration()
-        config.rect = CGRect(origin: .zero, size: targetSize)
         let takeSnapStart = CFAbsoluteTimeGetCurrent()
-        let image = try await webView.takeSnapshot(configuration: config)
+        let image = try await captureBrowserSnapshot(
+            rect: CGRect(origin: .zero, size: targetSize), diagnostic: true)
         let takeSnapMs = Int((CFAbsoluteTimeGetCurrent() - takeSnapStart) * 1000)
         logger.info("[ScreenshotTiming] takeSnapshot elapsed=\(takeSnapMs)ms")
         lastScreenshot = image

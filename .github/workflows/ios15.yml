@@ -63,6 +63,7 @@ jobs:
           bash scripts/ios15/check-privileged-helper.sh 2>&1 | tee ci-logs/system-access.txt
           python3 scripts/ios15/check-embedded-toolchain-integration.py 2>&1 | tee ci-logs/embedded-toolchain-source-gate.txt
           bash scripts/ios15/check-embedded-toolchain-runtime-diagnostics.sh 2>&1 | tee ci-logs/embedded-toolchain-runtime-source-gate.txt
+          bash scripts/ios15/check-perf-preserve.sh --require-swift 2>&1 | tee ci-logs/perf-preserve-contract.txt
           bash scripts/ios15/check-native-build-entry.sh --require-swift 2>&1 | tee ci-logs/native-build-entry-contract.txt
           bash scripts/ios15/check-embedded-adapter.sh --require-swift 2>&1 | tee ci-logs/embedded-adapter-contract.txt
           bash scripts/ios15/check-embedded-project-snapshot.sh --require-swift 2>&1 | tee ci-logs/embedded-project-snapshot-contract.txt
@@ -89,7 +90,8 @@ jobs:
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.full_build) ||
       (github.event_name == 'push' && (github.ref == 'refs/heads/ios15-port' ||
-        github.ref == 'refs/heads/twork-parity-lld-20261111') &&
+        github.ref == 'refs/heads/twork-parity-lld-20261111' ||
+        github.ref == 'refs/heads/perf-preserve-20261113') &&
        contains(github.event.head_commit.message, '[ios15-full-build]'))
     needs: []
     # Cross-compiles the same arm64 iOS App; avoid the hosted arm64 queue outage.
@@ -113,6 +115,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          bash scripts/ios15/check-perf-preserve.sh --require-swift 2>&1 | tee ci-logs/perf-preserve-contract.txt
           bash scripts/ios15/check-native-build-entry.sh --require-swift 2>&1 | tee ci-logs/native-build-entry-contract.txt
           bash scripts/ios15/check-embedded-adapter.sh --require-swift 2>&1 | tee ci-logs/embedded-adapter-contract.txt
           bash scripts/ios15/check-embedded-project-snapshot.sh --require-swift 2>&1 | tee ci-logs/embedded-project-snapshot-contract.txt

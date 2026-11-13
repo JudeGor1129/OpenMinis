@@ -270,7 +270,8 @@ extension AIChatViewModel {
     nonisolated func processStreamEvents(
         stream: AsyncThrowingStream<AgentStreamEvent, Error>,
         msgIdx: Int,
-        provider: any AgentProvider
+        provider: any AgentProvider,
+        requestStarted: UInt64? = nil
     ) async throws -> StreamResult {
         var result = StreamResult()
         var currentTextBlockIdx: Int? = nil
@@ -381,6 +382,9 @@ extension AIChatViewModel {
             }
             guard let event = maybeEvent else { break }
             try Task.checkCancellation()
+            if eventSeq == 0, let requestStarted {
+                PerfProbe.recordPipeline(.requestToFirstEvent, since: requestStarted)
+            }
             // [StreamDiag] Per-event timeline. Throttled: the first 5 events of
             // a stream (covers "did the first byte ever arrive"), then only when
             // a gap exceeds 5s — enough to reconstruct the arrival timeline

@@ -161,6 +161,7 @@
 		E57000001 /* BrowserUseActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57000011 /* BrowserUseActions.swift */; };
 		E57000002 /* BrowserUseJavaScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57000012 /* BrowserUseJavaScript.swift */; };
 		E57000003 /* BrowserUseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57000013 /* BrowserUseManager.swift */; };
+		E5BSP0001 /* BrowserSnapshotPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BSP0011 /* BrowserSnapshotPolicy.swift */; };
 		E57000004 /* BrowserWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57000014 /* BrowserWebView.swift */; };
 		E57000005 /* BrowserSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57000015 /* BrowserSheetView.swift */; };
 		E57000006 /* BrowserManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57000016 /* BrowserManagementView.swift */; };
@@ -897,6 +898,7 @@
 		E57000011 /* BrowserUseActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserUseActions.swift; sourceTree = "<group>"; };
 		E57000012 /* BrowserUseJavaScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserUseJavaScript.swift; sourceTree = "<group>"; };
 		E57000013 /* BrowserUseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserUseManager.swift; sourceTree = "<group>"; };
+		E5BSP0011 /* BrowserSnapshotPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSnapshotPolicy.swift; sourceTree = "<group>"; };
 		E57000014 /* BrowserWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWebView.swift; sourceTree = "<group>"; };
 		E57000015 /* BrowserSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserSheetView.swift; sourceTree = "<group>"; };
 		E57000016 /* BrowserManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserManagementView.swift; sourceTree = "<group>"; };
@@ -1817,6 +1819,7 @@
 				E57000011 /* BrowserUseActions.swift */,
 				E57000012 /* BrowserUseJavaScript.swift */,
 				E57000013 /* BrowserUseManager.swift */,
+				E5BSP0011 /* BrowserSnapshotPolicy.swift */,
 				E57000014 /* BrowserWebView.swift */,
 				E57000015 /* BrowserSheetView.swift */,
 				E57000016 /* BrowserManagementView.swift */,
@@ -3175,6 +3178,7 @@
 				E57000001 /* BrowserUseActions.swift in Sources */,
 				E57000002 /* BrowserUseJavaScript.swift in Sources */,
 				E57000003 /* BrowserUseManager.swift in Sources */,
+				E5BSP0001 /* BrowserSnapshotPolicy.swift in Sources */,
 				E57000004 /* BrowserWebView.swift in Sources */,
 				E57000005 /* BrowserSheetView.swift in Sources */,
 				E57000006 /* BrowserManagementView.swift in Sources */,

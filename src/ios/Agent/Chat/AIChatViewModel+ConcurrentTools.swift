@@ -84,9 +84,18 @@ extension AIChatViewModel {
         tu: StreamResult.ToolEntry,
         msgIdx: Int,
         tools: [AgentToolDefinition],
-        batchBudget: BatchImageBudget
+        batchBudget: BatchImageBudget,
+        queuedAt: UInt64? = nil
     ) async -> ToolExecOutcome {
         let blockIdx = tu.blockIdx
+        let preflightStarted = PerfProbe.pipelineTick()
+        if let queuedAt { PerfProbe.recordPipeline(.toolQueue, since: queuedAt, until: preflightStarted) }
+        var preflightRecorded = false
+        var postprocessStarted: UInt64?
+        defer {
+            if !preflightRecorded { PerfProbe.recordPipeline(.toolPreflight, since: preflightStarted) }
+            if let started = postprocessStarted { PerfProbe.recordPipeline(.toolPostprocess, since: started) }
+        }
 
         // [T-perf-cpu-probe] Every tool call in the app funnels through this
         // function, so one pair of samples here covers them all — no per-tool
@@ -367,6 +376,9 @@ extension AIChatViewModel {
             return "{}"
         }()
 
+        let executionStarted = PerfProbe.pipelineTick()
+        PerfProbe.recordPipeline(.toolPreflight, since: preflightStarted, until: executionStarted)
+        preflightRecorded = true
         do {
         switch tu.name {
         case "host_list_files":
@@ -1151,6 +1163,10 @@ extension AIChatViewModel {
             toolOutput = "Error: \(error.localizedDescription)"
             toolSuccess = false
         }
+
+        let executionEnded = PerfProbe.pipelineTick()
+        PerfProbe.recordPipeline(.toolExecution, since: executionStarted, until: executionEnded)
+        postprocessStarted = executionEnded
 
         // Tail cancel-detection: if Task got cancelled mid-execution.
         if !cancelledHere && Task.isCancelled && self.userDidCancel {
