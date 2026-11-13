@@ -575,9 +575,10 @@ enum EmbeddedCodeSignature {
         // the filler between the NUL terminator and the special slots is checked.
         let identTerminator = Int(identOffset) + identifier.utf8.count + 1
         let specialSlotsStart = Int(hashOffset) - Int(specialSlots) * 32
+        let identFillerStart = cd + identTerminator
         guard specialSlotsStart >= identTerminator,
               hashArray + Int(codeSlots) * 32 == cd + Int(cdLength),
-              let hashFiller = slice(identStart + identTerminator, specialSlotsStart - identTerminator),
+              let hashFiller = slice(identFillerStart, specialSlotsStart - identTerminator),
               hashFiller.allSatisfy({ $0 == 0 }) else {
             throw EmbeddedCodeSignatureError.malformed("CodeDirectory identifier or hash layout")
         }
