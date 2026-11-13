@@ -167,9 +167,10 @@ struct NativeEntryContracts {
                     "native provider classification drifted")
     }
     private static func target(_ installName: String?, kind: EmbeddedTheosTargetKind = .tweak,
-                               name: String = "MinisSmoke", source: String = "Smoke.m") -> EmbeddedTheosTarget {
+                               name: String = "MinisSmoke", source: String = "Smoke.m",
+                               installPath: String = "Library/MobileSubstrate/DynamicLibraries/MinisSmoke.dylib") -> EmbeddedTheosTarget {
         .init(name: name, kind: kind, sourcePaths: [source], headerPaths: ["Shared.h"], frameworks: ["Foundation"],
-              installPath: kind == .tweak ? "Library/MobileSubstrate/DynamicLibraries/MinisSmoke.dylib" : "usr/libexec/MinisSmoke",
+              installPath: kind == .tweak ? installPath : "usr/libexec/MinisSmoke",
               installName: installName, filterPlistPath: kind == .tweak ? "MinisSmoke.plist" : nil,
               entitlementsPath: nil, architectures: [.arm64, .arm64e])
     }
@@ -178,19 +179,26 @@ struct NativeEntryContracts {
         try require(false, "invalid target accepted: \(candidate.installName ?? "nil")")
     }
     private static func testTargetAndParser() throws {
-        try target("@rpath/MinisSmoke.dylib").validate()
-        try require(true, "normal dylib install name must validate")
-        for name in [nil, "@rpath/MinisSmoke", "@rpath/Other.dylib", "@rpath/../MinisSmoke.dylib",
-                     "@rpath//MinisSmoke.dylib", "/tmp/MinisSmoke.dylib", "@loader_path/MinisSmoke.dylib",
-                     "@rpath/MinisSmoke.dylib\n", "@rpath/MinisSmoke.dylib\0"] as [String?] {
+        try target("/var/jb/Library/MobileSubstrate/DynamicLibraries/MinisSmoke.dylib").validate()
+        try require(true, "rootless absolute dylib install name must validate")
+        for name in [nil, "@rpath/MinisSmoke.dylib", "/var/jb/Library/MobileSubstrate/DynamicLibraries/MinisSmoke",
+                     "/var/jb/Library/MobileSubstrate/DynamicLibraries/Other.dylib",
+                     "/var/jb/Library/MobileSubstrate/DynamicLibraries/../MinisSmoke.dylib",
+                     "/tmp/MinisSmoke.dylib", "/var/jb/Library/MobileSubstrate/DynamicLibraries/MinisSmoke.dylib\n",
+                     "/var/jb/Library/MobileSubstrate/DynamicLibraries/MinisSmoke.dylib\0"] as [String?] {
             try rejects(target(name))
         }
+        let alternatePath = "Library/Inject/MinisSmoke.dylib"
+        try target("/var/jb/" + alternatePath, installPath: alternatePath).validate()
+        try require(true, "install ID must follow the declared rootless path")
+        try rejects(target("/var/jb/Library/../Inject/MinisSmoke.dylib",
+            installPath: "Library/../Inject/MinisSmoke.dylib"))
         try target(nil, kind: .daemon).validate()
         try require(true, "daemon validates without LC_ID_DYLIB")
-        try rejects(target("@rpath/MinisSmoke.dylib", kind: .daemon))
-        try rejects(target("@rpath/MinisSmoke.dylib", name: "MinisSmoke\n"))
+        try rejects(target("/var/jb/Library/MobileSubstrate/DynamicLibraries/MinisSmoke.dylib", kind: .daemon))
+        try rejects(target("/var/jb/Library/MobileSubstrate/DynamicLibraries/MinisSmoke.dylib", name: "MinisSmoke\n"))
         for source in ["../Smoke.m", "src//Smoke.m", "src/./Smoke.m", "src/Smoke.m/", "Smoke.m\0", "\\Smoke.m"] {
-            try rejects(target("@rpath/MinisSmoke.dylib", source: source))
+            try rejects(target("/var/jb/Library/MobileSubstrate/DynamicLibraries/MinisSmoke.dylib", source: source))
         }
         let makefile = """
         ARCHS = arm64 arm64e
@@ -205,7 +213,8 @@ struct NativeEntryContracts {
         try require(graph.targets.count == 1 && graph.targets[0].kind == .tweak, "smoke parser failed")
         try require(graph.targets[0].sourcePaths == ["Smoke.m", "Helper.c"] && graph.targets[0].headerPaths == ["Shared.h"],
                     "parser lost smoke files")
-        try require(graph.targets[0].installName == "@rpath/MinisSmoke.dylib", "parser changed installation name")
+        try require(graph.targets[0].installName == "/var/jb/Library/MobileSubstrate/DynamicLibraries/MinisSmoke.dylib",
+                    "parser changed the rootless absolute installation name")
         try require(graph.ignoredRecipes.isEmpty, "smoke unexpectedly contains recipes")
         let architectureCases: [(String, [EmbeddedToolchainArchitecture])] = [
             ("arm64", [.arm64]), ("arm64e", [.arm64e]),

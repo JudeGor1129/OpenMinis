@@ -90,6 +90,8 @@ require('"-adhoc_codesign"' in theos_executor and
         "embedded Theos executor must request and independently verify ad-hoc signatures")
 require('"-no_fixup_chains"' in theos_executor and
         'if !driverReady && arch == .arm64 { linkArguments.append("-no_fixup_chains") }' in theos_executor and
+        'linkArguments += ["-dylib", "-install_name", installName]' in theos_executor and
+        'expectedInstallName: plan.target.installName' in theos_executor and
         'OMToolchain.runCompilerDriver(arguments' in theos_executor and
         'OMToolchain.runLLD(linkArguments' in theos_executor and
         'let linkMinimumIOS = arch == .arm64e ? "14.0" : minimumIOS' in theos_executor and
@@ -184,6 +186,8 @@ require("EmbeddedTheosSigningRequirement(path: installed, name: containerName" i
         "signedSlices.count == expectedSignedSlices" in theos_provider and
         "architectures: target.architectures" in theos_provider and
         "expectedArchitectures: requirement.architectures" in deb_package and
+        "expectedInstallName: requirement.expectedInstallName" in deb_package and
+        "expectedInstallName: target.installName" in theos_provider and
         "delivery.deb, requirements: delivery.signingRequirements" in theos_provider,
         "signature requirements must bind every declared target architecture to the published DEB bytes")
 planner = text("src/ios/Agent/Build/EmbeddedTheosCompilePlan.swift")

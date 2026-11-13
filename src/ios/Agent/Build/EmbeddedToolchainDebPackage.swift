@@ -151,14 +151,17 @@ struct EmbeddedTheosSigningRequirement: Equatable, Sendable {
     let filetype: UInt32
     let entitlements: Data?
     let architectures: [EmbeddedToolchainArchitecture]
+    let expectedInstallName: String?
 
     init(path: String, name: String, filetype: UInt32, entitlements: Data?,
-         architectures: [EmbeddedToolchainArchitecture] = [.arm64, .arm64e]) {
+         architectures: [EmbeddedToolchainArchitecture] = [.arm64, .arm64e],
+         expectedInstallName: String? = nil) {
         self.path = path
         self.name = name
         self.filetype = filetype
         self.entitlements = entitlements
         self.architectures = architectures
+        self.expectedInstallName = expectedInstallName
     }
 }
 
@@ -312,7 +315,8 @@ enum EmbeddedTheosDebPackage {
             let bytes = matches[0].bytes
             let universal = try EmbeddedToolchainUniversalBinary.inspectPayload(bytes,
                 name: requirement.name, filetype: requirement.filetype,
-                expectedArchitectures: requirement.architectures, fixupPolicy: .lldCompatible)
+                expectedArchitectures: requirement.architectures, fixupPolicy: .lldCompatible,
+                expectedInstallName: requirement.expectedInstallName)
             for slice in universal.slices {
                 let thin = Data(bytes[slice.offset..<(slice.offset + slice.bytes)])
                 let signature = try EmbeddedCodeSignature.verify(thin,

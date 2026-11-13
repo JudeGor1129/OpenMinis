@@ -406,11 +406,11 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
             } else {
                 payload = try EmbeddedToolchainUniversalBinary.merge(
                     arm64: slices[0], arm64e: slices[1], name: containerName, filetype: filetype,
-                    fixupPolicy: .lldCompatible)
+                    fixupPolicy: .lldCompatible, expectedInstallName: target.installName)
             }
             let verified = try EmbeddedToolchainUniversalBinary.inspectPayload(payload,
                 name: containerName, filetype: filetype, expectedArchitectures: target.architectures,
-                fixupPolicy: .lldCompatible)
+                fixupPolicy: .lldCompatible, expectedInstallName: target.installName)
             let foundArchitectures = Set(architectures + verified.architectures)
             architectures = ["arm64", "arm64e"].filter { foundArchitectures.contains($0) }
             let installed = EmbeddedTheosDebPackage.rootlessPrefix + target.installPath
@@ -419,7 +419,7 @@ struct EmbeddedTheosBuildProvider: BuildProvider {
             requirements.append(EmbeddedTheosSigningRequirement(path: installed, name: containerName,
                 filetype: filetype,
                 entitlements: prepared.plans.first { $0.target.name == target.name }?.entitlements,
-                architectures: target.architectures))
+                architectures: target.architectures, expectedInstallName: target.installName))
             kinds.append("\(target.name):\(target.kind.rawValue):\(verified.architectures.joined(separator: "+"))")
             if target.kind == .tweak {
                 guard let filter = prepared.filterPlist else {

@@ -64,7 +64,7 @@ final class ProgrammingBuildToolsTests: XCTestCase {
             sourcePaths: ["bridge/ICNBridge.m"], headerPaths: ["shared/ICNProtocol.h"],
             frameworks: ["Foundation", "UIKit", "CoreFoundation"],
             installPath: "Library/MobileSubstrate/DynamicLibraries/DemoBridge.dylib",
-            installName: "@rpath/DemoBridge.dylib", filterPlistPath: "DemoBridge.plist",
+            installName: "/var/jb/Library/MobileSubstrate/DynamicLibraries/DemoBridge.dylib", filterPlistPath: "DemoBridge.plist",
             entitlementsPath: nil, architectures: [.arm64, .arm64e])
         let plan = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.demo",
             version: "1.0", name: "Demo", maintainer: "Test", description: "Native test",
@@ -73,7 +73,7 @@ final class ProgrammingBuildToolsTests: XCTestCase {
 
         let unsafe = EmbeddedTheosTarget(name: "bad", kind: .tweak,
             sourcePaths: ["../escape.m"], headerPaths: [], frameworks: [],
-            installPath: "Library/Tweak.dylib", installName: "@rpath/Tweak.dylib",
+            installPath: "Library/Tweak.dylib", installName: "/var/jb/Library/Tweak.dylib",
             filterPlistPath: nil, entitlementsPath: nil, architectures: [.arm64, .arm64e])
         XCTAssertThrowsError(try unsafe.validate())
 
@@ -128,7 +128,7 @@ final class ProgrammingBuildToolsTests: XCTestCase {
         XCTAssertEqual(daemon.architectures, [.arm64, .arm64e])
         let tweak = try XCTUnwrap(plan.targets.first { $0.kind == .tweak })
         XCTAssertEqual(tweak.installPath, "Library/MobileSubstrate/DynamicLibraries/DemoBridge.dylib")
-        XCTAssertEqual(tweak.installName, "@rpath/DemoBridge.dylib")
+        XCTAssertEqual(tweak.installName, "/var/jb/Library/MobileSubstrate/DynamicLibraries/DemoBridge.dylib")
         XCTAssertFalse(EmbeddedTheosManifestParser.ignoredRecipes(in: makefile).isEmpty)
 
         let shellMakefile = """
@@ -150,7 +150,7 @@ final class ProgrammingBuildToolsTests: XCTestCase {
             sourcePaths: ["bridge/ICNBridge.m"], headerPaths: [],
             frameworks: ["UIKit"],
             installPath: "Library/MobileSubstrate/DynamicLibraries/DemoBridge.dylib",
-            installName: "@rpath/DemoBridge.dylib", filterPlistPath: "DemoBridge.plist",
+            installName: "/var/jb/Library/MobileSubstrate/DynamicLibraries/DemoBridge.dylib", filterPlistPath: "DemoBridge.plist",
             entitlementsPath: nil, architectures: [.arm64, .arm64e])
         let project = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.demo",
             version: "1.0", name: "Demo", maintainer: "Test", description: "Native test",
@@ -194,7 +194,7 @@ final class ProgrammingBuildToolsTests: XCTestCase {
             let target = EmbeddedTheosTarget(name: "ArchProbe", kind: .tweak,
                 sourcePaths: ["Probe.m"], headerPaths: [], frameworks: ["Foundation"],
                 installPath: "Library/MobileSubstrate/DynamicLibraries/ArchProbe.dylib",
-                installName: "@rpath/ArchProbe.dylib", filterPlistPath: "ArchProbe.plist",
+                installName: "/var/jb/Library/MobileSubstrate/DynamicLibraries/ArchProbe.dylib", filterPlistPath: "ArchProbe.plist",
                 entitlementsPath: nil, architectures: architectures)
             let project = EmbeddedTheosProjectPlan(schema: 1, packageID: "com.example.arch-probe",
                 version: "1.0", name: "Arch Probe", maintainer: "Test", description: "Compile-only contract",

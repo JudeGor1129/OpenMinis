@@ -82,7 +82,7 @@ assert engine.count('Self.nativeInspection(request: request, provider: providerI
 assert '$0.id == request.provider' in engine
 chat=Path('src/ios/Agent/Chat/AIChatViewModel+BuildTools.swift').read_text()
 assert chat.count('request.provider?.isNativeEmbedded == true') == 2
-assert 'installName == "@rpath/\\(name).dylib"' in m
+assert 'guard safeInstallPath, installName == rootlessInstallName else' in m
 workflow=Path('.github/workflows/ios15.yml').read_text()
 assert workflow.count('bash scripts/ios15/check-native-build-entry.sh --require-swift') == 2
 assert Path('toolchain-build/scripts/test-native-build-entry.swift').is_file()

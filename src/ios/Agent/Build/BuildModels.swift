@@ -84,6 +84,10 @@ struct EmbeddedTheosTarget: Codable, Equatable, Sendable {
     let entitlementsPath: String?
     let architectures: [EmbeddedToolchainArchitecture]
 
+    var rootlessInstallName: String? {
+        kind == .tweak ? "/var/jb/" + installPath : nil
+    }
+
     func validate() throws {
         func safeName(_ value: String) -> Bool {
             guard let range = value.range(of: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", options: .regularExpression) else { return false }
@@ -103,10 +107,19 @@ struct EmbeddedTheosTarget: Codable, Equatable, Sendable {
                architectures == [.arm64, .arm64e]) else {
             throw EmbeddedTheosPlanError.invalidTarget(name)
         }
-        // Keep target names extension-free, but a tweak's LC_ID_DYLIB must be the
-        // canonical filename. Applying safeName to "<name>.dylib" rejected all tweaks.
+        // Keep the dylib ID bound to the exact safe relative payload path.
         if kind == .tweak {
-            guard installName == "@rpath/\(name).dylib" else {
+            let installParts = installPath.split(separator: "/", omittingEmptySubsequences: false)
+            let safeDirectories = installParts.dropLast().allSatisfy { part in
+                let component = String(part)
+                guard let range = component.range(of: "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$",
+                                                  options: .regularExpression) else { return false }
+                return range == component.startIndex..<component.endIndex
+            }
+            let safeInstallPath = installPath.utf8.count <= 192 &&
+                installParts.count <= 8 && safeDirectories &&
+                (installPath == "\(name).dylib" || installPath.hasSuffix("/\(name).dylib"))
+            guard safeInstallPath, installName == rootlessInstallName else {
                 throw EmbeddedTheosPlanError.invalidInstallName(name)
             }
         } else if installName != nil {
@@ -268,7 +281,7 @@ enum EmbeddedTheosManifestParser {
                 sourcePaths: files.filter { !["h", "hh", "hpp"].contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) },
                 headerPaths: files.filter { ["h", "hh", "hpp"].contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) },
                 frameworks: frameworks, installPath: install,
-                installName: kind == .tweak ? "@rpath/\(name).dylib" : nil,
+                installName: kind == .tweak ? "/var/jb/\(install)" : nil,
                 filterPlistPath: kind == .tweak ? "\(name).plist" : nil,
                 entitlementsPath: entitlements, architectures: architectures)
             do { try target.validate() } catch { throw EmbeddedTheosManifestError.invalidTarget(name) }

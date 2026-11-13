@@ -131,11 +131,33 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
     /// Validate command/segment bounds; never load or execute generated code.
     static func inspect(_ data: Data, name: String, filetype: UInt32,
                         architecture: EmbeddedToolchainArchitecture = .arm64,
-                        fixupPolicy: FixupPolicy = .any) throws -> Self {
+                        fixupPolicy: FixupPolicy = .any,
+                        expectedInstallName: String? = nil) throws -> Self {
         func invalid(_ rule: String = "structure", line: Int = #line) -> EmbeddedAdapterError {
             .poisoned("Mach-O output rejected: \(rule) (check_line=\(line))")
         }
         guard [UInt32(1), 2, 6].contains(filetype) else { throw invalid("unexpected_filetype=\(filetype)") }
+        let requiredInstallName = expectedInstallName ?? "@rpath/" + name
+        if let expectedInstallName {
+            let pathParts = Array(expectedInstallName.split(separator: "/", omittingEmptySubsequences: false).dropFirst())
+            let validDirectory = "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$"
+            let validDylibName = "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,69}$"
+            let safeDirectories = pathParts.dropLast().allSatisfy {
+                String($0).range(of: validDirectory, options: .regularExpression) != nil
+            }
+            let safeFileName = pathParts.last.map {
+                String($0).range(of: validDylibName, options: .regularExpression) != nil
+            } ?? false
+            let safeComponents = !pathParts.isEmpty && safeDirectories && safeFileName
+            guard filetype == 6, expectedInstallName.utf8.count <= 200,
+                  expectedInstallName.hasPrefix("/var/jb/"),
+                  !expectedInstallName.contains("\\"), !expectedInstallName.contains("\0"),
+                  expectedInstallName.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }),
+                  pathParts.count >= 3, pathParts.count <= 10,
+                  safeComponents, expectedInstallName.hasSuffix("/" + name) else {
+                throw invalid("unsafe_expected_install_name")
+            }
+        }
         guard data.count >= 32, data.count <= 16 * 1024 * 1024 else { throw invalid("output_size_out_of_bounds") }
         func word(_ offset: Int) -> UInt32 {
             UInt32(data[offset]) | UInt32(data[offset + 1]) << 8 |
@@ -364,7 +386,7 @@ struct EmbeddedAdapterArtifact: Codable, Sendable {
         }
         if filetype == 6 {
             guard dependencies.count <= 64, dependencies.allSatisfy(isSystemDependency),
-                  installNames == ["@rpath/" + name] else {
+                  installNames == [requiredInstallName] else {
                 throw invalid("dependency_or_install_name_mismatch")
             }
         } else if filetype == 2 {

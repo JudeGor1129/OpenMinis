@@ -185,9 +185,14 @@ enum EmbeddedTheosExecutor {
                 if let entitlementURL {
                     linkArguments += ["-adhoc_codesign_entitlements", entitlementURL.path]
                 }
-                linkArguments += plan.target.kind == .tweak
-                    ? ["-dylib", "-install_name", plan.target.installName ?? "@rpath/\(plan.target.name).dylib"]
-                    : ["-execute", "-e", "_main"]
+                if plan.target.kind == .tweak {
+                    guard let installName = plan.target.installName else {
+                        throw EmbeddedTheosExecutorError.invalidOutput("tweak target has no validated install name")
+                    }
+                    linkArguments += ["-dylib", "-install_name", installName]
+                } else {
+                    linkArguments += ["-execute", "-e", "_main"]
+                }
                 linkArguments += ["-syslibroot", sysroot, "-platform_version", "ios", linkMinimumIOS, "16.4",
                                   "-o", output.path]
                 linkArguments += objects
@@ -231,8 +236,8 @@ enum EmbeddedTheosExecutor {
                 let signature: EmbeddedCodeSignatureReport
                 do {
                     artifact = try EmbeddedAdapterArtifact.inspect(data, name: outputName,
-                        filetype: filetype, architecture: arch,
-                        fixupPolicy: fixupPolicy)
+                        filetype: filetype, architecture: arch, fixupPolicy: fixupPolicy,
+                        expectedInstallName: plan.target.installName)
                     signature = try EmbeddedCodeSignature.verify(data,
                         expectedEntitlements: entitlementBytes)
                     guard signature.adHoc else {

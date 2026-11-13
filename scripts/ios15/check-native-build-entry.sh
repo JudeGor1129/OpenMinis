@@ -23,7 +23,7 @@ assert 'var isNativeEmbedded: Bool' in models
 assert tools.count('request.provider?.isNativeEmbedded == true')==2
 assert tools.count('Self.nativeInspection(request: request, provider: providerID)')==2
 assert '$0.id == request.provider' in tools
-assert 'installName == "@rpath/\\(name).dylib"' in models
+assert 'installName == rootlessInstallName' in models
 for token in ['testNativeWorkspaceRouting', 'testTargetAndParser', 'testLocalizedErrors']:
  assert token in Path('toolchain-build/scripts/test-native-build-entry.swift').read_text()
 parts=[between('EmbeddedToolchainBuildProvider.swift','enum EmbeddedToolchainArchitecture:','enum EmbeddedToolchainLanguage:'),

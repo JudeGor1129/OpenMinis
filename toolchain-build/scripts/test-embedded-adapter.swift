@@ -425,6 +425,17 @@ private struct AdapterContracts {
         let badVersion = MachOFixture.adding(badVersionCommand, to: object)
         let unknown = MachOFixture.adding(MachOFixture.u32(0xdeadbeef) + MachOFixture.u32(8), to: object)
         let dylib = MachOFixture.image(filetype: 6, installName: "@rpath/bad.dylib")
+        let rootlessInstallName = "/var/jb/Library/MobileSubstrate/DynamicLibraries/bad.dylib"
+        let rootlessDylib = MachOFixture.image(filetype: 6, installName: rootlessInstallName)
+        _ = try EmbeddedAdapterArtifact.inspect(rootlessDylib, name: "bad.dylib", filetype: 6,
+            expectedInstallName: rootlessInstallName)
+        do {
+            _ = try EmbeddedAdapterArtifact.inspect(rootlessDylib, name: "bad.dylib", filetype: 6,
+                expectedInstallName: "/var/jb/Library/MobileSubstrate/DynamicLibraries/Other/bad.dylib")
+            throw ContractFailure(description: "rootless install ID differing from its declared path was accepted")
+        } catch EmbeddedAdapterError.poisoned(let reason) {
+            try require(reason.contains("dependency_or_install_name_mismatch"), "wrong absolute install ID rejection: \(reason)")
+        }
         var modern = MachOFixture.adding(MachOFixture.u32(0x2a) + MachOFixture.u32(16) + MachOFixture.u64(0), to: dylib)
         for command in [UInt32(0x80000033), 0x80000034] {
             modern = MachOFixture.adding(MachOFixture.u32(command) + MachOFixture.u32(16) + MachOFixture.u64(0), to: modern)
