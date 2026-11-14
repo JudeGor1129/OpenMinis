@@ -244,6 +244,17 @@ grep -q '"-no_fixup_chains"' src/ios/Agent/Build/EmbeddedTheosExecutor.swift \
   || { echo 'FAIL: Theos linker must disable chained fixups'; exit 1; }
 grep -q '"-no_fixup_chains"' src/ios/Agent/Build/EmbeddedToolchainExecutionAdapter.swift \
   || { echo 'FAIL: structured adapter linker must disable chained fixups'; exit 1; }
+# The Theos executor links executable (TOOL) targets with -execute -e _main, so
+# the in-process LLD argument allowlist has to accept both tokens. Without them
+# every daemon build is rejected as an "unsupported LLD option/job" while tweak
+# (dylib) targets keep building, which hides the regression.
+grep -q '"-execute", "-e", "_main"' src/ios/Agent/Build/EmbeddedTheosExecutor.swift \
+  || { echo 'FAIL: Theos linker must emit -execute/-e for tool targets'; exit 1; }
+grep -q '@"-execute"' src/ios/Vendor/OMToolchain/OMToolchain.mm \
+  || { echo 'FAIL: OMToolchain LLD allowlist must accept -execute'; exit 1; }
+grep -q '@"-e"' src/ios/Vendor/OMToolchain/OMToolchain.mm \
+  || { echo 'FAIL: OMToolchain LLD allowlist must accept -e'; exit 1; }
+echo 'PASS: tool-target entry flags stay accepted by the LLD allowlist.'
 echo 'PASS: arm64e pointer-authentication flags and classic fixup policy are wired.'
 echo 'PASS: actual Swift adapter compiled and fake-bridge contracts executed.'
 echo 'NOTE: native SHA-256/evidence checks were not changed; real LLVM, signing, loading and device RSS remain separate gates.'
