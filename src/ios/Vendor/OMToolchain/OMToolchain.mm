@@ -756,12 +756,12 @@ public:
     }
     NSArray<NSString *> *arguments = [lldArguments copy];
     bool valid = OMValidArguments(arguments);
-    NSSet *flags = [NSSet setWithArray:@[@"-dylib", @"-bundle", @"-dead_strip", @"-no_dead_strip_inits_and_terms",
+    NSSet *flags = [NSSet setWithArray:@[@"-dylib", @"-bundle", @"-execute", @"-dead_strip", @"-no_dead_strip_inits_and_terms",
         @"-no_adhoc_codesign", @"-adhoc_codesign", @"-fixup_chains", @"-no_fixup_chains",
         @"-fatal_warnings", @"-ObjC", @"-all_load", @"-no_uuid", @"-no_function_starts",
         @"-no_data_in_code_info", @"-application_extension", @"-no_warn_inits"]];
     NSSet *paths = [NSSet setWithArray:@[@"-o", @"-syslibroot", @"-L", @"-F", @"-force_load", @"-install_name", @"-rpath"]];
-    NSSet *values = [NSSet setWithArray:@[@"-arch", @"-framework", @"-weak_framework", @"-undefined",
+    NSSet *values = [NSSet setWithArray:@[@"-arch", @"-e", @"-framework", @"-weak_framework", @"-undefined",
         @"-compatibility_version", @"-current_version", @"-exported_symbol", @"-u"]];
     NSUInteger outputs = 0, inputs = 0, archs = 0, platforms = 0;
     bool versionOnly = arguments.count == 1 && [arguments.firstObject isEqualToString:@"--version"];
