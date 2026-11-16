@@ -102,9 +102,9 @@ static void MROAudit(NSString *base, NSDictionary *metadata, NSString *action) {
 }
 static NSData *MROChunk(NSDictionary *request, NSString *action) {
     NSString *encoded = MRORequired(request, @"chunk_base64", action);
-    if (encoded.length > 2_400_000) MROFail(action, @"chunk_too_large", @"Encoded chunk exceeds the bounded request size.");
+    if (encoded.length > 2400000) MROFail(action, @"chunk_too_large", @"Encoded chunk exceeds the bounded request size.");
     NSData *data = [[NSData alloc] initWithBase64EncodedString:encoded options:0];
-    if (!data || data.length == 0 || data.length > 1_700_000) MROFail(action, @"chunk_invalid", @"Chunk is not bounded base64 data.");
+    if (!data || data.length == 0 || data.length > 1700000) MROFail(action, @"chunk_invalid", @"Chunk is not bounded base64 data.");
     return data;
 }
 static NSString *MROFilePath(NSString *base, NSString *stageID, NSString *suffix, NSString *action) {
