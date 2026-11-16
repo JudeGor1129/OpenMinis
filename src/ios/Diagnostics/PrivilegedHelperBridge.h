@@ -6,9 +6,8 @@ FOUNDATION_EXPORT void OpenMinisCancelPrivilegedRequests(void);
 FOUNDATION_EXPORT void OpenMinisCancelPrivilegedRequestsForSession(NSString *sessionID);
 FOUNDATION_EXPORT NSString * _Nullable OpenMinisSystemAccessSessionKey(NSString * _Nullable sessionID);
 
-/// One short-lived allowlisted helper request. The JSON body (at most 3 MiB)
-/// is framed onto the helper's dedicated FD 3 request channel; it never touches
-/// disk, and file content and credentials never appear in argv.
+/// One short-lived allowlisted helper request. Request bodies are framed on FD 3,
+/// never placed in argv or disk. Results are JSON with stdout/stderr/exit code.
 @interface OpenMinisPrivilegedRequest : NSObject
 @property(nonatomic, copy, readonly, nullable) NSString *sessionID;
 - (instancetype)initWithAction:(NSString *)action

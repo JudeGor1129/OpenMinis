@@ -391,12 +391,17 @@ Do not create extraneous files: README.md, INSTALLATION_GUIDE.md, CHANGELOG.md, 
             _ = try? importSkill(content: Self.skillCreatorContent, source: .bundled)
         }
 
-        // The bundled phone-control runner integration was removed. Drop the
-        // skill an earlier build installed; a user-imported copy with the
-        // same id is left untouched.
-        if let legacy = skills.first(where: { $0.id == "ictrl-phone-control" }),
-           legacy.importSource == .bundled {
-            deleteSkill(legacy.id)
+        // [T-ictrl-envelope-v1] The bundled phone-control skill is back, now
+        // describing the in-app client rather than an XCTest runner. Never
+        // overwrite a user-imported copy with the bundled one.
+        let ictrlId = "ictrl-phone-control"
+        if let existing = skills.first(where: { $0.id == ictrlId }) {
+            if existing.importSource == .bundled,
+               existing.version < BundledSkillCatalog.ictrlVersion {
+                _ = try? importSkill(content: BundledSkillCatalog.ictrlContent, source: .bundled)
+            }
+        } else {
+            _ = try? importSkill(content: BundledSkillCatalog.ictrlContent, source: .bundled)
         }
     }
 

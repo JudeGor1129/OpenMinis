@@ -429,6 +429,28 @@ enum EmbeddedToolchainProjectSnapshotBuilder {
         }
     }
 
+    /// Read one regular file beneath a session workspace without following user symlinks.
+    static func readWorkspaceFile(guestPath: String, workspace: URL, limit: Int) throws -> Data {
+        let prefix = "/var/minis/workspace/"
+        guard guestPath.hasPrefix(prefix), !guestPath.contains("\\"), !guestPath.contains("\0") else {
+            throw EmbeddedToolchainProjectSnapshotError.unsupportedPath(guestPath)
+        }
+        let relative = String(guestPath.dropFirst(prefix.count))
+        let components = relative.split(separator: "/", omittingEmptySubsequences: false)
+        guard !relative.isEmpty, components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+            throw EmbeddedToolchainProjectSnapshotError.unsupportedPath(guestPath)
+        }
+        let root = try validatedRoot(workspace)
+        let parentRelative = components.dropLast().map(String.init).joined(separator: "/")
+        let parent = parentRelative.isEmpty ? root : try validatedRoot(root.appendingPathComponent(parentRelative, isDirectory: true))
+        let rootParts = root.pathComponents
+        let parentParts = parent.pathComponents
+        guard parentParts.count >= rootParts.count, parentParts.starts(with: rootParts) else {
+            throw EmbeddedToolchainProjectSnapshotError.unsupportedPath(guestPath)
+        }
+        return try readBoundedFile(relative: String(components.last!), root: parent, limit: limit)
+    }
+
     private static func readBoundedFile(relative: String, root: URL, limit: Int) throws -> Data {
         let rootFD = try openDirectoryDescriptor(root)
         var directoryFD = rootFD

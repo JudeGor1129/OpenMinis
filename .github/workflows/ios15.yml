@@ -61,6 +61,7 @@ jobs:
           bash scripts/ios15/check-rootfs-build-settings.sh 2>&1 | tee ci-logs/rootfs-build-settings.txt
           bash scripts/ios15/check-host-file-tools.sh 2>&1 | tee ci-logs/host-file-tools.txt
           bash scripts/ios15/check-privileged-helper.sh 2>&1 | tee ci-logs/system-access.txt
+          bash scripts/ios15/check-ictrl-client.sh 2>&1 | tee ci-logs/ictrl-client.txt
           python3 scripts/ios15/check-embedded-toolchain-integration.py 2>&1 | tee ci-logs/embedded-toolchain-source-gate.txt
           bash scripts/ios15/check-embedded-toolchain-runtime-diagnostics.sh 2>&1 | tee ci-logs/embedded-toolchain-runtime-source-gate.txt
           bash scripts/ios15/check-perf-preserve.sh --require-swift 2>&1 | tee ci-logs/perf-preserve-contract.txt

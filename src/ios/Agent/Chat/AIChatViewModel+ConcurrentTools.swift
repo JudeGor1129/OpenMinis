@@ -482,7 +482,7 @@ extension AIChatViewModel {
                     toolOutput += "\n\n" + recovery
                 }
             }
-        case "system_access_status", "system_file_read", "system_file_write", "system_file_rollback", "system_access_audit":
+        case "system_access_status", "system_file_read", "system_file_write", "system_file_rollback", "system_access_audit", "system_plugin_install", "system_file_copy", "system_root_command":
             let result = await executeSystemAccessTool(name: tu.name, args: toolArgs)
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 messages[msgIdx].blocks[blockIdx].content = result.output
@@ -505,6 +505,73 @@ extension AIChatViewModel {
             }
             toolOutput = await MinisUserQuestionPresenter.shared.ask(question)
             toolSuccess = !Task.isCancelled
+        case "ictrl_call":
+            // [T-ictrl-envelope-v1] In-app client for the iCTRL rootless
+            // daemon: no shell, no downloads, encrypted envelope only. A
+            // screenshot is written to the attachments directory and reported
+            // as a path, so pixels never enter the transcript.
+            guard let ictrlData = argsJson.data(using: .utf8),
+                  let ictrlArgs = try? JSONSerialization.jsonObject(with: ictrlData) as? [String: Any] else {
+                toolOutput = "Error: invalid iCTRL arguments."
+                toolSuccess = false
+                break
+            }
+            let ictrlAction = (ictrlArgs["action"] as? String) ?? "call"
+            let ictrlHost = ictrlArgs["host"] as? String
+            let ictrlTimeout = Double(max(5, min(120, (ictrlArgs["timeout"] as? Int) ?? (ictrlAction == "pair" ? 90 : 30))))
+            var ictrlParams: [String: Any] = [:]
+            if ictrlAction == "call" {
+                let paramsText = (ictrlArgs["params_json"] as? String) ?? "{}"
+                guard let paramsData = paramsText.data(using: .utf8),
+                      let parsed = (try? JSONSerialization.jsonObject(with: paramsData)) as? [String: Any] else {
+                    toolOutput = "Error: params_json must be a JSON object."
+                    toolSuccess = false
+                    break
+                }
+                ictrlParams = parsed
+            } else if ictrlAction != "pair" {
+                toolOutput = "Error: iCTRL action must be pair or call."
+                toolSuccess = false
+                break
+            }
+            do {
+                var reply: [String: Any]
+                if ictrlAction == "pair" {
+                    reply = try await ICTRLClient.pair(host: ictrlHost,
+                                                       name: ICTRLClient.defaultPairingName,
+                                                       timeout: ictrlTimeout)
+                    toolSuccess = (reply["paired"] as? Bool) == true
+                } else {
+                    let method = (ictrlArgs["method"] as? String) ?? "device_info"
+                    reply = try await ICTRLClient.call(host: ictrlHost, method: method,
+                                                       params: ictrlParams, timeout: ictrlTimeout)
+                    if method == "screenshot", var payload = reply["result"] as? [String: Any],
+                       let encoded = payload["data"] as? String,
+                       let image = Data(base64Encoded: encoded) {
+                        let directory = ContainerLocator.documentsDirectory
+                            .appendingPathComponent("attachments", isDirectory: true)
+                        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                        let file = directory.appendingPathComponent("ictrl-\(Int(Date().timeIntervalSince1970)).jpg")
+                        try? image.write(to: file, options: [.atomic])
+                        payload.removeValue(forKey: "data")
+                        payload["saved_path"] = file.path
+                        payload["bytes"] = image.count
+                        reply["result"] = payload
+                    }
+                    toolSuccess = reply["error"] == nil
+                }
+                let encodedText = (try? JSONSerialization.data(withJSONObject: reply, options: [.sortedKeys]))
+                    .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+                toolOutput = encodedText.count > 12000
+                    ? String(encodedText.prefix(12000)) + "\n… (truncated)"
+                    : encodedText
+            } catch {
+                toolOutput = "Error: \(error.localizedDescription)"
+                toolSuccess = false
+            }
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = toolOutput
+            }
         case "shell_execute":
             let (command, timeout, delay) = parseToolInput(from: argsJson)
 

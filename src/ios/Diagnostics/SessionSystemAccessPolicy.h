@@ -27,7 +27,7 @@ static inline BOOL MinisSessionAuditOwnerMatches(NSDictionary *metadata, NSStrin
 static inline NSString * _Nullable MinisSessionSystemAccessRefusal(
     NSString *action, NSString * _Nullable sid, NSString * _Nullable requestedMode,
     NSUserDefaults *defaults, BOOL identityProbe) {
-    if (![@[@"identity", @"read", @"write", @"rollback"] containsObject:action])
+    if (![@[@"identity", @"read", @"write", @"rollback", @"stage_chunk", @"stage_abort", @"plugin_install", @"root_command", @"file_stage_chunk", @"file_publish", @"file_abort"] containsObject:action])
         return @"Action is not allowlisted.";
     // Only the dedicated read-only identity factory may be unscoped.
     if (identityProbe)
@@ -38,7 +38,10 @@ static inline NSString * _Nullable MinisSessionSystemAccessRefusal(
     NSInteger requested = MinisSessionSystemAccessRank(requestedMode);
     if (!granted) return @"System access is disabled for this session.";
     if (!requested || requested > granted) return @"Session permission changed or is insufficient.";
-    if (([action isEqualToString:@"write"] || [action isEqualToString:@"rollback"]) && requested < 2)
+    if (([action isEqualToString:@"write"] || [action isEqualToString:@"rollback"] ||
+         [action isEqualToString:@"stage_chunk"] || [action isEqualToString:@"stage_abort"] || [action isEqualToString:@"plugin_install"] ||
+         [action isEqualToString:@"root_command"] || [action isEqualToString:@"file_stage_chunk"] ||
+         [action isEqualToString:@"file_publish"] || [action isEqualToString:@"file_abort"]) && requested < 2)
         return @"This session is in read-only mode.";
     return nil;
 }
