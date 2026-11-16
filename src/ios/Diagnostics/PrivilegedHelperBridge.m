@@ -60,7 +60,8 @@ void OpenMinisCancelPrivilegedRequestsForSession(NSString *sessionID) {
 }
 static NSData *RequestFrameBody(NSString *action, NSDictionary *payload, NSString *sessionID, NSError **error) {
     NSMutableDictionary *body = [payload mutableCopy] ?: [NSMutableDictionary dictionary];
-    body[@"protocol"] = @2; body[@"action"] = action;
+    BOOL extended = [@[@"stage_chunk", @"stage_abort", @"plugin_install", @"root_command", @"file_stage_chunk", @"file_publish", @"file_abort"] containsObject:action];
+    body[@"protocol"] = extended ? @3 : @2; body[@"action"] = action;
     if (sessionID) body[@"session_id"] = sessionID;
     else [body removeObjectForKey:@"session_id"];
     NSData *data = [NSJSONSerialization dataWithJSONObject:body options:0 error:error];
@@ -162,9 +163,11 @@ static NSData *RequestFrameBody(NSString *action, NSDictionary *payload, NSStrin
                 });
                 return;
             }
+            unsigned timeoutMS = ([self->_action isEqualToString:@"plugin_install"] || [self->_action isEqualToString:@"file_stage_chunk"] || [self->_action isEqualToString:@"file_publish"]) ? 190000 :
+                ([self->_action isEqualToString:@"root_command"] ? 35000 : 20000);
             MinisHelperResult result = MinisHelperRun(HelperPath().fileSystemRepresentation,
                 self->_action.UTF8String, requestBody.bytes, requestBody.length,
-                true, 20000, &self->_control);
+                true, timeoutMS, &self->_control);
             NSString *response = [self checkedResult:&result];
             MinisHelperResultFree(&result);
             dispatch_async(dispatch_get_main_queue(), ^{

@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Foundation
 import SwiftUI
 import UIKit
@@ -77,6 +78,9 @@ enum SystemHelperClient {
             }
         }
         var body = payload
+        if ["stage_chunk", "stage_abort", "plugin_install", "root_command", "file_stage_chunk", "file_publish", "file_abort"].contains(action) {
+            body["protocol"] = 3
+        }
         body["mode"] = effectiveMode.rawValue
         let request = OpenMinisPrivilegedRequest(action: action, payload: body, sessionID: sessionID)
         return await perform(request)
@@ -177,6 +181,122 @@ extension AIChatViewModel {
         return String(describing: value)
     }
 
+    func executeRootOperation(_ action: String, payload: [String: Any], sessionID: String, mode: SystemAccessMode) async -> FileToolResult {
+        guard mode != .readonly else { return FileToolResult(output: "当前为只读模式；root 操作需要有限写入或专家写入。", success: false) }
+        let result = await SystemHelperClient.run(action: action, payload: payload, sessionID: sessionID, requiredMode: mode)
+        return systemToolJSON(result.value, success: result.ok)
+    }
+
+    private func executePluginInstall(_ args: [String: Any], sessionID: String, mode: SystemAccessMode) async -> FileToolResult {
+        guard mode != .readonly else { return FileToolResult(output: "当前为只读模式；插件安装需要有限写入或专家写入。", success: false) }
+        guard let debPath = args["deb_path"] as? String,
+              let package = args["package"] as? String,
+              debPath.hasPrefix("/var/minis/workspace/"), debPath.hasSuffix(".deb") else {
+            return FileToolResult(output: "需要当前会话工作区内的明确 deb_path 和 package。", success: false)
+        }
+        let bytes: Data
+        do {
+            bytes = try EmbeddedToolchainProjectSnapshotBuilder.readWorkspaceFile(
+                guestPath: debPath, workspace: sessionWorkspaceDirectory, limit: 32 * 1024 * 1024)
+        } catch {
+            return FileToolResult(output: "无法安全读取工作区 DEB：\(error.localizedDescription)", success: false)
+        }
+        let sha = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let packageID = package
+        let stageID = UUID().uuidString
+        let chunkSize = 1_500_000
+        let chunks = (bytes.count + chunkSize - 1) / chunkSize
+        let title = "确认安装插件"
+        let message = "文件：\(debPath)\n包：\(package)\n大小：\(bytes.count) B\nSHA-256：\(sha)\n目标：/var/jb（通过固定 dpkg argv）\n\n安装结果会自动回传，不需要截图。"
+        guard await SystemWriteConfirmer.shared.confirm(title: title, message: message, confirmButtonTitle: "安装", sessionID: sessionID) else {
+            return FileToolResult(output: "用户已取消插件安装。", success: false)
+        }
+        var last: SystemAccessEnvelope?
+        for index in 0..<chunks {
+            let start = index * chunkSize; let end = min(bytes.count, start + chunkSize)
+            let encoded = bytes[start..<end].base64EncodedString()
+            last = await SystemHelperClient.run(action: "stage_chunk", payload: [
+                "mode": mode.rawValue, "session_id": sessionID, "stage_id": stageID,
+                "package": packageID, "offset": start, "total_bytes": bytes.count,
+                "total_sha256": sha, "chunk_base64": encoded, "final": index == chunks - 1
+            ], sessionID: sessionID, requiredMode: mode)
+            if last?.ok != true {
+                _ = await SystemHelperClient.run(action: "stage_abort", payload: [
+                    "mode": mode.rawValue, "session_id": sessionID, "stage_id": stageID
+                ], sessionID: sessionID, requiredMode: mode)
+                return systemToolJSON(last?.value ?? ["ok": false, "code": "stage_failed"], success: false)
+            }
+        }
+        let result = await SystemHelperClient.run(action: "plugin_install", payload: [
+            "mode": mode.rawValue, "session_id": sessionID, "stage_id": stageID, "package": packageID,
+            "total_sha256": sha
+        ], sessionID: sessionID, requiredMode: mode)
+        return systemToolJSON(result.value, success: result.ok)
+    }
+
+    private func executeFileCopy(_ args: [String: Any], sessionID: String, mode: SystemAccessMode) async -> FileToolResult {
+        guard mode != .readonly else { return FileToolResult(output: "当前为只读模式；文件复制需要有限写入或专家写入。", success: false) }
+        guard let sourcePath = args["source_path"] as? String,
+              let targetPath = args["target_path"] as? String,
+              sourcePath.hasPrefix("/var/minis/workspace/"),
+              targetPath.hasPrefix("/var/jb/Library/MobileSubstrate/DynamicLibraries/") else {
+            return FileToolResult(output: "源文件必须来自当前会话工作区，目标只能是 /var/jb/Library/MobileSubstrate/DynamicLibraries 下的 dylib 或 plist。", success: false)
+        }
+        let sourceBytes: Data
+        do {
+            sourceBytes = try EmbeddedToolchainProjectSnapshotBuilder.readWorkspaceFile(
+                guestPath: sourcePath, workspace: sessionWorkspaceDirectory, limit: 32 * 1024 * 1024)
+        } catch {
+            return FileToolResult(output: "无法安全读取工作区源文件：\(error.localizedDescription)", success: false)
+        }
+        guard !sourceBytes.isEmpty else {
+            return FileToolResult(output: "源文件为空。", success: false)
+        }
+        let name = (targetPath as NSString).lastPathComponent
+        guard name.hasSuffix(".dylib") || name.hasSuffix(".plist"), !name.contains(".."), !targetPath.contains("//") else {
+            return FileToolResult(output: "目标文件名必须是安全的 .dylib 或 .plist。", success: false)
+        }
+        let bytes = sourceBytes
+        let sha = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let stageID = UUID().uuidString; let chunkSize = 1_500_000; let chunks = (bytes.count + chunkSize - 1) / chunkSize
+        let message = "源：\(sourcePath)\n目标：\(targetPath)\n大小：\(bytes.count) B\nSHA-256：\(sha)\n\n目标文件已存在时会拒绝覆盖；结果会自动回传。"
+        guard await SystemWriteConfirmer.shared.confirm(title: "确认复制文件到 /var/jb", message: message, confirmButtonTitle: "复制", sessionID: sessionID) else {
+            return FileToolResult(output: "用户已取消文件复制。", success: false)
+        }
+        var last: SystemAccessEnvelope?
+        for index in 0..<chunks {
+            let start = index * chunkSize; let end = min(bytes.count, start + chunkSize)
+            last = await SystemHelperClient.run(action: "file_stage_chunk", payload: [
+                "mode": mode.rawValue, "session_id": sessionID, "stage_id": stageID,
+                "target": targetPath, "offset": start, "total_bytes": bytes.count,
+                "total_sha256": sha, "chunk_base64": bytes[start..<end].base64EncodedString(), "final": index == chunks - 1
+            ], sessionID: sessionID, requiredMode: mode)
+            if last?.ok != true {
+                _ = await SystemHelperClient.run(action: "file_abort", payload: ["mode": mode.rawValue, "session_id": sessionID, "stage_id": stageID], sessionID: sessionID, requiredMode: mode)
+                return systemToolJSON(last?.value ?? ["ok": false, "code": "file_stage_failed"], success: false)
+            }
+        }
+        let result = await SystemHelperClient.run(action: "file_publish", payload: [
+            "mode": mode.rawValue, "session_id": sessionID, "stage_id": stageID,
+            "target": targetPath, "total_sha256": sha
+        ], sessionID: sessionID, requiredMode: mode)
+        return systemToolJSON(result.value, success: result.ok)
+    }
+
+    private func executeRootCommand(_ args: [String: Any], sessionID: String, mode: SystemAccessMode) async -> FileToolResult {
+        guard mode != .readonly else { return FileToolResult(output: "当前为只读模式；root 操作需要有限写入或专家写入。", success: false) }
+        guard let operation = args["operation"] as? String else { return FileToolResult(output: "缺少固定 operation。", success: false) }
+        if operation == "springboard_reload" {
+            guard mode == .expert else { return FileToolResult(output: "重启桌面需要专家写入权限。", success: false) }
+            guard await SystemWriteConfirmer.shared.confirm(title: "确认重启 SpringBoard", message: "将关闭当前桌面并重新加载注入插件。未保存的界面状态可能丢失；若进入安全模式，请卸载刚安装的插件。", confirmButtonTitle: "重启桌面", sessionID: sessionID) else {
+                return FileToolResult(output: "用户已取消重启桌面。", success: false)
+            }
+        }
+        var payload: [String: Any] = ["mode": mode.rawValue, "session_id": sessionID, "operation": operation]
+        if let package = args["package"] as? String { payload["package"] = package }
+        return await executeRootOperation("root_command", payload: payload, sessionID: sessionID, mode: mode)
+    }
+
     func executeSystemAccessTool(name: String, args: [String: Any]) async -> FileToolResult {
         guard remoteDeviceId == nil, let sessionID = self.sessionId,
               let sessionMode = SystemAccessSettings.mode(for: sessionID) else {
@@ -191,6 +311,12 @@ extension AIChatViewModel {
             let maxBytes = max(1, min(262_144, (args["max_bytes"] as? Int) ?? 65_536))
             let result = await SystemHelperClient.run(action: "read", payload: ["path": path, "max_bytes": maxBytes], sessionID: sessionID)
             return systemToolJSON(result.value, success: result.ok)
+        case "system_plugin_install":
+            return await executePluginInstall(args, sessionID: sessionID, mode: sessionMode)
+        case "system_file_copy":
+            return await executeFileCopy(args, sessionID: sessionID, mode: sessionMode)
+        case "system_root_command":
+            return await executeRootCommand(args, sessionID: sessionID, mode: sessionMode)
         case "system_file_write":
             return await executeConfirmedSystemWrite(args, sessionID: sessionID, mode: sessionMode)
         case "system_file_rollback":
@@ -299,10 +425,28 @@ extension AIChatViewModel {
                     "audit_id": AgentToolParam(type: .string, description: "system_access_audit 返回的 UUID。")],
                 required: ["tool_title", "audit_id"], propertyOrdering: ["tool_title", "audit_id"]),
             AgentToolDefinition(name: "system_access_audit",
-                description: "列出系统文件写入和回滚审计元数据。记录路径、时间、动作、哈希和结果，不包含文件正文或凭证。",
+                description: "列出系统文件写入、回滚和 root 操作审计元数据。记录路径、时间、动作、哈希和结果，不包含文件正文或凭证。",
                 parameters: ["tool_title": title,
                     "limit": AgentToolParam(type: .integer, description: "返回最近记录数，1...500。")],
                 required: ["tool_title"], propertyOrdering: ["tool_title", "limit"]),
+            AgentToolDefinition(name: "system_plugin_install",
+                description: "在前台确认后，分块传输并校验当前会话工作区内已构建的受审 rootless DEB，然后由真实 iOS root helper 使用固定 dpkg argv 安装；自动回传 stdout、stderr、退出码、超时和结果，不需要截图。",
+                parameters: ["tool_title": title,
+                    "deb_path": AgentToolParam(type: .string, description: "当前会话工作区内明确的 DEB 文件路径。"),
+                    "package": AgentToolParam(type: .string, description: "期待安装的包 ID。")],
+                required: ["tool_title", "deb_path", "package"], propertyOrdering: ["tool_title", "deb_path", "package"]),
+            AgentToolDefinition(name: "system_file_copy",
+                description: "在前台确认后，将当前会话工作区内的二进制或 plist 分块复制到 rootless /var/jb DynamicLibraries；目标文件已存在时拒绝覆盖，自动回传 SHA-256 和结果。",
+                parameters: ["tool_title": title,
+                    "source_path": AgentToolParam(type: .string, description: "当前会话工作区中的源文件。"),
+                    "target_path": AgentToolParam(type: .string, description: "/var/jb/Library/MobileSubstrate/DynamicLibraries 下的 .dylib 或 .plist 目标。")],
+                required: ["tool_title", "source_path", "target_path"], propertyOrdering: ["tool_title", "source_path", "target_path"]),
+            AgentToolDefinition(name: "system_root_command",
+                description: "执行固定白名单的真实 iOS root 操作并自动回传 stdout、stderr、退出码；不接受 shell、任意 executable 或任意 argv。当前仅支持 dpkg_status，expert 模式可支持 springboard_reload。",
+                parameters: ["tool_title": title,
+                    "operation": AgentToolParam(type: .string, description: "固定操作：dpkg_status 或 springboard_reload。"),
+                    "package": AgentToolParam(type: .string, description: "dpkg_status 时的受审包 ID。")],
+                required: ["tool_title", "operation"], propertyOrdering: ["tool_title", "operation", "package"]),
         ]
     }
 }

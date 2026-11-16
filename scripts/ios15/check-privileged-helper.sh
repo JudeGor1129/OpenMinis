@@ -30,7 +30,7 @@ grep -q 'ContainerLocator.libraryDirectory' src/ios/Agent/Build/BuildRunStore.sw
 # Root persona cannot open app-container files on Xina; helper state is the
 # fixed rootless temp directory, which the helper canonicalizes itself.
 grep -q 'URL(fileURLWithPath: "/var/jb/var/tmp/MinisSystemAccess", isDirectory: true)' "$swift"
-must_not_contain 'AppLogger\\(' "$locator"
+must_not_contain_fixed 'AppLogger(' "$locator"
 grep -q 'static var applicationSupportDirectory' "$locator"
 grep -q 'static var cachesDirectory' "$locator"
 if find src/ios -name '*.swift' ! -name 'ContainerLocator.swift' -exec grep -HE 'FileManager\.default\.urls\(for: \.(documentDirectory|libraryDirectory|applicationSupportDirectory|cachesDirectory)' {} + | grep -q .; then
@@ -85,7 +85,7 @@ grep -q 'S_IXUSR' "$bridge"
 must_not_contain 'access(path.fileSystemRepresentation, X_OK)' "$bridge"
 grep -q 'UIApplicationDidEnterBackgroundNotification' "$bridge"
 grep -q 'OpenMinisCancelPrivilegedRequests' "$bridge"
-for action in identity read write rollback; do grep -q "@\"$action\"" "$helper"; done
+for action in identity read write rollback stage_chunk stage_abort plugin_install root_command; do grep -q "@\"$action\"" "$helper"; done
 for denied in Keychains /private/var/db /private/preboot /System /dev /var/jb/basebin; do grep -q "$denied" "$helper"; done
 grep -q '/var/jb/var/tmp' "$helper"
 grep -q '/var/jb/usr/local' "$helper"
@@ -100,6 +100,12 @@ grep -q 'SystemWriteConfirmer.shared.confirm' "$swift"
 grep -q 'testDirectHostWritesCannotBypassSystemConfirmation' "$tests"
 grep -q 'system_file_write' "$swift"
 grep -q 'system_file_rollback' "$swift"
+grep -q 'system_plugin_install' "$swift"
+grep -q 'system_root_command' "$swift"
+grep -q 'stage_chunk' "$swift"
+grep -Eq 'protocol.*= 3|protocol: 3' "$swift"
+grep -q 'dpkg' "$helper"
+grep -q 'session' "$swift"
 grep -q 'Direct host_write_\* calls never bypass confirmation' src/ios/Agent/Chat/AIChatViewModel+HostWriteTools.swift
 for name in AIChatViewModel+SystemFileTools.swift SystemAccessSettingsView.swift HelperProcessRunner.c PrivilegedHelperBridge.m; do
   test "$(grep -Fc "/* $name in Sources */" "$project")" -eq 2 || { echo "FAIL target membership $name"; exit 1; }

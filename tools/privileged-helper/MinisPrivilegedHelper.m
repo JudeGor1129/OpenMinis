@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include "HelperLease.h"
 #import "../../src/ios/Diagnostics/SessionSystemAccessPolicy.h"
+#import "../../src/ios/Diagnostics/RootOperations.h"
 
 #define READ_LIMIT (256u * 1024u)
 #define CONTENT_LIMIT (1024u * 1024u)
@@ -47,7 +48,8 @@ static void Emit(NSDictionary *object, int code) {
 
 static void Fail(NSString *action, NSString *code, NSString *message) {
     NSMutableDictionary *result = [IdentityFields() mutableCopy];
-    [result addEntriesFromDictionary:@{@"protocol": @PROTOCOL_VERSION, @"ok": @NO,
+    NSNumber *protocol = [@[@"stage_chunk", @"stage_abort", @"plugin_install", @"root_command", @"file_stage_chunk", @"file_publish", @"file_abort"] containsObject:action] ? @3 : @PROTOCOL_VERSION;
+    [result addEntriesFromDictionary:@{@"protocol": protocol, @"ok": @NO,
            @"action": action ?: @"unknown", @"code": code ?: @"error",
            @"stage": ExecutionStage ?: @"unknown",
            @"error": message ?: @"Request failed."}];
@@ -305,8 +307,8 @@ static NSString *RequiredMode(NSDictionary *request, NSString *action, BOOL writ
 
 static void DoIdentity(NSString *action) {
     NSMutableDictionary *result = [MutableCommon(action) mutableCopy];
-    result[@"helper_version"] = @"2.2";
-    result[@"capabilities"] = @[@"bounded_utf8_read", @"atomic_utf8_write", @"rollback"];
+    result[@"helper_version"] = @"2.3";
+    result[@"capabilities"] = @[@"bounded_utf8_read", @"atomic_utf8_write", @"rollback", @"staged_deb_install", @"fixed_root_commands", @"structured_command_output"];
     BOOL root = [result[@"root_verified"] boolValue];
     result[@"ok"] = @(root);
     if (!root) {
@@ -452,7 +454,14 @@ static void DoRollback(NSDictionary *request, NSString *base, NSString *action) 
 }
 
 
-static void *LeaseMonitor(void *unused) { (void)unused; MinisHelperWaitForRevocation(STDIN_FILENO); return NULL; }
+static void *LeaseMonitor(void *unused) {
+    (void)unused;
+    char byte = 0; ssize_t n;
+    do { n = read(STDIN_FILENO, &byte, 1); } while (n < 0 && errno == EINTR);
+    MRORevokeActiveChild();
+    _exit(125);
+    return NULL;
+}
 
 static NSData *ConsumeFramedRequest(NSString *action) {
     unsigned char *bytes = NULL; size_t size = 0;
@@ -473,10 +482,11 @@ int main(int argc, char **argv) {
         // argv carries only the allowlisted verb; the request body arrives on FD 3.
         if (argc != 2 || !argv[1]) return 64;
         NSString *action = [NSString stringWithUTF8String:argv[1]];
-        NSSet *allowed = [NSSet setWithArray:@[@"identity", @"read", @"write", @"rollback"]];
+        NSSet *allowed = [NSSet setWithArray:@[@"identity", @"read", @"write", @"rollback", @"stage_chunk", @"stage_abort", @"plugin_install", @"root_command", @"file_stage_chunk", @"file_publish", @"file_abort"]];
         if (![allowed containsObject:action]) Fail(action, @"action_denied", @"Action is not allowlisted.");
         if (!MinisHelperAwaitLaunchPermit(STDIN_FILENO)) return 125;
-        alarm(20);
+        unsigned alarmSeconds = ([action isEqualToString:@"plugin_install"] || [action isEqualToString:@"file_stage_chunk"] || [action isEqualToString:@"file_publish"]) ? 195 : ([action isEqualToString:@"root_command"] ? 40 : 20);
+        alarm(alarmSeconds);
         pthread_t monitor;
         if (pthread_create(&monitor, NULL, LeaseMonitor, NULL) != 0) Fail(action, @"lease_failed", @"Cannot monitor parent lease.");
         pthread_detach(monitor);
@@ -490,7 +500,10 @@ int main(int argc, char **argv) {
         NSError *error = nil;
         NSDictionary *request = [NSJSONSerialization JSONObjectWithData:body options:0 error:&error];
         if (![request isKindOfClass:NSDictionary.class]) Fail(action, @"invalid_json", @"Request is not a JSON object.");
-        if (![request[@"protocol"] isEqual:@PROTOCOL_VERSION] || ![request[@"action"] isEqual:action])
+        NSNumber *requestProtocol = [request[@"protocol"] isKindOfClass:NSNumber.class] ? request[@"protocol"] : nil;
+        BOOL extended = [@[@"stage_chunk", @"stage_abort", @"plugin_install", @"root_command", @"file_stage_chunk", @"file_publish", @"file_abort"] containsObject:action];
+        if (![request[@"action"] isEqual:action] ||
+            !([requestProtocol isEqual:@PROTOCOL_VERSION] || (extended && [requestProtocol isEqual:@3])))
             Fail(action, @"protocol_mismatch", @"Request protocol/action mismatch.");
         ExecutionStage = @"root_validation";
         if (getuid() != 0 || geteuid() != 0 || getgid() != 0 || getegid() != 0)
@@ -499,6 +512,13 @@ int main(int argc, char **argv) {
         if ([action isEqualToString:@"read"]) DoRead(request, action);
         if ([action isEqualToString:@"write"]) DoWrite(request, StateBase(action), action);
         if ([action isEqualToString:@"rollback"]) DoRollback(request, StateBase(action), action);
+        if ([action isEqualToString:@"stage_chunk"]) MROStageChunk(request);
+        if ([action isEqualToString:@"stage_abort"]) MROStageAbort(request);
+        if ([action isEqualToString:@"file_stage_chunk"]) MROFileStageChunk(request);
+        if ([action isEqualToString:@"file_publish"]) MROFilePublish(request);
+        if ([action isEqualToString:@"file_abort"]) MROFileAbort(request);
+        if ([action isEqualToString:@"plugin_install"]) MROInstall(request);
+        if ([action isEqualToString:@"root_command"]) MRORootCommand(request);
         Fail(action, @"action_denied", @"Action is not implemented.");
     }
 }

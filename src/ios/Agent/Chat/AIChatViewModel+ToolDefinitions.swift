@@ -561,6 +561,22 @@ extension AIChatViewModel {
            SessionSystemAccessStore.shared.mode(for: sessionId) != .disabled {
             tools.append(contentsOf: systemAccessToolDefinitions())
         }
+        if AgentToolSwitch.ictrl.isEnabled {
+            tools.append(AgentToolDefinition(
+                name: "ictrl_call",
+                description: "Control this iPhone through the local iCTRL rootless daemon (default 127.0.0.1:8200) over its encrypted envelope. Use action=pair once when pairing is needed — the user must approve the on-device prompt, and the daemon rate-limits retries — then action=call with a supported JSON-RPC method. The shipped daemon implements device_info and screenshot; other methods only work if that build supports them. Screenshots are saved to the attachments directory and returned as a path, never as base64. This tool does not open a shell, download clients, mount disk images or bypass pairing.",
+                parameters: [
+                    "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of the iCTRL operation."),
+                    "action": AgentToolParam(type: .string, description: "Pair once or call one JSON-RPC method.", enumValues: ["pair", "call"]),
+                    "host": AgentToolParam(type: .string, description: "Daemon host:port. Default is 127.0.0.1:8200; only loopback or a private LAN address is accepted."),
+                    "method": AgentToolParam(type: .string, description: "JSON-RPC method for action=call, for example device_info or screenshot."),
+                    "params_json": AgentToolParam(type: .string, description: "A JSON object string containing the method parameters. Use {} when the method has no parameters."),
+                    "timeout": AgentToolParam(type: .integer, description: "Maximum seconds for the request. Default 30."),
+                ],
+                required: ["tool_title", "action"],
+                propertyOrdering: ["tool_title", "action", "host", "method", "params_json", "timeout"]
+            ))
+        }
         return tools
     }
 

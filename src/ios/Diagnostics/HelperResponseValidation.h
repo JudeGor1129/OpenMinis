@@ -12,9 +12,12 @@ static inline BOOL MinisHelperHasZeroID(NSDictionary *object, NSString *key) {
 
 static inline NSDictionary *MinisValidateHelperResponse(id raw, NSString *action, int exitCode) {
     NSDictionary *object = [raw isKindOfClass:NSDictionary.class] ? raw : nil;
-    if (![object[@"protocol"] isEqual:@2] || ![object[@"action"] isEqual:action] ||
+    NSNumber *protocol = [object[@"protocol"] isKindOfClass:NSNumber.class] ? object[@"protocol"] : nil;
+    BOOL protocolOK = [protocol isEqual:@2] ||
+        ([protocol isEqual:@3] && [@[@"stage_chunk", @"stage_abort", @"plugin_install", @"root_command", @"file_stage_chunk", @"file_publish", @"file_abort"] containsObject:action]);
+    if (!protocolOK || ![object[@"action"] isEqual:action] ||
         ![object[@"ok"] isKindOfClass:NSNumber.class]) {
-        return @{@"protocol": @2, @"action": action, @"ok": @NO,
+        return @{@"protocol": protocol ?: @2, @"action": action, @"ok": @NO,
                  @"code": @"invalid_response", @"root_verified": @NO,
                  @"exit_code": @(exitCode),
                  @"error": @"Helper returned an invalid protocol envelope."};
@@ -29,13 +32,22 @@ static inline NSDictionary *MinisValidateHelperResponse(id raw, NSString *action
         success[@"exit_code"] = @0;
         return success;
     }
-    NSMutableDictionary *failure = [@{@"protocol": @2, @"action": action,
+    NSMutableDictionary *failure = [@{@"protocol": protocol ?: @2, @"action": action,
         @"ok": @NO, @"root_verified": @(root), @"exit_code": @(exitCode)} mutableCopy];
-    for (NSString *key in @[@"uid", @"euid", @"gid", @"egid"])
+    for (NSString *key in @[@"uid", @"euid", @"gid", @"egid", @"signal", @"timed_out", @"output_truncated"])
         if ([object[key] isKindOfClass:NSNumber.class]) failure[key] = object[key];
+    if ([object[@"exit_code"] isKindOfClass:NSNumber.class]) failure[@"process_exit_code"] = object[@"exit_code"];
     for (NSString *key in @[@"code", @"stage", @"error"])
         if ([object[key] isKindOfClass:NSString.class])
             failure[key] = [(NSString *)object[key] substringToIndex:MIN([(NSString *)object[key] length], 1600)];
+    if ([action isEqualToString:@"root_command"] || [action isEqualToString:@"plugin_install"] || [action isEqualToString:@"file_stage_chunk"] || [action isEqualToString:@"file_publish"] || [action isEqualToString:@"file_abort"]) {
+        for (NSString *key in @[@"stdout", @"stderr"])
+            if ([object[key] isKindOfClass:NSString.class])
+                failure[key] = [(NSString *)object[key] substringToIndex:MIN([(NSString *)object[key] length], 65536)];
+        for (NSString *key in @[@"operation", @"package", @"stage_id", @"session_id"])
+            if ([object[key] isKindOfClass:NSString.class])
+                failure[key] = [(NSString *)object[key] substringToIndex:MIN([(NSString *)object[key] length], 512)];
+    }
     if (claimedOK) {
         failure[@"code"] = root ? @"exit_mismatch" : @"root_not_verified";
         failure[@"error"] = root ? @"Helper success envelope had a non-zero exit code."
