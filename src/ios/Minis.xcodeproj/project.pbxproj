@@ -510,8 +510,6 @@
 		E5MB0001 /* AIChatViewModel+HostBinaryTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5MB0002 /* AIChatViewModel+HostBinaryTools.swift */; };
 		E5VMC0003 /* AIChatViewModel+Offloading.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0013 /* AIChatViewModel+Offloading.swift */; };
 		E5VMC0004 /* AIChatViewModel+SSEStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0014 /* AIChatViewModel+SSEStream.swift */; };
-		A1C7C0000000000000000001 /* ICTRLClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C7C0000000000000000002 /* ICTRLClient.swift */; };
-		A1C7C0000000000000000003 /* BundledSkillCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C7C0000000000000000004 /* BundledSkillCatalog.swift */; };
 		E5VMC0005 /* AIChatViewModel+Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0015 /* AIChatViewModel+Persistence.swift */; };
 		E5VMC0006 /* AIChatViewModel+BackgroundTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */; };
 		E5VMC0007 /* AIChatViewModel+ConcurrentTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */; };
@@ -1277,8 +1275,6 @@
 		E5MB0002 /* AIChatViewModel+HostBinaryTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+HostBinaryTools.swift"; sourceTree = "<group>"; };
 		E5VMC0013 /* AIChatViewModel+Offloading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Offloading.swift"; sourceTree = "<group>"; };
 		E5VMC0014 /* AIChatViewModel+SSEStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+SSEStream.swift"; sourceTree = "<group>"; };
-		A1C7C0000000000000000002 /* ICTRLClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICTRLClient.swift; sourceTree = "<group>"; };
-		A1C7C0000000000000000004 /* BundledSkillCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSkillCatalog.swift; sourceTree = "<group>"; };
 		E5VMC0015 /* AIChatViewModel+Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+Persistence.swift"; sourceTree = "<group>"; };
 		E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+BackgroundTask.swift"; sourceTree = "<group>"; };
 		E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatViewModel+ConcurrentTools.swift"; sourceTree = "<group>"; };
@@ -1974,7 +1970,6 @@
 				E5G000014 /* AgentActivityAttributes.swift */,
 				E5AT00011 /* AudioTogglePlaybackIntent.swift */,
 				E5Q000013 /* AppLogger.swift */,
-				A1C7C0000000000000000004 /* BundledSkillCatalog.swift */,
 				CL0C0A02 /* ContainerLocator.swift */,
 				GWS00002 /* GroupWorkspaceStore.swift */,
 				LOC00002 /* AppLocalization.swift */,
@@ -2297,7 +2292,6 @@
 				E5VMC0015 /* AIChatViewModel+Persistence.swift */,
 				E5VMC0016 /* AIChatViewModel+BackgroundTask.swift */,
 				E5VMC0017 /* AIChatViewModel+ConcurrentTools.swift */,
-				A1C7C0000000000000000002 /* ICTRLClient.swift */,
 				E5VMP0011 /* AIChatViewModel+ProgrammingTools.swift */,
 				E5SYS0011 /* AIChatViewModel+SystemFileTools.swift */,
 				E5SM0011 /* StructuredMemory.swift */,
@@ -3104,8 +3098,6 @@
 				E5VMD0001 /* MinisURLPathDecoding.swift in Sources */,
 				E5VMC0003 /* AIChatViewModel+Offloading.swift in Sources */,
 				E5VMC0004 /* AIChatViewModel+SSEStream.swift in Sources */,
-				A1C7C0000000000000000001 /* ICTRLClient.swift in Sources */,
-				A1C7C0000000000000000003 /* BundledSkillCatalog.swift in Sources */,
 				E5VMC0005 /* AIChatViewModel+Persistence.swift in Sources */,
 				E5VMC0006 /* AIChatViewModel+BackgroundTask.swift in Sources */,
 				E5VMC0007 /* AIChatViewModel+ConcurrentTools.swift in Sources */,

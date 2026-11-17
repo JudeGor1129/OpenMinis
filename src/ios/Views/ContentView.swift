@@ -856,7 +856,8 @@ private struct FolderPickerSheet: View {
                         } label: {
                             HStack {
                                 if suggesting {
-                                    ProgressView().controlSize(.small)
+                                    ThinkingOrb(.composing, size: .small, speed: 0.75)
+                                        .accessibilityHidden(true)
                                 } else {
                                     Image(systemName: "sparkles")
                                         .foregroundStyle(Color.accentColor)
@@ -2063,20 +2064,10 @@ struct ModernContentView: View {
                 ZStack {
                     Color.black.opacity(0.3).ignoresSafeArea()
                     VStack(spacing: 12) {
-                        // [T-ios-hud-spinner-contrast] Tint the spinner with the
-                        // adaptive label colour (GH#333).
-                        //
-                        // The card behind it is `.ultraThinMaterial`, which is
-                        // LIGHT in light mode. An untinted ProgressView takes
-                        // the ambient tint rather than the label colour, and
-                        // over a pale material that lands close to the
-                        // background — the reported "can't tell whether it is
-                        // loading". `UIColor.label` is dark on light and light
-                        // on dark, so this fixes light mode without touching
-                        // how dark mode looks today.
-                        ProgressView()
-                            .controlSize(.large)
-                            .tint(ChatColors.primaryText)
+                        // Theme-adaptive waiting animation; the actual export
+                        // count below remains the source of progress information.
+                        ThinkingOrb(.working, size: .small, diameter: 36, speed: 0.7)
+                            .accessibilityHidden(true)
                         if let p = exportProgress, p.total > 0 {
                             Text(AppLocalized("Exporting… \(p.done) / \(p.total)"))
                                 .font(.subheadline)
@@ -3342,7 +3333,8 @@ struct ModernContentView: View {
                 if regeneratingTitleSessionId == session.id {
                     ZStack {
                         Color(.systemBackground).opacity(0.7)
-                        ProgressView()
+                        ThinkingOrb(.composing, size: .small, diameter: 32, speed: 0.7)
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -3547,7 +3539,8 @@ struct ModernContentView: View {
                                     if regeneratingTitleSessionId == session.id {
                                         ZStack {
                                             Color(.systemBackground).opacity(0.7)
-                                            ProgressView()
+                                            ThinkingOrb(.composing, size: .small, diameter: 32, speed: 0.7)
+                                                .accessibilityHidden(true)
                                         }
                                     }
                                 }
@@ -6426,10 +6419,14 @@ private struct DeleteConfirmSheet: View {
             VStack(spacing: 0) {
                 if isLoading || info == nil {
                     Spacer()
-                    ProgressView("Calculating…")
-                        .controlSize(.large)
+                    VStack(spacing: 8) {
+                        ThinkingOrb(.working, size: .small, diameter: 36, speed: 0.7)
+                            .accessibilityHidden(true)
+                        Text("Calculating…")
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
-                    let _ = print("[DELETE] DeleteConfirmSheet showing ProgressView. isLoading=\(isLoading), info is \(info == nil ? "nil" : "non-nil")")
+                    let _ = print("[DELETE] DeleteConfirmSheet showing loading indicator. isLoading=\(isLoading), info is \(info == nil ? "nil" : "non-nil")")
                 } else if let info {
                     let _ = print("[DELETE] DeleteConfirmSheet showing info. sessionCount=\(info.sessionCount)")
                     ScrollView {
@@ -6553,7 +6550,8 @@ private struct ExportPreviewSheet: View {
                     summaryView(summary)
                 } else if isLoadingPreview {
                     Spacer()
-                    ProgressView()
+                    ThinkingOrb(.working, size: .small, diameter: 36, speed: 0.7)
+                        .accessibilityLabel(Text("Loading preview…"))
                     Spacer()
                 } else {
                     ScrollView {

@@ -3984,8 +3984,8 @@ struct AIChatView: View {
         VStack(spacing: 0) {
             if vm.isSuspended {
                 HStack(spacing: 8) {
-                    ProgressView()
-                        .tint(.yellow)
+                    ThinkingOrb(.connecting, size: .small, speed: 0.65, tint: .yellow)
+                        .accessibilityHidden(true)
                     Text("Waiting for other tasks to complete...")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
@@ -4629,7 +4629,8 @@ struct AIChatView: View {
                     VStack {
                         HStack(spacing: 8) {
                             if FileMentionIndex.shared.isScanning {
-                                ProgressView().scaleEffect(0.7)
+                                ThinkingOrb(.searching, size: .small, diameter: 14, speed: 0.75)
+                                    .accessibilityHidden(true)
                             }
                             Text(FileMentionIndex.shared.isScanning
                                  ? AppLocalized("Scanning files…")
@@ -4687,7 +4688,8 @@ struct AIChatView: View {
                     }
                     if FileMentionIndex.shared.isScanning {
                         HStack(spacing: 6) {
-                            ProgressView().scaleEffect(0.6)
+                            ThinkingOrb(.searching, size: .small, diameter: 12, speed: 0.75)
+                                .accessibilityHidden(true)
                             Text("Scanning more locations…")
                                 .font(.system(size: 11))
                                 .foregroundStyle(ChatColors.secondaryText)

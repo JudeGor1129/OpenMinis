@@ -31,9 +31,6 @@ import SwiftUI
 enum AgentToolSwitch: String, CaseIterable {
     case interaction = "agent.tools.interaction.enabled"
     case browser = "agent.tools.browser.enabled"
-    // [T-ictrl-envelope-v1] Opt-in: the tool talks to a rootless daemon that
-    // may not be installed, so a fresh install starts with it hidden.
-    case ictrl = "agent.tools.ictrl.enabled"
     case agents = "agent.tools.agents.enabled"
 
     var key: String { rawValue }
@@ -59,10 +56,6 @@ enum AgentToolSwitch: String, CaseIterable {
         switch self {
         case .interaction: return true
         case .browser: return true
-        // The daemon is a separate rootless package; without it the tool can
-        // only return "unreachable", so it stays out of the schema until the
-        // user turns it on deliberately.
-        case .ictrl: return false
         case .agents: return true
         }
     }
@@ -82,7 +75,6 @@ enum AgentToolSwitch: String, CaseIterable {
     nonisolated static func governing(_ toolName: String) -> AgentToolSwitch? {
         switch toolName {
         case "ask_user": return .interaction
-        case "ictrl_call": return .ictrl
         case "browser_use": return .browser
         case SubAgentDefinition.toolName: return .agents
         default: return nil
@@ -96,6 +88,7 @@ enum AgentToolSwitch: String, CaseIterable {
     // MARK: Migration from the single master switch (cdbfd4f75)
 
     private static let migrationKey = "agent.tools.granular.v1.migrated"
+    private static let retiredICTRLMigrationKey = "agent.tools.ictrl.retired.v1.migrated"
     /// The one-round master switch that gated browser_use + delegate_task.
     static let legacyMasterKey = "agent.tools.enabled"
 
@@ -115,6 +108,18 @@ enum AgentToolSwitch: String, CaseIterable {
     /// OFF does not turn it off — that switch was about agents.
     static func migrateLegacyIfNeeded() {
         let d = UserDefaults.standard
+        // Retire only state owned by the removed iCTRL integration. This
+        // separate key still runs if the unrelated agent migration already ran.
+        if !d.bool(forKey: retiredICTRLMigrationKey) {
+            d.removeObject(forKey: "agent.tools.ictrl.enabled")
+            let retiredPairingFile = ContainerLocator.applicationSupportDirectory
+                .appendingPathComponent("iCTRL", isDirectory: true)
+                .appendingPathComponent("sessions.json")
+            if FileManager.default.fileExists(atPath: retiredPairingFile.path) {
+                try? FileManager.default.removeItem(at: retiredPairingFile)
+            }
+            d.set(true, forKey: retiredICTRLMigrationKey)
+        }
         guard !d.bool(forKey: migrationKey) else { return }
         d.set(true, forKey: migrationKey)
         guard d.object(forKey: AgentToolSwitch.agents.key) == nil else { return }
@@ -129,7 +134,6 @@ enum AgentToolSwitch: String, CaseIterable {
 struct ToolsSettingsView: View {
     @AppStorage(AgentToolSwitch.interaction.key) private var interactionEnabled = AgentToolSwitch.interaction.defaultValue
     @AppStorage(AgentToolSwitch.browser.key) private var browserEnabled: Bool = AgentToolSwitch.browser.defaultValue
-    @AppStorage(AgentToolSwitch.ictrl.key) private var ictrlEnabled = AgentToolSwitch.ictrl.defaultValue
 
     var body: some View {
         Form {
@@ -138,12 +142,6 @@ struct ToolsSettingsView: View {
                 toolRow(AppLocalized("Browser Use"), tool: "browser_use", icon: "globe", isOn: $browserEnabled)
             } footer: {
                 Text(AppLocalized("Browse the web in the in-app browser: open pages, read them, click and type. Stable and on by default. When off, the tool is removed from every conversation — the model does not see it at all."))
-            }
-            Section {
-                toolRow("iCTRL 手机控制", tool: "ictrl_call", icon: "iphone", isOn: $ictrlEnabled)
-                Text("通过本机 iCTRL rootless 守护进程（默认 127.0.0.1:8200）读取设备信息与截图，加密信封直连，不下载、不执行外部客户端。默认关闭；启用前请确认守护进程已安装并由你配对。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             Section {
                 NavigationLink {

@@ -391,18 +391,23 @@ Do not create extraneous files: README.md, INSTALLATION_GUIDE.md, CHANGELOG.md, 
             _ = try? importSkill(content: Self.skillCreatorContent, source: .bundled)
         }
 
-        // [T-ictrl-envelope-v1] The bundled phone-control skill is back, now
-        // describing the in-app client rather than an XCTest runner. Never
-        // overwrite a user-imported copy with the bundled one.
-        let ictrlId = "ictrl-phone-control"
-        if let existing = skills.first(where: { $0.id == ictrlId }) {
-            if existing.importSource == .bundled,
-               existing.version < BundledSkillCatalog.ictrlVersion {
-                _ = try? importSkill(content: BundledSkillCatalog.ictrlContent, source: .bundled)
-            }
-        } else {
-            _ = try? importSkill(content: BundledSkillCatalog.ictrlContent, source: .bundled)
+        // Remove the obsolete bundled instructions on upgrade or restore;
+        // an independently imported skill with the same id remains user's data.
+        let retiredPhoneControlSkillID = "ictrl-phone-control"
+        if let legacy = skills.first(where: { $0.id == retiredPhoneControlSkillID }),
+           legacy.importSource == .bundled {
+            removeRetiredBundledSkillLocally(legacy.id)
         }
+    }
+
+    /// Retire only this app's old bundled copy. Do not enqueue a cloud
+    /// tombstone: a peer may have a user-imported skill with the same id.
+    private func removeRetiredBundledSkillLocally(_ skillId: String) {
+        guard skills.contains(where: { $0.id == skillId && $0.importSource == .bundled }) else { return }
+        skills.removeAll { $0.id == skillId }
+        dbDeleteSkill(id: skillId)
+        try? fm.removeItem(at: skillsDir.appendingPathComponent(skillId))
+        try? fm.removeItem(at: rootfsSkillsDir.appendingPathComponent(skillId))
     }
 
     // MARK: - One-time Migration: re-sync skills with bundled files
