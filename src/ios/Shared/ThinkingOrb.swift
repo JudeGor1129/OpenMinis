@@ -17,13 +17,14 @@ import SwiftUI
 /// ThinkingOrb(.solving, diameter: 56)           // the 64 pt design drawn at 56 pt
 /// ```
 ///
-/// Ink is strictly monochrome and follows the environment's color scheme:
-/// dark dots on light backgrounds, light dots on dark ones. Pin it with
-/// `.environment(\.colorScheme, .dark)`.
+/// Ink defaults to monochrome and follows the environment's color scheme:
+/// dark dots on light backgrounds, light dots on dark ones. An optional tint
+/// preserves semantic status colours in compact indicators.
 ///
-/// Every orb runs on one shared clock, so orbs on screen together stay in
-/// phase. An orb pauses itself while scrolled out of view or while the app is
-/// in the background, and shows a single still frame when Reduce Motion is on.
+/// Every orb uses one shared clock, at most 30 frames per second. It displays
+/// a still frame when paused, inactive, disappeared, or Reduce Motion is on.
+/// On iOS 15, disappearance follows SwiftUI's lifecycle, not exact viewport
+/// intersection; a lazily retained row may remain alive beyond the viewport.
 public struct ThinkingOrb: View {
 
     private let design: OrbDesign
@@ -31,6 +32,7 @@ public struct ThinkingOrb: View {
     private let diameter: CGFloat?
     private let speed: Double
     private let isPaused: Bool
+    private let tint: Color?
 
     /// - Parameters:
     ///   - design: Which animation to show.
@@ -39,29 +41,32 @@ public struct ThinkingOrb: View {
     ///   - diameter: Draws the chosen size's design at another size, in
     ///     points. Leave `nil` to draw it at its tuned size.
     ///   - speed: A multiplier on the design's tuned speed.
-    ///   - isPaused: Freezes the orb on its current frame.
+    ///   - isPaused: Shows a representative still frame without a timeline.
+    ///   - tint: Optional semantic colour; nil retains the monochrome design.
     public init(
         _ design: OrbDesign = .working,
         size: OrbSize = .regular,
         diameter: CGFloat? = nil,
         speed: Double = 1,
-        isPaused: Bool = false
+        isPaused: Bool = false,
+        tint: Color? = nil
     ) {
         self.design = design
         self.size = size
         self.diameter = diameter
         self.speed = speed
         self.isPaused = isPaused
+        self.tint = tint
     }
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var isOnScreen = true
+    @State private var isOnScreen = false
 
     private var isRunning: Bool {
-        !isPaused && isOnScreen && scenePhase != .background
+        !isPaused && isOnScreen && scenePhase == .active && !reduceMotion
     }
 
     public var body: some View {
@@ -70,25 +75,25 @@ public struct ThinkingOrb: View {
         let side = diameter ?? size.points
 
         Group {
-            if reduceMotion {
-                // one static, representative frame; it still follows the theme
-                OrbCanvas(resolved: resolved, size: size, t: 0.6, dark: dark)
-            } else {
-                TimelineView(.animation(paused: !isRunning)) { timeline in
+            if isRunning {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                     OrbCanvas(
                         resolved: resolved,
                         size: size,
                         t: OrbClock.seconds(at: timeline.date) * resolved.speed * speed,
-                        dark: dark
+                        dark: dark,
+                        tint: tint
                     )
                 }
+            } else {
+                // No scheduled frames while idle, inactive or Reduce Motion
+                // is enabled. Keep a legible silhouette in either theme.
+                OrbCanvas(resolved: resolved, size: size, t: 0.6, dark: dark, tint: tint)
             }
         }
         .frame(width: side, height: side)
-        // iOS 15 has no scroll-visibility geometry API. TimelineView still
-        // pauses while the scene is backgrounded, and the fixed frame keeps
-        // the inline indicator cheap in long lists.
         .onAppear { isOnScreen = true }
+        .onDisappear { isOnScreen = false }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(design.accessibilityLabel))
         .accessibilityAddTraits(.isImage)
@@ -103,6 +108,7 @@ struct OrbCanvas: View {
     let size: OrbSize
     let t: Double
     let dark: Bool
+    var tint: Color? = nil
 
     var body: some View {
         Canvas { context, box in
@@ -111,25 +117,31 @@ struct OrbCanvas: View {
             let scale = min(box.width, box.height) / unit
             context.translateBy(x: (box.width - unit * scale) / 2, y: (box.height - unit * scale) / 2)
             context.scaleBy(x: scale, y: scale)
-            Self.paint(frame, dark: dark, in: &context)
+            Self.paint(frame, dark: dark, tint: tint, in: &context)
         }
     }
 
     /// Lines first, so nodes sit on top of their edges, then the dots in the
     /// order they arrive (already z-sorted far → near).
-    static func paint(_ frame: OrbFrame, dark: Bool, in context: inout GraphicsContext) {
+    static func paint(_ frame: OrbFrame, dark: Bool, tint: Color? = nil, in context: inout GraphicsContext) {
         for line in frame.lines {
             var path = Path()
             path.move(to: CGPoint(x: line.x1, y: line.y1))
             path.addLine(to: CGPoint(x: line.x2, y: line.y2))
-            context.opacity = line.a
-            context.stroke(path, with: .color(ink(line.white, dark: dark)), lineWidth: line.w)
+            context.opacity = line.a * (tint == nil ? 1 : tintDepth(line.white))
+            context.stroke(path, with: .color(tint ?? ink(line.white, dark: dark)), lineWidth: line.w)
         }
         for dot in frame.dots {
             let rect = CGRect(x: dot.x - dot.r, y: dot.y - dot.r, width: dot.r * 2, height: dot.r * 2)
-            context.opacity = dot.a
-            context.fill(Path(ellipseIn: rect), with: .color(ink(dot.white, dark: dark)))
+            context.opacity = dot.a * (tint == nil ? 1 : tintDepth(dot.white))
+            context.fill(Path(ellipseIn: rect), with: .color(tint ?? ink(dot.white, dark: dark)))
         }
+    }
+
+    // Unlike colourMultiply on black ink, semantic tint remains visible on
+    // light backgrounds. Depth is carried by opacity in both appearances.
+    private static func tintDepth(_ white: Double) -> Double {
+        0.55 + 0.45 * (1 - min(1, max(0, white)))
     }
 
     /// Matte grayscale, one of 256 levels. On a dark ground the ink value is

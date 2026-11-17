@@ -2304,6 +2304,8 @@ struct AIChatView: View {
             resolvedText: resolved.map { "\($0.providerLabel) · \($0.modelName)" },
             hasBinding: vm.sessionId != nil && configStore.binding(for: vm.sessionId!) != nil,
             hasProviders: !configStore.instances.isEmpty,
+            isProcessing: vm.isProcessing,
+            isCompacting: vm.isCompacting,
             showThinkingBadge: !vm.availableThinkingLevels.isEmpty
                 && (vm.currentThinkingLevel.isEnabled || vm.currentModelSupportsReasoning),
             thinkingLevelName: vm.currentThinkingLevel.displayName,
@@ -2451,9 +2453,15 @@ struct AIChatView: View {
                         showModelPicker = true
                     } label: {
                         HStack(spacing: 4) {
-                            Circle()
-                                .fill(isAuthed ? Color.green : Color.orange)
-                                .frame(width: 6, height: 6)
+                            ThinkingOrb(
+                                vm.isCompacting ? .weaving : (vm.isProcessing ? .working : .breathing),
+                                size: .small,
+                                diameter: 12,
+                                speed: 0.65,
+                                isPaused: !(vm.isProcessing || vm.isCompacting),
+                                tint: isAuthed ? Color.green : Color.orange
+                            )
+                            .accessibilityHidden(true)
                             if isGroupBound {
                                 Image(systemName: "square.stack.3d.up")
                                     .font(.system(size: 8))
@@ -2899,11 +2907,12 @@ struct AIChatView: View {
                 // reserved room for the composer. When the floating tool preview
                 // ("Minis 电脑" panel) was on screen it covered the newest
                 // message, so the last bubble could only be read by scrolling.
-                // Reserve the same measured height here, plus a small gap so the
-                // text does not touch the panel's edge.
+                // Reserve both measured heights once, with 8pt clearance.
+                // The inverted list keeps message spacing separate from its
+                // tail spacer so the latest row sits just above the toolbar.
                 MinisLegacyTranscript(
                     vm: vm,
-                    bottomInset: inputBarHeight + floatingBarHeight + 32
+                    bottomInset: inputBarHeight + floatingBarHeight + 8
                 )
             }
             // Empty/loading overlay for tap-to-dismiss-keyboard.
@@ -5672,6 +5681,10 @@ private struct NavTitleKey: Equatable {
     let resolvedText: String?
     let hasBinding: Bool
     let hasProviders: Bool
+    // Discrete turn edges must pierce the toolbar cache; orb frame ticks
+    // stay inside ThinkingOrb and never rebuild the open navigation menu.
+    let isProcessing: Bool
+    let isCompacting: Bool
     let showThinkingBadge: Bool
     let thinkingLevelName: String
     let fallbackTrigger: Int
@@ -7339,14 +7352,18 @@ struct MinisLegacyTranscript: View {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 20) {
-                        // This is the native TOP, displayed at the physical
-                        // bottom after inversion. It reserves composer space.
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        // Native TOP is the visual BOTTOM after inversion.
+                        // bottomInset already includes the measured composer,
+                        // tool preview and 8pt clearance. Do not add the 20pt
+                        // message spacing to this tail spacer a second time.
                         Color.clear.frame(height: max(1, bottomInset))
                             .id(bottomAnchor)
                         if vm.isProcessing || vm.isCompacting {
                             HStack(spacing: 8) {
-                                ProgressView()
+                                ThinkingOrb(vm.isCompacting ? .weaving : .working,
+                                            size: .small, speed: 0.8)
+                                    .accessibilityHidden(true)
                                 Text(vm.isCompacting ? "正在整理上下文…" : "模型任务运行中（请求或工具处理中）…")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -7361,10 +7378,14 @@ struct MinisLegacyTranscript: View {
                                 detailTarget: $toolDetail
                             )
                                 .equatable()
-                                .id(message.id)
                                 .rotationEffect(.degrees(180))
+                                // Native top is visual bottom. Keep 20pt
+                                // between messages, not after the newest edge.
+                                .padding(.top, (message.id == vm.messages.last?.id
+                                               && !(vm.isProcessing || vm.isCompacting)) ? 0 : 20)
+                                .id(message.id)
                         }
-                        Color.clear.frame(height: 12)
+                        Color.clear.frame(height: 32)
                     }
                     .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
                     .padding(.horizontal, 18)
@@ -7847,7 +7868,9 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
             Divider()
             HStack(spacing: 5) {
                 if message.isCompactLoading {
-                    ProgressView().scaleEffect(0.6).frame(width: 12, height: 12)
+                    ThinkingOrb(.weaving, size: .small, diameter: 12, speed: 0.8)
+                        .frame(width: 12, height: 12)
+                        .accessibilityHidden(true)
                 } else {
                     Image(systemName: message.role == .compactDivider
                           ? "arrow.down.right.and.arrow.up.left" : (message.systemIcon ?? "info.circle"))
@@ -7950,7 +7973,8 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
             }
             if message.role == .assistant && isActiveMessage && message.shouldShowTypingIndicator {
                 HStack(spacing: 8) {
-                    ProgressView()
+                    ThinkingOrb(.working, size: .small, speed: 0.8)
+                        .accessibilityHidden(true)
                     Text("正在等待模型响应…")
                         .font(.caption)
                         .foregroundColor(.secondary)
