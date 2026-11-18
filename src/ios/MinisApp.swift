@@ -547,6 +547,7 @@ struct MinisApp: App {
             // runs on a later tick, outside the fragile window.
             Task { @MainActor in
                 await Task.yield()
+                VoiceOutputPlayer.shared.startPetSpeechBridge()
 
                 ViewModelCache.shared.resumeAllStreamingUI()
 

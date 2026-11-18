@@ -1,5 +1,7 @@
 import Foundation
 import AVFoundation
+import CoreFoundation
+import UIKit
 
 // MARK: - Voice-output preference (persisted)
 
@@ -78,6 +80,29 @@ enum VoiceOutputPreferences {
 final class VoiceOutputPlayer: NSObject, ObservableObject {
 
     static let shared = VoiceOutputPlayer()
+
+    private struct PetSpeechJob {
+        let id: String
+        let text: String
+        let speed: Float
+        let createdAt: Double
+        let claimedURL: URL
+    }
+    private var activePetSpeechJob: PetSpeechJob?
+    private var petSpeechTask: Task<Void, Never>?
+
+    private override init() {
+        super.init()
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let player = Unmanaged<VoiceOutputPlayer>.fromOpaque(observer).takeUnretainedValue()
+                Task { @MainActor in player.drainPetSpeechInbox() }
+            }, "com.judegor.minispet.speech.request" as CFString, nil, .deliverImmediately)
+    }
+
+    func startPetSpeechBridge() { drainPetSpeechInbox() }
 
     @Published private(set) var isPlaying = false
     /// True while a cloud TTS network synthesis is in flight with nothing yet
@@ -260,6 +285,121 @@ final class VoiceOutputPlayer: NSObject, ObservableObject {
             String(trimmed.prefix(30))))
         pumpPrefetch()
         pumpPlayback()
+    }
+
+    private var petSpeechRootURL: URL? {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SharedContainerStore.appGroupID)?
+            .appendingPathComponent("MinisFileProvider/shared/minis-pet/speech", isDirectory: true)
+    }
+
+    private func writePetSpeechResponse(root: URL, id: UUID, ok: Bool, error: String = "", audio: String = "") {
+        guard let data = try? JSONSerialization.data(withJSONObject: [
+            "schema": 1, "request_id": id.uuidString, "ok": ok, "error": error,
+            "audio": audio, "created_at": Date().timeIntervalSince1970
+        ], options: [.sortedKeys]) else { return }
+        let outbox = root.appendingPathComponent("outbox", isDirectory: true)
+        try? FileManager.default.createDirectory(at: outbox, withIntermediateDirectories: true)
+        try? data.write(to: outbox.appendingPathComponent("response-\(id.uuidString).json"), options: .atomic)
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName("com.judegor.minispet.speech.response" as CFString), nil, nil, true)
+    }
+
+    func drainPetSpeechInbox() {
+        let isInBackground = UIApplication.shared.applicationState == .background
+        guard UIApplication.shared.applicationState == .active || (isInBackground && BackgroundKeepAliveManager.shared.backgroundSpeakEnabled),
+              let root = petSpeechRootURL else { return }
+        let fm = FileManager.default
+        let inbox = root.appendingPathComponent("inbox", isDirectory: true)
+        let outbox = root.appendingPathComponent("outbox", isDirectory: true)
+        try? fm.createDirectory(at: inbox, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: outbox, withIntermediateDirectories: true)
+        if let stopData = try? Data(contentsOf: root.appendingPathComponent("stop.json")),
+           let stop = try? JSONSerialization.jsonObject(with: stopData) as? [String: Any],
+           let at = stop["created_at"] as? Double, at.isFinite, abs(Date().timeIntervalSince1970 - at) < 60 {
+            try? fm.removeItem(at: root.appendingPathComponent("stop.json"))
+            if let activePetSpeechJob, activePetSpeechJob.createdAt <= at { petSpeechTask?.cancel() }
+            petSpeechJobs.removeAll { job in
+                if job.createdAt <= at { try? fm.removeItem(at: job.claimedURL); return true }
+                return false
+            }
+        }
+        guard let files = try? fm.contentsOfDirectory(at: inbox, includingPropertiesForKeys: [.fileSizeKey]) else { return }
+        for file in files where file.lastPathComponent.hasPrefix("request-") && file.pathExtension == "json" {
+            guard petSpeechJobs.count < 3 else { break }
+            let rawID = String(file.deletingPathExtension().lastPathComponent.dropFirst(8))
+            guard let id = UUID(uuidString: rawID), !petSpeechJobIDs.contains(id.uuidString) else { continue }
+            let claimed = inbox.appendingPathComponent("processing-\(id.uuidString).json")
+            guard (try? fm.moveItem(at: file, to: claimed)) != nil else { continue }
+            do {
+                let size = try claimed.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard size > 0, size <= 8192,
+                      let obj = try JSONSerialization.jsonObject(with: Data(contentsOf: claimed)) as? [String: Any],
+                      (obj["schema"] as? Int) == 1,
+                      (obj["request_id"] as? String)?.uppercased() == id.uuidString,
+                      let rawText = obj["text"] as? String, let created = obj["created_at"] as? Double,
+                      created.isFinite, Date().timeIntervalSince1970 - created <= 90, created - Date().timeIntervalSince1970 <= 5 else {
+                    throw VoiceProviderError.parseError("bad pet speech request")
+                }
+                let text = VoiceTextSanitizer.sanitize(rawText)
+                let speed = (obj["speed"] as? NSNumber)?.floatValue ?? 1
+                guard text.count >= 2, text.count <= 300, speed.isFinite, (0.8...1.2).contains(speed) else {
+                    throw VoiceProviderError.parseError("pet speech bounds")
+                }
+                petSpeechJobs.append(PetSpeechJob(id: id.uuidString, text: text, speed: speed, createdAt: created, claimedURL: claimed))
+                petSpeechJobIDs.insert(id.uuidString)
+            } catch {
+                writePetSpeechResponse(root: root, id: id, ok: false, error: "invalid_request")
+                try? fm.removeItem(at: claimed)
+            }
+        }
+        processNextPetSpeechJob(root: root)
+    }
+
+    private func processNextPetSpeechJob(root: URL) {
+        guard activePetSpeechJob == nil, !petSpeechJobs.isEmpty else { return }
+        guard let job = petSpeechJobs.first else { return }
+        let candidates = VoiceProviderResolver.resolvedOutputCandidates().filter { !VoiceProviderResolver.isSystemEntry($0.providerInstanceId) }.compactMap { entry -> Candidate? in
+            guard let provider = VoiceProviderResolver.outputProvider(for: entry) else { return nil }
+            return Candidate(key: entry.id, modelId: entry.model.id, voiceId: entry.model.id, label: entry.model.displayName, provider: provider, resolvedModel: entry.model)
+        }
+        guard !candidates.isEmpty else {
+            petSpeechJobs.removeFirst()
+            petSpeechJobIDs.remove(job.id)
+            if let id = UUID(uuidString: job.id) { writePetSpeechResponse(root: root, id: id, ok: false, error: "cloud_tts_unconfigured") }
+            try? FileManager.default.removeItem(at: job.claimedURL)
+            processNextPetSpeechJob(root: root); return
+        }
+        petSpeechJobs.removeFirst()
+        activePetSpeechJob = job
+        petSpeechTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let audio = try await self.synthesizePetSpeech(job, candidates: candidates)
+                guard !Task.isCancelled, self.activePetSpeechJob?.id == job.id, let liveRoot = self.petSpeechRootURL, let id = UUID(uuidString: job.id) else { throw CancellationError() }
+                let name = "audio-\(job.id).wav"; let audioURL = liveRoot.appendingPathComponent("outbox", isDirectory: true).appendingPathComponent(name)
+                try audio.write(to: audioURL, options: .atomic)
+                guard !Task.isCancelled, self.activePetSpeechJob?.id == job.id else { try? FileManager.default.removeItem(at: audioURL); throw CancellationError() }
+                self.writePetSpeechResponse(root: liveRoot, id: id, ok: true, audio: name)
+            } catch {
+                if let id = UUID(uuidString: job.id), self.activePetSpeechJob?.id == job.id { self.writePetSpeechResponse(root: root, id: id, ok: false, error: error is CancellationError ? "cancelled" : "synthesis_failed") }
+            }
+            try? FileManager.default.removeItem(at: job.claimedURL); guard self.activePetSpeechJob?.id == job.id else { return }
+            self.petSpeechTask = nil; self.activePetSpeechJob = nil; self.processNextPetSpeechJob(root: self.petSpeechRootURL ?? root)
+        }
+    }
+
+    private func synthesizePetSpeech(_ job: PetSpeechJob, candidates: [Candidate]) async throws -> Data {
+        var lastError: Error?
+        for candidate in candidates {
+            if Task.isCancelled { throw CancellationError() }
+            do {
+                let data = try await candidate.provider.synthesize(VoiceOutputRequest(input: job.text, model: candidate.modelId, voice: candidate.voiceId, speed: job.speed, responseFormat: .wav, resolvedModel: candidate.resolvedModel))
+                guard data.count > 44, data.starts(with: Data("RIFF".utf8)), data.subdata(in: 8..<12) == Data("WAVE".utf8), data.count <= 15_000_000 else { throw VoiceProviderError.noAudioData }
+                return data
+            } catch is CancellationError { throw CancellationError() }
+            catch { lastError = error }
+        }
+        throw lastError ?? VoiceProviderError.unsupported("cloud TTS unavailable")
     }
 
     /// Sanitize, split into speech-sized segments using the streaming segmenter,
