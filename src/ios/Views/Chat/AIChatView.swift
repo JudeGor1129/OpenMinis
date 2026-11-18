@@ -369,6 +369,7 @@ struct AIChatView: View {
         nonmutating set { voiceMode.isVoiceActive = newValue }
     }
     @StateObject private var voiceVM = VoiceInputViewModel()
+    @ObservedObject private var voiceLaunch = VoiceLaunchIntent.shared
     /// Global read-replies state — observed so the voice-mode "Read replies" toggle
     /// reflects enabled/muted in lockstep with the global voice-output capsule.
     @ObservedObject private var voiceOutput = VoiceOutputState.shared
@@ -1477,6 +1478,7 @@ struct AIChatView: View {
             injectPendingShareIfNeeded()
             injectPendingTransferIfNeeded()
             isChatViewVisible = true
+            enablePetVoiceIfRequested()
             refreshTitlePillSession()
             // Notify workflow that THIS view is mounted + visible. If
             // the workflow is waiting for our session id, it will
@@ -1485,6 +1487,12 @@ struct AIChatView: View {
             // (sessionId=nil) won't match the workflow's target and
             // are correctly skipped.
             tryMarkWorkflowChatReady(reason: "onAppear")
+        }
+        .onReceive(voiceLaunch.$pending) { _ in
+            Task { @MainActor in
+                await Task.yield()
+                enablePetVoiceIfRequested()
+            }
         }
         .observingQuickActions(modifier: quickActionObserver)
         .onChange(of: vm.sessionId) { _ in
@@ -3712,6 +3720,16 @@ struct AIChatView: View {
     /// decoder doesn't recurse past its stack limit (see crash 2026-04-17
     /// where `AIChatView.inputBar.getter` blew the stack via
     /// `__swift_instantiateConcreteTypeFromMangledNameV2`).
+    @MainActor
+    private func enablePetVoiceIfRequested() {
+        guard isChatViewVisible, scenePhase == .active, remoteDeviceId == nil,
+              AIChatViewModel.activeSessionId == sessionId,
+              voiceLaunch.wantsStart(sessionId: sessionId) else { return }
+        vm.voiceUsedInComposition = true
+        VoiceModePreference.shared.enteredFromText = true
+        voiceInputActive = true
+    }
+
     private var inputFieldOrWaveform: AnyView {
         let topPadding: CGFloat = (vm.attachments.isEmpty && vm.loadingVideoCount == 0) ? 16 : 11
         if voiceInputActive {
@@ -3722,6 +3740,8 @@ struct AIChatView: View {
                 InlineVoiceInputView(
                     viewModel: voiceVM,
                     inputText: inputTextBinding,
+                    launchSessionId: sessionId,
+                    petLaunchReady: isChatViewVisible && !hasOverlayPresented && scenePhase != .background,
                     onPasteImage: { image in vm.addImageAttachment(image) },
                     onPasteFile: { url in vm.addFileAttachment(from: url) },
                     onPasteLongText: { text in vm.stashPastedText(text) },

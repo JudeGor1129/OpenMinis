@@ -1264,6 +1264,7 @@ struct ModernContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var shareCoordinator: ShareCoordinator
     @ObservedObject private var deepLink = DeepLinkCoordinator.shared
+    @ObservedObject private var petNavigation = PetChatNavigation.shared
     /// Subscribe to the router so changes to its `@Published` fields are
     /// observed by SwiftUI — without this, `onChange(of: router.newChatTrigger)`
     /// reads a static value and never fires after the view mounts. Quick
@@ -1382,6 +1383,9 @@ struct ModernContentView: View {
     @State private var renameFolderText = ""
     @State private var renameFolderDesc = ""
     @State private var folderToDissolve: ChatFolder?
+    /// Long-press → "新建分组": an EMPTY group, created from the folder
+    /// header's context menu rather than by filing existing chats.
+    @State private var showCreateGroupSheet = false
     /// When delete-all runs for a folder, the (by then empty) folder row is
     /// dropped after the sessions are gone. Cleared on cancel in onDismiss.
     @State private var pendingDeleteFolderId: String?
@@ -2013,6 +2017,15 @@ struct ModernContentView: View {
         .sheet(item: $folderToConfigure) { folder in
             MinisGroupConfigurationView(folder: folder)
         }
+        .sheet(isPresented: $showCreateGroupSheet) {
+            NewGroupSheet(existingNames: folders.map(\.name)) { name, desc in
+                Task { @MainActor in
+                    _ = await ChatStore.shared.createFolder(name: name, desc: desc)
+                    refreshSessionList()
+                }
+            }
+            .presentationDetents([.medium])
+        }
         .modifier(FolderWorkspaceDeletePrompt(
             folder: $folderWorkspaceDeletePrompt,
             onChoice: beginDeleteFolderWithSessions
@@ -2475,6 +2488,12 @@ struct ModernContentView: View {
                 deepLink.pendingRootfsManagement = false
             }
         }
+        .onReceive(petNavigation.$route) { _ in
+            Task { @MainActor in
+                await Task.yield()
+                routePendingPetChat()
+            }
+        }
         .onChange(of: deepLink.pendingSessionId) { sid in
             guard let sid, !sid.isEmpty else { return }
             // Switch to the requested session if it exists in the loaded
@@ -2502,6 +2521,7 @@ struct ModernContentView: View {
                     // runloop turn with a full frame budget, never inside the
                     // foreground-transition tick.
                     flushPendingBackgroundNavigation()
+                    routePendingPetChat()
                     fetchAlarmsIfNeeded()
                     if #available(iOS 17.0, *) {
                         SyncCore.shared.isAppInBackground = false
@@ -5569,6 +5589,14 @@ struct ModernContentView: View {
         }
         .contextMenu {
             if let fid = group.folderId, let folder = folders.first(where: { $0.id == fid }) {
+                // Create a brand-new EMPTY group from the header menu — the
+                // other entry points all file existing chats into a group.
+                Button {
+                    showCreateGroupSheet = true
+                } label: {
+                    Label("新建分组", systemImage: "folder.badge.plus")
+                }
+                Divider()
                 Button {
                     Task { @MainActor in
                         await ChatStore.shared.toggleFolderPin(fid)
@@ -5654,6 +5682,17 @@ struct ModernContentView: View {
     /// The folder assignment is deferred to draft promotion (see
     /// pendingFolderDraft); the folder is auto-expanded so the new session
     /// doesn't appear to vanish into a collapsed section.
+    @MainActor
+    private func routePendingPetChat() {
+        guard scenePhase == .active, let route = petNavigation.route else { return }
+        petNavigation.route = nil
+        guard AIChatViewModel.activeSessionId != route.sessionId else { return }
+        activeToolSheet = nil
+        showTerminal = false
+        if isWideLayout { openSession(route.sessionId) }
+        else { switchToSession(route.sessionId) }
+    }
+
     private func newChatInFolder(_ folderId: String) {
         if collapsedFolderIds.contains(folderId) { toggleFolderCollapsed(folderId) }
         let draftId = Self.makeNewSessionId()
@@ -8943,3 +8982,56 @@ private struct FolderWorkspaceDeletePrompt: ViewModifier {
     }
 }
 
+
+/// Create an EMPTY group from the home sidebar's folder-header long-press
+/// menu. The existing creation path (`FolderPickerSheet`) always files the
+/// chats it was opened for, so it can't express "make a group first, fill it
+/// later" — which is what a long-press on a group header asks for.
+private struct NewGroupSheet: View {
+    let existingNames: [String]
+    /// name + optional description; the caller writes them through ChatStore.
+    let onCreate: (String, String?) -> Void
+
+    @State private var name = ""
+    @State private var desc = ""
+    @Environment(\.dismiss) private var dismiss
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var duplicateName: Bool {
+        existingNames.contains { $0.caseInsensitiveCompare(trimmedName) == .orderedSame }
+    }
+    var body: some View {
+        MinisNavigationContainer {
+            Form {
+                Section {
+                    TextField("New Group Name", text: $name)
+                    TextField("Description (optional)", text: $desc)
+                        .onChange(of: desc) { value in
+                            if value.count > 100 { desc = String(value.prefix(100)) }
+                        }
+                }
+                Section {
+                    Button("Create") {
+                        let cleanName = trimmedName
+                        guard !cleanName.isEmpty, !duplicateName else { return }
+                        let cleanDesc = desc.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onCreate(cleanName, cleanDesc.isEmpty ? nil : cleanDesc)
+                        dismiss()
+                    }
+                    .disabled(trimmedName.isEmpty || duplicateName)
+                    if duplicateName { Text("已有同名分组，请换一个名称").foregroundStyle(.secondary) }
+                }
+            }
+            .navigationTitle("新建分组")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}

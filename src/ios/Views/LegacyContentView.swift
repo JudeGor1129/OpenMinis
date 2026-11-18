@@ -60,6 +60,8 @@ private struct LegacyContentView: View {
     /// Session pushed from inside the group sheet. Only meaningful together
     /// with `showingSession`; kept separate from `draftID` so the draft link
     /// and the session link never fight over one isActive flag.
+    @ObservedObject private var petNavigation = PetChatNavigation.shared
+    @State private var petNavigationIdentity = UUID()
     @State private var openedSessionID = ""
     @State private var showingSession = false
     @State private var draftID = ""
@@ -85,6 +87,11 @@ private struct LegacyContentView: View {
                         if groupsExpanded { reloadFolders() }
                     } label: {
                         Label("会话分组", systemImage: groupsExpanded ? "folder.fill" : "folder")
+                    }
+                    .contextMenu {
+                        Button { creatingGroup = true } label: {
+                            Label("新建分组", systemImage: "folder.badge.plus")
+                        }
                     }
                     if groupsExpanded {
                         // Every interactive element must be its OWN List row.
@@ -127,10 +134,9 @@ private struct LegacyContentView: View {
                                 }
                             }
                         }
-                        if folders.isEmpty {
-                            Button { creatingGroup = true } label: {
-                                Label("新建分组", systemImage: "folder.badge.plus")
-                            }
+                        // Keep a discoverable button as well as the long-press shortcut.
+                        Button { creatingGroup = true } label: {
+                            Label("新建分组", systemImage: "folder.badge.plus")
                         }
                     }
                 }
@@ -234,12 +240,25 @@ private struct LegacyContentView: View {
                 reload()
                 shareCoordinator.checkForPendingShare()
                 routePendingShare()
+                routePendingPetChat()
+            }
+            .onReceive(petNavigation.$route) { _ in
+                Task { @MainActor in
+                    await Task.yield()
+                    routePendingPetChat()
+                }
             }
             .onChange(of: shareCoordinator.hasPendingShare) { pending in
                 if pending { routePendingShare() }
             }
             .onChange(of: scenePhase) { phase in
-                if phase == .active { shareCoordinator.checkForPendingShare() }
+                if phase == .active {
+                    shareCoordinator.checkForPendingShare()
+                    Task { @MainActor in
+                        await Task.yield()
+                        routePendingPetChat()
+                    }
+                }
             }
             .sheet(isPresented: $showingSettings, onDismiss: reload) {
                 LegacySettingsSheet()
@@ -304,6 +323,33 @@ private struct LegacyContentView: View {
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+        .id(petNavigationIdentity)
+    }
+
+    @MainActor
+    private func routePendingPetChat() {
+        guard scenePhase == .active, let route = petNavigation.route else { return }
+        petNavigation.route = nil
+        guard AIChatViewModel.activeSessionId != route.sessionId else { return }
+        showingSettings = false; showingTerminal = false; showingRootfs = false
+        showingBrowser = false; showingBrowserSettings = false
+        managingFolder = nil; creatingGroup = false; pendingOpenSessionId = nil
+        showingDraft = false; showingSession = false
+        // Reset NavigationView's row-owned pushes without dropping cached chat VMs.
+        let identity = UUID()
+        petNavigationIdentity = identity
+        Task { @MainActor in
+            await Task.yield()
+            guard petNavigationIdentity == identity else { return }
+            // A newer route must win; never commit this push from the background.
+            guard scenePhase == .active else {
+                if petNavigation.route == nil { petNavigation.route = route }
+                return
+            }
+            guard petNavigation.route == nil else { return }
+            openedSessionID = route.sessionId
+            showingSession = true
+        }
     }
 
     @MainActor

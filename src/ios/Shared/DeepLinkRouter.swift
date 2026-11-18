@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 private let deepLinkLog = AppLogger(category: "DeepLink")
 
@@ -104,6 +105,11 @@ enum DeepLinkRouter {
                 object: nil,
                 userInfo: ["sessionId": id]
             )
+
+        case "chat":
+            // `minis://chat?group=<name-or-id>&voice=1` — pet → group chat,
+            // optionally straight into voice input (see ChatDeepLink below).
+            ChatDeepLink.handle(url: url)
 
         case "settings":
             handleSettings(url: url, coord: coord)
@@ -320,6 +326,99 @@ enum DeepLinkRouter {
                 object: nil,
                 userInfo: ["shortcut": shortcut]
             )
+        }
+    }
+}
+
+/// Buffered until the active home view can navigate (including a cold launch).
+/// Both the iOS 15 NavigationView and the modern NavigationStack consume it.
+@MainActor
+final class PetChatNavigation: ObservableObject {
+    static let shared = PetChatNavigation()
+    struct Route: Equatable {
+        let id = UUID()
+        let sessionId: String
+    }
+    @Published var route: Route?
+}
+
+/// A short-lived, session-scoped recording request. Navigation is not a timer:
+/// the actual voice panel consumes it AFTER prepare() and while visible.
+@MainActor
+final class VoiceLaunchIntent: ObservableObject {
+    static let shared = VoiceLaunchIntent()
+    struct Request: Equatable {
+        let id: UUID
+        let sessionId: String
+        let expiresAt: Date
+    }
+    @Published private(set) var pending: Request?
+    private(set) var generation = UUID()
+
+    func cancel() {
+        generation = UUID()
+        pending = nil
+    }
+    func request(sessionId: String) {
+        generation = UUID()
+        pending = Request(id: generation, sessionId: sessionId,
+                          expiresAt: Date().addingTimeInterval(60))
+    }
+    func wantsStart(sessionId: String?) -> Bool {
+        guard let pending else { return false }
+        return pending.sessionId == sessionId && pending.expiresAt > Date()
+    }
+    func consumeAutoStart(sessionId: String?) -> Request? {
+        guard wantsStart(sessionId: sessionId), let request = pending else { return nil }
+        pending = nil
+        return request
+    }
+    func isCurrent(_ request: Request) -> Bool {
+        generation == request.id && request.expiresAt > Date()
+    }
+}
+
+/// `minis://chat?group=<name-or-id>&voice=1`; omit voice for text-only navigation.
+/// Ambiguous names and empty groups produce actionable feedback, never select
+/// another group or create an unsolicited persistent conversation.
+@MainActor
+private enum ChatDeepLink {
+    private static var resolutionID = UUID()
+    static func handle(url: URL) {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let groups = items.filter { $0.name == "group" }
+        let key = (groups.first?.value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        VoiceLaunchIntent.shared.cancel()
+        PetChatNavigation.shared.route = nil
+        let requestID = UUID()
+        resolutionID = requestID
+        guard groups.count == 1, !key.isEmpty else {
+            MinisToast.show("请指定桌宠的会话分组", duration: 2.2, systemImage: "folder")
+            return
+        }
+        let wantsVoice = items.contains { $0.name == "voice" && $0.value == "1" }
+        Task { @MainActor in
+            let folders = await ChatStore.shared.listFolders()
+            guard resolutionID == requestID else { return }
+            let named = folders.filter { $0.name.caseInsensitiveCompare(key) == .orderedSame }
+            guard let folder = folders.first(where: { $0.id == key })
+                    ?? (named.count == 1 ? named.first : nil) else {
+                MinisToast.show(named.count > 1 ? "分组名称重复，请使用分组 ID" : "未找到该分组，请先创建会话分组",
+                                duration: 2.2, systemImage: "folder")
+                return
+            }
+            let sessions = await ChatStore.shared.listSessions()
+            guard resolutionID == requestID else { return }
+            let target = sessions.filter { $0.folderId == folder.id && !$0.isChild }
+                .sorted { $0.updatedAt == $1.updatedAt ? $0.id < $1.id : $0.updatedAt > $1.updatedAt }
+                .first
+            guard let target else {
+                MinisToast.show("请先在该分组中开始一个新会话", duration: 2.2, systemImage: "plus.bubble")
+                return
+            }
+            if wantsVoice { VoiceLaunchIntent.shared.request(sessionId: target.id) }
+            deepLinkLog.info("PET_CHAT_ROUTE voice=\(wantsVoice ? 1 : 0)")
+            PetChatNavigation.shared.route = .init(sessionId: target.id)
         }
     }
 }

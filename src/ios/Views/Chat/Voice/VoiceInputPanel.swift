@@ -455,6 +455,30 @@ final class VoiceInputViewModel: ObservableObject {
         }
     }
 
+    /// An explicit pet tap may start capture, never toggle an already-live mic.
+    /// Revalidate after EVERY permission await: the panel may have disappeared.
+    func startListeningForPetLaunch(canStart: () -> Bool) async {
+        func allowed() -> Bool {
+            !Task.isCancelled && canStart() && UIApplication.shared.applicationState == .active
+        }
+        guard allowed(), !vad.isCapturing else { return }
+        let granted = await VoiceActivityDetector.requestMicrophonePermission()
+        guard allowed() else { return }
+        guard granted else {
+            permissionDenied = true
+            report(.micPermissionDenied)
+            return
+        }
+        if willUseSystemASR {
+            let speechGranted = await SystemVoiceProvider.ensureSpeechAuthorization()
+            guard allowed() else { return }
+            guard speechGranted else { report(.speechPermissionDenied); return }
+        }
+        guard allowed(), !vad.isCapturing else { return }
+        prewarmIfSystem()
+        startVAD()
+    }
+
     /// Stop capture and return the panel to idle.
     ///
     /// [T-ios-voice-keyboard-text-carry] `clearTranscript: false` is used when

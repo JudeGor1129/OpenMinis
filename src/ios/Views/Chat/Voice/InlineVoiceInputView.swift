@@ -13,6 +13,10 @@ struct InlineVoiceInputView: View {
     @ObservedObject var viewModel: VoiceInputViewModel
     /// Mirrors the recognized text into the composer's input binding.
     @Binding var inputText: String
+    var launchSessionId: String? = nil
+    var petLaunchReady: Bool = false
+    @ObservedObject private var voiceLaunch = VoiceLaunchIntent.shared
+    @State private var launchPanelVisible = false
     var onPasteImage: ((UIImage) -> Void)?
     var onPasteFile: ((URL) -> Void)?
     /// [T-paste-placeholder] Long pasted text → vm stash, returns the
@@ -481,10 +485,21 @@ struct InlineVoiceInputView: View {
             }
             // Don't auto-start: show "Tap to speak" and let the user tap the mic.
             viewModel.prepare()
+            launchPanelVisible = true
+        }
+        .task(id: (launchPanelVisible && petLaunchReady) ? voiceLaunch.generation : nil) {
+            guard launchPanelVisible, petLaunchReady, AIChatViewModel.activeSessionId == launchSessionId,
+                  let request = voiceLaunch.consumeAutoStart(sessionId: launchSessionId) else { return }
+            await viewModel.startListeningForPetLaunch {
+                launchPanelVisible && voiceMode.isVoiceActive &&
+                AIChatViewModel.activeSessionId == launchSessionId &&
+                voiceLaunch.isCurrent(request)
+            }
         }
         // [voice-correction] No auto-correction .onChange here by design — correction is
         // manual, driven solely by the top-right AI-correction button (runManualCorrection).
         .onDisappear {
+            launchPanelVisible = false
             VoiceLog.log("[panel-lifecycle] onDisappear expanded=\(expanded) transcript=\(viewModel.transcript.count)ch state=\(viewModel.state)")
             // [T-voice-panel-gap-after-edit] The panel can be torn down (voice→text
             // toggle, session switch) while the transcript editor still holds the
