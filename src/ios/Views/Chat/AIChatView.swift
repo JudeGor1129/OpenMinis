@@ -1345,6 +1345,16 @@ struct AIChatView: View {
         }
         .onAppear {
             wireComposerActions()
+            // 桌宠「点一下就说话」：minis://chat?group=…&voice=1 落到这个会话后，
+            // 直接切进语音输入并开始收音。标志只消费一次，且必须 sessionId 匹配，
+            // 所以后续手动打开别的会话不会被它带进语音模式。
+            if VoiceLaunchIntent.consumeAutoStart(sessionId: sessionId) {
+                VoiceModePreference.shared.enteredFromText = true
+                withAnimation(MinisMotion.layout) { voiceInputActive = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    voiceVM.handleMainButtonTap()
+                }
+            }
             let sinceInit = (CFAbsoluteTimeGetCurrent() - AIChatViewModel.onAppearTimestamp) * 1000
             minisLogger.info("[SessionLoad] onAppear T+\(String(format: "%.0f", sinceInit))ms isNew=\(cached.isNew) msgs=\(vm.messages.count)")
             // [T-inputbar-stale-across-reentry] Re-arm the leading-edge seed on

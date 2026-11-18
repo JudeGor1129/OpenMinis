@@ -90,6 +90,11 @@ enum DeepLinkRouter {
                 userInfo: ["sessionId": id]
             )
 
+        case "chat":
+            // `minis://chat?group=<name-or-id>&voice=1` — pet → group chat,
+            // optionally straight into voice input (see ChatDeepLink below).
+            ChatDeepLink.handle(url: url)
+
         case "settings":
             handleSettings(url: url, coord: coord)
 
@@ -310,6 +315,76 @@ enum DeepLinkRouter {
                 name: .openWebAppDeepLink,
                 object: nil,
                 userInfo: ["shortcut": shortcut]
+            )
+        }
+    }
+}
+
+/// One-shot intent set by `minis://chat?…&voice=1` and consumed by the chat
+/// screen that actually lands on the target session. Session-id matched so a
+/// stale intent can never drag a later, unrelated chat into voice mode.
+@MainActor
+enum VoiceLaunchIntent {
+    private static var pendingSessionId: String?
+
+    static func request(sessionId: String) {
+        pendingSessionId = sessionId
+    }
+
+    static func consumeAutoStart(sessionId: String?) -> Bool {
+        guard let pending = pendingSessionId, pending == sessionId else { return false }
+        pendingSessionId = nil
+        return true
+    }
+}
+
+/// `minis://chat?group=<name-or-id>&voice=1`
+///
+/// Used by MinisPet so a single tap on the desktop pet lands in the user's
+/// dedicated chat group with the microphone already listening. Resolution:
+///   - `group` is matched by folder id first, then by exact name (case
+///     insensitive) — the pet only knows the name the user typed.
+///   - the target session is the group's most recently updated one; a group
+///     with no chats yet is reported and left alone rather than silently
+///     creating a session the user did not ask for.
+///   - `voice=1` arms `VoiceLaunchIntent`; without it this is a plain
+///     "open this group" link.
+@MainActor
+private enum ChatDeepLink {
+    static func handle(url: URL) {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let rawGroup = items.first(where: { $0.name == "group" })?.value ?? ""
+        let wantsVoice = items.contains { $0.name == "voice" && $0.value == "1" }
+        let key = rawGroup.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            deepLinkLog.info("chat URL missing group: \(url.absoluteString)")
+            return
+        }
+        Task { @MainActor in
+            let folders = await ChatStore.shared.listFolders()
+            let folder = folders.first(where: { $0.id == key })
+                ?? folders.first(where: { $0.name.caseInsensitiveCompare(key) == .orderedSame })
+            guard let folder else {
+                deepLinkLog.info("chat group not found: \(key)")
+                return
+            }
+            let sessions = await ChatStore.shared.listSessions()
+            let target = sessions
+                .filter { $0.folderId == folder.id }
+                .sorted { $0.updatedAt > $1.updatedAt }
+                .first
+            guard let target else {
+                deepLinkLog.info("chat group has no session yet: \(folder.name)")
+                return
+            }
+            if wantsVoice {
+                VoiceLaunchIntent.request(sessionId: target.id)
+            }
+            deepLinkLog.info("chat open group=\(folder.name) session=\(target.id) voice=\(wantsVoice ? 1 : 0)")
+            NotificationCenter.default.post(
+                name: .openSessionFromIntent,
+                object: nil,
+                userInfo: ["sessionId": target.id]
             )
         }
     }

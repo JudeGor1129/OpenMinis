@@ -1381,6 +1381,9 @@ struct ModernContentView: View {
     @State private var renameFolderText = ""
     @State private var renameFolderDesc = ""
     @State private var folderToDissolve: ChatFolder?
+    /// Long-press → "新建分组": an EMPTY group, created from the folder
+    /// header's context menu rather than by filing existing chats.
+    @State private var showCreateGroupSheet = false
     /// When delete-all runs for a folder, the (by then empty) folder row is
     /// dropped after the sessions are gone. Cleared on cancel in onDismiss.
     @State private var pendingDeleteFolderId: String?
@@ -2011,6 +2014,15 @@ struct ModernContentView: View {
         }
         .sheet(item: $folderToConfigure) { folder in
             MinisGroupConfigurationView(folder: folder)
+        }
+        .sheet(isPresented: $showCreateGroupSheet) {
+            NewGroupSheet { name, desc in
+                Task { @MainActor in
+                    _ = await ChatStore.shared.createFolder(name: name, desc: desc)
+                    refreshSessionList()
+                }
+            }
+            .presentationDetents([.medium])
         }
         .modifier(FolderWorkspaceDeletePrompt(
             folder: $folderWorkspaceDeletePrompt,
@@ -5572,6 +5584,14 @@ struct ModernContentView: View {
         }
         .contextMenu {
             if let fid = group.folderId, let folder = folders.first(where: { $0.id == fid }) {
+                // Create a brand-new EMPTY group from the header menu — the
+                // other entry points all file existing chats into a group.
+                Button {
+                    showCreateGroupSheet = true
+                } label: {
+                    Label("新建分组", systemImage: "folder.badge.plus")
+                }
+                Divider()
                 Button {
                     Task { @MainActor in
                         await ChatStore.shared.toggleFolderPin(fid)
@@ -8941,3 +8961,51 @@ private struct FolderWorkspaceDeletePrompt: ViewModifier {
     }
 }
 
+
+/// Create an EMPTY group from the home sidebar's folder-header long-press
+/// menu. The existing creation path (`FolderPickerSheet`) always files the
+/// chats it was opened for, so it can't express "make a group first, fill it
+/// later" — which is what a long-press on a group header asks for.
+private struct NewGroupSheet: View {
+    /// name + optional description; the caller writes them through ChatStore.
+    let onCreate: (String, String?) -> Void
+
+    @State private var name = ""
+    @State private var desc = ""
+    @Environment(\.dismiss) private var dismiss
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        MinisNavigationContainer {
+            Form {
+                Section {
+                    TextField("New Group Name", text: $name)
+                    TextField("Description (optional)", text: $desc)
+                        .onChange(of: desc) { value in
+                            if value.count > 100 { desc = String(value.prefix(100)) }
+                        }
+                }
+                Section {
+                    Button("Create") {
+                        let cleanName = trimmedName
+                        guard !cleanName.isEmpty else { return }
+                        let cleanDesc = desc.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onCreate(cleanName, cleanDesc.isEmpty ? nil : cleanDesc)
+                        dismiss()
+                    }
+                    .disabled(trimmedName.isEmpty)
+                }
+            }
+            .navigationTitle("新建分组")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
