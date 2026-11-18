@@ -349,6 +349,7 @@ enum VoiceLaunchIntent {
 ///     creating a session the user did not ask for.
 ///   - `voice=1` arms `VoiceLaunchIntent`; without it this is a plain
 ///     "open this group" link.
+// (Added 2026-11-18 with the pet voice work; see also AIChatView.onAppear.)
 @MainActor
 private enum ChatDeepLink {
     static func handle(url: URL) {
