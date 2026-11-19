@@ -211,10 +211,11 @@ struct SpeechPlayerControl: View {
         // once a second (GH report, frame-tracked 590↔670px). Asymmetric
         // policy instead:
         //   rise: apply immediately — never let UI cover the button;
-        //   fall: apply only after the LOWER target has held continuously for
-        //         `descentSettleMillis`; any interim rise/return cancels the
-        //         pending descent, so an oscillating obstacle pins the capsule
-        //         at its high-water mark instead of dancing with it.
+        //   fall: only when the path is FULLY clear and no reply is being
+        //         read, then after `descentSettleMillis` of stability. Any
+        //         interim rise/return cancels the pending descent, so an
+        //         oscillating obstacle pins the capsule at its high-water mark
+        //         instead of dancing with it.
         let delta = newLift - avoidLift
         if delta > 6 {
             descentTask?.cancel()
@@ -222,11 +223,21 @@ struct SpeechPlayerControl: View {
             VoiceLog.log("[capsule] APPLY lift \(Int(avoidLift)) → \(Int(newLift)) (rise); restingBottom=\(Int(rf.maxY)) → displayBottom=\(Int(rf.maxY - newLift))")
             avoidLift = newLift
         } else if delta < -6 {
-            if allowDescent {
+            // [T-capsule-read-aloud-hold] Descend only to a fully clear path, and
+            // never while a reply is being read. The obstacle set under the
+            // capsule changes with every streamed chunk (the input bar preview
+            // grows and swaps, scroll buttons pop in and out), so settling to
+            // each intermediate target made the read-aloud capsule bob up and
+            // down for the whole utterance. Staying at the high-water mark until
+            // the path is clear keeps it still, and still lets it drop back down
+            // after the keyboard or voice panel is dismissed.
+            let pathClear = newLift <= 0.5
+            let hold = pathClear && !state.isReadingAloud
+            if allowDescent && hold {
                 descentTask = nil
                 VoiceLog.log("[capsule] APPLY lift \(Int(avoidLift)) → \(Int(newLift)) (settled descent); restingBottom=\(Int(rf.maxY)) → displayBottom=\(Int(rf.maxY - newLift))")
                 avoidLift = newLift
-            } else if descentTask == nil {
+            } else if descentTask == nil && hold {
                 VoiceLog.log("[capsule] descent \(Int(avoidLift)) → \(Int(newLift)) ARMED — applying after \(Self.descentSettleMillis)ms of stability")
                 descentTask = Task { @MainActor in
                     try? await Task.sleep(nanoseconds: UInt64(Self.descentSettleMillis) * 1_000_000)
@@ -296,6 +307,10 @@ struct SpeechPlayerControl: View {
         // First real utterance → collapse to compact.
         .onChange(of: state.isReadingAloud) { reading in
             if reading, expanded { setExpanded(false) }
+            // Playback start/end changes which obstacles are allowed to matter
+            // (the descent is frozen while reading); re-evaluate both edges so
+            // the capsule never waits for an unrelated layout change to settle.
+            scheduleRecompute()
         }
         // Fail-over switched the active model → update the capsule's model name.
         .onChange(of: voicePlayer.activeModelLabel) { _ in refreshModelLabel() }

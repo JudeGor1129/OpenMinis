@@ -547,6 +547,7 @@ struct MinisApp: App {
             // runs on a later tick, outside the fragile window.
             Task { @MainActor in
                 await Task.yield()
+                VoiceOutputPlayer.shared.startPetSpeechBridge()
 
                 ViewModelCache.shared.resumeAllStreamingUI()
 
@@ -701,6 +702,10 @@ struct MinisApp: App {
 
         case .background:
             backgroundEntryDate = Date()
+            Task { @MainActor in
+                await Task.yield()
+                VoiceOutputPlayer.shared.startPetSpeechBridge()
+            }
             let remaining = UIApplication.shared.backgroundTimeRemaining
             lifecycleLog.info("[Lifecycle] → Background (remaining: \(Self.formatTimeRemaining(remaining)))")
             CrashReporter.shared.updateMarkerPhase(phase: "background")

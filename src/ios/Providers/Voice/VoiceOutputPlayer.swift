@@ -1,5 +1,8 @@
 import Foundation
 import AVFoundation
+import CoreFoundation
+import Darwin
+import UIKit
 
 // MARK: - Voice-output preference (persisted)
 
@@ -78,6 +81,24 @@ enum VoiceOutputPreferences {
 final class VoiceOutputPlayer: NSObject, ObservableObject {
 
     static let shared = VoiceOutputPlayer()
+
+    private var activePetSpeechRequest: PetSpeechRequest?
+    private var petSpeechTask: Task<Void, Never>?
+    private var petSpeechWatchdog: Task<Void, Never>?
+    private var lastPetSpeechPrune: TimeInterval = -.infinity
+
+    private override init() {
+        super.init()
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let player = Unmanaged<VoiceOutputPlayer>.fromOpaque(observer).takeUnretainedValue()
+                Task { @MainActor in player.drainPetSpeechInbox() }
+            }, "com.judegor.minispet.speech.request" as CFString, nil, .deliverImmediately)
+    }
+
+    func startPetSpeechBridge() { drainPetSpeechInbox() }
 
     @Published private(set) var isPlaying = false
     /// True while a cloud TTS network synthesis is in flight with nothing yet
@@ -260,6 +281,132 @@ final class VoiceOutputPlayer: NSObject, ObservableObject {
             String(trimmed.prefix(30))))
         pumpPrefetch()
         pumpPlayback()
+    }
+
+    // The host never starts a background mode on behalf of the pet.
+    private var petSpeechMayRun: Bool {
+        let state = UIApplication.shared.applicationState
+        return state == .active || (state == .background && BackgroundKeepAliveManager.shared.enhancedBackgroundEffective)
+    }
+
+    private func drainPetSpeechInbox() {
+        guard petSpeechMayRun else { petSpeechTask?.cancel(); return }
+        let directory = PetSpeechMailbox.openDirectory()
+        guard directory >= 0 else { petSpeechTask?.cancel(); return }
+        let current = PetSpeechMailbox.readRequest(from: directory)
+        if let activePetSpeechRequest {
+            close(directory)
+            if current != activePetSpeechRequest { petSpeechTask?.cancel() }
+            return
+        }
+
+        let uptime = ProcessInfo.processInfo.systemUptime
+        if uptime - lastPetSpeechPrune >= 60 {
+            PetSpeechMailbox.prune(in: directory)
+            lastPetSpeechPrune = uptime
+        }
+        guard let request = current, PetSpeechMailbox.claim(request.id, in: directory) else {
+            close(directory)
+            return
+        }
+        let age = Date().timeIntervalSince1970 - request.createdAt
+        let deadline = uptime + max(0, PetSpeechMailbox.lifetime - max(0, age))
+        activePetSpeechRequest = request
+        petSpeechTask = Task { [weak self] in
+            defer { close(directory) }
+            guard let self else { return }
+            await self.servePetSpeech(request, in: directory, deadline: deadline)
+            self.petSpeechWatchdog?.cancel()
+            self.petSpeechWatchdog = nil
+            self.activePetSpeechRequest = nil
+            self.petSpeechTask = nil
+            // A newer lease may have arrived while cancellation was in flight.
+            self.drainPetSpeechInbox()
+        }
+        petSpeechWatchdog = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 750_000_000) } catch { return }
+                guard !Task.isCancelled, let self else { return }
+                if !self.petSpeechIsCurrent(request, in: directory, deadline: deadline) {
+                    self.petSpeechTask?.cancel()
+                    return
+                }
+            }
+        }
+    }
+
+    private func petSpeechIsCurrent(_ request: PetSpeechRequest, in directory: Int32, deadline: TimeInterval) -> Bool {
+        !Task.isCancelled && petSpeechMayRun && activePetSpeechRequest == request &&
+            ProcessInfo.processInfo.systemUptime < deadline && PetSpeechMailbox.readRequest(from: directory) == request
+    }
+
+    private func servePetSpeech(_ request: PetSpeechRequest, in directory: Int32, deadline: TimeInterval) async {
+        guard petSpeechIsCurrent(request, in: directory, deadline: deadline) else { return }
+        let text = VoiceTextSanitizer.sanitize(request.text)
+        guard (2...PetSpeechMailbox.textLimit).contains(text.utf16.count) else {
+            await finishPetSpeech(request, in: directory, deadline: deadline, failure: "invalid_text")
+            return
+        }
+        let entries = VoiceProviderResolver.resolvedOutputCandidates()
+        var triedCloudProvider = false
+        for entry in entries {
+            guard petSpeechIsCurrent(request, in: directory, deadline: deadline) else { return }
+            guard !VoiceProviderResolver.isSystemEntry(entry.providerInstanceId),
+                  let provider = VoiceProviderResolver.outputProvider(for: entry),
+                  !(provider is SystemVoiceProvider) else { continue }
+            triedCloudProvider = true
+            let input = VoiceOutputRequest(input: text, model: entry.model.id, voice: entry.model.id,
+                                          responseFormat: .mp3, resolvedModel: entry.model)
+            do {
+                let bytes = try await provider.synthesize(input)
+                guard petSpeechIsCurrent(request, in: directory, deadline: deadline) else { return }
+                guard let suffix = PetSpeechMailbox.audioSuffix(bytes) else { continue }
+                await finishPetSpeech(request, in: directory, deadline: deadline, audio: (bytes, suffix))
+                return
+            } catch is CancellationError {
+                return
+            } catch {
+                // The next configured cloud entry can try the same line within the lease.
+            }
+        }
+        await finishPetSpeech(request, in: directory, deadline: deadline,
+                              failure: triedCloudProvider ? "synthesis_failed" : "cloud_tts_unconfigured")
+    }
+
+    private func finishPetSpeech(_ request: PetSpeechRequest, in directory: Int32, deadline: TimeInterval,
+                                 audio: (Data, String)? = nil, failure: String = "write_failed") async {
+        guard petSpeechIsCurrent(request, in: directory, deadline: deadline) else { return }
+        var result: [String: Any] = ["schema": 1, "request_id": request.id, "request_created_at": request.createdAt]
+        var audioName: String?
+        if let (bytes, suffix) = audio {
+            let name = "audio-\(request.id).\(suffix)"
+            // Keep the descriptor alive until the writer finishes. Only the
+            // main actor publishes a receipt, after rechecking the live lease.
+            let written = await Task.detached(priority: .utility) {
+                PetSpeechMailbox.write(bytes, named: name, in: directory)
+            }.value
+            if written {
+                audioName = name
+                result["audio"] = name
+                result["audio_bytes"] = bytes.count
+            }
+        }
+        result["ok"] = audioName != nil
+        if audioName == nil { result["error"] = failure }
+        let created = Date().timeIntervalSince1970
+        result["created_at"] = created
+        let receipt = "response-\(request.id).json"
+        guard created >= request.createdAt,
+              let data = try? JSONSerialization.data(withJSONObject: result),
+              petSpeechIsCurrent(request, in: directory, deadline: deadline),
+              PetSpeechMailbox.write(data, named: receipt, in: directory),
+              petSpeechIsCurrent(request, in: directory, deadline: deadline) else {
+            if let audioName { unlinkat(directory, audioName, 0) }
+            unlinkat(directory, receipt, 0)
+            return
+        }
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName("com.judegor.minispet.speech.response" as CFString), nil, nil, true)
     }
 
     /// Sanitize, split into speech-sized segments using the streaming segmenter,
@@ -637,5 +784,209 @@ extension VoiceOutputPlayer: AVAudioPlayerDelegate {
                 self.releaseSessionIfSafe()
             }
         }
+    }
+}
+
+// MARK: - Desktop pet mailbox
+
+private struct PetSpeechRequest: Equatable {
+    let id: String
+    let createdAt: TimeInterval
+    let text: String
+}
+
+private enum PetSpeechMailbox {
+    static let lifetime: TimeInterval = 30
+    static let jsonLimit = 8_192
+    static let audioLimit = 15_000_000
+    static let textLimit = 300
+    static let clockSkew: TimeInterval = 3
+    static let requestName = "request.json"
+
+    /// Keep this mailbox outside the File Provider's shared domain.
+    static func openDirectory() -> Int32 {
+        guard let group = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: SharedContainerStore.appGroupID
+        ) else { return -1 }
+        let base = group.path.withCString { open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC) }
+        guard base >= 0 else { return -1 }
+        defer { close(base) }
+        let folder = "MinisPetSpeech"
+        guard mkdirat(base, folder, mode_t(0o700)) == 0 || errno == EEXIST else { return -1 }
+        let fd = openat(base, folder, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { return -1 }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_uid == getuid(), info.st_mode & 0o077 == 0 else {
+            close(fd)
+            return -1
+        }
+        return fd
+    }
+
+    static func readRequest(from directory: Int32) -> PetSpeechRequest? {
+        let fd = openat(directory, requestName, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+              info.st_uid == getuid(), info.st_nlink == 1, info.st_size > 0,
+              info.st_size <= off_t(jsonLimit) else { return nil }
+        var body = Data(count: Int(info.st_size))
+        let complete = body.withUnsafeMutableBytes { (bytes: UnsafeMutableRawBufferPointer) -> Bool in
+            guard let ptr = bytes.baseAddress else { return false }
+            var offset = 0
+            while offset < bytes.count {
+                let count = Darwin.read(fd, ptr.advanced(by: offset), bytes.count - offset)
+                if count < 0 && errno == EINTR { continue }
+                guard count > 0 else { return false }
+                offset += count
+            }
+            var extra: UInt8 = 0
+            var tail: Int
+            repeat { tail = Darwin.read(fd, &extra, 1) } while tail < 0 && errno == EINTR
+            return tail == 0
+        }
+        guard complete, let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+              let schema = number(object["schema"]), schema == 1,
+              let id = object["request_id"] as? String, id.utf8.count == 36, UUID(uuidString: id)?.uuidString == id,
+              let created = number(object["created_at"]), created > 0,
+              let text = object["text"] as? String, (2...textLimit).contains(text.utf16.count) else { return nil }
+        let age = Date().timeIntervalSince1970 - created
+        guard age >= -clockSkew, age < lifetime else { return nil }
+        return PetSpeechRequest(id: id, createdAt: created, text: text)
+    }
+
+    private static func number(_ value: Any?) -> Double? {
+        guard let value = value as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
+              value.doubleValue.isFinite else { return nil }
+        return value.doubleValue
+    }
+
+    /// Persist only the UUID, before calling a provider. A resumed app must
+    /// not synthesize or bill the same live request twice.
+    static func claim(_ id: String, in directory: Int32) -> Bool {
+        let fd = openat(directory, "seen-\(id).marker", O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        return fsync(fd) == 0
+    }
+
+    static func write(_ data: Data, named name: String, in directory: Int32) -> Bool {
+        let temporary = ".speech-\(UUID().uuidString).tmp"
+        let fd = openat(directory, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
+        guard fd >= 0 else { return false }
+        defer {
+            close(fd)
+            unlinkat(directory, temporary, 0)
+        }
+        let complete = data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) -> Bool in
+            guard let ptr = bytes.baseAddress else { return false }
+            var offset = 0
+            while offset < bytes.count {
+                let count = Darwin.write(fd, ptr.advanced(by: offset), bytes.count - offset)
+                if count < 0 && errno == EINTR { continue }
+                guard count > 0 else { return false }
+                offset += count
+            }
+            return true
+        }
+        return complete && fsync(fd) == 0 && renameat(directory, temporary, directory, name) == 0
+    }
+
+    static func prune(in directory: Int32) {
+        let copy = openat(directory, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard copy >= 0 else { return }
+        guard let list = fdopendir(copy) else { close(copy); return }
+        defer { closedir(list) }
+        let cutoff = Date().timeIntervalSince1970 - 120
+        for _ in 0..<512 {
+            guard let item = readdir(list) else { break }
+            let name = withUnsafeBytes(of: item.pointee.d_name) { bytes in
+                String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
+            }
+            guard isGeneratedFilename(name) else { continue }
+            var info = stat()
+            if fstatat(directory, name, &info, AT_SYMLINK_NOFOLLOW) == 0,
+               info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(),
+               Double(info.st_mtimespec.tv_sec) < cutoff {
+                unlinkat(directory, name, 0)
+            }
+        }
+    }
+
+    private static func isGeneratedFilename(_ name: String) -> Bool {
+        let formats = [("seen-", ".marker"), ("response-", ".json"), ("audio-", ".mp3"), ("audio-", ".wav"),
+                       (".speech-", ".tmp"), (".request-", ".tmp")]
+        for (prefix, suffix) in formats where name.hasPrefix(prefix) && name.hasSuffix(suffix) {
+            let id = String(name.dropFirst(prefix.count).dropLast(suffix.count))
+            if id.utf8.count == 36 && UUID(uuidString: id)?.uuidString == id { return true }
+        }
+        return false
+    }
+}
+
+private extension PetSpeechMailbox {
+    static func audioSuffix(_ data: Data) -> String? {
+        guard (4...audioLimit).contains(data.count) else { return nil }
+        return data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) -> String? in
+            if isWAV(bytes) { return "wav" }
+            if isMP3(bytes) { return "mp3" }
+            return nil
+        }
+    }
+
+    static func isWAV(_ bytes: UnsafeRawBufferPointer) -> Bool {
+        func word(at offset: Int) -> UInt32 {
+            UInt32(littleEndian: bytes.loadUnaligned(fromByteOffset: offset, as: UInt32.self))
+        }
+        // RIFF and WAVE in little endian. Non-PCM variants are left to the player.
+        guard bytes.count > 44, word(at: 0) == 0x46464952, word(at: 8) == 0x45564157 else { return false }
+        let declared = word(at: 4)
+        guard declared == UInt32.max || Int(declared) == bytes.count - 8 else { return false }
+        var offset = 12
+        var hasFormat = false
+        for _ in 0..<128 {
+            let available = bytes.count - offset - 8
+            guard available >= 0 else { return false }
+            let kind = word(at: offset)
+            let length = word(at: offset + 4)
+            if kind == 0x61746164 { // data
+                return hasFormat && length > 0 && available > 0 && (length == UInt32.max || Int(length) <= available)
+            }
+            if kind == 0x20746d66 { // fmt
+                guard length >= 16 else { return false }
+                hasFormat = true
+            }
+            let padded = Int(length) + Int(length & 1)
+            guard padded <= available else { return false }
+            offset += 8 + padded
+        }
+        return false
+    }
+
+    static func isMP3(_ bytes: UnsafeRawBufferPointer) -> Bool {
+        let rates = [44100, 48000, 32000]
+        let mpeg1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320]
+        let mpeg2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160]
+        var offset = 0
+        if bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33 { // ID3
+            guard bytes.count >= 10, (2...4).contains(bytes[3]) else { return false }
+            for i in 6..<10 {
+                guard bytes[i] & 0x80 == 0 else { return false }
+                offset = (offset << 7) | Int(bytes[i])
+            }
+            offset += bytes[3] == 4 && bytes[5] & 0x10 != 0 ? 20 : 10
+        }
+        guard offset <= bytes.count - 4 else { return false }
+        let second = bytes[offset + 1]
+        let third = bytes[offset + 2]
+        let version = (second >> 3) & 3
+        let bitRate = Int(third >> 4)
+        let rate = Int((third >> 2) & 3)
+        guard bytes[offset] == 0xff, second & 0xe6 == 0xe2,
+              version != 1, (1...14).contains(bitRate), rate < 3 else { return false }
+        let hz = rates[rate] / (version == 3 ? 1 : version == 2 ? 2 : 4)
+        let frame = (version == 3 ? 144000 * mpeg1[bitRate] : 72000 * mpeg2[bitRate]) / hz
+        return bytes.count - offset >= frame + Int((third >> 1) & 1)
     }
 }
