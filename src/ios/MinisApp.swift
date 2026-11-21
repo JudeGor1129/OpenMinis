@@ -522,6 +522,7 @@ struct MinisApp: App {
     // MARK: - Lifecycle Logging
 
     private func handleScenePhaseChange(_ phase: ScenePhase) {
+        guard scenePhase == phase else { return }
         let startedAt = ProcessInfo.processInfo.systemUptime
         defer {
             let elapsed = ProcessInfo.processInfo.systemUptime - startedAt

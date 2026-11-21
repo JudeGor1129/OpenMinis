@@ -33,6 +33,7 @@ check('legacySessionListPreview(session.lastMessage)' in legacy,'bounded display
 for call in ('showPrivacyScreen = true','clearAllUnlocks()','noteAppBackgrounded()'):
     check(observer.index(call)<queued,'privacy precedes deferred maintenance: '+call)
 check('handleScenePhaseChange(newPhase)' in observer[queued:],'maintenance queued outside observer')
+check('guard scenePhase == phase else { return }' in app,'stale inactive/background callbacks are discarded')
 check(app.count('guard scenePhase == .active else { return }')>=3,'foreground work revalidates after suspension')
 active=bka.split('NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)',1)[1].split('.store(in: &cancellables)',1)[0]
 check('DispatchQueue.main.async { [weak self] in' in active and 'UIApplication.shared.applicationState == .active' in active,'stale active notification cannot clean up new keep-alive')
