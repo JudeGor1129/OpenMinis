@@ -501,9 +501,15 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.logLifecycleSnapshot("Active")
-                self?.retractOrphanedLocationSession(caller: "didBecomeActive")
-                self?.evaluateSilentAudio(caller: "didBecomeActive")
+                // Leave notification delivery before touching audio/location.
+                // Revalidate: a rapid return to background must not run stale
+                // foreground cleanup or stop a newly armed keep-alive leg.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, UIApplication.shared.applicationState == .active else { return }
+                    self.logLifecycleSnapshot("Active")
+                    self.retractOrphanedLocationSession(caller: "didBecomeActive")
+                    self.evaluateSilentAudio(caller: "didBecomeActive")
+                }
             }
             .store(in: &cancellables)
 

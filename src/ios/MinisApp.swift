@@ -492,7 +492,25 @@ struct MinisApp: App {
             }
         }
         .onChange(of: scenePhase) { newPhase in
-            handleScenePhaseChange(newPhase)
+            // Privacy must take effect before an app-switcher snapshot; never
+            // defer these security state changes with the maintenance work.
+            if newPhase == .inactive, SessionLockStore.shared.appLockEnabled {
+                SessionLockStore.shared.showPrivacyScreen = true
+            }
+            if newPhase == .background {
+                if SessionLockStore.shared.idleTimeoutSeconds < 0 {
+                    SessionLockStore.shared.clearAllUnlocks()
+                }
+                if SessionLockStore.shared.appLockIdleSeconds < 0 {
+                    SessionLockStore.shared.noteAppBackgrounded()
+                }
+            }
+            // Queue bookkeeping outside this synchronous observer, in arrival
+            // order. This avoids re-entrant maintenance during graph updates;
+            // it does NOT exempt main-thread work from the scene watchdog.
+            DispatchQueue.main.async {
+                handleScenePhaseChange(newPhase)
+            }
             // Handle shares completed after the scene-active callback.
             // [T-scene-onreceive] Timer-driven .onReceive lived on the Scene,
             // which has no such modifier (build 98 broke here). Folded into
@@ -504,8 +522,17 @@ struct MinisApp: App {
     // MARK: - Lifecycle Logging
 
     private func handleScenePhaseChange(_ phase: ScenePhase) {
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        defer {
+            let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+            if elapsed >= 0.1 {
+                lifecycleLog.warning("[LifecycleTiming] phase=\(String(describing: phase)) sync_ms=\(elapsed * 1000)")
+            }
+        }
         switch phase {
         case .active:
+            // A newer background notification may precede this queued work.
+            guard scenePhase == .active else { return }
             let remaining = UIApplication.shared.backgroundTimeRemaining
             if let entry = backgroundEntryDate {
                 let elapsed = Date().timeIntervalSince(entry)
@@ -547,6 +574,7 @@ struct MinisApp: App {
             // runs on a later tick, outside the fragile window.
             Task { @MainActor in
                 await Task.yield()
+                guard scenePhase == .active else { return }
                 VoiceOutputPlayer.shared.startPetSpeechBridge()
 
                 ViewModelCache.shared.resumeAllStreamingUI()
@@ -572,6 +600,7 @@ struct MinisApp: App {
                 // own date so a restored marker is stamped with WHEN the
                 // session was interrupted, not with "now".
                 let interruptedWithDates = await ChatStore.shared.interruptedSessionsWithTailDate()
+                guard scenePhase == .active else { return }
                 let interruptedSessions = Set(interruptedWithDates.keys)
                 // Exclude sessions that are actively streaming RIGHT NOW: a
                 // resumed/running session's DB tail still looks "interrupted"
@@ -695,10 +724,7 @@ struct MinisApp: App {
             lifecycleLog.info("[Lifecycle] → Inactive (remaining: \(Self.formatTimeRemaining(remaining)))")
             CrashReporter.shared.updateMarkerPhase(phase: "inactive")
             ViewModelCache.shared.suspendAllStreamingUI()
-            // Privacy screen in task switcher when app lock is enabled
-            if SessionLockStore.shared.appLockEnabled {
-                SessionLockStore.shared.showPrivacyScreen = true
-            }
+            // Privacy masking was already applied synchronously by the observer.
 
         case .background:
             backgroundEntryDate = Date()
@@ -728,22 +754,9 @@ struct MinisApp: App {
             // a jetsam can drop history that only ever reached the -wal sidecar.
             // Cheap and synchronous — this is the last reliable moment to do it.
             ConfigAuditLog.shared.checkpoint()
-            // "Lock on exit" mode — drop every cached unlock
-            // stamp so re-entering any locked session requires Face ID.
-            // Per-session AIChatView observer only covers the session
-            // currently on screen; this catches the rest.
-            if SessionLockStore.shared.idleTimeoutSeconds < 0 {
-                SessionLockStore.shared.clearAllUnlocks()
-            }
-            // [T-applock-repeated-faceid] App-level "lock on exit": record WHEN we
-            // backgrounded instead of dropping the unlock immediately. The next
-            // foreground evaluateAppLock() re-locks only if the background spell
-            // exceeded the grace window (SessionLockStore.lockOnExitGraceSeconds),
-            // so the rapid inactive↔active churn iOS emits (banners, control
-            // center, background-audio state flips) no longer re-prompts Face ID.
-            if SessionLockStore.shared.appLockIdleSeconds < 0 {
-                SessionLockStore.shared.noteAppBackgrounded()
-            }
+            // Lock-on-exit and its grace-window timestamp are handled before
+            // enqueuing maintenance, so a delayed callback cannot relock a
+            // newly foregrounded app or shift the grace-period start.
 
         @unknown default:
             lifecycleLog.warning("[Lifecycle] → Unknown scene phase")

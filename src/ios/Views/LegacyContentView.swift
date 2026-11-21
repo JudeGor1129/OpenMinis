@@ -25,17 +25,27 @@ private final class LegacySessionActivitySnapshot: ObservableObject {
 
     init() {
         activity.$activeSessions
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] ids in self?.active = ids }
             .store(in: &cancellables)
         concurrency.$suspendedSessions
+            .map { Set($0) }
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] ids in self?.suspended = Set(ids) }
+            .sink { [weak self] ids in self?.suspended = ids }
             .store(in: &cancellables)
     }
 
     func isActive(_ id: String) -> Bool { active.contains(id) }
     func isSuspended(_ id: String) -> Bool { suspended.contains(id) }
+}
+
+// A two-line list subtitle must not lay out a whole generated reply. Bound
+// work before Text measurement without changing the stored message or export.
+private func legacySessionListPreview(_ text: String?) -> String? {
+    guard let text, !text.isEmpty else { return nil }
+    return String(text.prefix(240))
 }
 
 /// iOS 15 Implementation of the essential conversation flow.
@@ -47,7 +57,11 @@ private struct LegacyContentView: View {
     @State private var sessions: [ChatSession] = []
     @State private var folders: [ChatFolder] = []
     @StateObject private var activitySnapshot = LegacySessionActivitySnapshot()
-    @State private var groupSessions: [String: [ChatSession]] = [:]
+    // Keep the grouped List's diff input to stable IDs, avoiding session-value
+    // array comparisons during parent updates. The row models stay in a lookup
+    // table so titles, previews, and context actions still use fresh data.
+    @State private var groupSessionIDs: [String: [String]] = [:]
+    @State private var groupedSessionsByID: [String: ChatSession] = [:]
     @State private var expandedGroups: Set<String> = []
     @State private var groupsExpanded = false
     @State private var draftGroupId: String? = nil
@@ -102,7 +116,7 @@ private struct LegacyContentView: View {
                         ForEach(folders) { folder in
                             DisclosuredGroupHeader(
                                 folder: folder,
-                                memberCount: members(of: folder.id).count,
+                                memberCount: groupSessionIDs[folder.id]?.count ?? 0,
                                 expanded: expandedGroups.contains(folder.id),
                                 onToggle: { toggleGroup(folder.id) },
                                 onManage: { managingFolder = folder }
@@ -111,40 +125,31 @@ private struct LegacyContentView: View {
                                 Button { startDraft(in: folder.id) } label: {
                                     Label("开始新会话", systemImage: "plus.bubble")
                                 }
-                                if members(of: folder.id).isEmpty {
+                                let memberIDs = groupSessionIDs[folder.id] ?? []
+                                if memberIDs.isEmpty {
                                     Text("组内暂无会话")
                                         .font(.footnote)
                                         .foregroundColor(.secondary)
                                 }
-                                ForEach(members(of: folder.id)) { session in
-                                    // Deliberately read-only selection state:
-                                    // group rows always push into the chat. A
-                                    // live selectionMode binding turned them
-                                    // into checkboxes whenever the home list
-                                    // was in multi-select, so a tap selected
-                                    // instead of opening.
-                                    LegacySessionRow(
-                                        session: session,
-                                        selectionMode: .constant(false),
-                                        selectedSessions: .constant([]),
-                                        onChange: reload,
-                                        isActiveOverride: sessionIsActive(session.id),
-                                        isSuspendedOverride: sessionIsSuspended(session.id)
-                                    )
+                                ForEach(memberIDs, id: \.self) { sessionID in
+                                    if let session = groupedSessionsByID[sessionID] {
+                                        // Keep the group list's diff key to the
+                                        // session ID; do not diff ChatSession arrays.
+                                        LegacySessionRow(
+                                            session: session,
+                                            selectionMode: .constant(false),
+                                            selectedSessions: .constant([]),
+                                            onChange: reload,
+                                            isActiveOverride: sessionIsActive(session.id),
+                                            isSuspendedOverride: sessionIsSuspended(session.id)
+                                        )
+                                    }
                                 }
                             }
                         }
-                        // Keep a discoverable button as well as the long-press shortcut.
-                        Button { creatingGroup = true } label: {
-                            Label("新建分组", systemImage: "folder.badge.plus")
-                        }
                     }
                 }
-                if ungroupedSessions.isEmpty && !sessions.isEmpty {
-                    Text("所有会话都已归入分组；展开分组即可查看。")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                } else if sessions.isEmpty {
+                if sessions.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "bubble.left.and.bubble.right")
                             .font(.system(size: 38))
@@ -422,15 +427,17 @@ private struct LegacyContentView: View {
 
     @MainActor
     private func reloadGroupMembers() {
-        // We already have folder_id on ChatSession. Derive the visible members
-        // locally instead of issuing one sessionIdsInFolder() query per folder
-        // every time the disclosure is tapped.
-        var members: [String: [ChatSession]] = [:]
+        // Build an id-only ForEach input and a lookup table once per refresh.
+        // This keeps ChatSession value comparisons out of the scroll hot path.
+        var idsByFolder: [String: [String]] = [:]
+        var sessionsByID: [String: ChatSession] = [:]
         for session in sessions where !session.isChild {
+            sessionsByID[session.id] = session
             guard let folderID = session.folderId else { continue }
-            members[folderID, default: []].append(session)
+            idsByFolder[folderID, default: []].append(session.id)
         }
-        groupSessions = members
+        groupSessionIDs = idsByFolder
+        groupedSessionsByID = sessionsByID
     }
 
     /// Destination for the sheet-dismiss-then-push path. Guarded so an empty
@@ -442,10 +449,6 @@ private struct LegacyContentView: View {
         } else {
             LegacySessionDestination(sessionID: openedSessionID)
         }
-    }
-
-    private func members(of folderId: String) -> [ChatSession] {
-        groupSessions[folderId] ?? []
     }
 
     private func startDraft(in folderId: String? = nil) {
@@ -735,7 +738,7 @@ private struct LegacySessionRow: View {
                     if session.isPinned { Image(systemName: "pin.fill").font(.caption2) }
                     if busy { ProgressView().scaleEffect(0.75) }
                 }
-                if let preview = session.lastMessage, !preview.isEmpty {
+                if let preview = legacySessionListPreview(session.lastMessage) {
                     Text(preview).font(.caption).foregroundColor(.secondary).lineLimit(2)
                 }
             }

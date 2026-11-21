@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 bash scripts/ios15/check-build70-chat-style.sh
+python3 scripts/ios15/check-home-lifecycle.py --require-swift
 
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 
