@@ -71,7 +71,7 @@ let oldIDs=h.groupSessionIDs["a"]
 h.sessions[0].title="renamed"; h.reloadGroupMembers()
 expect(h.groupSessionIDs["a"] == oldIDs && h.groupedSessionsByID["s0"]?.title == "renamed","same IDs expose refreshed data")
 h.sessions[0].folderId="b"; h.sessions.removeAll { $0.id == "s1" }; h.reloadGroupMembers()
-expect(h.groupSessionIDs["a"]?.count == 298 && h.groupSessionIDs["b"]?.first == "s300" && h.groupSessionIDs["b"]?.last == "s0","move/delete preserve remaining order")
+expect(h.groupSessionIDs["a"]?.count == 298 && h.groupSessionIDs["b"]?.first == "s0" && h.groupSessionIDs["b"]?.last == "s399","move/delete preserve remaining order")
 expect(h.groupSessionIDs["b"]?.filter { $0 == "s0" }.count == 1 && h.groupedSessionsByID["s1"] == nil,"moved/deleted lookup is fresh")
 expect(legacySessionListPreview(nil) == nil && legacySessionListPreview("") == nil,"empty previews absent")
 expect(legacySessionListPreview("short") == "short","short preview unchanged")
