@@ -1,6 +1,10 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Your response" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "你的回答"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "你的回答"}}}} ,
+    "Send answer" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "发送回答"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "傳送回答"}}}} ,
+    "Minis is waiting for your answer" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "Minis 正在等待你的回答"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "Minis 正在等待你的回答"}}}} ,
+    "A user interaction needs your reply. Tap to return to Minis." : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "有一条用户交互问题待回答。点按返回 Minis 查看。"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "有一則使用者互動問題待回答。點按返回 Minis 查看。"}}}} ,
     "User Interaction" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用户交互" } }, "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "使用者互動" } } } },
     "Your answer" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请输入回答" } }, "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請輸入回答" } } } },
     "Share Conversation" : { "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分享会话" } }, "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "分享對話" } } } },

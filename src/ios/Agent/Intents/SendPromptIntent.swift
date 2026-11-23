@@ -490,6 +490,19 @@ final class ShortcutNotificationDelegate: NSObject, UNUserNotificationCenterDele
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
+        if let questionId = userInfo["userQuestionId"] as? String {
+            DispatchQueue.main.async {
+                if MinisUserQuestionPresenter.shared.handleNotificationTap(questionId) { return }
+                // Process restarted / question ended: navigate, never replay it.
+                if let sessionId = userInfo["sessionId"] as? String, !sessionId.isEmpty {
+                    NotificationNavigationStore.shared.setPending(sessionId)
+                    NotificationCenter.default.post(name: .openSessionFromIntent, object: nil,
+                                                    userInfo: ["sessionId": sessionId])
+                }
+            }
+            completionHandler()
+            return
+        }
         if let sessionId = userInfo["sessionId"] as? String, !sessionId.isEmpty {
             DispatchQueue.main.async {
                 // Buffer first (cold-launch consumer), then post (warm-path
@@ -523,6 +536,12 @@ final class ShortcutNotificationDelegate: NSObject, UNUserNotificationCenterDele
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        // A background add can arrive after foregrounding. The existing sheet
+        // is the reminder here; all unrelated notifications keep their behavior.
+        if notification.request.content.userInfo["userQuestionId"] != nil {
+            completionHandler([])
+            return
+        }
         completionHandler([.banner, .sound])
     }
 }

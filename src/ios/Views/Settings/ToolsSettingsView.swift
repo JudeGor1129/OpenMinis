@@ -159,6 +159,12 @@ struct ToolsSettingsView: View {
         }
         .navigationTitle(AppLocalized("Agent Tools"))
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if interactionEnabled { MinisUserQuestionPresenter.shared.prepareNotificationPermission() }
+        }
+        .onChange(of: interactionEnabled) { enabled in
+            if enabled { MinisUserQuestionPresenter.shared.prepareNotificationPermission() }
+        }
     }
 
     func toolRow(_ title: String, tool: String, icon: String, iconSize: CGFloat = 14,
@@ -187,40 +193,4 @@ extension AIChatViewModel {
     static let toolsDisabledMessage =
         "This tool is turned off in the app's settings. Tell the user they can enable it there; do not retry."
 }
-import UIKit
-
-/// Serializes interactive prompts and bounds their lifetime when a task stops.
-@MainActor
-final class MinisUserQuestionPresenter {
-    static let shared = MinisUserQuestionPresenter()
-    private var active: UUID?
-
-    func ask(_ question: String) async -> String {
-        guard active == nil else { return "Another user question is already open." }
-        let id = UUID()
-        active = id
-        defer { active = nil }
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        guard var presenter = scenes.flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController else {
-            return "User interaction unavailable: no active window."
-        }
-        while let next = presenter.presentedViewController { presenter = next }
-        let alert = UIAlertController(title: AppLocalized("User Interaction"), message: question, preferredStyle: .alert)
-        alert.addTextField { $0.placeholder = AppLocalized("Your answer") }
-        var answer: String?
-        alert.addAction(UIAlertAction(title: AppLocalized("Send"), style: .default) { _ in
-            answer = alert.textFields?.first?.text ?? ""
-        })
-        alert.addAction(UIAlertAction(title: AppLocalized("Cancel"), style: .cancel) { _ in
-            answer = "User cancelled the question."
-        })
-        presenter.present(alert, animated: true)
-        for _ in 0..<3000 {
-            if let answer { return answer }
-            do { try await Task.sleep(nanoseconds: 100_000_000) }
-            catch { alert.dismiss(animated: true); return "Question cancelled because the task stopped." }
-        }
-        alert.dismiss(animated: true)
-        return "User question timed out after five minutes."
-    }
-}
+// User interaction presentation lives in UserQuestionPresenter.swift.

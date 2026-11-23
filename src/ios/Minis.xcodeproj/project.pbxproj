@@ -449,6 +449,7 @@
 		E5T00000B /* UserMessageEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5T00001B /* UserMessageEntity.swift */; };
 		E5T0000A1 /* AskMinisIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5T0000A2 /* AskMinisIntent.swift */; };
 		E5TLC0001 /* ThinkingLevelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TLC0002 /* ThinkingLevelCatalog.swift */; };
+		E5UQ00001 /* UserQuestionPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5UQ00002 /* UserQuestionPresenter.swift */; };
 		E5TLS0001 /* ToolsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TLS0011 /* ToolsSettingsView.swift */; };
 		E5TRC001 /* ThinkingRuleCoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TRC002 /* ThinkingRuleCoding.swift */; };
 		E5TRC0010 /* ThinkingRulesCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5TRC0020 /* ThinkingRulesCollection.swift */; };
@@ -1224,6 +1225,7 @@
 		E5T00001B /* UserMessageEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserMessageEntity.swift; sourceTree = "<group>"; };
 		E5T0000A2 /* AskMinisIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskMinisIntent.swift; sourceTree = "<group>"; };
 		E5TLC0002 /* ThinkingLevelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingLevelCatalog.swift; sourceTree = "<group>"; };
+		E5UQ00002 /* UserQuestionPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserQuestionPresenter.swift; sourceTree = "<group>"; };
 		E5TLS0011 /* ToolsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolsSettingsView.swift; sourceTree = "<group>"; };
 		E5TRC002 /* ThinkingRuleCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ThinkingRuleCoding.swift; path = Thinking/ThinkingRuleCoding.swift; sourceTree = "<group>"; };
 		E5TRC0020 /* ThinkingRulesCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ThinkingRulesCollection.swift; path = Config/Collections/ThinkingRulesCollection.swift; sourceTree = "<group>"; };
@@ -2511,6 +2513,7 @@
 				E5SOUL102 /* SoulSettingsView.swift */,
 				E5SCH0014 /* HelperSettingsView.swift */,
 				E5TLS0011 /* ToolsSettingsView.swift */,
+				E5UQ00002 /* UserQuestionPresenter.swift */,
 				E5SYS0012 /* SystemAccessSettingsView.swift */,
 				E5LOCK102 /* FaceIDProtectionSettingsView.swift */,
 				E5LOCK103 /* AppLockOverlay.swift */,
@@ -3084,6 +3087,7 @@
 				E5SCH0003 /* ScheduledOffloadBridge.swift in Sources */,
 				E5SCH0004 /* HelperSettingsView.swift in Sources */,
 				E5TLS0001 /* ToolsSettingsView.swift in Sources */,
+				E5UQ00001 /* UserQuestionPresenter.swift in Sources */,
 				E5VMB0002 /* AIChatViewModel+Fallback.swift in Sources */,
 				E5VMB0003 /* AIChatViewModel+Misc.swift in Sources */,
 				E5VMB0004 /* AIChatViewModel+RequestBudget.swift in Sources */,

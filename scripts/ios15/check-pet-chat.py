@@ -48,6 +48,19 @@ info=src('Info.plist')
 check('NSMicrophoneUsageDescription' in info and 'NSSpeechRecognitionUsageDescription' in info,'existing iOS privacy descriptions remain')
 subprocess.run(['git','diff','--check'],cwd=ROOT,check=True)
 check(subprocess.run(['git','merge-base','--is-ancestor','7c39a5fb05e6ff00051110ed54354577ecc402b0','HEAD'],cwd=ROOT).returncode==0,'branch descends from verified build329 commit')
-protected=['src/ios/Shared/ThinkingOrb.swift','src/ios/Views/Chat/ChatInputBar.swift','src/ios/Minis.xcodeproj/project.pbxproj','tools/privileged-helper/MinisPrivilegedHelper.m','.github/workflows/ios15.yml']
-check(not subprocess.check_output(['git','diff','7c39a5f','--']+protected,cwd=ROOT),'329 renderer, core composer, project, helper and CI unchanged')
+protected=['src/ios/Shared/ThinkingOrb.swift','src/ios/Views/Chat/ChatInputBar.swift','tools/privileged-helper/MinisPrivilegedHelper.m','.github/workflows/ios15.yml']
+check(not subprocess.check_output(['git','diff','7c39a5f','--']+protected,cwd=ROOT),'329 renderer, core composer, helper and CI unchanged')
+# The new question sheet needs one source registration. Permit ONLY its four
+# exact records; after removing them the entire project must equal build329.
+projectPath='src/ios/Minis.xcodeproj/project.pbxproj'
+project=(ROOT/projectPath).read_text()
+records=[
+ '\t\tE5UQ00001 /* UserQuestionPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5UQ00002 /* UserQuestionPresenter.swift */; };\n',
+ '\t\tE5UQ00002 /* UserQuestionPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserQuestionPresenter.swift; sourceTree = "<group>"; };\n',
+ '\t\t\t\tE5UQ00002 /* UserQuestionPresenter.swift */,\n',
+ '\t\t\t\tE5UQ00001 /* UserQuestionPresenter.swift in Sources */,\n']
+check(all(project.count(record)==1 for record in records),'one exact source registration for user-question sheet')
+for record in records: project=project.replace(record,'',1)
+baseline=subprocess.check_output(['git','show','7c39a5f:'+projectPath],cwd=ROOT,text=True)
+check(project==baseline,'all build329 project records unchanged outside four exact question-sheet additions')
 print(f'{checks} source contracts passed; runtime and compilation require macOS/real iPhone.')

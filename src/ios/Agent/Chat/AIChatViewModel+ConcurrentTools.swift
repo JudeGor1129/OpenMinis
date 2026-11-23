@@ -503,7 +503,7 @@ extension AIChatViewModel {
                 toolSuccess = false
                 break
             }
-            toolOutput = await MinisUserQuestionPresenter.shared.ask(question)
+            toolOutput = await MinisUserQuestionPresenter.shared.ask(question, sessionId: sessionId)
             toolSuccess = !Task.isCancelled
         case "shell_execute":
             let (command, timeout, delay) = parseToolInput(from: argsJson)
