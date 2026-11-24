@@ -278,6 +278,7 @@ struct UnifiedModelPicker: View {
     /// per-row bolt button so any model — cloud, group member, or System voice —
     /// can be smoke-tested (speak / text output) without leaving the picker.
     @State private var quickTestEntry: ModelEntry?
+    @State private var quotaSheetTarget: QuotaSheetTarget?
 
     // [T-picker-cache-first] The rows this render draws, and where they came
     // from. `nil` means "nothing computed yet" — only then does the list show a
@@ -708,6 +709,9 @@ struct UnifiedModelPicker: View {
                         }
                     }
             }
+        }
+        .sheet(item: $quotaSheetTarget) { target in
+            QuotaDetailSheet(instanceId: target.id)
         }
         .sheet(item: $quickTestEntry) { entry in
             // [T-quicktest-stale-session] .id(entry.id) forces a FRESH view
@@ -1279,6 +1283,9 @@ struct UnifiedModelPicker: View {
         } header: {
             HStack {
                 Text(item.instance.label)
+                QuotaSectionHeaderBadge(instanceId: item.instance.id) {
+                    quotaSheetTarget = QuotaSheetTarget(id: item.instance.id)
+                }
                 Spacer()
                 if searchText.isEmpty && item.entries.count > 1 {
                     let collapsed = collapsedInstanceIds.contains(item.instance.id)
@@ -1341,6 +1348,7 @@ struct UnifiedModelPicker: View {
                         .font(.subheadline)
                         .foregroundStyle(disabled ? Color(UIColor.tertiaryLabel) : Color(UIColor.label))
                     HStack(spacing: 4) {
+                        ModelQuotaHintView(instanceId: entry.providerInstanceId, modelId: entry.model.id)
                         // Subtitle from traits (e.g. "iOS built-in, works offline")
                         // for built-ins; the raw model id for cloud models.
                         Text(traits.subtitle ?? entry.model.id)

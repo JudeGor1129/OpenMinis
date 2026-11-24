@@ -194,6 +194,10 @@ struct AIChatView: View {
     /// callbacks. See `ComposerActionChannel`.
     @State private var composerActions = ComposerActionChannel()
     @State private var showingSessionSearch = false
+    @StateObject private var chatSearch = ChatSearchController()
+    @State private var showsChatShare = false
+    @State private var chatQuotaTarget: QuotaSheetTarget?
+    @State private var chatShareInitialMessageIds: Set<UUID> = []
     @State private var sessionSystemAccessTarget: SessionSystemAccessTarget?
     @State private var sessionExportURL: URL?
     @State private var sessionExportError: String?
@@ -534,13 +538,18 @@ struct AIChatView: View {
     private var sessionActionsMenu: some View {
         MinisSessionActionsMenu(
             keepAwake: manualScreenAwake,
-            onShare: exportSessionMarkdown,
-            onSearch: { showingSessionSearch = true },
+            onShare: { showsChatShare = true },
+            onSearch: beginSessionSearch,
             onToggleAwake: {
                 manualScreenAwake.toggle()
                 UIApplication.shared.isIdleTimerDisabled = manualScreenAwake
             }
         )
+    }
+
+    private func beginSessionSearch() {
+        chatSearch.bind(to: vm)
+        chatSearch.activate()
     }
 
     private func exportSessionMarkdown() {
@@ -564,6 +573,15 @@ struct AIChatView: View {
             // Messages — floating tool preview overlaid at bottom
             messagesArea
                 .safeAreaInset(edge: .top, spacing: 0) {
+                    if chatSearch.isActive { ChatSearchControls(search: chatSearch) }
+                    if let entry = vm.resolveCurrentEntry() {
+                        HStack {
+                            ModelQuotaMemberPill(instanceId: entry.providerInstanceId, modelId: entry.model.id) {
+                                chatQuotaTarget = QuotaSheetTarget(id: entry.providerInstanceId)
+                            }
+                            Spacer()
+                        }.padding(.horizontal, 18)
+                    }
                     // Error banner
                     if let error = vm.errorMessage {
                         errorBanner(error)
@@ -1140,6 +1158,13 @@ struct AIChatView: View {
             }
             .minisChatSheetSize(.large)
         }
+        .sheet(item: $chatQuotaTarget) { target in
+            QuotaDetailSheet(instanceId: target.id)
+        }
+        .sheet(isPresented: $showsChatShare) {
+            ChatShareSelectionView(vm: vm, title: "聊天记录", initialMessageIds: chatShareInitialMessageIds)
+                .environmentObject(vm)
+        }
         .sheet(isPresented: $showTokenUsage) {
             TokenUsageSheet(vm: cached.vm)
                 .minisChatSheetSize(.tokenUsage)
@@ -1362,6 +1387,7 @@ struct AIChatView: View {
             if let newId { AIChatViewModel.activeSessionId = newId }
         }
         .onAppear {
+            chatSearch.bind(to: vm)
             wireComposerActions()
             let sinceInit = (CFAbsoluteTimeGetCurrent() - AIChatViewModel.onAppearTimestamp) * 1000
             minisLogger.info("[SessionLoad] onAppear T+\(String(format: "%.0f", sinceInit))ms isNew=\(cached.isNew) msgs=\(vm.messages.count)")
@@ -1515,6 +1541,7 @@ struct AIChatView: View {
             injectPendingShareIfNeeded()
         }
         .onDisappear {
+            chatSearch.deactivate()
             isChatViewVisible = false
             siriFlowArmTask?.cancel()
             siriFlowArmTask = nil
@@ -2049,8 +2076,8 @@ struct AIChatView: View {
         // the intrinsic icon size so the system wraps it in the same round
         // glass as a plain toolbar icon (fixes the earlier capsule).
         ChatTrailingMenuButton(
-            onShareSession: exportSessionMarkdown,
-            onSearchSession: { showingSessionSearch = true },
+            onShareSession: { showsChatShare = true },
+            onSearchSession: beginSessionSearch,
             onToggleSessionAwake: {
                 manualScreenAwake.toggle()
                 UIApplication.shared.isIdleTimerDisabled = manualScreenAwake
@@ -2907,7 +2934,8 @@ struct AIChatView: View {
                 },
                 maxContentWidth: maxContentWidth ?? 0,
                 floatingBarHeight: floatingBarHeight,
-                inputBarHeight: inputBarHeight
+                inputBarHeight: inputBarHeight,
+                chatSearch: chatSearch
             )
             } else {
                 // [T-ios15-floating-preview-inset] The modern list receives the
@@ -2920,7 +2948,8 @@ struct AIChatView: View {
                 // tail spacer so the latest row sits just above the toolbar.
                 MinisLegacyTranscript(
                     vm: vm,
-                    bottomInset: inputBarHeight + floatingBarHeight + 8
+                    bottomInset: inputBarHeight + floatingBarHeight + 8,
+                    chatSearch: chatSearch
                 )
             }
             // Empty/loading overlay for tap-to-dismiss-keyboard.
@@ -7169,6 +7198,7 @@ private struct ChatSendButton: View {
     /// [T-scheduled-stop-confirm] Confirmation before Stop takes this
     /// conversation's timers down with the reply.
     @State private var showScheduledStopConfirm = false
+    @State private var showStopChoice = false
 
     /// True when this conversation owns a timer that will still fire.
     private var hasLiveScheduled: Bool {
@@ -7211,6 +7241,8 @@ private struct ChatSendButton: View {
                 // reply" keeps its immediate, un-prompted behaviour.
                 if hasLiveScheduled {
                     showScheduledStopConfirm = true
+                } else if hasRunningSubAgent {
+                    showStopChoice = true
                 } else {
                     vm.cancel()
                 }
@@ -7224,6 +7256,14 @@ private struct ChatSendButton: View {
             // to a different action (New Chat from the "…" menu), so the two
             // can never contend — they are driven by separate flags and
             // separate user gestures.
+            .confirmationDialog(AppLocalized("Stop running work?"), isPresented: $showStopChoice, titleVisibility: .visible) {
+                Button(AppLocalized("Stop all sub agents"), role: .destructive) {
+                    if let sid = vm.sessionId { _ = AgentJobRegistry.shared.cancelAll(parent: sid, reason: "user_stop_all", silent: true) }
+                    vm.cancel()
+                }
+                Button(AppLocalized("Stop current conversation"), role: .destructive) { vm.cancel() }
+                Button(AppLocalized("Cancel"), role: .cancel) {}
+            } message: { Text(AppLocalized("Choose whether to stop all delegated work or only this conversation.")) }
             .alert(AppLocalized("Scheduled Tasks Planned"), isPresented: $showScheduledStopConfirm) {
                 Button(AppLocalized("Stop All"), role: .destructive) { vm.cancel() }
                 Button(AppLocalized("Cancel"), role: .cancel) {}
@@ -7366,6 +7406,8 @@ struct MinisLegacyTranscript: View {
     @ObservedObject var vm: AIChatViewModel
     let bottomInset: CGFloat
     var readOnly = false
+    var chatSearch: ChatSearchController? = nil
+    @State private var searchNavigationGeneration = 0
     @State private var followingBottom = true
     @State private var toolDetail: MinisLegacyToolDetailTarget?
     private let bottomAnchor = "legacyTranscriptBottom"
@@ -7400,6 +7442,9 @@ struct MinisLegacyTranscript: View {
                                 detailTarget: $toolDetail
                             )
                                 .equatable()
+                                .environment(\.chatSearchHighlights, chatSearch?.highlights)
+                                .environment(\.chatSearchMessageId, message.id)
+                                .environment(\.chatSearchDimmed, message.isCompactedHistory)
                                 .rotationEffect(.degrees(180))
                                 // Native top is visual bottom. Keep 20pt
                                 // between messages, not after the newest edge.
@@ -7436,7 +7481,18 @@ struct MinisLegacyTranscript: View {
                 .onAppear {
                     followingBottom = true
                     if !vm.isNearBottom { vm.isNearBottom = true }
+                    chatSearch?.onNavigate = { hit in
+                        guard vm.messages.contains(where: { $0.id == hit.key.messageId }) else { return }
+                        followingBottom = false
+                        vm.isNearBottom = false
+                        searchNavigationGeneration += 1
+                        proxy.scrollTo(hit.key.messageId, anchor: .center)
+                    }
                 }
+                .onDisappear { chatSearch?.onNavigate = nil }
+                .simultaneousGesture(DragGesture(minimumDistance: 3).onChanged { _ in
+                    searchNavigationGeneration += 1
+                })
                 .onChange(of: vm.latestSessionAnchorRequest) { _ in
                     followingBottom = true
                     if !vm.isNearBottom { vm.isNearBottom = true }
@@ -7866,6 +7922,7 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
     private var userBubble: some View {
         if !userDisplayText.isEmpty {
             Text(userDisplayText)
+                .overlay(alignment: .bottomTrailing) { ChatSearchUserBubbleOverlay(message: message) }
                 .font(.system(size: fontSettings.scaledMessage(16.5)))
                 .foregroundStyle(message.isQueued ? ChatColors.secondaryText : ChatColors.primaryText)
                 .textSelection(.enabled)

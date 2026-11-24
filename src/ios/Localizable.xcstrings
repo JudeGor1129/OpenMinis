@@ -1,6 +1,16 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Previous question" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "上一题"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "上一題"}}}} ,
+    "Next question" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "下一题"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "下一題"}}}} ,
+    "Allow" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "允许"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "允許"}}}} ,
+    "Deny" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "拒绝"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "拒絕"}}}} ,
+    "You decide" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "由你决定"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "由你決定"}}}} ,
+    "You decide ✓" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "由你决定 ✓"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "由你決定 ✓"}}}} ,
+    "Stop running work?" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "停止正在运行的任务？"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "停止正在執行的工作？"}}}} ,
+    "Stop all sub agents" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "停止全部子代理"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "停止所有子代理"}}}} ,
+    "Stop current conversation" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "停止当前会话"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "停止目前對話"}}}} ,
+    "Choose whether to stop all delegated work or only this conversation." : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "选择停止全部委派任务，或只停止当前会话。"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "選擇停止所有委派工作，或只停止目前對話。"}}}} ,
     "Your response" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "你的回答"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "你的回答"}}}} ,
     "Send answer" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "发送回答"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "傳送回答"}}}} ,
     "Minis is waiting for your answer" : {"localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "Minis 正在等待你的回答"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "Minis 正在等待你的回答"}}}} ,

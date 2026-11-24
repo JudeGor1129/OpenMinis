@@ -7,6 +7,10 @@
 
 #import "ISHKernel.h"
 #import "CurrentRoot.h"
+// Verified against official iSH pin 0fd17a135e78b7a0cf08a4f5831217bbb76ed22f.
+int jit_control(const char *cmd, size_t len);
+size_t jit_describe(char *buf, size_t size);
+static NSString *const AOJITEnabledDefaultsKey = @"aojitEnabled";
 // [GH#175] For sizeof(sockaddr_un.sun_path) — the Darwin HOST limit that
 // iSH's unchecked sprintf in fs/sock.c writes into. Safe to include here:
 // this file does not pull in ish/fs/sock.h, so there is no clash with iSH's
@@ -27,6 +31,7 @@
 #include "ish/kernel/mm.h"
 #include <os/proc.h>
 #include <pthread.h>
+#include <sys/mman.h>
 #include <stdatomic.h>
 #include <stdlib.h>     // realpath
 #include <errno.h>
@@ -378,11 +383,36 @@ extern __thread volatile uint64_t jit_saved_pc;
 // Assembly trampoline: returns INT_JIT_CRASH via fiber_exit (defined in entry.S)
 extern void jit_crash_trampoline(void);
 
-// cpu_state field offsets (must match cpu-offsets.h)
-#define CRASH_CPU_pc 272
-#define CRASH_CPU_segfault_addr 832
-#define CRASH_CPU_segfault_was_write 840
-#define CRASH_LOCAL_jit_exit_sp 920
+// Diagnostics handle_interrupt reads after a recovered fault (defined in calls.c).
+extern __thread volatile uint64_t jit_last_host_fault;
+extern __thread volatile uint64_t jit_last_x7;
+extern __thread volatile uint64_t jit_last_x10;
+extern __thread volatile int jit_crash_count;
+
+// Native (AOT/JIT) code keeps pinned guest registers only in host registers;
+// copy them back before the block re-runs. Lives in libish_emu (jit.c) and is
+// a no-op while no native code is loaded. Weak, so a libish built without
+// -Djit still links.
+extern bool jit_crash_sync(void *ucontext) __attribute__((weak_import));
+
+// [T-jit-recovery-offsets] Field offsets come from the cpu-offsets.h that meson
+// generated for the SAME libish build this app links (build_ish.sh copies it
+// next to the other ish headers). They used to be hand-copied literals
+//   pc 272, segfault_addr 832, segfault_was_write 840, jit_exit_sp 920
+// while the iOS build's structs say 272 / 840 / 848 / 952. deps/ish/main.c
+// fixed the same drift for the CLI on 2026-08-22 (f7b0a737); this copy was
+// missed. The damaging one is jit_exit_sp: recovery restored SP from the
+// wrong slot, `fiber_exit + 4` (`ldr lr, [sp, #0x60]`) faulted on it, and
+// with SP pointing nowhere XNU could not push the second signal frame, so it
+// killed the whole process with SIGILL ("trashed its stack"). That is
+// EXC_CRASH (SIGILL) attributed to the idle main thread, with a guest thread
+// parked at fiber_exit+4 <- handle_miss_* (1.15 build 4, 2026-09-29 17:20 and
+// 17:22, both during `ldid`).
+#include "ish/cpu-offsets.h"
+#define CRASH_CPU_pc                  CPU_pc
+#define CRASH_CPU_segfault_addr       CPU_segfault_addr
+#define CRASH_CPU_segfault_was_write  CPU_segfault_was_write
+#define CRASH_LOCAL_jit_exit_sp       LOCAL_jit_exit_sp
 
 /// Handles SIGSEGV/SIGBUS from JIT code (stale TLB pointers from concurrent CoW).
 /// Uses ucontext PC manipulation to redirect to jit_crash_trampoline.
@@ -394,34 +424,59 @@ static void jit_crash_handler(int sig, siginfo_t *info, void *ctx) {
         // _cpu is in x1 — pointer to cpu_state within fiber_frame
         uint64_t cpu_ptr = uc->uc_mcontext->__ss.__x[1];
 
-        // Reconstruct guest segfault_addr from registers
-        uint64_t x7 = uc->uc_mcontext->__ss.__x[7];
-        uint64_t x10 = uc->uc_mcontext->__ss.__x[10];
-        uint64_t guest_addr = (x7 - x10) & 0xffffffffffffULL;
-
-        // Determine read/write from host ESR
-        uint64_t esr = uc->uc_mcontext->__es.__esr;
-        int was_write = (esr & 0x40) != 0;
-
-        // Write crash info directly to cpu_state
-        *(uint64_t *)(cpu_ptr + CRASH_CPU_segfault_addr) = guest_addr;
-        *(int *)(cpu_ptr + CRASH_CPU_segfault_was_write) = was_write;
-        *(uint64_t *)(cpu_ptr + CRASH_CPU_pc) = (uint64_t)jit_saved_pc;
-
-        // Restore SP to the value saved by fiber_enter
+        // [T-jit-recovery-offsets] Never resume on a stack pointer that is not
+        // this thread's: a bad one faults again with nowhere to put the signal
+        // frame, and XNU then kills the WHOLE app (SIGILL). fiber_enter saved
+        // exit_sp above the frames we are unwinding, so it must be 16-byte
+        // aligned and lie in (current sp, top of this thread's stack]. If not,
+        // fall through and park only this guest thread (below).
         uint64_t exit_sp = *(uint64_t *)(cpu_ptr + CRASH_LOCAL_jit_exit_sp);
-        uc->uc_mcontext->__ss.__sp = exit_sp;
+        uint64_t cur_sp = uc->uc_mcontext->__ss.__sp;
+        uint64_t stack_top = (uint64_t)pthread_get_stackaddr_np(pthread_self());
+        bool sp_ok = exit_sp != 0 && (exit_sp & 0xf) == 0
+            && exit_sp > cur_sp && exit_sp <= stack_top;
+        if (sp_ok) {
+            if (jit_crash_sync) jit_crash_sync(uc);
 
-        // Redirect execution to crash trampoline
-        uc->uc_mcontext->__ss.__pc = (uint64_t)jit_crash_trampoline;
+            // Reconstruct guest segfault_addr from registers
+            uint64_t x7 = uc->uc_mcontext->__ss.__x[7];
+            uint64_t x10 = uc->uc_mcontext->__ss.__x[10];
+            uint64_t guest_addr = (x7 - x10) & 0xffffffffffffULL;
 
-        // Unblock signal so it can fire again
-        sigset_t unblock;
-        sigemptyset(&unblock);
-        sigaddset(&unblock, sig);
-        sigprocmask(SIG_UNBLOCK, &unblock, NULL);
+            jit_last_host_fault = (uint64_t)info->si_addr;
+            jit_last_x7 = x7;
+            jit_last_x10 = x10;
+            jit_crash_count++;
 
-        return;
+            // Determine read/write from host ESR
+            uint64_t esr = uc->uc_mcontext->__es.__esr;
+            bool was_write = (esr & 0x40) != 0;
+
+            // Write crash info directly to cpu_state. segfault_was_write is a
+            // `bool`: store 1 byte (the gadgets use strb), not an int.
+            *(uint64_t *)(cpu_ptr + CRASH_CPU_segfault_addr) = guest_addr;
+            *(bool *)(cpu_ptr + CRASH_CPU_segfault_was_write) = was_write;
+            *(uint64_t *)(cpu_ptr + CRASH_CPU_pc) = (uint64_t)jit_saved_pc;
+
+            // Restore SP to the value saved by fiber_enter
+            uc->uc_mcontext->__ss.__sp = exit_sp;
+
+            // Redirect execution to crash trampoline
+            uc->uc_mcontext->__ss.__pc = (uint64_t)jit_crash_trampoline;
+
+            // Unblock signal so it can fire again
+            sigset_t unblock;
+            sigemptyset(&unblock);
+            sigaddset(&unblock, sig);
+            sigprocmask(SIG_UNBLOCK, &unblock, NULL);
+
+            return;
+        }
+        char msg[160];
+        int mlen = snprintf(msg, sizeof(msg),
+            "\n=== iSH JIT recovery refused: exit_sp 0x%llx outside (sp 0x%llx, top 0x%llx] ===\n",
+            (unsigned long long)exit_sp, (unsigned long long)cur_sp, (unsigned long long)stack_top);
+        write(STDERR_FILENO, msg, mlen);
     }
 #endif
     // Check if this is an iSH guest thread by testing the thread-local `in_jit` variable.
@@ -554,10 +609,42 @@ static void embedded_die_handler(const char *msg) {
     __builtin_unreachable();
 }
 
+// BEGIN JitAltstack
+/// [T-crash-quickaction-tlv] A signal altstack in its own mapping with a
+/// PROT_NONE guard page on each side. It used to be a 128 KB static array in
+/// the app's __bss, between the TLV descriptors and Swift's once tokens /
+/// metadata caches; anything running past either end of it (a handler or an
+/// adopting runtime using more than it was given) silently overwrote those
+/// words. Now an overrun faults at the guard page with its own address.
+/// NULL when the mapping fails: no altstack, signals run on the thread stack.
+static void *jit_altstack_alloc(size_t size) {
+    size_t page = (size_t)getpagesize();
+    size = (size + page - 1) & ~(page - 1);
+    size_t total = size + 2 * page;
+    char *base = mmap(NULL, total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (base == MAP_FAILED) return NULL;
+    if (mprotect(base, page, PROT_NONE) != 0 || mprotect(base + page + size, page, PROT_NONE) != 0) {
+        munmap(base, total);
+        return NULL;
+    }
+    return base + page;
+}
+// END JitAltstack
+
 static void install_jit_crash_handler(void) {
-    static char altstack[SIGSTKSZ];
-    stack_t ss = {.ss_sp = altstack, .ss_size = SIGSTKSZ};
-    sigaltstack(&ss, NULL);
+    // [T-crash-quickaction-tlv] Each thread that installs gets its OWN guarded
+    // altstack (a static one was shared by every installing thread). Keep an
+    // altstack this thread already has from an earlier boot.
+    stack_t old;
+    if (sigaltstack(NULL, &old) != 0 || (old.ss_flags & SS_DISABLE) || old.ss_sp == NULL) {
+        void *altstack = jit_altstack_alloc(SIGSTKSZ);
+        if (altstack != NULL) {
+            stack_t ss = {.ss_sp = altstack, .ss_size = SIGSTKSZ};
+            sigaltstack(&ss, NULL);
+        } else {
+            NSLog(@"ISHKernel: guarded signal altstack mmap failed - crash signals run on the thread stack");
+        }
+    }
 
     struct sigaction sa = {0};
     sa.sa_sigaction = jit_crash_handler;
@@ -661,6 +748,39 @@ static void handle_process_exit(struct task *task, int code) {
     ISHCommandCompletionCallback _commandCompletionCallback;
     NSTimer *_commandTimeoutTimer;
     dispatch_queue_t _commandQueue;
+}
+
+#pragma mark - AOJIT [T-ios-aojit]
+
++ (BOOL)isAOJITEnabled {
+    // [T-aojit-default-on] On unless the user switched it off: an absent key
+    // (fresh install, or the setting never touched) reads YES, while a value
+    // the user stored, on or off, is kept as is.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    if ([defaults objectForKey:AOJITEnabledDefaultsKey] == nil) return YES;
+    return [defaults boolForKey:AOJITEnabledDefaultsKey];
+}
+
++ (void)setAOJITEnabled:(BOOL)enabled {
+    [NSUserDefaults.standardUserDefaults setBool:enabled forKey:AOJITEnabledDefaultsKey];
+    [self applyAOJIT];
+}
+
++ (void)applyAOJIT {
+    BOOL on = [self isAOJITEnabled];
+    const char *cmd = on ? "on" : "off";
+    int rc = jit_control(cmd, strlen(cmd));
+    NSLog(@"ISHKernel: [AOJIT] %s (rc=%d)", cmd, rc);
+}
+
++ (NSString *)aojitStatusReport {
+    size_t size = 16384;
+    char *buf = malloc(size);
+    if (buf == NULL) return @"";
+    jit_describe(buf, size);
+    NSString *text = [NSString stringWithUTF8String:buf] ?: @"";
+    free(buf);
+    return text;
 }
 
 + (ISHKernel *)shared {
@@ -812,6 +932,9 @@ static void handle_process_exit(struct task *task, int code) {
     } else {
         NSLog(@"ISHKernel: realpath(_dataPath) failed (errno=%d), bind-mount cycle guard disabled", errno);
     }
+
+    // Apply the persisted setting before any guest process (unset = on).
+    [ISHKernel applyAOJIT];
 
     // 2. Become init process (PID 1)
     err = become_first_process();
@@ -1262,20 +1385,6 @@ static void handle_process_exit(struct task *task, int code) {
             memcpy(argv + pos, exec_path, len);
             pos += len;
             exec_argc++;
-            // Inject V8 flags to work around scope corruption in emulation
-            static const char *v8_flags[] = {
-                "--jitless",
-                "--no-lazy",
-                "--no-expose-wasm",
-                "--max-old-space-size=512",
-            };
-            for (int fi = 0; fi < (int)(sizeof(v8_flags)/sizeof(v8_flags[0])); fi++) {
-                len = strlen(v8_flags[fi]) + 1;
-                if (pos + len >= sizeof(argv)) break;
-                memcpy(argv + pos, v8_flags[fi], len);
-                pos += len;
-                exec_argc++;
-            }
             // Copy remaining args (skip argv[0])
             for (NSUInteger ai = 1; ai < commandCopy.count; ai++) {
                 const char *carg = commandCopy[ai].UTF8String;

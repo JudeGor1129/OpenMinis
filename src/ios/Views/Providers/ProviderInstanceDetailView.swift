@@ -30,6 +30,10 @@ struct ProviderInstanceDetailView: View {
     @State private var editingModelEntry: ModelEntry?
     @State private var pendingDeleteModelEntry: ModelEntry?
     @State private var showKeyRevealed = false
+    @State private var quotaConsoleURL: URL?
+    @State private var responseIdleSeconds = ResponseIdleTimeoutSetting.defaultSeconds
+    @State private var responseIdleIsCustom = false
+    @State private var responseIdleCustomText = ""
 
     private var instance: ProviderInstance? {
         store.instance(for: instanceId)
@@ -53,6 +57,14 @@ struct ProviderInstanceDetailView: View {
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                 }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { quotaConsoleURL != nil },
+            set: { if !$0 { quotaConsoleURL = nil } }
+        )) {
+            if let url = quotaConsoleURL {
+                MinisLinkPreviewView(url: url, browserPool: nil)
             }
         }
         .sheet(item: $thinkingEditorRequest) { req in
@@ -289,6 +301,14 @@ struct ProviderInstanceDetailView: View {
             if instance.supportsImageEndpointSetting {
                 imageEndpointSection(instance)
             }
+
+            // MARK: Response idle timeout — compatible Chat API only, never Codex/Responses.
+            if ResponseIdleTimeoutSetting.supports(instance) {
+                responseIdleTimeoutSection(instance)
+            }
+
+            // MARK: Upstream quota (not Minis token telemetry)
+            ProviderQuotaSection(instance: instance, consoleURL: $quotaConsoleURL)
 
             // MARK: Manual OAuth Token (for OAuth instances with manual token)
             //
@@ -709,6 +729,74 @@ struct ProviderInstanceDetailView: View {
         var updated = instance
         updated.customUserAgent = trimmed.isEmpty ? nil : trimmed
         store.updateInstance(updated)
+    }
+
+    // MARK: - Response idle timeout (official 1.15, device-local)
+
+    private static func responseIdleLabel(_ seconds: Int) -> String {
+        switch seconds {
+        case 120: return AppLocalized("2 minutes (default)")
+        case 300: return AppLocalized("5 minutes")
+        case 600: return AppLocalized("10 minutes")
+        case 1800: return AppLocalized("30 minutes")
+        case 3600: return AppLocalized("60 minutes")
+        default: return AppLocalized("\(seconds) seconds")
+        }
+    }
+
+    private static let responseIdleCustomTag = -1
+
+    private func responseIdleTimeoutSection(_ instance: ProviderInstance) -> some View {
+        Section {
+            Picker(AppLocalized("Response idle timeout"), selection: Binding(
+                get: { responseIdleIsCustom ? Self.responseIdleCustomTag : responseIdleSeconds },
+                set: { picked in
+                    if picked == Self.responseIdleCustomTag {
+                        responseIdleIsCustom = true
+                        responseIdleCustomText = String(responseIdleSeconds)
+                    } else {
+                        responseIdleIsCustom = false
+                        responseIdleSeconds = picked
+                        ResponseIdleTimeoutSetting.set(picked, forInstanceId: instance.id)
+                    }
+                })) {
+                ForEach(ResponseIdleTimeoutSetting.presets, id: \.self) { seconds in
+                    Text(Self.responseIdleLabel(seconds)).tag(seconds)
+                }
+                Text(AppLocalized("Custom…")).tag(Self.responseIdleCustomTag)
+            }
+            if responseIdleIsCustom {
+                HStack {
+                    Text(AppLocalized("Seconds (30–3600)"))
+                    Spacer()
+                    TextField("120", text: $responseIdleCustomText)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 100)
+                        .onSubmit { saveCustomResponseIdle(instance) }
+                        .onDisappear { saveCustomResponseIdle(instance) }
+                        .onChange(of: responseIdleCustomText) { _ in saveCustomResponseIdle(instance) }
+                }
+            }
+        } header: {
+            Text(AppLocalized("Response idle timeout"))
+        } footer: {
+            Text(AppLocalized("How long to wait for the first response, and between pieces of a response, before treating the connection as stalled and retrying. This is not a limit on total generation time: a reply that keeps arriving never times out. Raise it for a local model that needs minutes to process a long context. With a longer value, a connection that really died also takes that long to be noticed. Saved on this device only."))
+        }
+        .onAppear {
+            let stored = ResponseIdleTimeoutSetting.seconds(forInstanceId: instance.id)
+            responseIdleSeconds = stored
+            responseIdleIsCustom = !ResponseIdleTimeoutSetting.presets.contains(stored)
+            responseIdleCustomText = String(stored)
+        }
+    }
+
+    private func saveCustomResponseIdle(_ instance: ProviderInstance) {
+        guard responseIdleIsCustom,
+              let typed = Int(responseIdleCustomText.trimmingCharacters(in: .whitespaces)),
+              typed >= ResponseIdleTimeoutSetting.minSeconds, typed <= ResponseIdleTimeoutSetting.maxSeconds else { return }
+        responseIdleSeconds = typed
+        ResponseIdleTimeoutSetting.set(typed, forInstanceId: instance.id)
     }
 
     // MARK: - Image Generation Endpoint

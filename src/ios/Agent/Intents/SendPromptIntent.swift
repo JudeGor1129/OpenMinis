@@ -394,7 +394,7 @@ enum ShortcutNotification {
             actions: [],
             intentIdentifiers: []
         )
-        center.setNotificationCategories([category])
+        NotificationCategoryCenter.shared.register([category])
 
         let content = UNMutableNotificationContent()
         content.title = title
@@ -490,9 +490,10 @@ final class ShortcutNotificationDelegate: NSObject, UNUserNotificationCenterDele
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        if let questionId = userInfo["userQuestionId"] as? String {
+        if let questionId = userInfo["userAskRequestId"] as? String {
             DispatchQueue.main.async {
-                if MinisUserQuestionPresenter.shared.handleNotificationTap(questionId) { return }
+                _ = UserAskCenter.shared.handleNotificationResponse(response)
+                if MinisUserAskSheetPresenter.shared.handleNotificationTap(questionId) { return }
                 // Process restarted / question ended: navigate, never replay it.
                 if let sessionId = userInfo["sessionId"] as? String, !sessionId.isEmpty {
                     NotificationNavigationStore.shared.setPending(sessionId)
@@ -538,7 +539,7 @@ final class ShortcutNotificationDelegate: NSObject, UNUserNotificationCenterDele
     ) {
         // A background add can arrive after foregrounding. The existing sheet
         // is the reminder here; all unrelated notifications keep their behavior.
-        if notification.request.content.userInfo["userQuestionId"] != nil {
+        if notification.request.content.userInfo["userAskRequestId"] != nil {
             completionHandler([])
             return
         }

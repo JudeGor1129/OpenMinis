@@ -13,6 +13,13 @@ private let logger = AppLogger(category: "AIChatVM")
 
 @MainActor
 final class AIChatViewModel: ObservableObject, SpeechControlling {
+    var userAskExposedThisRun: Bool?
+    var userAskDeferredThisRun: Bool?
+    var currentUserAskAssistantRaw: RawMessage?
+    var currentUserAskBatchToolIds: [String] = []
+    var programmaticTurnOrigin: ProgrammaticPromptOrigin?
+    var programmaticQueuedOrigins: [UUID: ProgrammaticPromptOrigin] = [:]
+
 
     /// Maximum characters returned in a single tool result to the model
     static let kMaxToolResultChars = 15000
@@ -2943,6 +2950,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             return
         }
 
+        if usingComposer {
+            supersedePendingUserAsk()
+            programmaticTurnOrigin = nil
+        }
         // Don't stop TTS here — let the previous reply finish playing. The stream
         // handler will clear the queue on the FIRST textDelta of the new reply, so
         // the old audio plays until actual new content starts arriving.
@@ -4848,6 +4859,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     }
 
     func cancel() {
+        cancelPendingUserAsk()
         let lastBlocks = (messages.last?.role == .assistant) ? messages.last!.blocks.count : -1
         let lastRole = messages.last.map { $0.role == .assistant ? "assistant" : "user" } ?? "nil"
         logger.info("⏹️ cancel() START session=\(self.sessionId ?? "nil") isProcessing=\(self.isProcessing) lastRole=\(lastRole) lastBlocks=\(lastBlocks) currentTask=\(self.currentTask != nil)")
@@ -5050,6 +5062,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // Silent iff nothing a user typed is in this batch.
             let batch = self.promptQueue
             self.programmaticSilentTurn = !batch.isEmpty && batch.allSatisfy { self.silentQueuedPromptIds.contains($0.id) }
+            self.programmaticTurnOrigin = batch.compactMap { self.programmaticQueuedOrigins.removeValue(forKey: $0.id) }.first
             self.silentQueuedPromptIds.subtract(batch.map(\.id))
             self.isProcessing = true
             self.beginBackgroundProcessing()
@@ -5904,6 +5917,14 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     }
 
     private func runAgentLoopCore(resumingAt existingMsgIdx: Int? = nil, committedBlocks: Int? = nil) async throws {
+        let exposure = computeUserAskExposure()
+        userAskExposedThisRun = exposure.exposed
+        userAskDeferredThisRun = exposure.deferred
+        defer {
+            userAskExposedThisRun = nil; userAskDeferredThisRun = nil
+            currentUserAskAssistantRaw = nil; currentUserAskBatchToolIds = []
+            programmaticTurnOrigin = nil
+        }
         // REPRO-DIAG(2026-05-16): bump global round counter and emit a clear
         // BEGIN/END marker so the user can grep `ROUND \d+` to slice the log
         // by attempt. A "round" = one runAgentLoop invocation, which is
@@ -7466,6 +7487,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // Build assistant RawMessage now but defer DB write until tool results
             // are ready, so both can be persisted in a single SQLite transaction.
             let deferredAssistantRaw = await buildRawMessage(assistantMessage, thoughtSignatures: sigMap)
+            currentUserAskAssistantRaw = deferredAssistantRaw
+            currentUserAskBatchToolIds = toolEntries.map(\.id)
             // Phase B: write the DB id back into agentHistory immediately — even though
             // we defer the actual appendMessages to batch with the tool results below,
             // the id is deterministic and compact lookups rely on it.
@@ -7643,6 +7666,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 if let assistantRaw = deferredAssistantRaw { batch.append(assistantRaw) }
                 batch.append(toolResultRaw)
                 await ChatStore.shared.appendMessages(batch)
+                await UserAskCenter.shared.acknowledgeBatch(toolUseIds: currentUserAskBatchToolIds)
                 // Phase B: write the DB id back into agentHistory entries so compact
                 // can resolve boundaries by id.
                 if toolResultAgentIdx < agentHistory.count {

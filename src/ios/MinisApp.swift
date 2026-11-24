@@ -365,6 +365,9 @@ struct MinisApp: App {
                     ConfigRegistry.shared.registerBuiltinsIfNeeded()
                     // Register notification delegate for shortcut task tap-to-open
                     ShortcutNotificationDelegate.shared.register()
+                    _ = MinisUserAskSheetPresenter.shared
+                    QuotaStore.shared.start()
+                    Task { @MainActor in await UserAskCenter.shared.recoverAll() }
                     // Register App Shortcuts with the system so Siri and Spotlight discover them
                     if #available(iOS 17.0, *) {
                         MinisShortcutsProvider.updateAppShortcutParameters()
@@ -576,7 +579,6 @@ struct MinisApp: App {
             Task { @MainActor in
                 await Task.yield()
                 guard scenePhase == .active else { return }
-                VoiceOutputPlayer.shared.startPetSpeechBridge()
 
                 ViewModelCache.shared.resumeAllStreamingUI()
 
@@ -729,10 +731,6 @@ struct MinisApp: App {
 
         case .background:
             backgroundEntryDate = Date()
-            Task { @MainActor in
-                await Task.yield()
-                VoiceOutputPlayer.shared.startPetSpeechBridge()
-            }
             let remaining = UIApplication.shared.backgroundTimeRemaining
             lifecycleLog.info("[Lifecycle] → Background (remaining: \(Self.formatTimeRemaining(remaining)))")
             CrashReporter.shared.updateMarkerPhase(phase: "background")

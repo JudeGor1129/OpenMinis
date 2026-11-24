@@ -180,7 +180,7 @@ final class ConfigConfirmationGate: ObservableObject {
 
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
-        center.setNotificationCategories([
+        NotificationCategoryCenter.shared.register([
             UNNotificationCategory(identifier: Self.notifyCategoryId, actions: [], intentIdentifiers: [])
         ])
 

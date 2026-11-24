@@ -603,6 +603,32 @@
 		RCL000119 /* BackupHistoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000219 /* BackupHistoryDetailView.swift */; };
 		RCL000120 /* BackupCategoryIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000220 /* BackupCategoryIcon.swift */; };
 		RCL000121 /* BackupHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCL000221 /* BackupHUD.swift */; };
+		4BCDB5605D54D6BD07729431 /* AIChatViewModel+UserAsk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AD00ACF657D13C41364F721 /* AIChatViewModel+UserAsk.swift */; };
+		4CA551D678ECB1F4C425E4F8 /* AOJITShellStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = E67F664FFB523BBC35F0366C /* AOJITShellStats.swift */; };
+		8997771B07410691C05660AE /* UserAskCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B965F2161E08692EA420E5A4 /* UserAskCenter.swift */; };
+		2B6F4E2204082D7DC6E72E4C /* UserAskCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2648C7C290190684513C2571 /* UserAskCore.swift */; };
+		E9E158B54E94F15DB3FC409B /* UserAskSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E9B29D4F3786B4E7CEB281 /* UserAskSettings.swift */; };
+		B39178AA177CA97FD690B64F /* ChatSearchController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A380F76F12449425FEB1DEB9 /* ChatSearchController.swift */; };
+		8D6451A8915BBCEA55C0F95D /* ChatSearchEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1367BD6E072381A82AE0AB5E /* ChatSearchEngine.swift */; };
+		18962CEC0DAE596809C0F26A /* ChatSearchHighlights.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF35E6D42603740A8A3923DD /* ChatSearchHighlights.swift */; };
+		FCD67D6A293FD5AE119CC328 /* ChatSearchMarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFB5DE417E03CBB9572C457 /* ChatSearchMarkdownText.swift */; };
+		C2349DD4639EF4FDF0366340 /* ChatSearchUnits.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1CF940E5386B23AC2BB39C /* ChatSearchUnits.swift */; };
+		4A1B7937F1AFD5627EAE7AED /* QuotaAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = D97AB86482307F9EC27A06D4 /* QuotaAdapters.swift */; };
+		7103AF24D3954818C82A67A4 /* QuotaModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 185F49E25EB894024AE20DE2 /* QuotaModels.swift */; };
+		0E044EB2F242BD303C4F22D4 /* QuotaPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F84C80CF395CCBD626BD922 /* QuotaPersistence.swift */; };
+		BE8A58362210CF3428D5D7FC /* QuotaRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74D8F7F90486CF37F954436 /* QuotaRules.swift */; };
+		522695D6E0AD271A7A698B90 /* QuotaStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E78B797C52DBF1DC431EDC3 /* QuotaStore.swift */; };
+		FF6E57EBCE5EDE1E7D32EEEB /* ResponseIdleTimeoutSetting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FB92A8F0D40FB8D6488ED04 /* ResponseIdleTimeoutSetting.swift */; };
+		4DCB57942CE6E07F31B5461C /* NotificationCategoryCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A816EC61E68F4021D714B89E /* NotificationCategoryCenter.swift */; };
+		6C1222B37CF13EB1FF95D5F6 /* ChatExportRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86B03C051269294CFFC97649 /* ChatExportRenderer.swift */; };
+		922F8A11319095653A33B9BE /* ChatShareModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A370977E8E4CC0E383F1079 /* ChatShareModel.swift */; };
+		5236BCD111F7BA94549D0E3A /* ChatShareSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18E04B9938C549D704B9B1B0 /* ChatShareSelectionView.swift */; };
+		9BF18B1A9C123A636521C73B /* ProviderQuotaSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD01A0A8874DE916903828A /* ProviderQuotaSection.swift */; };
+		2098F5DFEF1ED4E3F5DE4D49 /* QuotaDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23C8C062EA6A750932A1BD4 /* QuotaDetailSheet.swift */; };
+		775BD250CD58762D6806600A /* QuotaPickerHints.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0827AEED0CC495CD10558F39 /* QuotaPickerHints.swift */; };
+		AF33E6343034F2870B3B8008 /* AOJITSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75E48B66950F6BA245CC4ED7 /* AOJITSettingsView.swift */; };
+		B28755BC4F980D40888A4F1B /* AOJITRuntimeStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF7F88AB4A4EDDEE24F836AC /* AOJITRuntimeStatus.swift */; };
+		7BE9C2CF56E63D5014D697FE /* AOJITRestore in Resources */ = {isa = PBXBuildFile; fileRef = 8FD907D2C52452223B5F086F /* AOJITRestore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1225,7 +1251,7 @@
 		E5T00001B /* UserMessageEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserMessageEntity.swift; sourceTree = "<group>"; };
 		E5T0000A2 /* AskMinisIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskMinisIntent.swift; sourceTree = "<group>"; };
 		E5TLC0002 /* ThinkingLevelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingLevelCatalog.swift; sourceTree = "<group>"; };
-		E5UQ00002 /* UserQuestionPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserQuestionPresenter.swift; sourceTree = "<group>"; };
+		E5UQ00002 /* UserQuestionPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/Settings/UserQuestionPresenter.swift"; sourceTree = "<group>"; };
 		E5TLS0011 /* ToolsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolsSettingsView.swift; sourceTree = "<group>"; };
 		E5TRC002 /* ThinkingRuleCoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ThinkingRuleCoding.swift; path = Thinking/ThinkingRuleCoding.swift; sourceTree = "<group>"; };
 		E5TRC0020 /* ThinkingRulesCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ThinkingRulesCollection.swift; path = Config/Collections/ThinkingRulesCollection.swift; sourceTree = "<group>"; };
@@ -1372,6 +1398,32 @@
 		RCL000219 /* BackupHistoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHistoryDetailView.swift; sourceTree = "<group>"; };
 		RCL000220 /* BackupCategoryIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupCategoryIcon.swift; sourceTree = "<group>"; };
 		RCL000221 /* BackupHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupHUD.swift; sourceTree = "<group>"; };
+		5AD00ACF657D13C41364F721 /* AIChatViewModel+UserAsk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Agent/Chat/AIChatViewModel+UserAsk.swift"; sourceTree = "<group>"; };
+		E67F664FFB523BBC35F0366C /* AOJITShellStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Agent/Chat/AOJITShellStats.swift"; sourceTree = "<group>"; };
+		B965F2161E08692EA420E5A4 /* UserAskCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Agent/Chat/UserAskCenter.swift"; sourceTree = "<group>"; };
+		2648C7C290190684513C2571 /* UserAskCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Agent/Chat/UserAskCore.swift"; sourceTree = "<group>"; };
+		83E9B29D4F3786B4E7CEB281 /* UserAskSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Agent/Chat/UserAskSettings.swift"; sourceTree = "<group>"; };
+		A380F76F12449425FEB1DEB9 /* ChatSearchController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Agent/MessageList/CollectionViewMessageListV3/Search/ChatSearchController.swift"; sourceTree = "<group>"; };
+		1367BD6E072381A82AE0AB5E /* ChatSearchEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Agent/MessageList/CollectionViewMessageListV3/Search/ChatSearchEngine.swift"; sourceTree = "<group>"; };
+		CF35E6D42603740A8A3923DD /* ChatSearchHighlights.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Agent/MessageList/CollectionViewMessageListV3/Search/ChatSearchHighlights.swift"; sourceTree = "<group>"; };
+		4FFB5DE417E03CBB9572C457 /* ChatSearchMarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Agent/MessageList/CollectionViewMessageListV3/Search/ChatSearchMarkdownText.swift"; sourceTree = "<group>"; };
+		AE1CF940E5386B23AC2BB39C /* ChatSearchUnits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Agent/MessageList/CollectionViewMessageListV3/Search/ChatSearchUnits.swift"; sourceTree = "<group>"; };
+		D97AB86482307F9EC27A06D4 /* QuotaAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Providers/Quota/QuotaAdapters.swift"; sourceTree = "<group>"; };
+		185F49E25EB894024AE20DE2 /* QuotaModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Providers/Quota/QuotaModels.swift"; sourceTree = "<group>"; };
+		0F84C80CF395CCBD626BD922 /* QuotaPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Providers/Quota/QuotaPersistence.swift"; sourceTree = "<group>"; };
+		B74D8F7F90486CF37F954436 /* QuotaRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Providers/Quota/QuotaRules.swift"; sourceTree = "<group>"; };
+		6E78B797C52DBF1DC431EDC3 /* QuotaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Providers/Quota/QuotaStore.swift"; sourceTree = "<group>"; };
+		8FB92A8F0D40FB8D6488ED04 /* ResponseIdleTimeoutSetting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Providers/ResponseIdleTimeoutSetting.swift"; sourceTree = "<group>"; };
+		A816EC61E68F4021D714B89E /* NotificationCategoryCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Shared/NotificationCategoryCenter.swift"; sourceTree = "<group>"; };
+		86B03C051269294CFFC97649 /* ChatExportRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/Chat/ChatExportRenderer.swift"; sourceTree = "<group>"; };
+		6A370977E8E4CC0E383F1079 /* ChatShareModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/Chat/ChatShareModel.swift"; sourceTree = "<group>"; };
+		18E04B9938C549D704B9B1B0 /* ChatShareSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/Chat/ChatShareSelectionView.swift"; sourceTree = "<group>"; };
+		7BD01A0A8874DE916903828A /* ProviderQuotaSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/Providers/ProviderQuotaSection.swift"; sourceTree = "<group>"; };
+		E23C8C062EA6A750932A1BD4 /* QuotaDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/Providers/QuotaDetailSheet.swift"; sourceTree = "<group>"; };
+		0827AEED0CC495CD10558F39 /* QuotaPickerHints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/Providers/QuotaPickerHints.swift"; sourceTree = "<group>"; };
+		75E48B66950F6BA245CC4ED7 /* AOJITSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Views/Rootfs/AOJITSettingsView.swift"; sourceTree = "<group>"; };
+		CF7F88AB4A4EDDEE24F836AC /* AOJITRuntimeStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "iSH/AOJITRuntimeStatus.swift"; sourceTree = "<group>"; };
+		8FD907D2C52452223B5F086F /* AOJITRestore */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AOJITRestore; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -1389,6 +1441,9 @@
 				Standalone/SoulIconSourceTests.swift,
 				Standalone/UsageAttributionClobberTests.swift,
 				Standalone/VADStartRollbackTests.swift,
+				Standalone/ChatSearch349Cases.swift,
+				Standalone/AOJITTests.swift,
+				Standalone/AOJITShellStatsTests.swift,
 				ThinkingLevelTests.swift,
 			);
 			target = BB1000070F700000000000AA /* MinisTests */;
@@ -1633,6 +1688,8 @@
 		E51000031 /* Minis */ = {
 			isa = PBXGroup;
 			children = (
+				187FFD002076DD41E0B1D1E9 /* Upgrade115 */,
+				8FD907D2C52452223B5F086F /* AOJITRestore */,
 				D0A173000000000000000020 /* OMToolchain */,
 				E51000011 /* MinisApp.swift */,
 				E5QA0102 /* AppDelegate.swift */,
@@ -2513,7 +2570,6 @@
 				E5SOUL102 /* SoulSettingsView.swift */,
 				E5SCH0014 /* HelperSettingsView.swift */,
 				E5TLS0011 /* ToolsSettingsView.swift */,
-				E5UQ00002 /* UserQuestionPresenter.swift */,
 				E5SYS0012 /* SystemAccessSettingsView.swift */,
 				E5LOCK102 /* FaceIDProtectionSettingsView.swift */,
 				E5LOCK103 /* AppLockOverlay.swift */,
@@ -2596,6 +2652,38 @@
 				F1VMCP04 /* SessionMCPsView.swift */,
 			);
 			path = MCP;
+			sourceTree = "<group>";
+		};
+		187FFD002076DD41E0B1D1E9 /* Upgrade115 */ = {
+			isa = PBXGroup;
+			children = (
+				5AD00ACF657D13C41364F721 /* AIChatViewModel+UserAsk.swift */,
+				E67F664FFB523BBC35F0366C /* AOJITShellStats.swift */,
+				B965F2161E08692EA420E5A4 /* UserAskCenter.swift */,
+				2648C7C290190684513C2571 /* UserAskCore.swift */,
+				83E9B29D4F3786B4E7CEB281 /* UserAskSettings.swift */,
+				A380F76F12449425FEB1DEB9 /* ChatSearchController.swift */,
+				1367BD6E072381A82AE0AB5E /* ChatSearchEngine.swift */,
+				CF35E6D42603740A8A3923DD /* ChatSearchHighlights.swift */,
+				4FFB5DE417E03CBB9572C457 /* ChatSearchMarkdownText.swift */,
+				AE1CF940E5386B23AC2BB39C /* ChatSearchUnits.swift */,
+				D97AB86482307F9EC27A06D4 /* QuotaAdapters.swift */,
+				185F49E25EB894024AE20DE2 /* QuotaModels.swift */,
+				0F84C80CF395CCBD626BD922 /* QuotaPersistence.swift */,
+				B74D8F7F90486CF37F954436 /* QuotaRules.swift */,
+				6E78B797C52DBF1DC431EDC3 /* QuotaStore.swift */,
+				8FB92A8F0D40FB8D6488ED04 /* ResponseIdleTimeoutSetting.swift */,
+				A816EC61E68F4021D714B89E /* NotificationCategoryCenter.swift */,
+				86B03C051269294CFFC97649 /* ChatExportRenderer.swift */,
+				6A370977E8E4CC0E383F1079 /* ChatShareModel.swift */,
+				18E04B9938C549D704B9B1B0 /* ChatShareSelectionView.swift */,
+				7BD01A0A8874DE916903828A /* ProviderQuotaSection.swift */,
+				E23C8C062EA6A750932A1BD4 /* QuotaDetailSheet.swift */,
+				0827AEED0CC495CD10558F39 /* QuotaPickerHints.swift */,
+				75E48B66950F6BA245CC4ED7 /* AOJITSettingsView.swift */,
+				CF7F88AB4A4EDDEE24F836AC /* AOJITRuntimeStatus.swift */,
+			);
+			name = Upgrade115;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -2823,6 +2911,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7BE9C2CF56E63D5014D697FE /* AOJITRestore in Resources */,
 				D0A173000000000000000002 /* clang-resource in Resources */,
 				E51000004 /* Preview Assets.xcassets in Resources */,
 				AA26CCB72F31067900AECF2D /* alpine-rootfs.zip in Resources */,
@@ -3088,6 +3177,31 @@
 				E5SCH0004 /* HelperSettingsView.swift in Sources */,
 				E5TLS0001 /* ToolsSettingsView.swift in Sources */,
 				E5UQ00001 /* UserQuestionPresenter.swift in Sources */,
+				4BCDB5605D54D6BD07729431 /* AIChatViewModel+UserAsk.swift in Sources */,
+				4CA551D678ECB1F4C425E4F8 /* AOJITShellStats.swift in Sources */,
+				8997771B07410691C05660AE /* UserAskCenter.swift in Sources */,
+				2B6F4E2204082D7DC6E72E4C /* UserAskCore.swift in Sources */,
+				E9E158B54E94F15DB3FC409B /* UserAskSettings.swift in Sources */,
+				B39178AA177CA97FD690B64F /* ChatSearchController.swift in Sources */,
+				8D6451A8915BBCEA55C0F95D /* ChatSearchEngine.swift in Sources */,
+				18962CEC0DAE596809C0F26A /* ChatSearchHighlights.swift in Sources */,
+				FCD67D6A293FD5AE119CC328 /* ChatSearchMarkdownText.swift in Sources */,
+				C2349DD4639EF4FDF0366340 /* ChatSearchUnits.swift in Sources */,
+				4A1B7937F1AFD5627EAE7AED /* QuotaAdapters.swift in Sources */,
+				7103AF24D3954818C82A67A4 /* QuotaModels.swift in Sources */,
+				0E044EB2F242BD303C4F22D4 /* QuotaPersistence.swift in Sources */,
+				BE8A58362210CF3428D5D7FC /* QuotaRules.swift in Sources */,
+				522695D6E0AD271A7A698B90 /* QuotaStore.swift in Sources */,
+				FF6E57EBCE5EDE1E7D32EEEB /* ResponseIdleTimeoutSetting.swift in Sources */,
+				4DCB57942CE6E07F31B5461C /* NotificationCategoryCenter.swift in Sources */,
+				6C1222B37CF13EB1FF95D5F6 /* ChatExportRenderer.swift in Sources */,
+				922F8A11319095653A33B9BE /* ChatShareModel.swift in Sources */,
+				5236BCD111F7BA94549D0E3A /* ChatShareSelectionView.swift in Sources */,
+				9BF18B1A9C123A636521C73B /* ProviderQuotaSection.swift in Sources */,
+				2098F5DFEF1ED4E3F5DE4D49 /* QuotaDetailSheet.swift in Sources */,
+				775BD250CD58762D6806600A /* QuotaPickerHints.swift in Sources */,
+				AF33E6343034F2870B3B8008 /* AOJITSettingsView.swift in Sources */,
+				B28755BC4F980D40888A4F1B /* AOJITRuntimeStatus.swift in Sources */,
 				E5VMB0002 /* AIChatViewModel+Fallback.swift in Sources */,
 				E5VMB0003 /* AIChatViewModel+Misc.swift in Sources */,
 				E5VMB0004 /* AIChatViewModel+RequestBudget.swift in Sources */,
@@ -3855,6 +3969,7 @@
 					"-lish_emu",
 					"-lish",
 					"-lfakefs",
+					"-Wl,-force_load,$(SRCROOT)/../../deps/libs/libish_aot.a",
 				);
 				OTHER_SWIFT_FLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app;
@@ -3909,6 +4024,7 @@
 					"-lish_emu",
 					"-lish",
 					"-lfakefs",
+					"-Wl,-force_load,$(SRCROOT)/../../deps/libs/libish_aot.a",
 				);
 				OTHER_SWIFT_FLAGS = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.openminis.app;

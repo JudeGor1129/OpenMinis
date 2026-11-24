@@ -49,6 +49,7 @@ enum LLMProviderFactory {
         // installs a per-request hook rather than a snapshot header — see
         // `OpenCodeChannel.attach`.
         func finish(_ p: OpenAIProvider) -> OpenAIProvider {
+            p.providerInstanceId = instance.id
             if instance.isOpenCodeChannel {
                 OpenCodeChannel.attach(to: p, resolveSessionId: resolveSessionId)
             }
@@ -166,6 +167,9 @@ enum LLMProviderFactory {
 
     @discardableResult
     static func applyCustomUserAgent(_ provider: OpenAIProvider, instance: ProviderInstance) -> OpenAIProvider {
+        // All OpenAI-family builders, including pasted OAuth bearer tokens,
+        // carry identity for device-local idle settings and passive quota headers.
+        provider.providerInstanceId = instance.id
         // OAuth (Codex) requires its own `codex_cli_rs/...` UA — never touch it.
         guard !provider.isOAuth else { return provider }
         // A user-set per-provider custom UA wins (only honored for
@@ -275,7 +279,7 @@ enum LLMProviderFactory {
                 model: model
             )
             provider.codexAccountId = CodexOAuthManager.shared.accountId(instanceId: iid)
-            return provider
+            return applyCustomUserAgent(provider, instance: instance)
         }
     }
 
@@ -327,7 +331,7 @@ enum LLMProviderFactory {
             provider.appendV1Suffix = appendV1
             provider.forceResponsesAPI = true
             provider.codexAccountId = CodexOAuthManager.shared.accountId(instanceId: iid)
-            return provider
+            return applyCustomUserAgent(provider, instance: instance)
         }
     }
 
@@ -369,7 +373,7 @@ enum LLMProviderFactory {
         provider.perRequestHeaders = { body in
             CopilotConstants.perRequestHeaders(forBody: body)
         }
-        return provider
+        return applyCustomUserAgent(provider, instance: instance)
     }
 
     static func makeKimiProvider(instance: ProviderInstance, model: LLMModel) -> OpenAIProvider {
@@ -410,7 +414,7 @@ enum LLMProviderFactory {
             )
             provider.customBaseURL = customBase
             provider.appendV1Suffix = appendV1
-            return provider
+            return applyCustomUserAgent(provider, instance: instance)
         }
     }
 
@@ -433,7 +437,7 @@ enum LLMProviderFactory {
             )
             provider.customBaseURL = customBase
             provider.appendV1Suffix = appendV1
-            return provider
+            return applyCustomUserAgent(provider, instance: instance)
         }
     }
 

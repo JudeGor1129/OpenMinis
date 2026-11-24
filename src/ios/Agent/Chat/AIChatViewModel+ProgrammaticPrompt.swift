@@ -137,6 +137,7 @@ extension AIChatViewModel {
                 logger.warning("\(tag) REJECTED — enqueuePrompt did not accept the prompt (queue \(before) → \(self.promptQueue.count))")
                 return .rejected(reason: "enqueue_declined")
             }
+            if let queuedId = promptQueue.last?.id { programmaticQueuedOrigins[queuedId] = origin }
             if silent, let queuedId = promptQueue.last?.id {
                 silentQueuedPromptIds.insert(queuedId)
             }
@@ -151,9 +152,11 @@ extension AIChatViewModel {
         // it spawns its Task, so the flip is the acceptance signal — every
         // other exit from send() is a silent return.
         programmaticSilentTurn = silent
+        programmaticTurnOrigin = origin
         send(overrideText: text)
         guard isProcessing else {
             programmaticSilentTurn = false
+            programmaticTurnOrigin = nil
             let reason = showContextExhaustedPrompt ? "context_exhausted" : "send_declined"
             logger.warning("\(tag) REJECTED — send() did not start a loop (\(reason))")
             return .rejected(reason: reason)

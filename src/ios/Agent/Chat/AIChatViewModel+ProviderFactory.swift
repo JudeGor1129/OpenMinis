@@ -97,6 +97,7 @@ extension AIChatViewModel {
         // The channel installs a PER-REQUEST hook, so the session id is read
         // when each request is built rather than captured here.
         func wrap(_ p: OpenAIProvider) -> OpenAIProvider {
+            p.providerInstanceId = instance.id
             if instance.isOpenCodeChannel {
                 OpenCodeChannel.attach(to: p, resolveSessionId: resolveSessionId)
             }
@@ -224,7 +225,7 @@ extension AIChatViewModel {
                     model: entry.model
                 )
                 provider.codexAccountId = CodexOAuthManager.shared.accountId(instanceId: iid)
-                return provider
+                return LLMProviderFactory.applyCustomUserAgent(provider, instance: instance)
             }
         case .antigravity:
             let iid = instance.id
@@ -285,7 +286,7 @@ extension AIChatViewModel {
                 respProvider.appendV1Suffix = appendV1
                 respProvider.forceResponsesAPI = true
                 respProvider.codexAccountId = CodexOAuthManager.shared.accountId(instanceId: iid)
-                return respProvider
+                return LLMProviderFactory.applyCustomUserAgent(respProvider, instance: instance)
             }
         case .xAI:
             let xaiBase = customBase ?? "https://api.x.ai/v1"
@@ -307,7 +308,7 @@ extension AIChatViewModel {
                 )
                 provider.customBaseURL = xaiBase
                 provider.appendV1Suffix = xaiAppendV1
-                return provider
+                return LLMProviderFactory.applyCustomUserAgent(provider, instance: instance)
             }
         case .githubCopilot:
             // OAuth only; the builder owns the base URL and headers.
@@ -340,7 +341,7 @@ extension AIChatViewModel {
                 )
                 provider.customBaseURL = kimiBase
                 provider.appendV1Suffix = kimiAppendV1
-                return provider
+                return LLMProviderFactory.applyCustomUserAgent(provider, instance: instance)
             }
         case .unsupported:
             throw LLMProviderError.noCredentials

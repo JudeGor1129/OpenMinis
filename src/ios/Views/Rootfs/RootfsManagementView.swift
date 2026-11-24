@@ -68,6 +68,7 @@ struct RootfsManagementView: View {
                     }
                 }
 
+                AOJITSettingsSection()
                 MirrorsSectionView()
                 MinisEnvironmentPresetsSection()
                 Section("外部文件") {

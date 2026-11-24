@@ -1067,6 +1067,8 @@ final class ProviderConfigStore: ObservableObject {
         if !removedGroupIds.isEmpty {
             Self.recordTombstone(in: &config.deletedModelGroups, ids: Array(removedGroupIds))
         }
+        // Device-local link settings must not outlive the removed instance.
+        ResponseIdleTimeoutSetting.set(nil, forInstanceId: instanceId)
         // Clean up credentials from Keychain
         ProviderKeychainHelper.deleteAPIKey(instanceId: instanceId)
         ProviderKeychainHelper.deleteOAuthToken(instanceId: instanceId)
@@ -3600,7 +3602,12 @@ enum ProviderKeychainHelper {
 
     static func markOAuthNeedsReauth(instanceId: String, caller: String = #function) {
         guard let data = loadRawOAuthToken(instanceId: instanceId) else { return }
-        UserDefaults.standard.set(oauthFingerprint(data), forKey: oauthNeedsReauthUDKey(instanceId: instanceId))
+        let fingerprint = oauthFingerprint(data)
+        let key = oauthNeedsReauthUDKey(instanceId: instanceId)
+        // Official 1.15: a rejected blob already marked is not a new auth change.
+        // Avoid authRevision → quota refresh → rejected refresh → authRevision loops.
+        guard UserDefaults.standard.string(forKey: key) != fingerprint else { return }
+        UserDefaults.standard.set(fingerprint, forKey: key)
         AppLogger(category: "Keychain").warning("mark oauthNeedsReauth instanceId=\(instanceId.prefix(8)) credentials kept caller=\(caller)")
         notifyAuthChanged(instanceId: instanceId)
     }

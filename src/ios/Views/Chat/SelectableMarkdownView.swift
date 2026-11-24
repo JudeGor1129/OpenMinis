@@ -5014,6 +5014,22 @@ private extension Array where Element == InlineNode {
 /// background rendering (see `fillBackgroundRectArray` below). Kept as a
 /// dedicated class so other layout-manager hooks can be added in one place.
 final class MinisLayoutManager: NSLayoutManager {
+    // Paint-only ranges: never enter textStorage, renderer caches or sizing keys.
+    var searchPaintRanges: [ChatSearchPaintRange] = []
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+        guard let container = textContainers.first, let storage = textStorage else { return }
+        for hit in searchPaintRanges where NSMaxRange(hit.range) <= storage.length {
+            let glyph = glyphRange(forCharacterRange: hit.range, actualCharacterRange: nil)
+            let visible = NSIntersectionRange(glyph, glyphsToShow)
+            guard visible.length > 0 else { continue }
+            let color = hit.current ? ChatSearchHighlightStyle.currentColor(dimmed: false) : ChatSearchHighlightStyle.matchColor(dimmed: false)
+            color.setFill()
+            enumerateEnclosingRects(forGlyphRange: visible, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { rect, _ in
+                UIBezierPath(roundedRect: rect.offsetBy(dx: origin.x, dy: origin.y), cornerRadius: 2).fill()
+            }
+        }
+    }
 
     /// [T-ios-inline-code-quote-band] Breathing room painted past the last
     /// visible glyph on a wrapped line. Mirrors the ~0.5-1pt of slack the
@@ -5286,6 +5302,12 @@ final class MinisLayoutManager: NSLayoutManager {
 
 /// Non-editable, selectable UITextView subclass for rendering Markdown as NSAttributedString.
 final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate {
+    private var searchSubscription: AnyCancellable?
+    private var searchToken: ChatSearchHighlightToken?
+    private weak var searchCenter: ChatSearchHighlightCenter?
+    private var searchBindingKey: ChatSearchUnitKey?
+    private var searchHasPaint = false
+    private(set) var currentSearchRect: CGRect?
     private var legacyMeasuredWidth: CGFloat = 0
 
     override var intrinsicContentSize: CGSize {
@@ -6490,6 +6512,8 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
     }
 
     func updateAttachmentViews() {
+        // Code/table views may be recreated asynchronously after the text update.
+        defer { refreshSearchPaint() }
         // [AttachHotPath] Dedupe: when nothing relevant changed since the last
         // successful call AND the existing view map already covers every
         // attachment in storage, there is nothing to do — every branch in the
@@ -7952,6 +7976,7 @@ struct SelectableMarkdownView: UIViewRepresentable {
     /// [T-selection-menu-minis-tts] "Read Selection" (selected text) via Minis TTS.
     var onSpeakText: ((String) -> Void)?
     @Environment(\.openURL) private var openURL
+    @Environment(\.chatSearchHighlights) private var chatSearchHighlights
 
     func makeCoordinator() -> Coordinator {
         let coord = Coordinator()
@@ -8064,6 +8089,9 @@ struct SelectableMarkdownView: UIViewRepresentable {
     }
 
     func updateUIView(_ textView: SelectableMarkdownTextView, context: Context) {
+        textView.bindSearch(center: chatSearchHighlights, messageId: messageId, blockId: blockId)
+        // Also runs after the same-markdown fast return; colour changes never reparse.
+        defer { textView.refreshSearchPaint() }
         let updateStart = CFAbsoluteTimeGetCurrent()
         context.coordinator.openURL = openURL
         textView.onTapBlank = onTapBlank
@@ -9716,4 +9744,100 @@ private func resolveMinisFileURLForNativeText(url: URL) -> URL? {
 
     imgLogger.warning("[MinisImage][Resolve] NOT FOUND in active session / global dirs url=\(url.absoluteString) host=\(host) subPaths=\(subPaths) (cross-session scan disabled for isolation)")
     return nil
+}
+
+// MARK: - Build349 in-chat search paint (layout and cached attributed strings unchanged)
+extension SelectableMarkdownTextView {
+    func bindSearch(center: ChatSearchHighlightCenter?, messageId: UUID?, blockId: UUID?) {
+        let key = messageId.map { ChatSearchUnitKey(messageId: $0, blockId: blockId, field: .body) }
+        guard searchCenter !== center || searchBindingKey != key else { return }
+        searchSubscription = nil; searchToken = nil; clearSearchPaint()
+        searchCenter = center; searchBindingKey = key
+        guard let center, let key else { return }
+        let token = center.token(for: key)
+        searchToken = token
+        searchSubscription = token.$state.sink { [weak self] _ in
+            // @Published sends before assignment, so read token.state next runloop.
+            DispatchQueue.main.async { [weak self] in self?.refreshSearchPaint() }
+        }
+    }
+    private func clearSearchPaint() {
+        (layoutManager as? MinisLayoutManager)?.searchPaintRanges = []
+        currentSearchRect = nil; searchHasPaint = false
+        func clear(_ view: UIView) {
+            for child in view.subviews {
+                if let label = child as? UILabel { ChatSearchLabelPaintView.apply(to: label, hits: []) }
+                if let text = child as? UITextView, !(text is SelectableMarkdownTextView), text.textStorage.length > 0 {
+                    text.layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSRange(location: 0, length: text.textStorage.length))
+                    text.setNeedsDisplay()
+                }
+                if !(child is ChatSearchLabelPaintView) { clear(child) }
+            }
+        }
+        for view in attachmentViews { clear(view) }
+        setNeedsDisplay()
+    }
+    func refreshSearchPaint() {
+        guard let state = searchToken?.state else {
+            if searchHasPaint { clearSearchPaint() }
+            return
+        }
+        clearSearchPaint()
+        let rendered = ChatSearchRenderedText(textStorage), hits = rendered.hits(state)
+        var main: [ChatSearchPaintRange] = []
+        for piece in rendered.pieces {
+            let local = ChatSearchRenderedText.local(hits, in: piece.visibleRange)
+            if let attachment = piece.attachment {
+                guard let wrapper = attachmentViewMap[ObjectIdentifier(attachment)] else { continue }
+                var leaves: [UIView] = []
+                func walk(_ view: UIView) {
+                    for child in view.subviews where !(child is ChatSearchLabelPaintView) {
+                        if child is UITextView || (attachment is TableAttachment && child is UILabel) { leaves.append(child) }
+                        else { walk(child) }
+                    }
+                }
+                walk(wrapper)
+                leaves.sort {
+                    let a = $0.convert($0.bounds, to: self), b = $1.convert($1.bounds, to: self)
+                    return abs(a.minY - b.minY) > 2 ? a.minY < b.minY : a.minX < b.minX
+                }
+                var from = piece.projection.text.startIndex
+                for leaf in leaves {
+                    let raw = (leaf as? UITextView)?.attributedText?.string ?? (leaf as? UILabel)?.attributedText?.string ?? ""
+                    let projection = ChatSearchTextProjection(raw)
+                    guard !projection.text.isEmpty,
+                          let found = piece.projection.text.range(of: projection.text, range: from..<piece.projection.text.endIndex) else { continue }
+                    from = found.upperBound
+                    let span = NSRange(found, in: piece.projection.text)
+                    let leafHits = ChatSearchRenderedText.local(local, in: span).compactMap { hit -> ChatSearchPaintRange? in
+                        projection.sourceRange(hit.range).map { .init(range: $0, current: hit.current) }
+                    }
+                    if let label = leaf as? UILabel { ChatSearchLabelPaintView.apply(to: label, hits: leafHits) }
+                    if let text = leaf as? UITextView {
+                        for hit in leafHits {
+                            let color = hit.current ? ChatSearchHighlightStyle.currentColor(dimmed: false) : ChatSearchHighlightStyle.matchColor(dimmed: false)
+                            text.layoutManager.addTemporaryAttribute(.backgroundColor, value: color, forCharacterRange: hit.range)
+                        }
+                        text.setNeedsDisplay()
+                    }
+                    if leafHits.contains(where: \.current) { currentSearchRect = leaf.convert(leaf.bounds, to: self) }
+                }
+            } else {
+                for hit in local {
+                    guard let range = piece.projection.sourceRange(hit.range) else { continue }
+                    let source = NSRange(location: piece.sourceRange.location + range.location, length: range.length)
+                    main.append(.init(range: source, current: hit.current))
+                    if hit.current {
+                        let glyph = layoutManager.glyphRange(forCharacterRange: source, actualCharacterRange: nil)
+                        currentSearchRect = layoutManager.boundingRect(forGlyphRange: glyph, in: textContainer)
+                            .offsetBy(dx: textContainerInset.left, dy: textContainerInset.top)
+                    }
+                }
+            }
+        }
+        searchHasPaint = true
+        (layoutManager as? MinisLayoutManager)?.searchPaintRanges = main
+        layoutManager.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: textStorage.length))
+        setNeedsDisplay()
+    }
 }

@@ -1,0 +1,35 @@
+{
+  "new_app_sources": [
+    "src/ios/Agent/Chat/AIChatViewModel+UserAsk.swift",
+    "src/ios/Agent/Chat/AOJITShellStats.swift",
+    "src/ios/Agent/Chat/UserAskCenter.swift",
+    "src/ios/Agent/Chat/UserAskCore.swift",
+    "src/ios/Agent/Chat/UserAskSettings.swift",
+    "src/ios/Agent/MessageList/CollectionViewMessageListV3/Search/ChatSearchController.swift",
+    "src/ios/Agent/MessageList/CollectionViewMessageListV3/Search/ChatSearchEngine.swift",
+    "src/ios/Agent/MessageList/CollectionViewMessageListV3/Search/ChatSearchHighlights.swift",
+    "src/ios/Agent/MessageList/CollectionViewMessageListV3/Search/ChatSearchMarkdownText.swift",
+    "src/ios/Agent/MessageList/CollectionViewMessageListV3/Search/ChatSearchUnits.swift",
+    "src/ios/Providers/Quota/QuotaAdapters.swift",
+    "src/ios/Providers/Quota/QuotaModels.swift",
+    "src/ios/Providers/Quota/QuotaPersistence.swift",
+    "src/ios/Providers/Quota/QuotaRules.swift",
+    "src/ios/Providers/Quota/QuotaStore.swift",
+    "src/ios/Providers/ResponseIdleTimeoutSetting.swift",
+    "src/ios/Shared/NotificationCategoryCenter.swift",
+    "src/ios/Views/Chat/ChatExportRenderer.swift",
+    "src/ios/Views/Chat/ChatShareModel.swift",
+    "src/ios/Views/Chat/ChatShareSelectionView.swift",
+    "src/ios/Views/Providers/ProviderQuotaSection.swift",
+    "src/ios/Views/Providers/QuotaDetailSheet.swift",
+    "src/ios/Views/Providers/QuotaPickerHints.swift",
+    "src/ios/Views/Rootfs/AOJITSettingsView.swift",
+    "src/ios/iSH/AOJITRuntimeStatus.swift"
+  ],
+  "resource_folders": [
+    "AOJITRestore"
+  ],
+  "native_force_load": "deps/libs/libish_aot.a",
+  "source_snapshot": "11d74bd7e9a1c5039d8e8f45cd59d09baef2436c5be7d16d34b1772d1d899c3c",
+  "review_note": "AOT library still blocked until genuine recorded input images/digests supplied."
+}

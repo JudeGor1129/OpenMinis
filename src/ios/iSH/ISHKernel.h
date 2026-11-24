@@ -35,6 +35,17 @@ typedef void (^ISHCommandCompletionCallback)(NSString *output, NSError * _Nullab
 /// @return 0 on success, negative error code on failure
 - (int)bootWithRootPath:(NSString *)rootPath;
 
+/// [T-ios-aojit] AOJIT: run the AOT images linked into the app (libish_aot.a)
+/// instead of the gadget engine for the guest modules they cover. On by
+/// default (an unset key reads YES; a stored value wins). Persisted under `AOJITEnabledDefaultsKey`; applied before the
+/// first guest process at boot, and at once when changed. Only blocks
+/// compiled afterwards are affected, i.e. commands started from then on.
++ (BOOL)isAOJITEnabled;
++ (void)setAOJITEnabled:(BOOL)enabled;
+/// The runtime's own report (same text as /proc/ish/jit in the guest): mode,
+/// abi, each image (ok / rejected) and blocks / AOT hits per module.
++ (NSString *)aojitStatusReport;
+
 /// Execute a command (starts interactive shell)
 /// @param command Command and arguments array, e.g. @[@"/bin/sh", @"-l"]
 /// @return 0 on success, negative error code on failure
@@ -181,6 +192,7 @@ typedef NSString * _Nullable (^ISHPathReverseHandler)(NSString *hostPath);
 /// Stop the governor and clear any applied throttle. Call on foreground
 /// return. Idempotent.
 - (void)endBackgroundCPUGovernor;
+
 
 @end
 

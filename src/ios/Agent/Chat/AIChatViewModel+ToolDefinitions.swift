@@ -367,17 +367,7 @@ extension AIChatViewModel {
             ))
         }
 
-        if AgentToolSwitch.interaction.isEnabled {
-            tools.append(AgentToolDefinition(
-                name: "ask_user",
-                description: "Ask the user a clarification question and wait for their text answer. Use for decisions requiring user input; never request passwords or credentials.",
-                parameters: [
-                    "question": AgentToolParam(type: .string, description: "The question to display, in the user's language.")
-                ],
-                required: ["question"],
-                propertyOrdering: ["question"]
-            ))
-        }
+        if userAskExposed { tools.append(Self.userAskToolDefinition) }
         // [T-host-file-tools] iOS-side read-only filesystem tools. Ungated like
         // the existing file_read/file_write family, but they address the real
         // device filesystem instead of the iSH fakefs — `root` picks which.

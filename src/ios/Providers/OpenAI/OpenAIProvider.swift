@@ -231,6 +231,12 @@ final class OpenAIProvider: LLMProvider {
     /// outside the instance factory (title-gen references, tests) — those simply resolve
     /// against the built-in registry, which is the pre-Phase-2 behaviour.
     var providerInstanceId: String?
+
+    /// Scoped to compatible Chat Completions; Codex and Responses never read the setting.
+    var compatibleResponseIdleSeconds: Int? {
+        usesChatCompletionsAPI ? ResponseIdleTimeoutSetting.seconds(forInstanceId: providerInstanceId) : nil
+    }
+    let responseIdleActivity = ResponseIdleActivity()
     /// When true, always use the Responses API format (/v1/responses) regardless of auth mode.
     /// Used by the "Responses API" provider type for third-party Responses-compatible endpoints.
     var forceResponsesAPI: Bool = false
@@ -900,6 +906,67 @@ final class OpenAIProvider: LLMProvider {
                         estimatedMB * 3, availableMB
                     )
                 )
+            }
+        }
+    }
+
+    // MARK: - Compatible Chat Completions response idle timeout
+
+    private func bytesWithResponseIdleTimeout(for request: URLRequest, session: URLSession,
+        idleSeconds: Int?) async throws -> (URLSession.AsyncBytes, URLResponse) {
+        guard let seconds = idleSeconds else { return try await session.bytes(for: request) }
+        var transportRequest = request
+        // Explicitly avoid URLRequest's 60 s default pre-empting a long local prefill.
+        // The real deadline is the activity watchdog, never timeoutIntervalForResource.
+        transportRequest.timeoutInterval = ResponseIdleTimeoutSetting.requestTimeout(forIdleSeconds: seconds) ?? 600
+        let dispatchedRequest = transportRequest
+        responseIdleActivity.reset()
+        return try await ResponseIdleTimeoutSetting.awaitFirstResponse(seconds: seconds) {
+            try await session.bytes(for: dispatchedRequest)
+        }
+    }
+
+    private func idleAwareLines(_ bytes: URLSession.AsyncBytes, session: URLSession,
+        idleSeconds: Int?) -> AsyncThrowingStream<String, Error> {
+        let activity = responseIdleActivity
+        let reasoningField = model.interleavedReasoningField
+        return AsyncThrowingStream { continuation in
+            let pump = Task {
+                do {
+                    for try await line in bytes.lines {
+                        if idleSeconds != nil,
+                           ChatCompletionsIdleActivity.carriesActivity(line, interleavedField: reasoningField) {
+                            activity.record()
+                        }
+                        continuation.yield(line)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            let watchdog: Task<Void, Never>? = idleSeconds.map { seconds in
+                Task {
+                    while !Task.isCancelled {
+                        let remaining = TimeInterval(seconds) - activity.elapsed()
+                        if remaining <= 0 {
+                            continuation.finish(throwing: ResponseIdleTimeoutSetting.stalled(seconds))
+                            return
+                        }
+                        // Reset is based on real chunks, not total reply duration.
+                        try? await Task.sleep(nanoseconds: UInt64(min(remaining, 1) * 1_000_000_000))
+                    }
+                }
+            }
+            continuation.onTermination = { _ in
+                pump.cancel()
+                watchdog?.cancel()
+                if idleSeconds != nil {
+                    // A dead read must release its socket immediately, not wait for EOF.
+                    session.invalidateAndCancel()
+                } else {
+                    session.finishTasksAndInvalidate()
+                }
             }
         }
     }

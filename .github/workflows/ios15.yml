@@ -27,6 +27,11 @@ on:
         description: 'Exact 40-character OpenMinis/ish-arm64 commit required for a full build'
         type: string
         required: false
+      aojit_off:
+        description: 'Development-only compile check; omit all AOJIT images (not a final release)'
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
@@ -101,6 +106,7 @@ jobs:
     env:
       # Upstream OpenMinis/main submodule pin, explicitly selected for this diagnostic run.
       ISH_COMMIT: ${{ github.event_name == 'push' && 'e6521d9cfe9cd48f19917fc3b23aea622ba358b4' || inputs.ish_commit }}
+      AOJIT_OFF: ${{ github.event_name == 'workflow_dispatch' && inputs.aojit_off || false }}
       IOS_DEPLOYMENT_TARGET: '15.0'
     steps:
       - uses: actions/checkout@v4

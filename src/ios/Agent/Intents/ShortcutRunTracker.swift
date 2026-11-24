@@ -374,7 +374,7 @@ enum ShortcutRunTracker {
             actions: [],
             intentIdentifiers: []
         )
-        center.setNotificationCategories([action])
+        NotificationCategoryCenter.shared.register([action])
 
         let content = UNMutableNotificationContent()
         content.title = title

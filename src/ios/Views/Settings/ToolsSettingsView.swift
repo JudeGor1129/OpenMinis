@@ -74,7 +74,7 @@ enum AgentToolSwitch: String, CaseIterable {
     /// The switch governing a tool name; nil = always available.
     nonisolated static func governing(_ toolName: String) -> AgentToolSwitch? {
         switch toolName {
-        case "ask_user": return .interaction
+        case "user_ask": return .interaction
         case "browser_use": return .browser
         case SubAgentDefinition.toolName: return .agents
         default: return nil
@@ -138,7 +138,7 @@ struct ToolsSettingsView: View {
     var body: some View {
         Form {
             Section {
-                toolRow(AppLocalized("User Interaction"), tool: "ask_user", icon: "hand.tap", isOn: $interactionEnabled)
+                toolRow(AppLocalized("User Interaction"), tool: "user_ask", icon: "hand.tap", isOn: $interactionEnabled)
                 toolRow(AppLocalized("Browser Use"), tool: "browser_use", icon: "globe", isOn: $browserEnabled)
             } footer: {
                 Text(AppLocalized("Browse the web in the in-app browser: open pages, read them, click and type. Stable and on by default. When off, the tool is removed from every conversation — the model does not see it at all."))
@@ -160,10 +160,10 @@ struct ToolsSettingsView: View {
         .navigationTitle(AppLocalized("Agent Tools"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            if interactionEnabled { MinisUserQuestionPresenter.shared.prepareNotificationPermission() }
+            if interactionEnabled { MinisUserAskSheetPresenter.shared.prepareNotificationPermission() }
         }
         .onChange(of: interactionEnabled) { enabled in
-            if enabled { MinisUserQuestionPresenter.shared.prepareNotificationPermission() }
+            if enabled { MinisUserAskSheetPresenter.shared.prepareNotificationPermission() }
         }
     }
 

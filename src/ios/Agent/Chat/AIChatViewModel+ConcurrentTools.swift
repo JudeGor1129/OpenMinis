@@ -489,22 +489,17 @@ extension AIChatViewModel {
             }
             toolOutput = result.output
             toolSuccess = result.success
-        case "ask_user":
+        case "user_ask":
             guard AgentToolSwitch.interaction.isEnabled else {
-                toolOutput = Self.toolsDisabledMessage
-                toolSuccess = false
-                break
+                toolOutput = Self.toolsDisabledMessage; toolSuccess = false; break
             }
             guard let data = argsJson.data(using: .utf8),
-                  let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let question = args["question"] as? String,
-                  !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                toolOutput = "Missing required question."
-                toolSuccess = false
-                break
+                  let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                toolOutput = "Invalid user_ask arguments."; toolSuccess = false; break
             }
-            toolOutput = await MinisUserQuestionPresenter.shared.ask(question, sessionId: sessionId)
-            toolSuccess = !Task.isCancelled
+            let answer = await executeUserAsk(args: args, toolUseId: tu.id, msgIdx: msgIdx, blockIdx: blockIdx)
+            toolOutput = answer.output
+            toolSuccess = answer.success && !Task.isCancelled
         case "shell_execute":
             let (command, timeout, delay) = parseToolInput(from: argsJson)
 

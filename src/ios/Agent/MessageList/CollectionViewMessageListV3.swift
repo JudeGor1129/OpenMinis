@@ -60,9 +60,12 @@ struct CollectionViewMessageListV3: UIViewControllerRepresentable {
     var maxContentWidth: CGFloat
     var floatingBarHeight: CGFloat
     var inputBarHeight: CGFloat
+    /// Owned by AIChatView, optional for helper transcripts without a search UI.
+    var chatSearch: ChatSearchController? = nil
 
     func makeUIViewController(context: Context) -> MessageListViewController {
         let vc = MessageListViewController()
+        context.coordinator.bindSearch(chatSearch, vm: vm)
         context.coordinator.attach(to: vc, vm: vm)
         // Drops are handled exclusively by the SwiftUI `.onDrop` on the chat
         // root view. Previously a UIDropInteraction here intercepted drops on
@@ -86,6 +89,7 @@ struct CollectionViewMessageListV3: UIViewControllerRepresentable {
         // (device ring trace: coordinator vm read false at every sync while
         // the buttons stayed hidden at diff≈2700pt from the bottom).
         coord.rebindViewModelIfNeeded(vm)
+        coord.bindSearch(chatSearch, vm: vm)
         coord.onRetryMessage = onRetryMessage
         coord.onOpenSoulSettings = onOpenSoulSettings
         coord.onRetryLast = onRetryLast
@@ -749,6 +753,7 @@ private struct BridgedWholeMessageV3: View {
         // measured against the padded width, and the height precalc
         // (`measureUserBubbleHeight`, :3756) documents that same geometry.
         .padding(.horizontal, message.agentCallback != nil ? AgentCallbackCellView.horizontalInset : 0)
+        .overlay(alignment: .bottomTrailing) { ChatSearchUserBubbleOverlay(message: message) }
         .accessibilityIdentifier(message.role == .user ? "userMessage" : "wholeMessage")
     }
 }
@@ -1405,6 +1410,9 @@ extension CollectionViewMessageListV3 {
                     // explicitly on every hosting config.
                     // [T-ios-tool-capsule-vm-envobject-crash]
                     .environmentObject(vm)
+                    .environment(\.chatSearchHighlights, chatSearch?.highlights)
+                    .environment(\.chatSearchMessageId, message.id)
+                    .environment(\.chatSearchDimmed, message.isCompactedHistory)
                 }.minSize(width: 0, height: 0).margins(.all, 0)
                 cell.applyContentConfiguration(config)
 
@@ -1417,6 +1425,9 @@ extension CollectionViewMessageListV3 {
                                             onOpenSoulSettings: onOpenSoulSettings)
                         .transaction { $0.disablesAnimations = true }
                         .environmentObject(vm)
+                    .environment(\.chatSearchHighlights, chatSearch?.highlights)
+                    .environment(\.chatSearchMessageId, message.id)
+                    .environment(\.chatSearchDimmed, message.isCompactedHistory)
                 }.minSize(width: 0, height: 0).margins(.all, 0)
                 cell.applyContentConfiguration(config)
 
@@ -1441,6 +1452,9 @@ extension CollectionViewMessageListV3 {
                     )
                     .transaction { $0.disablesAnimations = true }
                     .environmentObject(vm)
+                    .environment(\.chatSearchHighlights, chatSearch?.highlights)
+                    .environment(\.chatSearchMessageId, message.id)
+                    .environment(\.chatSearchDimmed, message.isCompactedHistory)
                 }.minSize(width: 0, height: 0).margins(.all, 0)
                 cell.applyContentConfiguration(config)
 
@@ -1457,6 +1471,9 @@ extension CollectionViewMessageListV3 {
                     )
                     .transaction { $0.disablesAnimations = true }
                     .environmentObject(vm)
+                    .environment(\.chatSearchHighlights, chatSearch?.highlights)
+                    .environment(\.chatSearchMessageId, message.id)
+                    .environment(\.chatSearchDimmed, message.isCompactedHistory)
                 }.minSize(width: 0, height: 0).margins(.all, 0)
                 cell.applyContentConfiguration(config)
             }
@@ -4460,6 +4477,70 @@ extension CollectionViewMessageListV3 {
             return maxOffset - cv.contentOffset.y < threshold
         }
 
+        private var chatSearch: ChatSearchController?
+        private var searchNavigationGeneration = 0
+
+        func bindSearch(_ search: ChatSearchController?, vm: AIChatViewModel) {
+            search?.bind(to: vm)
+            guard chatSearch !== search else { return }
+            chatSearch?.onNavigate = nil
+            chatSearch = search
+            searchNavigationGeneration += 1
+            search?.onNavigate = { [weak self] hit in self?.navigateSearch(hit, attempt: 0) }
+        }
+
+        /// Always resolve the CURRENT diffable item by message/block UUID. No saved
+        /// indexPath survives an async layout or streaming snapshot replacement.
+        private func navigateSearch(_ hit: ChatSearchMatch, attempt: Int) {
+            guard chatSearch?.currentMatch == hit, let cv = viewController?.collectionView,
+                  let ds = dataSource else { return }
+            if attempt == 0 {
+                searchNavigationGeneration += 1
+                scrollMode = .userBrowsing
+                pendingScrollWork?.cancel(); pendingScrollWork = nil
+                isAnimatingScrollToBottom = false
+            }
+            let generation = searchNavigationGeneration
+            let item: MessageListItem = hit.key.blockId.map { .assistantBlock(hit.key.messageId, $0) }
+                ?? .wholeMessage(hit.key.messageId)
+            guard let path = ds.indexPath(for: item), path.section < cv.numberOfSections,
+                  path.item < cv.numberOfItems(inSection: path.section) else {
+                if attempt < 3 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                        guard let self, generation == self.searchNavigationGeneration else { return }
+                        self.navigateSearch(hit, attempt: attempt + 1)
+                    }
+                }
+                return
+            }
+            cv.layoutIfNeeded()
+            cv.scrollToItem(at: path, at: .top, animated: false)
+            // Let the offscreen cell render once, then expose the actual occurrence,
+            // including a match near the bottom of a very tall Markdown block.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                guard let self, generation == self.searchNavigationGeneration,
+                      self.chatSearch?.currentMatch == hit,
+                      let freshPath = self.dataSource?.indexPath(for: item),
+                      let cell = cv.cellForItem(at: freshPath) else { return }
+                func find(_ view: UIView) -> SelectableMarkdownTextView? {
+                    if let text = view as? SelectableMarkdownTextView { return text }
+                    for child in view.subviews { if let text = find(child) { return text } }
+                    return nil
+                }
+                if let text = find(cell) {
+                    text.refreshSearchPaint()
+                    if let rect = text.currentSearchRect {
+                        let target = text.convert(rect, to: cv)
+                        let minimum = -cv.adjustedContentInset.top
+                        let maximum = max(minimum, cv.contentSize.height - cv.bounds.height + cv.adjustedContentInset.bottom)
+                        let y = min(maximum, max(minimum, target.minY - cv.adjustedContentInset.top - 16))
+                        cv.setContentOffset(CGPoint(x: cv.contentOffset.x, y: y), animated: false)
+                    }
+                }
+                self.syncScrollFlags()
+            }
+        }
+
         func scrollToLastItem(animated: Bool = false) {
             guard let cv = viewController?.collectionView else { return }
             let section = cv.numberOfSections - 1
@@ -5435,6 +5516,7 @@ extension CollectionViewMessageListV3 {
         // MARK: - UIScrollViewDelegate
 
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            searchNavigationGeneration += 1 // user interaction cancels deferred hit placement
             AppLogger(category: "ScrollDiag").info("[ScrollDiag][willBeginDragging] offset=\(String(format: "%.0f", scrollView.contentOffset.y)) contentSize=\(String(format: "%.0f", scrollView.contentSize.height)) visibleCells=\(viewController?.collectionView?.visibleCells.count ?? -1)")
             #if DEBUG
             // [DecelDisplayLink] Safety: if the user grabs again mid-decel, stop
