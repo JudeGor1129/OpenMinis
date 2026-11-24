@@ -112,6 +112,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Fetch and verify locked AOJIT recorder images
+        if: ${{ env.AOJIT_OFF != 'true' && env.AOJIT_OFF != '1' }}
+        shell: bash
+        env:
+          AOJIT_ARTIFACT_TOKEN: ${{ secrets.AOJIT_ARTIFACT_TOKEN }}
+        run: |
+          set -euo pipefail
+          zip="$RUNNER_TEMP/aojit-images-1.15-run16.zip"
+          trap 'rm -f "$zip"' EXIT
+          python3 scripts/ios15/fetch-aojit-recorder.py --output "$zip"
+          PYTHONDONTWRITEBYTECODE=1 python3 deps/aot/tools/import_recorder.py "$zip"
       - name: Select Xcode for full app diagnostics
         shell: bash
         run: |

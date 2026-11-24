@@ -33,6 +33,11 @@ AOJIT_OFF="${AOJIT_OFF:-0}"
 if [[ "$AOJIT_OFF" == 1 || "$AOJIT_OFF" == true ]]; then
     echo 'WARNING: AOJIT_OFF development build — no AOJIT translations are included.' >&2
 else
+    # Optional local, digest-pinned recorder ZIP. It supplies only admitted
+    # inputs; strict verification still requires the complete locked set.
+    if [[ -n "${AOJIT_RECORDER_ARCHIVE:-}" ]]; then
+        python3 "$AOT_DIR/tools/import_recorder.py" "$AOJIT_RECORDER_ARCHIVE"
+    fi
     python3 "$SCRIPT_DIR/aot/tools/verify_inputs.py" "$SCRIPT_DIR"
 fi
 AOT_BUILD_JOBS="${AOT_BUILD_JOBS:-1}"
@@ -55,19 +60,19 @@ OUT="$OUT_DIR/libish_aot.a"
 SDK="$(xcrun --sdk "$PLATFORM" --show-sdk-path)"
 
 mkdir -p "$OBJ_DIR" "$OUT_DIR"
+OBJ_DIR="$(mktemp -d "$OBJ_DIR/assemble.XXXXXXXX")"
+trap 'rm -rf "$OBJ_DIR"' EXIT
 shopt -s nullglob
-images=("$AOT_DIR"/aot_*.S)
+images=()
+if [[ "$AOJIT_OFF" != 1 && "$AOJIT_OFF" != true ]]; then
+    images=("$AOT_DIR"/aot_*.S)
+fi
 
 objs=()
 pids=()
 for src in ${images[@]+"${images[@]}"}; do
     obj="$OBJ_DIR/$(basename "${src%.S}").o"
     objs+=("$obj")
-    # Assembling the large images takes minutes: skip unchanged ones.
-    if [ "$obj" -nt "$src" ]; then
-        echo "⏭️  $(basename "$src") unchanged"
-        continue
-    fi
     echo "🔧 assembling $(basename "$src") ($(du -h "$src" | cut -f1)) for $PLATFORM"
     xcrun --sdk "$PLATFORM" clang -c -arch arm64 -isysroot "$SDK" \
         "$MIN_FLAG" -o "$obj.tmp" "$src" && mv "$obj.tmp" "$obj" &

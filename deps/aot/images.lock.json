@@ -1,208 +1,961 @@
 {
   "ish_commit": "0fd17a135e78b7a0cf08a4f5831217bbb76ed22f",
   "abi": "1f3bb5a0",
-  "provenance": "Official Minis 1.15 deps/aot/README.md metadata; assembly bytes are gitignored and NOT available in this checkout. SHA256 must be independently admitted when genuine inputs are supplied.",
   "inputs_available": false,
+  "provenance": "Exact 25 catalog modules imported from successful public recorder run16. ABI, module path, family, build-id, symbol, translations, full ZIP digest and per-image SHA-256 are verified. Three unused modules are excluded.",
+  "recorder_bundle": {
+    "repository": "JudeGor1129/aojit-recorder",
+    "commit": "4d62c2c250ff8884e026fbe5b11f33c3a2494980",
+    "run_id": 45401233464,
+    "image_artifact_id": 14923953426,
+    "manifest_artifact_id": 14923244396,
+    "catalog_artifact_id": 14923469008,
+    "image_zip_bytes": 172160659,
+    "image_zip_sha256": "6cb9d077c0edf59c03ca69c096313e14d05b03f52409896d5689218beeaf9e29",
+    "manifest_zip_sha256": "ff071f1110fdd7f167386c91e2ddff22a22dbf2c9c45e52efdd084b7794a8a8e",
+    "catalog_zip_sha256": "ecd587c177779e1b382aaab0be4fc330ef4a858b4c4887a66c8957f286928df1",
+    "archive_members": [
+      {
+        "name": "aot_busybox.S",
+        "size": 28314684
+      },
+      {
+        "name": "aot_busybox_ios.o",
+        "size": 7216312
+      },
+      {
+        "name": "aot_crypto.S",
+        "size": 81552402
+      },
+      {
+        "name": "aot_crypto_ios.o",
+        "size": 21000712
+      },
+      {
+        "name": "aot_gh.S",
+        "size": 468864098
+      },
+      {
+        "name": "aot_gh_ios.o",
+        "size": 116739168
+      },
+      {
+        "name": "aot_imaging.S",
+        "size": 5171220
+      },
+      {
+        "name": "aot_imaging_ios.o",
+        "size": 1356872
+      },
+      {
+        "name": "aot_jpeg.S",
+        "size": 5488139
+      },
+      {
+        "name": "aot_jpeg_ios.o",
+        "size": 1451520
+      },
+      {
+        "name": "aot_musl.S",
+        "size": 18125687
+      },
+      {
+        "name": "aot_musl_ios.o",
+        "size": 4711440
+      },
+      {
+        "name": "aot_node.S",
+        "size": 616177652
+      },
+      {
+        "name": "aot_node_ios.o",
+        "size": 154618320
+      },
+      {
+        "name": "aot_numpy.S",
+        "size": 89592288
+      },
+      {
+        "name": "aot_numpy_ios.o",
+        "size": 22817368
+      },
+      {
+        "name": "aot_pcre2.S",
+        "size": 12030978
+      },
+      {
+        "name": "aot_pcre2_ios.o",
+        "size": 3121920
+      },
+      {
+        "name": "aot_pybinascii.S",
+        "size": 851165
+      },
+      {
+        "name": "aot_pybinascii_ios.o",
+        "size": 239672
+      },
+      {
+        "name": "aot_pyblake2.S",
+        "size": 1747311
+      },
+      {
+        "name": "aot_pyblake2_ios.o",
+        "size": 522960
+      },
+      {
+        "name": "aot_pyhashlib.S",
+        "size": 1870279
+      },
+      {
+        "name": "aot_pydatetime_ios.o",
+        "size": 676840
+      },
+      {
+        "name": "aot_pydatetime.S",
+        "size": 2532947
+      },
+      {
+        "name": "aot_pyhashlib_ios.o",
+        "size": 500088
+      },
+      {
+        "name": "aot_pyjson.S",
+        "size": 3154976
+      },
+      {
+        "name": "aot_pyjson_ios.o",
+        "size": 824080
+      },
+      {
+        "name": "aot_pymath.S",
+        "size": 404983
+      },
+      {
+        "name": "aot_pymath_ios.o",
+        "size": 123616
+      },
+      {
+        "name": "aot_pyselect.S",
+        "size": 776429
+      },
+      {
+        "name": "aot_pyselect_ios.o",
+        "size": 221152
+      },
+      {
+        "name": "aot_pysocket.S",
+        "size": 4358573
+      },
+      {
+        "name": "aot_pysocket_ios.o",
+        "size": 1162256
+      },
+      {
+        "name": "aot_pyssl.S",
+        "size": 3663199
+      },
+      {
+        "name": "aot_pyssl_ios.o",
+        "size": 961088
+      },
+      {
+        "name": "aot_pystruct.S",
+        "size": 1604454
+      },
+      {
+        "name": "aot_pystruct_ios.o",
+        "size": 429528
+      },
+      {
+        "name": "aot_python.S",
+        "size": 211721463
+      },
+      {
+        "name": "aot_python_ios.o",
+        "size": 53110232
+      },
+      {
+        "name": "aot_pyzlib.S",
+        "size": 1469268
+      },
+      {
+        "name": "aot_pyzlib_ios.o",
+        "size": 398384
+      },
+      {
+        "name": "aot_rg.S",
+        "size": 87316802
+      },
+      {
+        "name": "aot_rg_ios.o",
+        "size": 22172496
+      },
+      {
+        "name": "aot_scp.S",
+        "size": 2727820
+      },
+      {
+        "name": "aot_scp_ios.o",
+        "size": 732912
+      },
+      {
+        "name": "aot_sqlite.S",
+        "size": 76884362
+      },
+      {
+        "name": "aot_sqlite_ios.o",
+        "size": 19377816
+      },
+      {
+        "name": "aot_ssh.S",
+        "size": 7505349
+      },
+      {
+        "name": "aot_ssh_ios.o",
+        "size": 1972032
+      },
+      {
+        "name": "aot_ssl.S",
+        "size": 31204815
+      },
+      {
+        "name": "aot_ssl_ios.o",
+        "size": 7898752
+      },
+      {
+        "name": "aot_webp.S",
+        "size": 8622335
+      },
+      {
+        "name": "aot_webp_ios.o",
+        "size": 2278136
+      },
+      {
+        "name": "aot_zlib.S",
+        "size": 4924649
+      },
+      {
+        "name": "aot_zlib_ios.o",
+        "size": 1299520
+      }
+    ],
+    "manifest_images": [
+      {
+        "file": "aot_busybox.S",
+        "size": 28314684,
+        "module": "/bin/busybox",
+        "abi": "1f3bb5a0",
+        "build_id": "2f8b429ec88eacccb94c8bb23ec060ab4a028ee8",
+        "family": "busybox",
+        "symbol": "_ish_aot_module_busybox",
+        "translations": 6554,
+        "sha256": "85ab7218f87329f45c04b36f0ede69b3c6012facdbbb6f9dc83e1084a46ca711"
+      },
+      {
+        "file": "aot_crypto.S",
+        "size": 81552402,
+        "module": "/usr/lib/libcrypto.so.3",
+        "abi": "1f3bb5a0",
+        "build_id": "96665a3d2bc0ff6c33b3b0855aea7ff72a4fadf3",
+        "family": "libcrypto.so.3*",
+        "symbol": "_ish_aot_module_crypto",
+        "translations": 19124,
+        "sha256": "e1611474bd10430cebd1804f2c9fabdc8701c1b1dae5958728bb13e7319d2388"
+      },
+      {
+        "file": "aot_gh.S",
+        "size": 468864098,
+        "module": "/usr/bin/gh",
+        "abi": "1f3bb5a0",
+        "build_id": null,
+        "family": "gh",
+        "symbol": "_ish_aot_module_gh",
+        "translations": 86814,
+        "sha256": null
+      },
+      {
+        "file": "aot_imaging.S",
+        "size": 5171220,
+        "module": "/usr/lib/python3.12/site-packages/PIL/_imaging.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "4c527f1dd53c539fadb6e761f32fe1c97453f94e",
+        "family": "_imaging.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_imaging",
+        "translations": 1131,
+        "sha256": "f4a79043c47ecd5c1fc6cb8c9a1005ee49c676c46baa40d16976abdd3295af09"
+      },
+      {
+        "file": "aot_jpeg.S",
+        "size": 5488139,
+        "module": "/usr/lib/libjpeg.so.8.3.2",
+        "abi": "1f3bb5a0",
+        "build_id": "18c1b17b04d907c6774bf76263b9fa42e9408db8",
+        "family": "libjpeg.so.8*",
+        "symbol": "_ish_aot_module_jpeg",
+        "translations": 1115,
+        "sha256": "ecfdcee49c5d830c114fdcbc40bdc4279659aef210a544c61008c3c0377fc6b7"
+      },
+      {
+        "file": "aot_musl.S",
+        "size": 18125687,
+        "module": "/lib/ld-musl-aarch64.so.1",
+        "abi": "1f3bb5a0",
+        "build_id": "384940f9110e809da953d6fbabcb31d297c217b5",
+        "family": "ld-musl-aarch64.so.1*",
+        "symbol": "_ish_aot_module_musl",
+        "translations": 4221,
+        "sha256": "2a26acf3069a1fc151d89f95e9c61db93711af237a03852c905f1cc80edfea6f"
+      },
+      {
+        "file": "aot_node.S",
+        "size": 616177652,
+        "module": "/usr/bin/node",
+        "abi": "1f3bb5a0",
+        "build_id": "75fddd4ad61eb31ca5eb9917be4217eeebc889c6",
+        "family": "node",
+        "symbol": "_ish_aot_module_node",
+        "translations": 121250,
+        "sha256": "263c648b6cc972c92c895fafa0d2b560a08f913714933e11b9cbf1366499d44c"
+      },
+      {
+        "file": "aot_numpy.S",
+        "size": 89592288,
+        "module": "/usr/lib/python3.12/site-packages/numpy/_core/_multiarray_umath.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "04b4971c8e52a43f5c0608f64d7b13207b8c1c3e",
+        "family": "_multiarray_umath.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_numpy",
+        "translations": 19319,
+        "sha256": "a2ea2bedad4f57e544bb5c3ee4419a99fa452a9de534c71de3b1ae00f37c3677"
+      },
+      {
+        "file": "aot_pcre2.S",
+        "size": 12030978,
+        "module": "/usr/lib/libpcre2-8.so.0.12.0",
+        "abi": "1f3bb5a0",
+        "build_id": "670947d4acae16869d787c05238433d38333e1a1",
+        "family": "libpcre2-8.so.0*",
+        "symbol": "_ish_aot_module_pcre2",
+        "translations": 2662,
+        "sha256": "ca415b890ed1b896e9fce95ec6668e89d971aed155dabf5a971f3284556e8366"
+      },
+      {
+        "file": "aot_pybinascii.S",
+        "size": 851165,
+        "module": "/usr/lib/python3.12/lib-dynload/binascii.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "7072c03062e91be10b95a26d5a47b7b439b2d8a9",
+        "family": "binascii.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_pybinascii",
+        "translations": 202,
+        "sha256": "504ac2455dc172afa34f2ff055ab0da20fdebdb1088a3a38c26640502dbd7f07"
+      },
+      {
+        "file": "aot_pyblake2.S",
+        "size": 1747311,
+        "module": "/usr/lib/python3.12/lib-dynload/_blake2.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "03d10fff74925418d8c4906ca19770360950ed03",
+        "family": "_blake2.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_pyblake2",
+        "translations": 289,
+        "sha256": "2c6f0ad398f8a60ab88ba66c1d497ad3f91547e9f1909e8a2576899515947d6f"
+      },
+      {
+        "file": "aot_pydatetime.S",
+        "size": 2532947,
+        "module": "/usr/lib/python3.12/lib-dynload/_datetime.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "fcd4442d8c5e41cb71112640a189e7c280db9377",
+        "family": "_datetime.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_pydatetime",
+        "translations": 598,
+        "sha256": "386b7c78c6484b7d43ad29eddc98643df110d0ffbe8016510f0c9b61f8556952"
+      },
+      {
+        "file": "aot_pyhashlib.S",
+        "size": 1870279,
+        "module": "/usr/lib/python3.12/lib-dynload/_hashlib.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "04dff23fff61f99ac22c4108fc8f70568f143e9d",
+        "family": "_hashlib.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_pyhashlib",
+        "translations": 477,
+        "sha256": "c8af550c1bdcd3897b42bf4a6bf7a65690f04c6f08b96f1f7192c694f3eb12ff"
+      },
+      {
+        "file": "aot_pyjson.S",
+        "size": 3154976,
+        "module": "/usr/lib/python3.12/lib-dynload/_json.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "12cee56865fb4afcc00f1e63be9f36e948488bd2",
+        "family": "_json.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_pyjson",
+        "translations": 790,
+        "sha256": "55d306a3e6e8f82d4938fb35bd5198ec5c19d3fda171fcb130916198a7d714bb"
+      },
+      {
+        "file": "aot_pymath.S",
+        "size": 404983,
+        "module": "/usr/lib/python3.12/lib-dynload/math.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "31ed699ffa119d5a25859a07b52c3d96770df3c7",
+        "family": "math.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_pymath",
+        "translations": 102,
+        "sha256": "1505d878e17c0f30fc01f75dee1f18a7a8b5ab3645d0ce5517fe4ba7f1a8ce0b"
+      },
+      {
+        "file": "aot_pyselect.S",
+        "size": 776429,
+        "module": "/usr/lib/python3.12/lib-dynload/select.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "fd5415e308662b00a8e8426432c97de619fda99d",
+        "family": "select.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_pyselect",
+        "translations": 207,
+        "sha256": "07b70414d81953756521d1bdbcaf51aa34304cba08142fc2e5fffba853516613"
+      },
+      {
+        "file": "aot_pysocket.S",
+        "size": 4358573,
+        "module": "/usr/lib/python3.12/lib-dynload/_socket.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "f8ed76b8a5d6e84dac715cb934b26dc2caa28a88",
+        "family": "_socket.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_pysocket",
+        "translations": 1227,
+        "sha256": "8351b085c8e10aa06910ee6d06731f70404f1c8cc4edf45dc1e02ca46620c452"
+      },
+      {
+        "file": "aot_pyssl.S",
+        "size": 3663199,
+        "module": "/usr/lib/python3.12/lib-dynload/_ssl.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "6c3fd405ac9d69524b840f287bb4019d241c65bb",
+        "family": "_ssl.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_pyssl",
+        "translations": 989,
+        "sha256": null
+      },
+      {
+        "file": "aot_pystruct.S",
+        "size": 1604454,
+        "module": "/usr/lib/python3.12/lib-dynload/_struct.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "ecbcff3097cc4dd5979c23c48a984a2d0fd30140",
+        "family": "_struct.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_pystruct",
+        "translations": 390,
+        "sha256": "a0390f0228855d2193ecd525226964595651cc24a1024f7ae7794f52aedf8ffe"
+      },
+      {
+        "file": "aot_python.S",
+        "size": 211721463,
+        "module": "/usr/lib/libpython3.12.so.1.0",
+        "abi": "1f3bb5a0",
+        "build_id": "2845aa4dc27db8f860cb82bb1e733fff26a1e111",
+        "family": "libpython3.12.so.1*",
+        "symbol": "_ish_aot_module_python",
+        "translations": 48517,
+        "sha256": "d02b2c911e08899b893ae1cabd9d602ca2a9c993f1b878af9683a1887e448436"
+      },
+      {
+        "file": "aot_pyzlib.S",
+        "size": 1469268,
+        "module": "/usr/lib/python3.12/lib-dynload/zlib.cpython-312-aarch64-linux-musl.so",
+        "abi": "1f3bb5a0",
+        "build_id": "90b5288013235ec78c00dd519d77053f613995e3",
+        "family": "zlib.cpython-312-aarch64-linux-musl.so",
+        "symbol": "_ish_aot_module_pyzlib",
+        "translations": 377,
+        "sha256": "4491a45ce97d0ec1d748868ead0a9c9036102f9936bc1c112369467babaa870a"
+      },
+      {
+        "file": "aot_rg.S",
+        "size": 87316802,
+        "module": "/usr/bin/rg",
+        "abi": "1f3bb5a0",
+        "build_id": "01824e097c53d82e312d3a4ec62f080c21920409",
+        "family": "rg",
+        "symbol": "_ish_aot_module_rg",
+        "translations": 16855,
+        "sha256": null
+      },
+      {
+        "file": "aot_scp.S",
+        "size": 2727820,
+        "module": "/usr/bin/scp",
+        "abi": "1f3bb5a0",
+        "build_id": "cbc5234e3d96db92e8acd726e6743ec76b66e03d",
+        "family": "scp",
+        "symbol": "_ish_aot_module_scp",
+        "translations": 638,
+        "sha256": "6de8195e2d6fb3a2fb055b1d77c788e2e9c4e38fe1010c7b3215799db3599cbe"
+      },
+      {
+        "file": "aot_sqlite.S",
+        "size": 76884362,
+        "module": "/usr/lib/libsqlite3.so.0.8.6",
+        "abi": "1f3bb5a0",
+        "build_id": "0cd2f33152f67d2b77c8468184bbe0cef1d7e7f2",
+        "family": "libsqlite3.so.0*",
+        "symbol": "_ish_aot_module_sqlite",
+        "translations": 15639,
+        "sha256": "3a02a1efdb7c6f1abcb061c7491558ccc81552294272f26bb875f5b8aa7bc162"
+      },
+      {
+        "file": "aot_ssh.S",
+        "size": 7505349,
+        "module": "/usr/bin/ssh",
+        "abi": "1f3bb5a0",
+        "build_id": "33af3e0eafe4766f4d33ae4eb16c8ea713be19e4",
+        "family": "ssh",
+        "symbol": "_ish_aot_module_ssh",
+        "translations": 1755,
+        "sha256": "dd64b39066e55825c1a5f749fb4f307ce00b02d4cb0b877169fde375209f200f"
+      },
+      {
+        "file": "aot_ssl.S",
+        "size": 31204815,
+        "module": "/usr/lib/libssl.so.3",
+        "abi": "1f3bb5a0",
+        "build_id": "d33673f97d5df3ef789ba210cff379270c41db6c",
+        "family": "libssl.so.3*",
+        "symbol": "_ish_aot_module_ssl",
+        "translations": 7333,
+        "sha256": "ce54e4b92d1f5c5a319b992dca6b01163f783d67f5f2a0f751f054dbc9fa9868"
+      },
+      {
+        "file": "aot_webp.S",
+        "size": 8622335,
+        "module": "/usr/lib/libwebp.so.7.1.9",
+        "abi": "1f3bb5a0",
+        "build_id": "8ef75205b20db80a13c5a7cc73c4010bf5ee4d6f",
+        "family": "libwebp.so.7*",
+        "symbol": "_ish_aot_module_webp",
+        "translations": 1527,
+        "sha256": "cdcf2be117da449cd2d6fc35a063f106a4929af10167cf486df4381f64a0f950"
+      },
+      {
+        "file": "aot_zlib.S",
+        "size": 4924649,
+        "module": "/usr/lib/libz.so.1.3.1",
+        "abi": "1f3bb5a0",
+        "build_id": "0b23d104a896ab2e7e3a8144b70175fb3ce8cbd9",
+        "family": "libz.so.1*",
+        "symbol": "_ish_aot_module_zlib",
+        "translations": 954,
+        "sha256": "409a44daf290527ce7d9ad03f1db52c4b6e51a4c06372e4b49da5a0d1e818842"
+      }
+    ],
+    "excluded_modules": [
+      "/usr/bin/gh",
+      "/usr/lib/python3.12/lib-dynload/_ssl.cpython-312-aarch64-linux-musl.so",
+      "/usr/bin/rg"
+    ]
+  },
   "images": [
     {
       "file": "aot_musl_1.2.5-r8.S",
       "module": "/lib/ld-musl-aarch64.so.1",
-      "package": "musl-1.2.5-r8` (bundled rootfs)",
+      "package": "musl 1.2.5-r8",
       "family": "ld-musl-aarch64.so.1*",
       "build_id": "384940f9110e809da953d6fbabcb31d297c217b5",
-      "sha256": null
+      "sha256": "2a26acf3069a1fc151d89f95e9c61db93711af237a03852c905f1cc80edfea6f",
+      "recorder_member": "aot_musl.S",
+      "recorder_bytes": 18125687,
+      "apk_spec": null,
+      "catalog_module": "/lib/ld-musl-aarch64.so.1",
+      "recorded_path": null,
+      "recorder_symbol": "_ish_aot_module_musl",
+      "translations": 4221,
+      "recorder_package": "musl 1.2.5-r8"
     },
     {
       "file": "aot_busybox_1.37.0-r8.S",
       "module": "/bin/busybox",
-      "package": "busybox-1.37.0-r8` (bundled rootfs)",
+      "package": "busybox 1.37.0-r8",
       "family": "busybox",
       "build_id": "2f8b429ec88eacccb94c8bb23ec060ab4a028ee8",
-      "sha256": null
-    },
-    {
-      "file": "aot_zlib_1.3.1-r2.S",
-      "module": "/usr/lib/libz.so.1.3.1",
-      "package": "zlib-1.3.1-r2` (bundled rootfs)",
-      "family": "libz.so.1*",
-      "build_id": "0b23d104a896ab2e7e3a8144b70175fb3ce8cbd9",
-      "sha256": null
-    },
-    {
-      "file": "aot_libcrypto_3.3.2-r4.S",
-      "module": "/usr/lib/libcrypto.so.3",
-      "package": "libcrypto3-3.3.2-r4` (bundled rootfs)",
-      "family": "libcrypto.so.3*",
-      "build_id": "1dcac613c1f6b724c56844356ad82a8c97ff401a",
-      "sha256": null
-    },
-    {
-      "file": "aot_libssl_3.3.2-r4.S",
-      "module": "/usr/lib/libssl.so.3",
-      "package": "libssl3-3.3.2-r4` (bundled rootfs)",
-      "family": "libssl.so.3*",
-      "build_id": "d0b98a4924a7a7dcc3f3f31dc5645db6ffd4fd9c",
-      "sha256": null
+      "sha256": "85ab7218f87329f45c04b36f0ede69b3c6012facdbbb6f9dc83e1084a46ca711",
+      "recorder_member": "aot_busybox.S",
+      "recorder_bytes": 28314684,
+      "apk_spec": null,
+      "catalog_module": "/bin/busybox",
+      "recorded_path": null,
+      "recorder_symbol": "_ish_aot_module_busybox",
+      "translations": 6554,
+      "recorder_package": "busybox 1.37.0-r8"
     },
     {
       "file": "aot_python3_3.12.15-r0.S",
       "module": "/usr/lib/libpython3.12.so.1.0",
-      "package": "python3-3.12.15-r0` (`apk add`)",
+      "package": "python3 3.12.16-r0",
       "family": "libpython3.12.so.1*",
-      "build_id": "d644d658076939b92edde6d007ef8bf491fec5a3",
-      "sha256": null
+      "build_id": "2845aa4dc27db8f860cb82bb1e733fff26a1e111",
+      "sha256": "d02b2c911e08899b893ae1cabd9d602ca2a9c993f1b878af9683a1887e448436",
+      "apk_spec": "python3=3.12.16-r0",
+      "catalog_module": "/usr/lib/libpython3.12.so.1.0",
+      "recorded_path": null,
+      "recorder_member": "aot_python.S",
+      "recorder_bytes": 211721463,
+      "recorder_symbol": "_ish_aot_module_python",
+      "translations": 48517,
+      "recorder_package": "python3 3.12.16-r0"
     },
     {
       "file": "aot_nodejs_22.23.2-r0.S",
       "module": "/usr/bin/node",
-      "package": "nodejs-22.23.2-r0` (`apk add`)",
+      "package": "nodejs 22.23.5-r0",
       "family": "node",
-      "build_id": "c324f04a6d01b07f6858cc8ef1da4d6d3656daa3",
-      "sha256": null
-    },
-    {
-      "file": "aot_sqlite_3.48.0-r4.S",
-      "module": "/usr/lib/libsqlite3.so.0.8.6",
-      "package": "sqlite-libs-3.48.0-r4` (with python3)",
-      "family": "libsqlite3.so.0*",
-      "build_id": "0cd2f33152f67d2b77c8468184bbe0cef1d7e7f2",
-      "sha256": null
+      "build_id": "75fddd4ad61eb31ca5eb9917be4217eeebc889c6",
+      "sha256": "263c648b6cc972c92c895fafa0d2b560a08f913714933e11b9cbf1366499d44c",
+      "apk_spec": "nodejs=22.23.5-r0",
+      "catalog_module": "/usr/bin/node",
+      "recorded_path": null,
+      "recorder_member": "aot_node.S",
+      "recorder_bytes": 616177652,
+      "recorder_symbol": "_ish_aot_module_node",
+      "translations": 121250,
+      "recorder_package": "nodejs 22.23.5-r0"
     },
     {
       "file": "aot_pillow_11.0.0-r0.S",
       "module": "/usr/lib/python3.12/site-packages/PIL/_imaging.cpython-312-aarch64-linux-musl.so",
-      "package": "py3-pillow-11.0.0-r0` (`apk add`)",
-      "family": "same file name",
+      "package": "py3-pillow 11.0.0-r0",
+      "family": "_imaging.cpython-312-aarch64-linux-musl.so",
       "build_id": "4c527f1dd53c539fadb6e761f32fe1c97453f94e",
-      "sha256": null
+      "sha256": "f4a79043c47ecd5c1fc6cb8c9a1005ee49c676c46baa40d16976abdd3295af09",
+      "apk_spec": "py3-pillow=11.0.0-r0",
+      "catalog_module": "/usr/lib/python3.12/site-packages/PIL/_imaging.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_imaging.S",
+      "recorder_bytes": 5171220,
+      "recorder_symbol": "_ish_aot_module_imaging",
+      "translations": 1131,
+      "recorder_package": "py3-pillow 11.0.0-r0"
     },
     {
       "file": "aot_libwebp_1.4.0-r0.S",
       "module": "/usr/lib/libwebp.so.7.1.9",
-      "package": "libwebp-1.4.0-r0` (`apk add`)",
+      "package": "libwebp 1.4.0-r0",
       "family": "libwebp.so.7*",
       "build_id": "8ef75205b20db80a13c5a7cc73c4010bf5ee4d6f",
-      "sha256": null
+      "sha256": "cdcf2be117da449cd2d6fc35a063f106a4929af10167cf486df4381f64a0f950",
+      "apk_spec": "libwebp=1.4.0-r0",
+      "catalog_module": "/usr/lib/libwebp.so.7",
+      "recorded_path": "/usr/lib/libwebp.so.7.1.9",
+      "recorder_member": "aot_webp.S",
+      "recorder_bytes": 8622335,
+      "recorder_symbol": "_ish_aot_module_webp",
+      "translations": 1527,
+      "recorder_package": "libwebp 1.4.0-r0"
     },
     {
       "file": "aot_libjpeg_3.0.4-r0.S",
       "module": "/usr/lib/libjpeg.so.8.3.2",
-      "package": "libjpeg-turbo-3.0.4-r0` (`apk add`)",
+      "package": "libjpeg-turbo 3.0.4-r0",
       "family": "libjpeg.so.8*",
       "build_id": "18c1b17b04d907c6774bf76263b9fa42e9408db8",
-      "sha256": null
+      "sha256": "ecfdcee49c5d830c114fdcbc40bdc4279659aef210a544c61008c3c0377fc6b7",
+      "apk_spec": "libjpeg-turbo=3.0.4-r0",
+      "catalog_module": "/usr/lib/libjpeg.so.8",
+      "recorded_path": "/usr/lib/libjpeg.so.8.3.2",
+      "recorder_member": "aot_jpeg.S",
+      "recorder_bytes": 5488139,
+      "recorder_symbol": "_ish_aot_module_jpeg",
+      "translations": 1115,
+      "recorder_package": "libjpeg-turbo 3.0.4-r0"
     },
     {
       "file": "aot_numpy_2.1.3-r0.S",
       "module": "/usr/lib/python3.12/site-packages/numpy/_core/_multiarray_umath.cpython-312-aarch64-linux-musl.so",
-      "package": "py3-numpy-2.1.3-r0` (`apk add`)",
-      "family": "same file name",
+      "package": "py3-numpy 2.1.3-r0",
+      "family": "_multiarray_umath.cpython-312-aarch64-linux-musl.so",
       "build_id": "04b4971c8e52a43f5c0608f64d7b13207b8c1c3e",
-      "sha256": null
+      "sha256": "a2ea2bedad4f57e544bb5c3ee4419a99fa452a9de534c71de3b1ae00f37c3677",
+      "apk_spec": "py3-numpy=2.1.3-r0",
+      "catalog_module": "/usr/lib/python3.12/site-packages/numpy/_core/_multiarray_umath.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_numpy.S",
+      "recorder_bytes": 89592288,
+      "recorder_symbol": "_ish_aot_module_numpy",
+      "translations": 19319,
+      "recorder_package": "py3-numpy 2.1.3-r0"
+    },
+    {
+      "file": "aot_zlib_1.3.1-r2.S",
+      "module": "/usr/lib/libz.so.1.3.1",
+      "package": "zlib 1.3.1-r2",
+      "family": "libz.so.1*",
+      "build_id": "0b23d104a896ab2e7e3a8144b70175fb3ce8cbd9",
+      "sha256": "409a44daf290527ce7d9ad03f1db52c4b6e51a4c06372e4b49da5a0d1e818842",
+      "apk_spec": null,
+      "catalog_module": "/usr/lib/libz.so.1",
+      "recorded_path": "/usr/lib/libz.so.1.3.1",
+      "recorder_member": "aot_zlib.S",
+      "recorder_bytes": 4924649,
+      "recorder_symbol": "_ish_aot_module_zlib",
+      "translations": 954,
+      "recorder_package": "zlib 1.3.1-r2"
+    },
+    {
+      "file": "aot_sqlite_3.48.0-r4.S",
+      "module": "/usr/lib/libsqlite3.so.0.8.6",
+      "package": "sqlite-libs 3.48.0-r4",
+      "family": "libsqlite3.so.0*",
+      "build_id": "0cd2f33152f67d2b77c8468184bbe0cef1d7e7f2",
+      "sha256": "3a02a1efdb7c6f1abcb061c7491558ccc81552294272f26bb875f5b8aa7bc162",
+      "apk_spec": "sqlite-libs=3.48.0-r4",
+      "catalog_module": "/usr/lib/libsqlite3.so.0",
+      "recorded_path": "/usr/lib/libsqlite3.so.0.8.6",
+      "recorder_member": "aot_sqlite.S",
+      "recorder_bytes": 76884362,
+      "recorder_symbol": "_ish_aot_module_sqlite",
+      "translations": 15639,
+      "recorder_package": "sqlite-libs 3.48.0-r4"
+    },
+    {
+      "file": "aot_libcrypto_3.3.2-r4.S",
+      "module": "/usr/lib/libcrypto.so.3",
+      "package": "libcrypto3 3.3.7-r2",
+      "family": "libcrypto.so.3*",
+      "build_id": "96665a3d2bc0ff6c33b3b0855aea7ff72a4fadf3",
+      "sha256": "e1611474bd10430cebd1804f2c9fabdc8701c1b1dae5958728bb13e7319d2388",
+      "apk_spec": null,
+      "catalog_module": "/usr/lib/libcrypto.so.3",
+      "recorded_path": null,
+      "recorder_member": "aot_crypto.S",
+      "recorder_bytes": 81552402,
+      "recorder_symbol": "_ish_aot_module_crypto",
+      "translations": 19124,
+      "recorder_package": "libcrypto3 3.3.7-r2"
+    },
+    {
+      "file": "aot_libssl_3.3.2-r4.S",
+      "module": "/usr/lib/libssl.so.3",
+      "package": "libssl3 3.3.7-r2",
+      "family": "libssl.so.3*",
+      "build_id": "d33673f97d5df3ef789ba210cff379270c41db6c",
+      "sha256": "ce54e4b92d1f5c5a319b992dca6b01163f783d67f5f2a0f751f054dbc9fa9868",
+      "apk_spec": null,
+      "catalog_module": "/usr/lib/libssl.so.3",
+      "recorded_path": null,
+      "recorder_member": "aot_ssl.S",
+      "recorder_bytes": 31204815,
+      "recorder_symbol": "_ish_aot_module_ssl",
+      "translations": 7333,
+      "recorder_package": "libssl3 3.3.7-r2"
     },
     {
       "file": "aot_pcre2_10.43-r0.S",
       "module": "/usr/lib/libpcre2-8.so.0.12.0",
-      "package": "pcre2-10.43-r0` (with git / grep)",
+      "package": "pcre2 10.43-r1",
       "family": "libpcre2-8.so.0*",
-      "build_id": "2a7cfd13f571d133069bf15c8e869ba13d2a4c5f",
-      "sha256": null
+      "build_id": "670947d4acae16869d787c05238433d38333e1a1",
+      "sha256": "ca415b890ed1b896e9fce95ec6668e89d971aed155dabf5a971f3284556e8366",
+      "apk_spec": "pcre2=10.43-r1",
+      "catalog_module": "/usr/lib/libpcre2-8.so.0",
+      "recorded_path": "/usr/lib/libpcre2-8.so.0.12.0",
+      "recorder_member": "aot_pcre2.S",
+      "recorder_bytes": 12030978,
+      "recorder_symbol": "_ish_aot_module_pcre2",
+      "translations": 2662,
+      "recorder_package": "pcre2 10.43-r1"
     },
     {
       "file": "aot_ssh_9.9_p2-r0.S",
       "module": "/usr/bin/ssh",
-      "package": "openssh-client-default-9.9_p2-r0` (`apk add`)",
+      "package": "openssh-client-default 9.9_p2-r1",
       "family": "ssh",
-      "build_id": "df1649582b7a74dc596ffcb440391796995dd202",
-      "sha256": null
+      "build_id": "33af3e0eafe4766f4d33ae4eb16c8ea713be19e4",
+      "sha256": "dd64b39066e55825c1a5f749fb4f307ce00b02d4cb0b877169fde375209f200f",
+      "apk_spec": "openssh-client-default=9.9_p2-r1",
+      "catalog_module": "/usr/bin/ssh",
+      "recorded_path": null,
+      "recorder_member": "aot_ssh.S",
+      "recorder_bytes": 7505349,
+      "recorder_symbol": "_ish_aot_module_ssh",
+      "translations": 1755,
+      "recorder_package": "openssh-client-default 9.9_p2-r1"
     },
     {
       "file": "aot_scp_9.9_p2-r0.S",
       "module": "/usr/bin/scp",
-      "package": "openssh-client-common-9.9_p2-r0` (`apk add`)",
+      "package": "openssh-client-common 9.9_p2-r1",
       "family": "scp",
       "build_id": "cbc5234e3d96db92e8acd726e6743ec76b66e03d",
-      "sha256": null
+      "sha256": "6de8195e2d6fb3a2fb055b1d77c788e2e9c4e38fe1010c7b3215799db3599cbe",
+      "apk_spec": "openssh-client-common=9.9_p2-r1",
+      "catalog_module": "/usr/bin/scp",
+      "recorded_path": null,
+      "recorder_member": "aot_scp.S",
+      "recorder_bytes": 2727820,
+      "recorder_symbol": "_ish_aot_module_scp",
+      "translations": 638,
+      "recorder_package": "openssh-client-common 9.9_p2-r1"
     },
     {
       "file": "aot_py_json_3.12.15-r0.S",
       "module": "/usr/lib/python3.12/lib-dynload/_json.cpython-312-aarch64-linux-musl.so",
-      "package": "python3-3.12.15-r0` (`apk add`)",
-      "family": "same file name",
-      "build_id": "a1d82af66c4470aa6cac49ca772927a2995ed297",
-      "sha256": null
+      "package": "python3 3.12.16-r0",
+      "family": "_json.cpython-312-aarch64-linux-musl.so",
+      "build_id": "12cee56865fb4afcc00f1e63be9f36e948488bd2",
+      "sha256": "55d306a3e6e8f82d4938fb35bd5198ec5c19d3fda171fcb130916198a7d714bb",
+      "apk_spec": "python3=3.12.16-r0",
+      "catalog_module": "/usr/lib/python3.12/lib-dynload/_json.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_pyjson.S",
+      "recorder_bytes": 3154976,
+      "recorder_symbol": "_ish_aot_module_pyjson",
+      "translations": 790,
+      "recorder_package": "python3 3.12.16-r0"
     },
     {
       "file": "aot_py_hashlib_3.12.15-r0.S",
       "module": "/usr/lib/python3.12/lib-dynload/_hashlib.cpython-312-aarch64-linux-musl.so",
-      "package": "python3-3.12.15-r0` (`apk add`)",
-      "family": "same file name",
-      "build_id": "97a005a1b066e6bd4158eb271132e1b38c1be8cb",
-      "sha256": null
+      "package": "python3 3.12.16-r0",
+      "family": "_hashlib.cpython-312-aarch64-linux-musl.so",
+      "build_id": "04dff23fff61f99ac22c4108fc8f70568f143e9d",
+      "sha256": "c8af550c1bdcd3897b42bf4a6bf7a65690f04c6f08b96f1f7192c694f3eb12ff",
+      "apk_spec": "python3=3.12.16-r0",
+      "catalog_module": "/usr/lib/python3.12/lib-dynload/_hashlib.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_pyhashlib.S",
+      "recorder_bytes": 1870279,
+      "recorder_symbol": "_ish_aot_module_pyhashlib",
+      "translations": 477,
+      "recorder_package": "python3 3.12.16-r0"
     },
     {
       "file": "aot_py_blake2_3.12.15-r0.S",
       "module": "/usr/lib/python3.12/lib-dynload/_blake2.cpython-312-aarch64-linux-musl.so",
-      "package": "python3-3.12.15-r0` (`apk add`)",
-      "family": "same file name",
-      "build_id": "f4f542cf566ffe62953373b6e54602f614df6951",
-      "sha256": null
+      "package": "python3 3.12.16-r0",
+      "family": "_blake2.cpython-312-aarch64-linux-musl.so",
+      "build_id": "03d10fff74925418d8c4906ca19770360950ed03",
+      "sha256": "2c6f0ad398f8a60ab88ba66c1d497ad3f91547e9f1909e8a2576899515947d6f",
+      "apk_spec": "python3=3.12.16-r0",
+      "catalog_module": "/usr/lib/python3.12/lib-dynload/_blake2.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_pyblake2.S",
+      "recorder_bytes": 1747311,
+      "recorder_symbol": "_ish_aot_module_pyblake2",
+      "translations": 289,
+      "recorder_package": "python3 3.12.16-r0"
     },
     {
       "file": "aot_py_struct_3.12.15-r0.S",
       "module": "/usr/lib/python3.12/lib-dynload/_struct.cpython-312-aarch64-linux-musl.so",
-      "package": "python3-3.12.15-r0` (`apk add`)",
-      "family": "same file name",
-      "build_id": "6cfef1a2458b6dcc2f396ec8f2b9d9ebb771bba1",
-      "sha256": null
+      "package": "python3 3.12.16-r0",
+      "family": "_struct.cpython-312-aarch64-linux-musl.so",
+      "build_id": "ecbcff3097cc4dd5979c23c48a984a2d0fd30140",
+      "sha256": "a0390f0228855d2193ecd525226964595651cc24a1024f7ae7794f52aedf8ffe",
+      "apk_spec": "python3=3.12.16-r0",
+      "catalog_module": "/usr/lib/python3.12/lib-dynload/_struct.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_pystruct.S",
+      "recorder_bytes": 1604454,
+      "recorder_symbol": "_ish_aot_module_pystruct",
+      "translations": 390,
+      "recorder_package": "python3 3.12.16-r0"
     },
     {
       "file": "aot_py_datetime_3.12.15-r0.S",
       "module": "/usr/lib/python3.12/lib-dynload/_datetime.cpython-312-aarch64-linux-musl.so",
-      "package": "python3-3.12.15-r0` (`apk add`)",
-      "family": "same file name",
-      "build_id": "e361da74dd7d72b332863d47c2dfe3f52026d916",
-      "sha256": null
+      "package": "python3 3.12.16-r0",
+      "family": "_datetime.cpython-312-aarch64-linux-musl.so",
+      "build_id": "fcd4442d8c5e41cb71112640a189e7c280db9377",
+      "sha256": "386b7c78c6484b7d43ad29eddc98643df110d0ffbe8016510f0c9b61f8556952",
+      "apk_spec": "python3=3.12.16-r0",
+      "catalog_module": "/usr/lib/python3.12/lib-dynload/_datetime.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_pydatetime.S",
+      "recorder_bytes": 2532947,
+      "recorder_symbol": "_ish_aot_module_pydatetime",
+      "translations": 598,
+      "recorder_package": "python3 3.12.16-r0"
     },
     {
       "file": "aot_py_binascii_3.12.15-r0.S",
       "module": "/usr/lib/python3.12/lib-dynload/binascii.cpython-312-aarch64-linux-musl.so",
-      "package": "python3-3.12.15-r0` (`apk add`)",
-      "family": "same file name",
-      "build_id": "dd90d3e7366c8149d54e58c13669f05e76e48e60",
-      "sha256": null
+      "package": "python3 3.12.16-r0",
+      "family": "binascii.cpython-312-aarch64-linux-musl.so",
+      "build_id": "7072c03062e91be10b95a26d5a47b7b439b2d8a9",
+      "sha256": "504ac2455dc172afa34f2ff055ab0da20fdebdb1088a3a38c26640502dbd7f07",
+      "apk_spec": "python3=3.12.16-r0",
+      "catalog_module": "/usr/lib/python3.12/lib-dynload/binascii.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_pybinascii.S",
+      "recorder_bytes": 851165,
+      "recorder_symbol": "_ish_aot_module_pybinascii",
+      "translations": 202,
+      "recorder_package": "python3 3.12.16-r0"
     },
     {
       "file": "aot_py_math_3.12.15-r0.S",
       "module": "/usr/lib/python3.12/lib-dynload/math.cpython-312-aarch64-linux-musl.so",
-      "package": "python3-3.12.15-r0` (`apk add`)",
-      "family": "same file name",
-      "build_id": "67f6d6a06bb8f7453d482c52f6ef4bc6fb720937",
-      "sha256": null
+      "package": "python3 3.12.16-r0",
+      "family": "math.cpython-312-aarch64-linux-musl.so",
+      "build_id": "31ed699ffa119d5a25859a07b52c3d96770df3c7",
+      "sha256": "1505d878e17c0f30fc01f75dee1f18a7a8b5ab3645d0ce5517fe4ba7f1a8ce0b",
+      "apk_spec": "python3=3.12.16-r0",
+      "catalog_module": "/usr/lib/python3.12/lib-dynload/math.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_pymath.S",
+      "recorder_bytes": 404983,
+      "recorder_symbol": "_ish_aot_module_pymath",
+      "translations": 102,
+      "recorder_package": "python3 3.12.16-r0"
     },
     {
       "file": "aot_py_zlib_3.12.15-r0.S",
       "module": "/usr/lib/python3.12/lib-dynload/zlib.cpython-312-aarch64-linux-musl.so",
-      "package": "python3-3.12.15-r0` (`apk add`)",
-      "family": "same file name",
-      "build_id": "fad09a48ab85c708fbd9bc458f4b1ac1ed129055",
-      "sha256": null
+      "package": "python3 3.12.16-r0",
+      "family": "zlib.cpython-312-aarch64-linux-musl.so",
+      "build_id": "90b5288013235ec78c00dd519d77053f613995e3",
+      "sha256": "4491a45ce97d0ec1d748868ead0a9c9036102f9936bc1c112369467babaa870a",
+      "apk_spec": "python3=3.12.16-r0",
+      "catalog_module": "/usr/lib/python3.12/lib-dynload/zlib.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_pyzlib.S",
+      "recorder_bytes": 1469268,
+      "recorder_symbol": "_ish_aot_module_pyzlib",
+      "translations": 377,
+      "recorder_package": "python3 3.12.16-r0"
     },
     {
       "file": "aot_py_socket_3.12.15-r0.S",
       "module": "/usr/lib/python3.12/lib-dynload/_socket.cpython-312-aarch64-linux-musl.so",
-      "package": "python3-3.12.15-r0` (`apk add`)",
-      "family": "same file name",
-      "build_id": "d3f34d4d8f288f9f9324bf303dc3b25c8969b533",
-      "sha256": null
+      "package": "python3 3.12.16-r0",
+      "family": "_socket.cpython-312-aarch64-linux-musl.so",
+      "build_id": "f8ed76b8a5d6e84dac715cb934b26dc2caa28a88",
+      "sha256": "8351b085c8e10aa06910ee6d06731f70404f1c8cc4edf45dc1e02ca46620c452",
+      "apk_spec": "python3=3.12.16-r0",
+      "catalog_module": "/usr/lib/python3.12/lib-dynload/_socket.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_pysocket.S",
+      "recorder_bytes": 4358573,
+      "recorder_symbol": "_ish_aot_module_pysocket",
+      "translations": 1227,
+      "recorder_package": "python3 3.12.16-r0"
     },
     {
       "file": "aot_py_select_3.12.15-r0.S",
       "module": "/usr/lib/python3.12/lib-dynload/select.cpython-312-aarch64-linux-musl.so",
-      "package": "python3-3.12.15-r0` (`apk add`)",
-      "family": "same file name",
-      "build_id": "109bd4dae0f995d654c1e0b4346eba111c6aa8c1",
-      "sha256": null
+      "package": "python3 3.12.16-r0",
+      "family": "select.cpython-312-aarch64-linux-musl.so",
+      "build_id": "fd5415e308662b00a8e8426432c97de619fda99d",
+      "sha256": "07b70414d81953756521d1bdbcaf51aa34304cba08142fc2e5fffba853516613",
+      "apk_spec": "python3=3.12.16-r0",
+      "catalog_module": "/usr/lib/python3.12/lib-dynload/select.cpython-312-aarch64-linux-musl.so",
+      "recorded_path": null,
+      "recorder_member": "aot_pyselect.S",
+      "recorder_bytes": 776429,
+      "recorder_symbol": "_ish_aot_module_pyselect",
+      "translations": 207,
+      "recorder_package": "python3 3.12.16-r0"
     }
   ]
 }

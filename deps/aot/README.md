@@ -7,9 +7,37 @@ target). The app turns them on with **Rootfs Management → AOJIT** (off by
 default); `libish` is built AOT-only (`-Djit=true -Djit_emit=false`), so
 nothing is translated at run time and no executable memory is mapped.
 
-The `.S` files are gitignored — together they are ~1 GB of assembly. Put them
-back here before running `deps/build_ish.sh` (or `deps/build_aot.sh` alone);
-without them the app still builds, with an empty `libish_aot.a`.
+The `.S` files are gitignored. A normal build requires all 25 files in
+`images.lock.json` and checks their ABI, module, family, build ID and admitted
+SHA-256. `AOJIT_OFF=1` is development-only: it generates a marker archive and
+never assembles the local images, even if present.
+
+## Recorder input for the build349 upgrade
+
+[Recorder run #16](https://github.com/JudeGor1129/aojit-recorder/actions/runs/45401233464)
+([image ZIP](https://github.com/JudeGor1129/aojit-recorder/actions/runs/45401233464/artifacts/14923953426))
+recorded 28 modules at ABI `1f3bb5a0` with iSH `0fd17a135e78b7a0cf08a4f5831217bbb76ed22f`.
+We select 25 assembly sources; `gh`, `rg`, Python `_ssl`, and all preassembled
+objects are excluded. The ZIP and per-image SHA-256 are pinned in the lock.
+The `.S` names in the table are stable local names, not package version claims.
+
+```sh
+python3 deps/aot/tools/import_recorder.py /path/to/aojit-images-1.15-run16.zip
+python3 deps/aot/tools/verify_inputs.py deps
+```
+
+Alternatively, pass `AOJIT_RECORDER_ARCHIVE=/path/to/aojit-images-1.15-run16.zip`
+to `deps/build_ish.sh` or `deps/build_aot.sh`. The importer will not overwrite
+unrecognized local bytes. For GitHub Actions, configure the `AOJIT_ARTIFACT_TOKEN`
+secret in the App repository with Actions read permission on the recorder
+repository. The temporary GitHub artifact must still be available; expiry,
+missing access or a digest mismatch fails the build instead of omitting AOJIT.
+
+The catalog describes recorded package versions, not a replacement for the
+App's minirootfs. Existing guest packages are not changed by building or
+importing the images. Exact coverage requires the recorded ELF build ID;
+the existing runtime may reuse matching blocks for other builds in the same
+family. No acceleration claim is made until tested in the app.
 
 ## Images
 
@@ -73,33 +101,33 @@ carries ONE image, not one per version; the build picked is the one most users
 have: the bundled rootfs for core packages, what `apk add` installs today for
 the rest.
 
-| Image | Guest module | Recorded from (Alpine 3.21) | Family | build-id | Source |
+| Image | Guest module | Recorded package (Alpine 3.21) | Family | build-id | Source |
 |---|---|---|---|---|---|
-| `aot_musl_1.2.5-r8.S` | `/lib/ld-musl-aarch64.so.1` | `musl-1.2.5-r8` (bundled rootfs) | `ld-musl-aarch64.so.1*` | `384940f9110e809da953d6fbabcb31d297c217b5` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_busybox_1.37.0-r8.S` | `/bin/busybox` | `busybox-1.37.0-r8` (bundled rootfs) | `busybox` | `2f8b429ec88eacccb94c8bb23ec060ab4a028ee8` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_zlib_1.3.1-r2.S` | `/usr/lib/libz.so.1.3.1` | `zlib-1.3.1-r2` (bundled rootfs) | `libz.so.1*` | `0b23d104a896ab2e7e3a8144b70175fb3ce8cbd9` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_libcrypto_3.3.2-r4.S` | `/usr/lib/libcrypto.so.3` | `libcrypto3-3.3.2-r4` (bundled rootfs) | `libcrypto.so.3*` | `1dcac613c1f6b724c56844356ad82a8c97ff401a` | recorded here (2026-10-05), `tls_train.sh` on rootfs A + py3-requests |
-| `aot_libssl_3.3.2-r4.S` | `/usr/lib/libssl.so.3` | `libssl3-3.3.2-r4` (bundled rootfs) | `libssl.so.3*` | `d0b98a4924a7a7dcc3f3f31dc5645db6ffd4fd9c` | recorded here (2026-10-05), `tls_train.sh` on rootfs A + py3-requests |
-| `aot_python3_3.12.15-r0.S` | `/usr/lib/libpython3.12.so.1.0` | `python3-3.12.15-r0` (`apk add`) | `libpython3.12.so.1*` | `d644d658076939b92edde6d007ef8bf491fec5a3` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_nodejs_22.23.2-r0.S` | `/usr/bin/node` | `nodejs-22.23.2-r0` (`apk add`) | `node` | `c324f04a6d01b07f6858cc8ef1da4d6d3656daa3` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_sqlite_3.48.0-r4.S` | `/usr/lib/libsqlite3.so.0.8.6` | `sqlite-libs-3.48.0-r4` (with python3) | `libsqlite3.so.0*` | `0cd2f33152f67d2b77c8468184bbe0cef1d7e7f2` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_pillow_11.0.0-r0.S` | `/usr/lib/python3.12/site-packages/PIL/_imaging.cpython-312-aarch64-linux-musl.so` | `py3-pillow-11.0.0-r0` (`apk add`) | same file name | `4c527f1dd53c539fadb6e761f32fe1c97453f94e` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_libwebp_1.4.0-r0.S` | `/usr/lib/libwebp.so.7.1.9` | `libwebp-1.4.0-r0` (`apk add`) | `libwebp.so.7*` | `8ef75205b20db80a13c5a7cc73c4010bf5ee4d6f` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_libjpeg_3.0.4-r0.S` | `/usr/lib/libjpeg.so.8.3.2` | `libjpeg-turbo-3.0.4-r0` (`apk add`) | `libjpeg.so.8*` | `18c1b17b04d907c6774bf76263b9fa42e9408db8` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_numpy_2.1.3-r0.S` | `/usr/lib/python3.12/site-packages/numpy/_core/_multiarray_umath.cpython-312-aarch64-linux-musl.so` | `py3-numpy-2.1.3-r0` (`apk add`) | same file name | `04b4971c8e52a43f5c0608f64d7b13207b8c1c3e` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_pcre2_10.43-r0.S` | `/usr/lib/libpcre2-8.so.0.12.0` | `pcre2-10.43-r0` (with git / grep) | `libpcre2-8.so.0*` | `2a7cfd13f571d133069bf15c8e869ba13d2a4c5f` | recorded here (2026-10-05), `pcre_train2.sh` on rootfs A + git + ripgrep |
-| `aot_ssh_9.9_p2-r0.S` | `/usr/bin/ssh` | `openssh-client-default-9.9_p2-r0` (`apk add`) | `ssh` | `df1649582b7a74dc596ffcb440391796995dd202` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_scp_9.9_p2-r0.S` | `/usr/bin/scp` | `openssh-client-common-9.9_p2-r0` (`apk add`) | `scp` | `cbc5234e3d96db92e8acd726e6743ec76b66e03d` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_py_json_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_json.cpython-312-aarch64-linux-musl.so` | `python3-3.12.15-r0` (`apk add`) | same file name | `a1d82af66c4470aa6cac49ca772927a2995ed297` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_py_hashlib_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_hashlib.cpython-312-aarch64-linux-musl.so` | `python3-3.12.15-r0` (`apk add`) | same file name | `97a005a1b066e6bd4158eb271132e1b38c1be8cb` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_py_blake2_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_blake2.cpython-312-aarch64-linux-musl.so` | `python3-3.12.15-r0` (`apk add`) | same file name | `f4f542cf566ffe62953373b6e54602f614df6951` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_py_struct_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_struct.cpython-312-aarch64-linux-musl.so` | `python3-3.12.15-r0` (`apk add`) | same file name | `6cfef1a2458b6dcc2f396ec8f2b9d9ebb771bba1` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_py_datetime_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_datetime.cpython-312-aarch64-linux-musl.so` | `python3-3.12.15-r0` (`apk add`) | same file name | `e361da74dd7d72b332863d47c2dfe3f52026d916` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_py_binascii_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/binascii.cpython-312-aarch64-linux-musl.so` | `python3-3.12.15-r0` (`apk add`) | same file name | `dd90d3e7366c8149d54e58c13669f05e76e48e60` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_py_math_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/math.cpython-312-aarch64-linux-musl.so` | `python3-3.12.15-r0` (`apk add`) | same file name | `67f6d6a06bb8f7453d482c52f6ef4bc6fb720937` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_py_zlib_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/zlib.cpython-312-aarch64-linux-musl.so` | `python3-3.12.15-r0` (`apk add`) | same file name | `fad09a48ab85c708fbd9bc458f4b1ac1ed129055` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_py_socket_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_socket.cpython-312-aarch64-linux-musl.so` | `python3-3.12.15-r0` (`apk add`) | same file name | `d3f34d4d8f288f9f9324bf303dc3b25c8969b533` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
-| `aot_py_select_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/select.cpython-312-aarch64-linux-musl.so` | `python3-3.12.15-r0` (`apk add`) | same file name | `109bd4dae0f995d654c1e0b4346eba111c6aa8c1` | ish-arm64 `1f3bb5a0/minis/` (2026-10-05) |
+| `aot_musl_1.2.5-r8.S` | `/lib/ld-musl-aarch64.so.1` | `musl 1.2.5-r8` | `ld-musl-aarch64.so.1*` | `384940f9110e809da953d6fbabcb31d297c217b5` | recorder run16 `4d62c2c250ff` |
+| `aot_busybox_1.37.0-r8.S` | `/bin/busybox` | `busybox 1.37.0-r8` | `busybox` | `2f8b429ec88eacccb94c8bb23ec060ab4a028ee8` | recorder run16 `4d62c2c250ff` |
+| `aot_python3_3.12.15-r0.S` | `/usr/lib/libpython3.12.so.1.0` | `python3 3.12.16-r0` | `libpython3.12.so.1*` | `2845aa4dc27db8f860cb82bb1e733fff26a1e111` | recorder run16 `4d62c2c250ff` |
+| `aot_nodejs_22.23.2-r0.S` | `/usr/bin/node` | `nodejs 22.23.5-r0` | `node` | `75fddd4ad61eb31ca5eb9917be4217eeebc889c6` | recorder run16 `4d62c2c250ff` |
+| `aot_pillow_11.0.0-r0.S` | `/usr/lib/python3.12/site-packages/PIL/_imaging.cpython-312-aarch64-linux-musl.so` | `py3-pillow 11.0.0-r0` | `_imaging.cpython-312-aarch64-linux-musl.so` | `4c527f1dd53c539fadb6e761f32fe1c97453f94e` | recorder run16 `4d62c2c250ff` |
+| `aot_libwebp_1.4.0-r0.S` | `/usr/lib/libwebp.so.7.1.9` | `libwebp 1.4.0-r0` | `libwebp.so.7*` | `8ef75205b20db80a13c5a7cc73c4010bf5ee4d6f` | recorder run16 `4d62c2c250ff` |
+| `aot_libjpeg_3.0.4-r0.S` | `/usr/lib/libjpeg.so.8.3.2` | `libjpeg-turbo 3.0.4-r0` | `libjpeg.so.8*` | `18c1b17b04d907c6774bf76263b9fa42e9408db8` | recorder run16 `4d62c2c250ff` |
+| `aot_numpy_2.1.3-r0.S` | `/usr/lib/python3.12/site-packages/numpy/_core/_multiarray_umath.cpython-312-aarch64-linux-musl.so` | `py3-numpy 2.1.3-r0` | `_multiarray_umath.cpython-312-aarch64-linux-musl.so` | `04b4971c8e52a43f5c0608f64d7b13207b8c1c3e` | recorder run16 `4d62c2c250ff` |
+| `aot_zlib_1.3.1-r2.S` | `/usr/lib/libz.so.1.3.1` | `zlib 1.3.1-r2` | `libz.so.1*` | `0b23d104a896ab2e7e3a8144b70175fb3ce8cbd9` | recorder run16 `4d62c2c250ff` |
+| `aot_sqlite_3.48.0-r4.S` | `/usr/lib/libsqlite3.so.0.8.6` | `sqlite-libs 3.48.0-r4` | `libsqlite3.so.0*` | `0cd2f33152f67d2b77c8468184bbe0cef1d7e7f2` | recorder run16 `4d62c2c250ff` |
+| `aot_libcrypto_3.3.2-r4.S` | `/usr/lib/libcrypto.so.3` | `libcrypto3 3.3.7-r2` | `libcrypto.so.3*` | `96665a3d2bc0ff6c33b3b0855aea7ff72a4fadf3` | recorder run16 `4d62c2c250ff` |
+| `aot_libssl_3.3.2-r4.S` | `/usr/lib/libssl.so.3` | `libssl3 3.3.7-r2` | `libssl.so.3*` | `d33673f97d5df3ef789ba210cff379270c41db6c` | recorder run16 `4d62c2c250ff` |
+| `aot_pcre2_10.43-r0.S` | `/usr/lib/libpcre2-8.so.0.12.0` | `pcre2 10.43-r1` | `libpcre2-8.so.0*` | `670947d4acae16869d787c05238433d38333e1a1` | recorder run16 `4d62c2c250ff` |
+| `aot_ssh_9.9_p2-r0.S` | `/usr/bin/ssh` | `openssh-client-default 9.9_p2-r1` | `ssh` | `33af3e0eafe4766f4d33ae4eb16c8ea713be19e4` | recorder run16 `4d62c2c250ff` |
+| `aot_scp_9.9_p2-r0.S` | `/usr/bin/scp` | `openssh-client-common 9.9_p2-r1` | `scp` | `cbc5234e3d96db92e8acd726e6743ec76b66e03d` | recorder run16 `4d62c2c250ff` |
+| `aot_py_json_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_json.cpython-312-aarch64-linux-musl.so` | `python3 3.12.16-r0` | `_json.cpython-312-aarch64-linux-musl.so` | `12cee56865fb4afcc00f1e63be9f36e948488bd2` | recorder run16 `4d62c2c250ff` |
+| `aot_py_hashlib_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_hashlib.cpython-312-aarch64-linux-musl.so` | `python3 3.12.16-r0` | `_hashlib.cpython-312-aarch64-linux-musl.so` | `04dff23fff61f99ac22c4108fc8f70568f143e9d` | recorder run16 `4d62c2c250ff` |
+| `aot_py_blake2_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_blake2.cpython-312-aarch64-linux-musl.so` | `python3 3.12.16-r0` | `_blake2.cpython-312-aarch64-linux-musl.so` | `03d10fff74925418d8c4906ca19770360950ed03` | recorder run16 `4d62c2c250ff` |
+| `aot_py_struct_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_struct.cpython-312-aarch64-linux-musl.so` | `python3 3.12.16-r0` | `_struct.cpython-312-aarch64-linux-musl.so` | `ecbcff3097cc4dd5979c23c48a984a2d0fd30140` | recorder run16 `4d62c2c250ff` |
+| `aot_py_datetime_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_datetime.cpython-312-aarch64-linux-musl.so` | `python3 3.12.16-r0` | `_datetime.cpython-312-aarch64-linux-musl.so` | `fcd4442d8c5e41cb71112640a189e7c280db9377` | recorder run16 `4d62c2c250ff` |
+| `aot_py_binascii_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/binascii.cpython-312-aarch64-linux-musl.so` | `python3 3.12.16-r0` | `binascii.cpython-312-aarch64-linux-musl.so` | `7072c03062e91be10b95a26d5a47b7b439b2d8a9` | recorder run16 `4d62c2c250ff` |
+| `aot_py_math_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/math.cpython-312-aarch64-linux-musl.so` | `python3 3.12.16-r0` | `math.cpython-312-aarch64-linux-musl.so` | `31ed699ffa119d5a25859a07b52c3d96770df3c7` | recorder run16 `4d62c2c250ff` |
+| `aot_py_zlib_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/zlib.cpython-312-aarch64-linux-musl.so` | `python3 3.12.16-r0` | `zlib.cpython-312-aarch64-linux-musl.so` | `90b5288013235ec78c00dd519d77053f613995e3` | recorder run16 `4d62c2c250ff` |
+| `aot_py_socket_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/_socket.cpython-312-aarch64-linux-musl.so` | `python3 3.12.16-r0` | `_socket.cpython-312-aarch64-linux-musl.so` | `f8ed76b8a5d6e84dac715cb934b26dc2caa28a88` | recorder run16 `4d62c2c250ff` |
+| `aot_py_select_3.12.15-r0.S` | `/usr/lib/python3.12/lib-dynload/select.cpython-312-aarch64-linux-musl.so` | `python3 3.12.16-r0` | `select.cpython-312-aarch64-linux-musl.so` | `fd5415e308662b00a8e8426432c97de619fda99d` | recorder run16 `4d62c2c250ff` |
 
 **Provenance (2026-09-26).**
 - "ish-arm64 set": `benchmark/aojit/images/daf8fcc7/`

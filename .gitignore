@@ -155,3 +155,7 @@ src/android/app/libs/rclone.aar
 /toolchain-build/bridge-*/obj/
 /toolchain-build/bridge-*/packages/
 *.twork-cache
+
+# Locally admitted iSH AOJIT assembly (never committed)
+/deps/aot/aot_*.S
+/deps/aot/.build*/
