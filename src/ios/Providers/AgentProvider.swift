@@ -32,15 +32,53 @@ struct AgentToolDefinition {
     }
 }
 
-struct AgentToolParam {
+final class AgentToolParam {
     let type: AgentParamType
     let description: String
     let enumValues: [String]?
+    let properties: [String: AgentToolParam]?
+    let required: [String]?
+    let items: AgentToolParam?
+    let minItems: Int?
+    let maxItems: Int?
 
-    init(type: AgentParamType, description: String, enumValues: [String]? = nil) {
-        self.type = type
-        self.description = description
-        self.enumValues = enumValues
+    init(type: AgentParamType, description: String, enumValues: [String]? = nil,
+         properties: [String: AgentToolParam]? = nil, required: [String]? = nil,
+         items: AgentToolParam? = nil, minItems: Int? = nil, maxItems: Int? = nil) {
+        self.type = type; self.description = description; self.enumValues = enumValues
+        self.properties = properties; self.required = required; self.items = items
+        self.minItems = minItems; self.maxItems = maxItems
+    }
+
+    var jsonSchema: [String: Any] {
+        var value: [String: Any] = ["type": type.rawValue, "description": description]
+        if let enumValues { value["enum"] = enumValues }
+        if let properties { value["properties"] = properties.mapValues { $0.jsonSchema } }
+        if let required { value["required"] = required }
+        if let items { value["items"] = items.jsonSchema }
+        if let minItems { value["minItems"] = minItems }
+        if let maxItems { value["maxItems"] = maxItems }
+        return value
+    }
+
+    var geminiSchema: [String: Any] {
+        func normalized(_ value: [String: Any]) -> [String: Any] {
+            var result = value
+            if let raw = value["type"] as? String {
+                result["type"] = ["string":"STRING", "integer":"INTEGER", "boolean":"BOOLEAN",
+                                  "array":"ARRAY", "object":"OBJECT"][raw] ?? raw
+            }
+            if let values = result.removeValue(forKey: "enum") as? [String], !values.isEmpty {
+                let original = result["description"] as? String ?? ""
+                result["description"] = original + " (values: " + values.joined(separator: ", ") + ")"
+            }
+            if let properties = value["properties"] as? [String: [String: Any]] {
+                result["properties"] = properties.mapValues { normalized($0) }
+            }
+            if let items = value["items"] as? [String: Any] { result["items"] = normalized(items) }
+            return result
+        }
+        return normalized(jsonSchema)
     }
 }
 
@@ -48,6 +86,8 @@ enum AgentParamType: String {
     case string
     case integer
     case boolean
+    case array
+    case object
 }
 
 // MARK: - Agent Messages

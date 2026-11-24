@@ -57,10 +57,13 @@ final class MinisUserAskSheetPresenter: NSObject {
         }
     }
     func handleNotificationTap(_ id: String) -> Bool {
-        guard let ask = UserAskCenter.shared.asks[id], ask.state == .pending else { return false }
+        guard let ask = UserAskCenter.shared.asks[id], canInteract(ask) else { return false }
+        // Never rebind a presented controller to a different request. Its
+        // action closures are tied to the question that created it.
+        if controller != nil { return requestId == id }
         requestId = id
         refresh()
-        return canInteract(ask)
+        return true
     }
     private func canInteract(_ ask: PendingAsk) -> Bool {
         let lock = SessionLockStore.shared
@@ -81,15 +84,15 @@ final class MinisUserAskSheetPresenter: NSObject {
         if let id = requestId, let sheet = controller {
             guard let ask = UserAskCenter.shared.asks[id], ask.state == .pending,
                   !ask.isExpired(at: Date()) else { dismissResolved(); return }
-            sheet.render(ask)
             guard canInteract(ask) else { suspendForPrivacy(); return }
+            sheet.render(ask)
             if sheet.presentingViewController != nil { sheet.setPrivacyHidden(false); return }
             present(sheet, ask: ask)
             return
         }
         let waiting = UserAskCenter.shared.asks.values.filter { canInteract($0) }
             .sorted { $0.createdAt < $1.createdAt }
-        guard let ask = waiting.first else { return }
+        guard let ask = waiting.first(where: { $0.requestId == requestId }) ?? waiting.first else { return }
         requestId = ask.requestId
         let sheet = MinisUserAskSheetViewController(ask: ask)
         sheet.onAction = { [weak self] action in self?.perform(action, requestId: ask.requestId) }

@@ -221,14 +221,7 @@ final class AntigravityAgentProvider: AgentProvider {
         tools.map { tool in
             var properties: [String: [String: Any]] = [:]
             for (name, param) in tool.parameters {
-                var prop: [String: Any] = [
-                    "type": param.type.geminiType,
-                    "description": param.description,
-                ]
-                if let enumValues = param.enumValues {
-                    prop["description"] = "\(param.description) (values: \(enumValues.joined(separator: ", ")))"
-                }
-                properties[name] = prop
+                properties[name] = param.geminiSchema
             }
 
             var params: [String: Any] = [

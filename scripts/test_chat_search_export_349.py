@@ -38,16 +38,23 @@ class SourceGuards(unittest.TestCase):
         self.assertNotIn('textStorage.addAttribute', search)
         self.assertNotIn('attributedText =', search)
         self.assertNotIn('invalidateIntrinsicContentSize', search)
-        self.assertIn('addTemporaryAttribute(.backgroundColor', search)
+        self.assertIn('ChatSearchTextViewPaintView.apply(to: text, hits: leafHits)', search)
+        overlay = source(SEARCH+'ChatSearchHighlights.swift')
+        self.assertIn('final class ChatSearchTextViewPaintView: UIView', overlay)
+        self.assertIn('NSTextStorage(attributedString: textView.attributedText)', overlay)
+        self.assertNotIn('textView.textStorage.addAttribute', overlay)
+        self.assertIn('overlay.isUserInteractionEnabled = false', overlay)
         self.assertIn('searchSubscription = nil; searchToken = nil; clearSearchPaint()', search)
         self.assertIn('defer { textView.refreshSearchPaint() }', text)
         self.assertIn('defer { refreshSearchPaint() }', text)
     def test_original_sizing_lines_preserved(self):
         paths=['Agent/MessageList/CollectionViewMessageListV3.swift','Views/Chat/SelectableMarkdownView.swift']
         for p in paths:
-            diff=subprocess.check_output(['git','diff','--unified=0','--','src/ios/'+p],cwd=ROOT,text=True)
+            # Measure against the original layout, even after the upgrade is committed.
+            base = 'b5c205a930cf496d9eb6bab03761b8e3c052f232'
+            diff=subprocess.check_output(['git','diff','--unified=0',base,'--','src/ios/'+p],cwd=ROOT,text=True)
             removed=[x for x in diff.splitlines() if x.startswith('-') and not x.startswith('---')]
-            self.assertEqual([],removed,p+' must remain additive')
+            self.assertEqual([],removed,p+' must remain additive against build349')
     def test_search_navigation_re_resolves_and_does_not_pin(self):
         text=source('Agent/MessageList/CollectionViewMessageListV3.swift')
         nav=text.split('private func navigateSearch')[1].split('func scrollToLastItem')[0]

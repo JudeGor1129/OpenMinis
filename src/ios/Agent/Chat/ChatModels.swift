@@ -622,6 +622,8 @@ final class AssistantBlock: Identifiable, ObservableObject {
             return (!path.isEmpty && name != "/" && name.contains(".")) ? name : "Read image"
         case .memoryTool(let action):
             return action.isEmpty ? "Memory" : action
+        case .userAskTool:
+            return "User Interaction"
         case .info:
             return ""
         }
@@ -642,6 +644,7 @@ enum AssistantBlockKind: Equatable {
     /// tool_title. The block's content is a live progress line while the
     /// helper runs and the result JSON afterwards.
     case delegateTool(title: String)
+    case userAskTool
     case info
 }
 

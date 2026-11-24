@@ -654,7 +654,7 @@ final class QuotaStore: ObservableObject {
     // MARK: - Persistence
 
     private static var fileURL: URL? {
-        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        let base = ContainerLocator.applicationSupportDirectory
         return base.appendingPathComponent("Quota", isDirectory: true).appendingPathComponent("store.json")
     }
 
@@ -723,8 +723,8 @@ final class QuotaStore: ObservableObject {
     /// never goes to the fake server. Absent in Release builds; no file = no
     /// override.
     static func debugEndpointOverride(instanceId: String) -> URL? {
-        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first,
-              let data = try? Data(contentsOf: caches.appendingPathComponent("quota-debug-endpoints.json")),
+        let caches = ContainerLocator.cachesDirectory
+        guard let data = try? Data(contentsOf: caches.appendingPathComponent("quota-debug-endpoints.json")),
               let map = (try? JSONSerialization.jsonObject(with: data)) as? [String: String],
               let raw = map[instanceId], let url = URL(string: raw),
               url.scheme == "http" || url.scheme == "https", url.host != nil else { return nil }

@@ -33,26 +33,26 @@ extension AIChatViewModel {
     var userAskExposed: Bool { userAskExposedThisRun ?? computeUserAskExposure().exposed }
     var userAskDeferred: Bool { userAskDeferredThisRun ?? computeUserAskExposure().deferred }
     static var userAskToolDefinition: AgentToolDefinition {
-        let option = AgentSchemaNode.object(description: nil, properties: [
-            (name: "label", node: .string(description: "Max 12 chars.")),
-            (name: "description", node: .string(description: "One line.")),
+        let option = AgentToolParam(type: .object, description: "Choice option.", properties: [
+            "label": AgentToolParam(type: .string, description: "Max 12 chars."),
+            "description": AgentToolParam(type: .string, description: "One line."),
         ], required: ["label"])
-        let question = AgentSchemaNode.object(description: nil, properties: [
-            (name: "type", node: .string(description: "Required. options = a decision; confirm = approval for one action.", enumValues: ["options", "confirm"])),
-            (name: "question", node: .string(description: "Required. options: the question only, one sentence. confirm: the exact action (real command or target).")),
-            (name: "header", node: .string(description: "Short chip, max 12 chars.")),
-            (name: "options", node: .array(description: "type=options only. 2-4 genuinely different choices, best first. Omit for an open-ended question.", items: option, minItems: 2, maxItems: 4)),
-            (name: "multi_select", node: .boolean(description: "type=options only.")),
-            (name: "impact", node: .string(description: "type=confirm only: what can be lost, and whether it can be undone.")),
-            (name: "risk", node: .string(description: "type=confirm only. Card colour only (high = red).", enumValues: ["medium", "high"])),
-            (name: "default", node: .string(description: "type=options only, optional: 0-based index (e.g. \"0\") of the option you would pick. Never applied; returned to you on timeout as a suggestion.")),
+        let question = AgentToolParam(type: .object, description: "One user question.", properties: [
+            "type": AgentToolParam(type: .string, description: "Required: options or confirm.", enumValues: ["options", "confirm"]),
+            "question": AgentToolParam(type: .string, description: "Question text; for confirm name the exact action."),
+            "header": AgentToolParam(type: .string, description: "Short chip, maximum 12 characters."),
+            "options": AgentToolParam(type: .array, description: "2–4 distinct options. Omit for open-ended questions.", items: option, minItems: 2, maxItems: 4),
+            "multi_select": AgentToolParam(type: .boolean, description: "Allow multiple option selection."),
+            "impact": AgentToolParam(type: .string, description: "What may be lost and whether reversible."),
+            "risk": AgentToolParam(type: .string, description: "Visual risk level only.", enumValues: ["medium", "high"]),
+            "default": AgentToolParam(type: .string, description: "Optional zero-based unconfirmed suggestion index."),
         ], required: ["type", "question"])
         return AgentToolDefinition(
             name: UserAskTool.name,
             description: UserAskPromptText.toolDescription,
             parameters: [
                 "questions": AgentToolParam(type: .array, description: "Required. 1-4 question objects, each with `type` and `question`.",
-                                            schema: .array(description: nil, items: question, minItems: 1, maxItems: 4)),
+                                            items: question, minItems: 1, maxItems: 4),
             ],
             required: ["questions"]
         )

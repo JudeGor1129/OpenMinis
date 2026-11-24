@@ -1337,6 +1337,8 @@ struct ToolLiveSheet: View {
             return "\(truncateParam(action))"
         case .delegateTool(let title):
             return "delegate_task(\(truncateParam(title)))"
+        case .userAskTool:
+            return "user_ask"
         case .info:
             return ""
         }
@@ -1357,6 +1359,7 @@ struct ToolLiveSheet: View {
         case .readImageTool: Image(systemName: "photo")
         case .memoryTool: Image(systemName: "brain.head.profile")
         case .delegateTool: Image(systemName: HelperAccent.icon)
+        case .userAskTool: Image(systemName: "hand.tap")
         case .info: Image(systemName: "arrow.triangle.2.circlepath")
         case .text: Image(systemName: "text.alignleft")
         case .thinking: Image("ThinkingIcon")
@@ -2693,6 +2696,7 @@ struct ToolLiveSheet: View {
         case .readImageTool: return "Minis is reading Image"
         case .memoryTool: return "Minis is using Memory"
         case .delegateTool: return "Minis is using an Agent"
+        case .userAskTool: return "Minis is waiting for an answer"
         case .info: return "Minis"
         case .text: return "Minis"
         case .thinking: return "Minis"
@@ -2727,6 +2731,7 @@ struct ToolLiveSheet: View {
         case .readImageTool: return .purple
         case .memoryTool: return .pink
         case .delegateTool: return HelperAccent.color
+        case .userAskTool: return .orange
         case .info: return .secondary
         case .text: return .primary
         case .thinking: return .blue
@@ -3129,6 +3134,7 @@ private struct ToolPreviewThumbnail: View {
         case .readImageTool: return .purple
         case .memoryTool: return .pink
         case .delegateTool: return HelperAccent.color
+        case .userAskTool: return .orange
         case .info: return .secondary
         case .text: return .primary
         case .thinking: return .blue

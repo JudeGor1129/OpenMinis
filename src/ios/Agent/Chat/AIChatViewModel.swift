@@ -2430,6 +2430,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // the bullet above. Generated from the same list the tool schema's
             // enumValues use, so a name can never appear in one and not the other.
             + ((isHelper || !Self.toolEnabled(.agents)) ? "" : Self.subAgentRosterSection())
+            + (userAskExposed ? UserAskPromptText.systemPromptText(exposed: true) : "")
             + "- memory_write: Save a memory entry to today's daily log (YYYY-MM-DD.md). Use proactively to note user preferences, project patterns, and important context.\n"
             + "- memory_get: Recall memories with keyword search. Check memory at the start of new topics to leverage past knowledge.\n\n"
             + "Current time (approximate): \(approximateTimeString) (\(TimeZone.current.identifier)). "
@@ -5512,6 +5513,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 case .readImageTool: return "readImage"
                 case .memoryTool: return "memory"
                 case .delegateTool: return SubAgentDefinition.toolName
+                case .userAskTool: return "user_ask"
                 case .info: return "info"
                 }
             }()

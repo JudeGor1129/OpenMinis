@@ -30,7 +30,6 @@ final class UserAskCenter: ObservableObject {
     /// deliver them too, even in the gap between resolution and that persist.
     private var inProcess: Set<String> = []
     private var tickTask: Task<Void, Never>?
-    private var categoryRegistry = UserAskCategoryRegistry()
     private let store = UserAskRecordStore()
     private let logger = AppLogger(category: "UserAsk")
     private var observers: [NSObjectProtocol] = []
@@ -42,7 +41,6 @@ final class UserAskCenter: ObservableObject {
         // removed auto-default mode once, so neither can take effect again.
         let purged = UserAskSettings.purgeLegacyKeys()
         if !purged.isEmpty { logger.info("[UserAsk] removed legacy settings \(purged)") }
-        registerStaticCategories()
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
             Task { @MainActor in UserAskCenter.shared.appDidEnterBackground() }
@@ -87,18 +85,6 @@ final class UserAskCenter: ObservableObject {
         if !r.ask.isDeferred { inProcess.insert(r.ask.requestId) }
         asks[r.ask.requestId] = r.ask
         requestIdByToolUse[r.ask.toolCallId] = r.ask.requestId
-        // Register the answer category now, well before any notification uses
-        // it: registration is asynchronous and a category that is not in place
-        // yet shows the notification without its buttons.
-        // [T-user-ask-notif-multi] Every question's category, not only the
-        // first: the notification moves on to the next question after each
-        // answer.
-        let s = settings
-        let specs = UserAskNotificationPlan.dynamicCategories(for: r.ask, otherTitle: AppLocalized("Other…"))
-        if s.notifyInBackground, !specs.isEmpty {
-            specs.forEach { categoryRegistry.add($0) }
-            NotificationCategoryCenter.shared.register(specs.map(makeCategory))
-        }
         logger.info("[UserAsk] BEGIN req=\(r.ask.requestId.prefix(8)) tool=\(r.ask.toolCallId.prefix(16)) sid=\(r.ask.sessionId.prefix(8)) questions=\(r.ask.questions.count) types=\(r.ask.questions.map(\.type.rawValue)) timeout=\(r.ask.timeoutMinutes)m state=\(r.ask.state.rawValue)")
         guard r.ask.state == .pending else { return }
         startTicking()
@@ -309,31 +295,6 @@ final class UserAskCenter: ObservableObject {
 
     private var settings: UserAskSettings { UserAskSettings.load() }
 
-    private func registerStaticCategories() {
-        let specs = UserAskNotificationPlan.staticCategories(titles: (
-            cancel: AppLocalized("Cancel"), allow: AppLocalized("Allow"), open: AppLocalized("Open App")))
-        NotificationCategoryCenter.shared.register(specs.map(makeCategory))
-    }
-
-    private func makeCategory(_ spec: UserAskNotificationCategorySpec) -> UNNotificationCategory {
-        let actions: [UNNotificationAction] = spec.actions.map { a in
-            var options: UNNotificationActionOptions = []
-            if a.requiresAuthentication { options.insert(.authenticationRequired) }
-            if a.opensApp { options.insert(.foreground) }
-            switch a.kind {
-            case .textInput:
-                return UNTextInputNotificationAction(identifier: a.id, title: a.title, options: options,
-                                                     textInputButtonTitle: AppLocalized("Send"),
-                                                     textInputPlaceholder: AppLocalized("Your answer"))
-            case .button:
-                return UNNotificationAction(identifier: a.id, title: a.title, options: options)
-            }
-        }
-        return UNNotificationCategory(identifier: spec.id, actions: actions, intentIdentifiers: [],
-                                      hiddenPreviewsBodyPlaceholder: AppLocalized("A question is waiting for your answer"),
-                                      options: [])
-    }
-
     /// Shows the question the ask is on (the first not yet answered), under
     /// that question's own identifier [T-user-ask-notif-next-id], and clears
     /// any other question of the same request still in Notification Center,
@@ -392,7 +353,6 @@ final class UserAskCenter: ObservableObject {
         let ids = UserAskNotificationPlan.allNotificationIds(requestId: requestId, questionCount: count)
         center.removeDeliveredNotifications(withIdentifiers: ids)
         center.removePendingNotificationRequests(withIdentifiers: ids)
-        categoryRegistry.remove(requestId: requestId)
         NotificationCategoryCenter.shared.remove(identifiers:
             UserAskNotificationPlan.dynamicCategoryIds(requestId: requestId, questionCount: count))
     }
@@ -409,86 +369,6 @@ final class UserAskCenter: ObservableObject {
         }
         tick()
         Task { @MainActor in await self.recoverAll() }
-    }
-
-    enum NotificationOutcome { case notUserAsk, handled, openApp }
-
-    /// A notification action for a user_ask request. First come, first
-    /// served: an ask already resolved (in the app, by timeout, or
-    /// superseded) ignores it and just clears the notification.
-    func handleNotificationResponse(_ response: UNNotificationResponse) -> NotificationOutcome {
-        let info = response.notification.request.content.userInfo
-        guard let requestId = info["userAskRequestId"] as? String else { return .notUserAsk }
-        let lock = SessionLockStore.shared
-        let sid = info["sessionId"] as? String
-        guard UIApplication.shared.applicationState == .active, !lock.appIsLocked,
-              !lock.showPrivacyScreen,
-              !(sid.map { lock.isVisuallyLocked($0) } ?? false) else { return .openApp }
-        let action = response.actionIdentifier
-        logger.info("[UserAsk] NOTIFICATION action=\(action) req=\(requestId.prefix(8))")
-        if action == UNNotificationDismissActionIdentifier { return .handled }  // swiped away: keep waiting
-        if action == UNNotificationDefaultActionIdentifier || action == UserAskNotificationPlan.actionOpen {
-            return .openApp
-        }
-        guard var ask = asks[requestId] ?? store.record(requestId)?.ask else {
-            removeNotification(requestId: requestId)
-            return .handled
-        }
-        if asks[requestId] == nil { asks[requestId] = ask; requestIdByToolUse[ask.toolCallId] = requestId }
-        guard ask.state == .pending, !ask.isExpired(at: Date()) else {
-            logger.info("[UserAsk] notification answer ignored — already \(ask.state.rawValue)")
-            tick()
-            removeNotification(requestId: requestId)
-            return .handled
-        }
-        // [T-user-ask-notif-multi] The answer is for the question this
-        // notification showed. If that is no longer the open one (answered in
-        // the app meanwhile, or a stale notification), ignore it and show the
-        // question that is open now.
-        let index = info["userAskQuestionIndex"] as? Int ?? 0
-        guard index == UserAskNotificationPlan.notifiedIndex(ask) else {
-            logger.info("[UserAsk] notification answer for q\(index + 1) ignored — now on q\((UserAskNotificationPlan.notifiedIndex(ask) ?? -1) + 1)")
-            if UIApplication.shared.applicationState == .background { postNotification(for: ask, sound: false) }
-            return .handled
-        }
-        var a = ask.answers[index]
-        if let idx = UserAskNotificationPlan.optionIndex(fromActionId: action) {
-            a.selected = [idx]
-            a.otherText = nil
-        } else if action == UserAskNotificationPlan.actionOther,
-                  let text = (response as? UNTextInputNotificationResponse)?.userText,
-                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            // An answer typed into the notification — not a dismissal (§11.4 point 6).
-            a.otherText = text
-            a.selected = []
-        } else if action == UserAskNotificationPlan.actionAllow {
-            a.confirmChoice = .approve
-        } else if action == UserAskNotificationPlan.actionCancel {
-            a.confirmChoice = .deny
-        } else {
-            return .openApp
-        }
-        ask.setAnswer(a, at: index)
-        let outcome = ask.submit(index, now: Date())
-        if case .advanced(let next) = outcome { Self.preselectRecommended(&ask, at: next) }
-        asks[requestId] = ask
-        var r = records[requestId] ?? store.record(requestId) ?? UserAskRecord(ask: ask)
-        r.ask = ask
-        persist(r)
-        switch outcome {
-        case .rejected:
-            // Not answerable from the notification (e.g. empty text): open
-            // the card on this question.
-            return .openApp
-        case .advanced(let next):
-            logger.info("[UserAsk] NOTIFICATION q\(index + 1) answered — next q\(next + 1)/\(ask.questions.count)")
-            // In the foreground the card is on screen; it is on this question too.
-            if UIApplication.shared.applicationState == .background { postNotification(for: ask, sound: false) }
-            return .handled
-        case .complete:
-            resolveAnswered(requestId: requestId, source: .notification)
-            return .handled
-        }
     }
 
     // MARK: - Recovery after the process was killed (§12.4)

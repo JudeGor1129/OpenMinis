@@ -198,6 +198,24 @@ struct FixedContextTokenCache {
         }
     }
 
+    private static func sameParam(_ lhs: AgentToolParam, _ rhs: AgentToolParam) -> Bool {
+        guard lhs.type == rhs.type, sameBytes(lhs.description, rhs.description),
+              sameStrings(lhs.enumValues, rhs.enumValues), sameStrings(lhs.required, rhs.required),
+              lhs.minItems == rhs.minItems, lhs.maxItems == rhs.maxItems else { return false }
+        switch (lhs.items, rhs.items) {
+        case (nil, nil): break
+        case let (a?, b?): guard sameParam(a, b) else { return false }
+        default: return false
+        }
+        guard lhs.properties?.count == rhs.properties?.count else { return false }
+        let left = lhs.properties ?? [:], right = rhs.properties ?? [:]
+        for key in left.keys.sorted() {
+            guard let otherKey = right.keys.first(where: { sameBytes(key, $0) }),
+                  let a = left[key], let b = right[otherKey], sameParam(a, b) else { return false }
+        }
+        return true
+    }
+
     private static func sameTools(_ lhs: [AgentToolDefinition], _ rhs: [AgentToolDefinition]) -> Bool {
         guard lhs.count == rhs.count else { return false }
         for (a, b) in zip(lhs, rhs) {
@@ -211,8 +229,7 @@ struct FixedContextTokenCache {
             for (aKey, bKey) in zip(aKeys, bKeys) {
                 guard sameBytes(aKey, bKey),
                       let x = a.parameters[aKey], let y = b.parameters[bKey],
-                      x.type == y.type, sameBytes(x.description, y.description),
-                      sameStrings(x.enumValues, y.enumValues) else { return false }
+                      sameParam(x, y) else { return false }
             }
         }
         return true

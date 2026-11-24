@@ -279,6 +279,8 @@ struct ChatMessageRow: View {
                 parts.append("Memory: \(action)\n\(block.content)")
             case .delegateTool(let title):
                 parts.append("Agent: \(title)\n\(block.content)")
+            case .userAskTool:
+                parts.append("User interaction: \(block.content)")
             case .thinking:
                 if !block.content.isEmpty { parts.append("[Thinking]\n\(block.content)") }
             case .info:

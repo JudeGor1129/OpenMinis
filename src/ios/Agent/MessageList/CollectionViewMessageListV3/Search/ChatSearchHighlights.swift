@@ -347,6 +347,55 @@ final class ChatSearchLabelPaintView: UIView {
     }
 }
 
+/// Paint-only overlay for attachment UITextViews. It deliberately leaves their
+/// attributed storage alone, preserving source code colours and inline styles.
+final class ChatSearchTextViewPaintView: UIView {
+    weak var textView: UITextView?
+    var hits: [ChatSearchPaintRange] = []
+
+    override func draw(_ rect: CGRect) {
+        guard let textView, !hits.isEmpty else { return }
+        let storage = NSTextStorage(attributedString: textView.attributedText)
+        let manager = NSLayoutManager()
+        let container = NSTextContainer(size: textView.contentSize)
+        container.lineFragmentPadding = textView.textContainer.lineFragmentPadding
+        container.maximumNumberOfLines = textView.textContainer.maximumNumberOfLines
+        container.lineBreakMode = textView.textContainer.lineBreakMode
+        manager.addTextContainer(container)
+        storage.addLayoutManager(manager)
+        manager.ensureLayout(for: container)
+        for hit in hits where NSMaxRange(hit.range) <= storage.length {
+            let glyphs = manager.glyphRange(forCharacterRange: hit.range, actualCharacterRange: nil)
+            let color = hit.current ? ChatSearchHighlightStyle.currentColor(dimmed: false)
+                                    : ChatSearchHighlightStyle.matchColor(dimmed: false)
+            color.setFill()
+            manager.enumerateEnclosingRects(forGlyphRange: glyphs,
+                withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: container) { box, _ in
+                    UIBezierPath(roundedRect: box.offsetBy(dx: textView.textContainerInset.left,
+                        dy: textView.textContainerInset.top), cornerRadius: 2).fill()
+                }
+        }
+    }
+
+    static func apply(to textView: UITextView, hits: [ChatSearchPaintRange]) {
+        let existing = textView.subviews.compactMap { $0 as? ChatSearchTextViewPaintView }.first
+        guard existing != nil || !hits.isEmpty else { return }
+        let overlay = existing ?? ChatSearchTextViewPaintView()
+        if overlay.superview == nil {
+            overlay.isUserInteractionEnabled = false
+            overlay.isAccessibilityElement = false
+            overlay.backgroundColor = .clear
+            overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            textView.addSubview(overlay)
+        }
+        overlay.textView = textView
+        overlay.frame = CGRect(origin: .zero, size: textView.contentSize)
+        overlay.hits = hits
+        overlay.isHidden = hits.isEmpty
+        overlay.setNeedsDisplay()
+    }
+}
+
 /// Overlay mirrors only the old user's text HStack and its 14/10 padding. It is
 /// outside the sizing graph, ignores touches and keeps the old bubble/attachments.
 /// Not used for queued messages or callbacks. No geometry cache is invalidated.

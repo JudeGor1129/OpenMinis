@@ -9565,6 +9565,8 @@ struct SelectableMarkdownView: UIViewRepresentable {
                 }
                 let menu = UIMenu(children: [copyAction, openAction])
                 return UITextItem.MenuConfiguration(preview: nil, menu: menu)
+            case .tag(_):
+                return nil
             case .textAttachment(let attachment):
                 // [D1 T-ios-table-attachment-tap-preview-ios18] On iOS 18 and
                 // below, a tap on a table attachment must not present the image
@@ -9767,11 +9769,10 @@ extension SelectableMarkdownTextView {
         func clear(_ view: UIView) {
             for child in view.subviews {
                 if let label = child as? UILabel { ChatSearchLabelPaintView.apply(to: label, hits: []) }
-                if let text = child as? UITextView, !(text is SelectableMarkdownTextView), text.textStorage.length > 0 {
-                    text.layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: NSRange(location: 0, length: text.textStorage.length))
-                    text.setNeedsDisplay()
+                if let text = child as? UITextView, !(text is SelectableMarkdownTextView) {
+                    ChatSearchTextViewPaintView.apply(to: text, hits: [])
                 }
-                if !(child is ChatSearchLabelPaintView) { clear(child) }
+                if !(child is ChatSearchLabelPaintView) && !(child is ChatSearchTextViewPaintView) { clear(child) }
             }
         }
         for view in attachmentViews { clear(view) }
@@ -9814,11 +9815,7 @@ extension SelectableMarkdownTextView {
                     }
                     if let label = leaf as? UILabel { ChatSearchLabelPaintView.apply(to: label, hits: leafHits) }
                     if let text = leaf as? UITextView {
-                        for hit in leafHits {
-                            let color = hit.current ? ChatSearchHighlightStyle.currentColor(dimmed: false) : ChatSearchHighlightStyle.matchColor(dimmed: false)
-                            text.layoutManager.addTemporaryAttribute(.backgroundColor, value: color, forCharacterRange: hit.range)
-                        }
-                        text.setNeedsDisplay()
+                        ChatSearchTextViewPaintView.apply(to: text, hits: leafHits)
                     }
                     if leafHits.contains(where: \.current) { currentSearchRect = leaf.convert(leaf.bounds, to: self) }
                 }

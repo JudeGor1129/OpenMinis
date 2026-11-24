@@ -1006,6 +1006,7 @@ extension AIChatViewModel {
                 case .readImageTool: "read_image"
                 case .memoryTool(let a): a
                 case .delegateTool: SubAgentDefinition.toolName
+                case .userAskTool: "user_ask"
                 default: "other"
                 }
                 if counts[name] == nil { order.append(name) }

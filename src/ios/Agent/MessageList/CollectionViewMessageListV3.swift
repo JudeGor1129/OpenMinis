@@ -3638,6 +3638,7 @@ extension CollectionViewMessageListV3 {
                         case .readImageTool: "read_image"
                         case .memoryTool: "memory"
                         case .delegateTool: SubAgentDefinition.toolName
+                        case .userAskTool: "user_ask"
                         default: "unknown"
                         }
                         AppLogger(category: "ToolLC").verbose("[ToolLifecycle] RENDERED_CHATUI toolId=\(block.toolUseId?.prefix(20) ?? "nil") tool=\(toolName) sid=\(sid) appState=\(appState) suspended=\(suspended) isProcessing=\(processing) caller=\(caller)")

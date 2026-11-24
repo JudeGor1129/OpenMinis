@@ -66,6 +66,14 @@ struct AssistantBlockView: View {
             ToolCapsuleView(block: block, icon: "brain.head.profile", accentColor: .pink,
                             commandStartTime: commandStartTime, onStop: onStop,
                             toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
+        case .userAskTool:
+            if let toolId = block.toolUseId, let ask = UserAskCenter.shared.ask(forToolUseId: toolId) {
+                userAskCard(ask)
+            } else {
+                ToolCapsuleView(block: block, icon: "hand.tap", accentColor: .blue,
+                                commandStartTime: commandStartTime, onStop: onStop,
+                                toolSnapshots: toolSnapshots, detailBlock: $detailBlock)
+            }
         case .delegateTool:
             if HelperBlockInfo.controlSummary(block) != nil {
                 // [T-subagent-control-capsule] A status / steer / cancel /
@@ -132,6 +140,91 @@ struct AssistantBlockView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func userAskCard(_ ask: PendingAsk) -> some View {
+        let q = ask.questions[ask.currentIndex]
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: q.type == .confirm ? "checkmark.shield" : "hand.tap")
+                    .foregroundColor(q.risk == .high ? .red : .accentColor)
+                Text(q.header ?? AppLocalized("User Interaction"))
+                    .font(.headline)
+                Spacer()
+                Text("\\(ask.currentIndex + 1)/\\(ask.questions.count)")
+                    .font(.caption.monospacedDigit()).foregroundColor(.secondary)
+            }
+            Text(q.question).font(.body).fixedSize(horizontal: false, vertical: true)
+            if let impact = q.impact, !impact.isEmpty {
+                Text(impact).font(.subheadline).foregroundColor(.secondary)
+            }
+            if !ask.isExpired(at: Date()), ask.state == .pending {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array((q.options ?? []).enumerated()), id: \\.offset) { index, option in
+                        let selected = ask.answers[ask.currentIndex].selected.contains(index)
+                        Button {
+                            var answer = ask.answers[ask.currentIndex]
+                            if q.multiSelect {
+                                if selected { answer.selected.removeAll { $0 == index } } else { answer.selected.append(index) }
+                            } else { answer.selected = [index]; answer.otherText = nil }
+                            UserAskCenter.shared.updateAnswer(requestId: ask.requestId, index: ask.currentIndex, answer)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(option.label).font(.body)
+                                if let detail = option.description, !detail.isEmpty { Text(detail).font(.caption).foregroundColor(.secondary) }
+                            }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                                .background(selected ? Color.accentColor.opacity(0.12) : Color(UIColor.tertiarySystemBackground))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? Color.accentColor : Color(UIColor.separator), lineWidth: 1))
+                                .cornerRadius(12)
+                        }.buttonStyle(.plain).frame(minHeight: 44)
+                    }
+                }
+                if q.type == .options {
+                    TextField(AppLocalized("Other…"), text: Binding(
+                        get: { ask.answers[ask.currentIndex].otherText ?? "" },
+                        set: { var a = ask.answers[ask.currentIndex]; a.otherText = $0; UserAskCenter.shared.updateAnswer(requestId: ask.requestId, index: ask.currentIndex, a) }
+                    )).textFieldStyle(.roundedBorder)
+                    TextField(AppLocalized("Note"), text: Binding(
+                        get: { ask.answers[ask.currentIndex].note ?? "" },
+                        set: { var a = ask.answers[ask.currentIndex]; a.note = $0; UserAskCenter.shared.updateAnswer(requestId: ask.requestId, index: ask.currentIndex, a) }
+                    )).textFieldStyle(.roundedBorder)
+                } else {
+                    TextField(AppLocalized("Note"), text: Binding(
+                        get: { ask.answers[ask.currentIndex].note ?? "" },
+                        set: { var a = ask.answers[ask.currentIndex]; a.note = $0; UserAskCenter.shared.updateAnswer(requestId: ask.requestId, index: ask.currentIndex, a) }
+                    )).textFieldStyle(.roundedBorder)
+                }
+                HStack {
+                    if ask.currentIndex > 0 {
+                        Button(AppLocalized("Previous")) { UserAskCenter.shared.goTo(requestId: ask.requestId, index: ask.currentIndex - 1) }
+                            .frame(minHeight: 44)
+                    }
+                    Spacer()
+                    if q.type == .confirm {
+                        Button(AppLocalized("Deny"), role: .destructive) { UserAskCenter.shared.confirm(requestId: ask.requestId, index: ask.currentIndex, choice: .deny, note: ask.answers[ask.currentIndex].note) }
+                            .frame(minHeight: 44)
+                        Button(AppLocalized("Allow")) { UserAskCenter.shared.confirm(requestId: ask.requestId, index: ask.currentIndex, choice: .approve) }
+                            .buttonStyle(.borderedProminent).frame(minHeight: 44)
+                    } else {
+                        let complete = ask.answers[ask.currentIndex].isComplete(for: q)
+                        Button(ask.currentIndex + 1 < ask.questions.count ? AppLocalized("Next") : AppLocalized("Send answer")) {
+                            UserAskCenter.shared.submitQuestion(requestId: ask.requestId, index: ask.currentIndex)
+                        }.buttonStyle(.borderedProminent).disabled(!complete).frame(minHeight: 44)
+                    }
+                }
+                Button(AppLocalized("Close"), role: .cancel) {
+                    UserAskCenter.shared.dismiss(requestId: ask.requestId, reason: .userClosedCard)
+                }.frame(minHeight: 44)
+            } else {
+                Text(ask.resultStatuses.map(\\.rawValue).joined(separator: " · "))
+                    .font(.caption).foregroundColor(.secondary)
+            }
+        }
+        .padding(16).background(Color(UIColor.secondarySystemBackground))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(UIColor.separator), lineWidth: 1))
+            .cornerRadius(16).padding(.vertical, 4)
+            .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
@@ -305,6 +398,7 @@ struct ToolCapsuleView: View {
         case .readImageTool: toolName = "read_image"
         case .memoryTool:    toolName = "memory"
         case .delegateTool:  toolName = SubAgentDefinition.toolName
+        case .userAskTool:   toolName = "user_ask"
         case .text, .thinking, .info: toolName = "unknown"
         }
 

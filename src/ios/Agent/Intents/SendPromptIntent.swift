@@ -491,8 +491,12 @@ final class ShortcutNotificationDelegate: NSObject, UNUserNotificationCenterDele
     ) {
         let userInfo = response.notification.request.content.userInfo
         if let questionId = userInfo["userAskRequestId"] as? String {
+            // Ignore old notification shortcuts: only the in-app sheet can answer.
+            guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else {
+                completionHandler()
+                return
+            }
             DispatchQueue.main.async {
-                _ = UserAskCenter.shared.handleNotificationResponse(response)
                 if MinisUserAskSheetPresenter.shared.handleNotificationTap(questionId) { return }
                 // Process restarted / question ended: navigate, never replay it.
                 if let sessionId = userInfo["sessionId"] as? String, !sessionId.isEmpty {

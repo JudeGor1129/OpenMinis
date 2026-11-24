@@ -139,6 +139,11 @@ struct ToolsSettingsView: View {
         Form {
             Section {
                 toolRow(AppLocalized("User Interaction"), tool: "user_ask", icon: "hand.tap", isOn: $interactionEnabled)
+                if interactionEnabled {
+                    NavigationLink { UserAskSettingsView() } label: {
+                        Label(AppLocalized("Question behavior and reminders"), systemImage: "questionmark.bubble")
+                    }
+                }
                 toolRow(AppLocalized("Browser Use"), tool: "browser_use", icon: "globe", isOn: $browserEnabled)
             } footer: {
                 Text(AppLocalized("Browse the web in the in-app browser: open pages, read them, click and type. Stable and on by default. When off, the tool is removed from every conversation — the model does not see it at all."))

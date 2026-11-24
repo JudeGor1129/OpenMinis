@@ -5873,6 +5873,9 @@ extension RawMessage {
                     case "memory_get", "memory_manage": content = "Reading memory..."
                     default: content = "Saving task checkpoint..."
                     }
+                case "user_ask":
+                    kind = .userAskTool
+                    content = tu.input["questions"].map { _ in "Awaiting your response…" } ?? "Awaiting your response…"
                 case SubAgentDefinition.toolName:
                     kind = .delegateTool(title: tu.description ?? "")
                     content = "Delegating..."

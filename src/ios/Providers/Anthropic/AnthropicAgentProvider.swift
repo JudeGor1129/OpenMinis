@@ -862,29 +862,25 @@ final class AnthropicAgentProvider: AgentProvider {
     // MARK: - Tool Conversion
 
     private func convertTools(_ tools: [AgentToolDefinition]) -> [MessageParameter.Tool] {
-        tools.map { tool in
-            var properties: [String: JSONSchema.Property] = [:]
-            for (name, param) in tool.parameters {
-                let type: JSONSchema.JSONType = switch param.type {
-                case .string: .string
-                case .integer: .integer
-                case .boolean: .boolean
-                }
-                properties[name] = JSONSchema.Property(
-                    type: type,
-                    description: param.description,
-                    enumValues: param.enumValues
-                )
+        func schemaType(_ type: AgentParamType) -> JSONSchema.JSONType {
+            switch type {
+            case .string: return .string
+            case .integer: return .integer
+            case .boolean: return .boolean
+            case .array: return .array
+            case .object: return .object
             }
-            return MessageParameter.Tool.function(
-                name: tool.name,
-                description: tool.description,
-                inputSchema: JSONSchema(
-                    type: .object,
-                    properties: properties,
-                    required: tool.required
-                )
-            )
+        }
+        func property(_ param: AgentToolParam) -> JSONSchema.Property {
+            let item = param.items.map { JSONSchema.Items(type: schemaType($0.type),
+                properties: $0.properties?.mapValues(property), minItems: $0.minItems, maxItems: $0.maxItems) }
+            return JSONSchema.Property(type: schemaType(param.type), description: param.description,
+                items: item, required: param.required, enumValues: param.enumValues,
+                minItems: param.minItems, maxItems: param.maxItems)
+        }
+        return tools.map { tool in
+            MessageParameter.Tool.function(name: tool.name, description: tool.description,
+                inputSchema: JSONSchema(type: .object, properties: tool.parameters.mapValues(property), required: tool.required))
         }
     }
 

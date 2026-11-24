@@ -181,8 +181,8 @@ enum ChatExportRenderer {
             var media = CGRect(x: 0, y: 0, width: width, height: height)
             guard let consumer = CGDataConsumer(url: url as CFURL),
                   let context = CGContext(consumer: consumer, mediaBox: &media,
-                    auxiliaryInfo: [kCGPDFContextTitle as String: String(title.prefix(160)),
-                        kCGPDFContextCreator as String: "Minis"] as CFDictionary)
+                    [kCGPDFContextTitle as String: String(title.prefix(160)),
+                     kCGPDFContextCreator as String: "Minis"] as CFDictionary)
             else { throw ChatExportError.writeFailed }
             self.context = context
         }

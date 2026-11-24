@@ -727,6 +727,7 @@ private final class OAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
         RequestBodyPatcher.injectToolsCacheControl(into: mutable)
         // Inject eager_input_streaming into tool definitions
         RequestBodyPatcher.injectEagerInputStreaming(into: mutable)
+        RequestBodyPatcher.injectUserAskNestedRequirements(into: mutable)
         // Rewrite tool results that have associated images
         RequestBodyPatcher.patchToolResultsWithImages(into: mutable)
         // Inject 1h TTL into cache_control objects when enhanced caching is enabled
@@ -1023,6 +1024,42 @@ enum RequestBodyPatcher {
             if let newBody = try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]) {
                 request.httpBody = newBody
             }
+        }
+    }
+
+    /// SwiftAnthropic 2.2.0's JSONSchema.Items omits the JSON Schema `required`
+    /// key. Restore it only for the official nested user_ask array contract;
+    /// the SDK has already encoded the rest of each provider-neutral property.
+    static func injectUserAskNestedRequirements(into request: NSMutableURLRequest) {
+        guard let body = request.httpBody,
+              bodyMentionsTools(body),
+              var json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              var tools = json["tools"] as? [[String: Any]] else { return }
+        var modified = false
+        for index in tools.indices where tools[index]["name"] as? String == "user_ask" {
+            guard var schema = tools[index]["input_schema"] as? [String: Any],
+                  var properties = schema["properties"] as? [String: Any],
+                  var questions = properties["questions"] as? [String: Any],
+                  var question = questions["items"] as? [String: Any],
+                  var questionProperties = question["properties"] as? [String: Any] else { continue }
+            question["required"] = ["type", "question"]
+            if var options = questionProperties["options"] as? [String: Any],
+               var option = options["items"] as? [String: Any] {
+                option["required"] = ["label"]
+                options["items"] = option
+                questionProperties["options"] = options
+            }
+            question["properties"] = questionProperties
+            questions["items"] = question
+            properties["questions"] = questions
+            schema["properties"] = properties
+            tools[index]["input_schema"] = schema
+            modified = true
+        }
+        guard modified else { return }
+        json["tools"] = tools
+        if let patched = try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]) {
+            request.httpBody = patched
         }
     }
 
@@ -1599,6 +1636,7 @@ private final class EagerStreamingURLProtocol: URLProtocol, URLSessionDataDelega
         RequestBodyPatcher.normalizeKeyOrder(in: mutable)
         RequestBodyPatcher.injectToolsCacheControl(into: mutable)
         RequestBodyPatcher.injectEagerInputStreaming(into: mutable)
+        RequestBodyPatcher.injectUserAskNestedRequirements(into: mutable)
         RequestBodyPatcher.patchToolResultsWithImages(into: mutable)
         RequestBodyPatcher.injectCacheTTL(into: mutable)
         RequestBodyPatcher.injectThinkingConfig(into: mutable)
@@ -1789,6 +1827,7 @@ private final class DualAuthURLProtocol: URLProtocol, URLSessionDataDelegate {
         RequestBodyPatcher.normalizeKeyOrder(in: mutable)
         RequestBodyPatcher.injectToolsCacheControl(into: mutable)
         RequestBodyPatcher.injectEagerInputStreaming(into: mutable)
+        RequestBodyPatcher.injectUserAskNestedRequirements(into: mutable)
         RequestBodyPatcher.patchToolResultsWithImages(into: mutable)
         RequestBodyPatcher.injectCacheTTL(into: mutable)
         RequestBodyPatcher.injectThinkingConfig(into: mutable)

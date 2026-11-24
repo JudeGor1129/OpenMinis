@@ -260,15 +260,7 @@ final class GeminiAgentProvider: AgentProvider {
         tools.map { tool in
             var properties: [String: [String: Any]] = [:]
             for (name, param) in tool.parameters {
-                var prop: [String: Any] = [
-                    "type": param.type.geminiType,
-                    "description": param.description,
-                ]
-                if let enumValues = param.enumValues {
-                    // Gemini doesn't support enum directly in all cases, but we can add it to description
-                    prop["description"] = "\(param.description) (values: \(enumValues.joined(separator: ", ")))"
-                }
-                properties[name] = prop
+                properties[name] = param.geminiSchema
             }
 
             var params: [String: Any] = [
@@ -366,6 +358,8 @@ extension AgentParamType {
         case .string: return "STRING"
         case .integer: return "INTEGER"
         case .boolean: return "BOOLEAN"
+        case .array: return "ARRAY"
+        case .object: return "OBJECT"
         }
     }
 }
