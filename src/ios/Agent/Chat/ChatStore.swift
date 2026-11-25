@@ -2681,6 +2681,7 @@ actor ChatStore {
             markDirty(recordType: "Session", recordId: sid)
             MinisFsRouter.shared.setWorkspaceDirectory(
                 AIChatViewModel.minisWorkspacePersistentDir(for: sid), for: sid)
+            NotificationCenter.default.post(name: .sessionDidUpdate, object: sid)
         }
         markDirty(recordType: "Folder", recordId: id, operation: "delete")
         return memberIds
@@ -2730,6 +2731,7 @@ actor ChatStore {
             let target = groupWorkspace ?? AIChatViewModel.minisWorkspacePersistentDir(for: sid)
             if let groupWorkspace { GroupWorkspaceStore.adoptSessionWorkspace(sessionID: sid, into: groupWorkspace) }
             MinisFsRouter.shared.setWorkspaceDirectory(target, for: sid)
+            NotificationCenter.default.post(name: .sessionDidUpdate, object: sid)
         }
     }
 
@@ -2761,6 +2763,7 @@ actor ChatStore {
             let workspace = GroupWorkspaceStore.ensure(folderID: folderId, name: folder?.name)
             GroupWorkspaceStore.adoptSessionWorkspace(sessionID: sessionId, into: workspace)
             MinisFsRouter.shared.setWorkspaceDirectory(workspace, for: sessionId)
+            NotificationCenter.default.post(name: .sessionDidUpdate, object: sessionId)
         }
         return changed
     }
@@ -2906,6 +2909,7 @@ actor ChatStore {
         for sessionID in workspaceSessionIDs {
             MinisFsRouter.shared.setWorkspaceDirectory(
                 AIChatViewModel.minisWorkspacePersistentDir(for: sessionID), for: sessionID)
+            NotificationCenter.default.post(name: .sessionDidUpdate, object: sessionID)
         }
         iCloudLogger.info("[iCloud] applyRemoteFolderDeletion: id=\(id.prefix(8))")
     }

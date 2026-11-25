@@ -62,6 +62,7 @@ struct CollectionViewMessageListV3: UIViewControllerRepresentable {
     var inputBarHeight: CGFloat
     /// Owned by AIChatView, optional for helper transcripts without a search UI.
     var chatSearch: ChatSearchController? = nil
+    var groupSoul = GroupSoulIdentity()
 
     func makeUIViewController(context: Context) -> MessageListViewController {
         let vc = MessageListViewController()
@@ -92,6 +93,7 @@ struct CollectionViewMessageListV3: UIViewControllerRepresentable {
         coord.bindSearch(chatSearch, vm: vm)
         coord.onRetryMessage = onRetryMessage
         coord.onOpenSoulSettings = onOpenSoulSettings
+        coord.updateGroupSoul(groupSoul)
         coord.onRetryLast = onRetryLast
         coord.onEdit = onEdit
         coord.onDeleteFrom = onDeleteFrom
@@ -224,6 +226,7 @@ private struct BridgedAssistantHeaderV3: View {
     @ObservedObject var message: ChatMessage
     var maxWidth: CGFloat = 0
     @State private var soulMeta: SoulMetadata = SoulStore.cachedMetadata
+    var groupSoul: GroupSoulIdentity
     /// [T-ios-assistant-header-open-soul] Injected, NOT read from the
     /// environment.
     ///
@@ -246,7 +249,7 @@ private struct BridgedAssistantHeaderV3: View {
             // so it — not the text — sets the row height; the estimated
             // height seed below was re-measured to match.
             SoulIconView(
-                icon: soulMeta.icon,
+                icon: groupSoul.icon ?? soulMeta.icon,
                 size: 22,
                 sparkleGradient: LinearGradient(
                     colors: [Color(red: 0.72, green: 0.69, blue: 0.59),
@@ -256,7 +259,7 @@ private struct BridgedAssistantHeaderV3: View {
                 ),
                 cornerRadius: 5
             )
-            Text(soulMeta.name.isEmpty ? "Minis" : soulMeta.name)
+            Text(groupSoul.name ?? GroupSoulIdentity.nonBlank(soulMeta.name) ?? "Minis")
                 .font(.body.weight(.semibold))
                 .foregroundStyle(ChatColors.primaryText)
         }
@@ -881,6 +884,21 @@ extension CollectionViewMessageListV3 {
         // Callbacks
         var onRetryMessage: ((UUID) -> Void)?
         var onOpenSoulSettings: (() -> Void)?
+        private var groupSoul = GroupSoulIdentity()
+
+        func updateGroupSoul(_ identity: GroupSoulIdentity) {
+            guard groupSoul != identity else { return }
+            groupSoul = identity
+            guard let dataSource else { return }
+            var snapshot = dataSource.snapshot()
+            let headers = snapshot.itemIdentifiers.filter { item in
+                if case .assistantHeader = item { return true }
+                return false
+            }
+            guard !headers.isEmpty else { return }
+            snapshot.reconfigureItems(headers)
+            dataSource.apply(snapshot, animatingDifferences: false)
+        }
         var onRetryLast: (() -> Void)?
         var onEdit: ((UUID) -> Void)?
         var onDeleteFrom: ((UUID) -> Void)?
@@ -1423,7 +1441,7 @@ extension CollectionViewMessageListV3 {
                 cell.backgroundColor = .clear
                 let config = MinisMessageHostingConfiguration {
                     BridgedAssistantHeaderV3(message: message, maxWidth: width,
-                                            onOpenSoulSettings: onOpenSoulSettings)
+                                            groupSoul: groupSoul, onOpenSoulSettings: onOpenSoulSettings)
                         .transaction { $0.disablesAnimations = true }
                         .environmentObject(vm)
                     .environment(\.chatSearchHighlights, chatSearch?.highlights)

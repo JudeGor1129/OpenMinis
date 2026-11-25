@@ -141,7 +141,14 @@ struct ToolsSettingsView: View {
                 toolRow(AppLocalized("User Interaction"), tool: "user_ask", icon: "hand.tap", isOn: $interactionEnabled)
                 if interactionEnabled {
                     NavigationLink { UserAskSettingsView() } label: {
-                        Label(AppLocalized("Question behavior and reminders"), systemImage: "questionmark.bubble")
+                        HStack(spacing: 10) {
+                            Image(systemName: "questionmark.circle")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 22)
+                                .accessibilityHidden(true)
+                            Text(AppLocalized("Question behavior and reminders"))
+                        }
                     }
                 }
                 toolRow(AppLocalized("Browser Use"), tool: "browser_use", icon: "globe", isOn: $browserEnabled)

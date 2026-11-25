@@ -290,12 +290,30 @@ struct MinisGroupConfiguration: Codable {
     var soulIcon: String?
     var memoryEnabled: Bool?
 
+    var soulIdentity: GroupSoulIdentity {
+        GroupSoulIdentity(name: GroupSoulIdentity.nonBlank(soulName), icon: GroupSoulIdentity.nonBlank(soulIcon))
+    }
+
     var renderedSoul: String {
-        let fields = [soulName.map { "Name: \($0)" }, soulStyle.map { "Style: \($0)" },
+        let fields = [soulIdentity.name.map { "Name: \($0)" }, soulStyle.map { "Style: \($0)" },
                       soulLanguage.flatMap { $0 == "auto" ? nil : "Language: \($0)" }]
             .compactMap { $0 }.filter { !$0.hasSuffix(": ") }
         return (fields + [soul]).filter { !$0.isEmpty }.joined(separator: "\n")
     }
+}
+
+struct GroupSoulIdentity: Equatable {
+    var name: String? = nil
+    var icon: String? = nil
+
+    static func nonBlank(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
+    }
+}
+
+extension Notification.Name {
+    static let minisGroupConfigurationDidChange = Notification.Name("com.openminis.app.groupConfigurationDidChange")
 }
 
 enum MinisGroupConfigurationStore {
@@ -307,10 +325,19 @@ enum MinisGroupConfigurationStore {
             .appendingPathComponent(key, isDirectory: true)
     }
 
-    static func load(_ folderID: String) -> MinisGroupConfiguration {
-        var value = UserDefaults.standard.data(forKey: "group.configuration." + folderID)
+    private static func savedConfiguration(_ folderID: String) -> MinisGroupConfiguration {
+        UserDefaults.standard.data(forKey: "group.configuration." + folderID)
             .flatMap { try? JSONDecoder().decode(MinisGroupConfiguration.self, from: $0) }
             ?? MinisGroupConfiguration()
+    }
+
+    /// Display identity never reads a group's memory files.
+    static func soulIdentity(for folderID: String) -> GroupSoulIdentity {
+        savedConfiguration(folderID).soulIdentity
+    }
+
+    static func load(_ folderID: String) -> MinisGroupConfiguration {
+        var value = savedConfiguration(folderID)
         if let memory = try? String(contentsOf: memoryDirectory(folderID).appendingPathComponent("GLOBAL.md"), encoding: .utf8) {
             value.memory = memory
         }
@@ -321,7 +348,11 @@ enum MinisGroupConfigurationStore {
         let dir = memoryDirectory(folderID)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try value.memory.write(to: dir.appendingPathComponent("GLOBAL.md"), atomically: true, encoding: .utf8)
+        let oldIdentity = soulIdentity(for: folderID)
         UserDefaults.standard.set(data, forKey: "group.configuration." + folderID)
+        if oldIdentity != value.soulIdentity {
+            NotificationCenter.default.post(name: .minisGroupConfigurationDidChange, object: folderID)
+        }
     }
 }
 
@@ -368,7 +399,8 @@ struct MinisGroupConfigurationView: View {
                             Section {
                                 HStack(spacing: 12) {
                                     SoulIconView(icon: configuration.soulIcon ?? SoulStore.cachedMetadata.icon, size: 44)
-                                    Text(configuration.soulName ?? folder.name).font(.headline)
+                                    Text(configuration.soulIdentity.name ?? GroupSoulIdentity.nonBlank(SoulStore.cachedMetadata.name) ?? "Minis")
+                                        .font(.headline)
                                 }
                                 Button("从照片选择头像") { showPhotoPicker = true }
                                 Button("选择表情头像") {

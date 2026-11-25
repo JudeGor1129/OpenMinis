@@ -624,7 +624,8 @@ struct AOJITSettingsSection: View {
                 Spacer()
                 stateBadge(image)
             }
-            Text(image.binaries).font(.caption.monospaced()).foregroundStyle(.secondary)
+            Text(AppBundle.current.localizedString(forKey: image.binaries, value: image.binaries, table: nil))
+                .font(.caption.monospaced()).foregroundStyle(.secondary)
             Text(image.affects).font(.caption).foregroundStyle(.secondary)
             Text("Image recorded from \(image.build.package)").font(.caption2).foregroundStyle(.tertiary)
             // [T-aojit-family] What the installed file gets from the image.

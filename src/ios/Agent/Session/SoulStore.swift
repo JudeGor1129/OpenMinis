@@ -1178,10 +1178,11 @@ enum SystemPromptBuilder {
 /// any place that previously hard-coded "Minis" as a label.
 @MainActor
 struct AssistantSoulName: View {
+    var overrideName: String? = nil
     @State private var name: String = SoulStore.cachedMetadata.name.isEmpty
         ? "Minis" : SoulStore.cachedMetadata.name
     var body: some View {
-        Text(name)
+        Text(overrideName ?? name)
             .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
                 let n = SoulStore.cachedMetadata.name
                 name = n.isEmpty ? "Minis" : n

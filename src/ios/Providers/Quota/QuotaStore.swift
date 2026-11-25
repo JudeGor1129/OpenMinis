@@ -164,7 +164,8 @@ final class QuotaStore: ObservableObject {
         switch rec.status {
         case .supported:
             guard let kind = RelayKind.from(adapterId: rec.adapterId) else { return nil }
-            return ("\(kind.displayName) · \(kind.path)", true, rec.probedAt)
+            let name = kind == .openAIBilling ? AppLocalized("OpenAI-compatible billing") : kind.displayName
+            return ("\(name) · \(kind.path)", true, rec.probedAt)
         case .failed, .unsupported:
             return (rec.detail ?? "", false, rec.probedAt)
         }

@@ -483,10 +483,16 @@ struct AIChatView: View {
     @State private var titlePillSession: ChatSession?
     /// Session being edited via the title-pill tap. Drives the SessionEditSheet.
     @State private var titlePillEditSession: ChatSession?
-    /// Default chat title for sessions without a generated title. Sourced
-    /// from SOUL.md (`name`), falls back to "Minis". Refreshed on .soulMdChanged.
-    @State private var soulName: String = SoulStore.cachedMetadata.name.isEmpty
-        ? "Minis" : SoulStore.cachedMetadata.name
+    @State private var globalSoulName = GroupSoulIdentity.nonBlank(SoulStore.cachedMetadata.name) ?? "Minis"
+    @State private var groupSoul = GroupSoulIdentity()
+
+    private var activeGroupSoul: GroupSoulIdentity {
+        guard let sid = vm.sessionId, sid == titlePillSession?.id else { return GroupSoulIdentity() }
+        return groupSoul
+    }
+
+    /// Keep generated/renamed chat titles as-is; this is the assistant's identity.
+    private var soulName: String { activeGroupSoul.name ?? globalSoulName }
 
     /// True when any sheet or fullScreenCover is presented (suppress auto-focus to avoid keyboard bugs).
     private var hasOverlayPresented: Bool {
@@ -574,14 +580,6 @@ struct AIChatView: View {
             messagesArea
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if chatSearch.isActive { ChatSearchControls(search: chatSearch) }
-                    if let entry = vm.resolveCurrentEntry() {
-                        HStack {
-                            ModelQuotaMemberPill(instanceId: entry.providerInstanceId, modelId: entry.model.id) {
-                                chatQuotaTarget = QuotaSheetTarget(id: entry.providerInstanceId)
-                            }
-                            Spacer()
-                        }.padding(.horizontal, 18)
-                    }
                     // Error banner
                     if let error = vm.errorMessage {
                         errorBanner(error)
@@ -1529,10 +1527,17 @@ struct AIChatView: View {
                 await SkillStore.shared.refreshGroupDefaults(sessionId: sid)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .sessionDidUpdate)) { note in
+        .onReceive(NotificationCenter.default.publisher(for: .sessionDidUpdate).receive(on: RunLoop.main)) { note in
             guard let sid = vm.sessionId,
                   let updatedId = note.object as? String,
                   updatedId == sid else { return }
+            refreshTitlePillSession()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
+            globalSoulName = GroupSoulIdentity.nonBlank(SoulStore.cachedMetadata.name) ?? "Minis"
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .minisGroupConfigurationDidChange).receive(on: RunLoop.main)) { note in
+            guard let folderID = note.object as? String, titlePillSession?.folderId == folderID else { return }
             refreshTitlePillSession()
         }
         .onChange(of: shareCoordinator.bufferVersion) { newVersion in
@@ -2329,7 +2334,10 @@ struct AIChatView: View {
         let resolved = display.resolvedDetail(for: vm.sessionId)
         let sessionTitle: String? = (titlePillSession?.title?.trimmingCharacters(in: .whitespacesAndNewlines))
             .flatMap { $0.isEmpty ? nil : $0 }
+        let quotaEntry = vm.resolveCurrentEntry()
         return NavTitleKey(
+            quotaInstanceID: quotaEntry?.providerInstanceId,
+            quotaModelID: quotaEntry?.model.id,
             sessionTitle: sessionTitle,
             canEditTitle: titlePillSession != nil,
             soulName: soulName,
@@ -2355,6 +2363,7 @@ struct AIChatView: View {
         let modelName = display.displayName(for: vm.sessionId)
         let isGroupBound = display.isGroupBound(for: vm.sessionId)
         let resolved = display.resolvedDetail(for: vm.sessionId)
+        let quotaEntry = vm.resolveCurrentEntry()
         let hasBinding = vm.sessionId != nil && configStore.binding(for: vm.sessionId!) != nil
         let hasProviders = !configStore.instances.isEmpty
 
@@ -2463,10 +2472,6 @@ struct AIChatView: View {
                     // breathing room above the semibold cap height without
                     // re-introducing the top crop.
                     .padding(.top, legacyLayout ? 0 : 2)
-                    .onReceive(NotificationCenter.default.publisher(for: .soulMdChanged)) { _ in
-                        let n = SoulStore.cachedMetadata.name
-                        soulName = n.isEmpty ? "Minis" : n
-                    }
                 }
             }
             .buttonStyle(.plain)
@@ -2537,7 +2542,7 @@ struct AIChatView: View {
                     .accessibilityAddTraits(.isButton)
                 }
 
-                if let detail = resolved {
+                if resolved != nil || quotaEntry != nil {
                     // Row 2: "provider · model" + the thinking-level badge as a
                     // SEPARATE tappable sibling (not nested in the model-picker
                     // Button) so the badge opens ThinkingLevelSheetView while the
@@ -2563,35 +2568,37 @@ struct AIChatView: View {
                                 // the badge centers on the same visual band.
                                 .padding(.bottom, legacyLayout ? 1 : 4)
                         }
-                        Button {
-                            showModelPicker = true
-                        } label: {
-                            Text("\(detail.providerLabel) · \(detail.modelName)")
-                                .font(.system(size: 9))
-                                .foregroundStyle(ChatColors.secondaryText)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                // [NavTitleClip 2026-05-16] Reserve clearance
-                                // under the resolved-detail line so the final
-                                // glyph descenders ("g","p","y") don't touch
-                                // the navbar's bottom safe-area cutoff on
-                                // iOS 26. 2 → 4pt: 2 wasn't enough when text
-                                // included descenders ("Fake Hang 1" clipped
-                                // the lowered "1" stroke).
-                                // [T-navbar-title-model-gap] Legacy needs only
-                                // 1pt — the 4pt clearance is an iOS 26
-                                // liquid-glass-band requirement; on 16-18 it
-                                // was pure height waste, now traded into the
-                                // title→model gap (see the outer VStack).
-                                .padding(.bottom, legacyLayout ? 1 : 4)
-                                // Force vertical sizing to fit the full
-                                // glyph including descender so the line's
-                                // own frame doesn't crop before the navbar
-                                // gets a chance to lay it out.
-                                .fixedSize(horizontal: false, vertical: true)
-                                .layoutPriority(-1)
+                        if let detail = resolved {
+                            Button {
+                                showModelPicker = true
+                            } label: {
+                                Text("\(detail.providerLabel) · \(detail.modelName)")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(ChatColors.secondaryText)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    // [NavTitleClip 2026-05-16] Reserve clearance
+                                    // under the resolved-detail line so the final
+                                    // glyph descenders ("g","p","y") don't touch
+                                    // the navbar's bottom safe-area cutoff on
+                                    // iOS 26. 2 → 4pt: 2 wasn't enough when text
+                                    // included descenders ("Fake Hang 1" clipped
+                                    // the lowered "1" stroke).
+                                    // [T-navbar-title-model-gap] Legacy needs only
+                                    // 1pt — the 4pt clearance is an iOS 26
+                                    // liquid-glass-band requirement; on 16-18 it
+                                    // was pure height waste, now traded into the
+                                    // title→model gap (see the outer VStack).
+                                    .padding(.bottom, legacyLayout ? 1 : 4)
+                                    // Force vertical sizing to fit the full
+                                    // glyph including descender so the line's
+                                    // own frame doesn't crop before the navbar
+                                    // gets a chance to lay it out.
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .layoutPriority(-1)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                         // Show the badge whenever thinking is enabled, and ALSO
                         // when it's Off but the active model supports deep
                         // thinking — the icon + "Off" pill is then a discoverable
@@ -2612,6 +2619,12 @@ struct AIChatView: View {
                                 // [T-navbar-title-model-gap] Match the
                                 // provider text's legacy clearance.
                                 .padding(.bottom, legacyLayout ? 1 : 4)
+                        }
+                        if let entry = quotaEntry {
+                            ModelQuotaMemberPill(instanceId: entry.providerInstanceId, modelId: entry.model.id) {
+                                chatQuotaTarget = QuotaSheetTarget(id: entry.providerInstanceId)
+                            }
+                            .padding(.bottom, legacyLayout ? 1 : 4)
                         }
                     }
                 }
@@ -2729,6 +2742,7 @@ struct AIChatView: View {
     private func refreshTitlePillSession() {
         guard let sid = vm.sessionId else {
             titlePillSession = nil
+            groupSoul = GroupSoulIdentity()
             return
         }
         // ChatStore is an actor — must await off the main actor. Bouncing
@@ -2739,9 +2753,12 @@ struct AIChatView: View {
             let next = await ChatStore.shared.getSession(sid)
             await MainActor.run {
                 guard sid == vm.sessionId else { return }
+                let identity = (next?.folderId).map { MinisGroupConfigurationStore.soulIdentity(for: $0) } ?? GroupSoulIdentity()
+                if groupSoul != identity { groupSoul = identity }
                 if next?.id != titlePillSession?.id
                     || next?.title != titlePillSession?.title
-                    || next?.category != titlePillSession?.category {
+                    || next?.category != titlePillSession?.category
+                    || next?.folderId != titlePillSession?.folderId {
                     // Direct replace — animating the toolbar title makes the
                     // old "Minis" string slide before the real title swaps
                     // in, which looks broken. SwiftUI's default crossfade
@@ -2935,7 +2952,8 @@ struct AIChatView: View {
                 maxContentWidth: maxContentWidth ?? 0,
                 floatingBarHeight: floatingBarHeight,
                 inputBarHeight: inputBarHeight,
-                chatSearch: chatSearch
+                chatSearch: chatSearch,
+                groupSoul: activeGroupSoul
             )
             } else {
                 // [T-ios15-floating-preview-inset] The modern list receives the
@@ -2949,7 +2967,8 @@ struct AIChatView: View {
                 MinisLegacyTranscript(
                     vm: vm,
                     bottomInset: inputBarHeight + floatingBarHeight + 8,
-                    chatSearch: chatSearch
+                    chatSearch: chatSearch,
+                    groupSoul: activeGroupSoul
                 )
             }
             // Empty/loading overlay for tap-to-dismiss-keyboard.
@@ -5721,6 +5740,8 @@ private struct EquatableByValue<Key: Equatable, Content: View>: View, Equatable 
 /// bar every tick, and UIKit refreshes the presented menu when bar items are
 /// re-set (items shifting under the user's finger → mis-taps).
 private struct NavTitleKey: Equatable {
+    let quotaInstanceID: String?
+    let quotaModelID: String?
     let sessionTitle: String?
     let canEditTitle: Bool
     let soulName: String
@@ -7407,6 +7428,7 @@ struct MinisLegacyTranscript: View {
     let bottomInset: CGFloat
     var readOnly = false
     var chatSearch: ChatSearchController? = nil
+    var groupSoul: GroupSoulIdentity? = nil
     @State private var searchNavigationGeneration = 0
     @State private var followingBottom = true
     @State private var toolDetail: MinisLegacyToolDetailTarget?
@@ -7439,7 +7461,7 @@ struct MinisLegacyTranscript: View {
                         ForEach(vm.messages.reversed()) { message in
                             MinisLegacyTranscriptRow(
                                 message: message, vm: vm, readOnly: readOnly,
-                                detailTarget: $toolDetail
+                                detailTarget: $toolDetail, groupSoul: groupSoul
                             )
                                 .equatable()
                                 .environment(\.chatSearchHighlights, chatSearch?.highlights)
@@ -7849,6 +7871,7 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
     @ObservedObject private var fontSettings = FontSettings.shared
     @State private var highlightedBlockId: UUID?
     @Binding var detailTarget: MinisLegacyToolDetailTarget?
+    var groupSoul: GroupSoulIdentity? = nil
     @State private var groupIcon: String?
 
     private var detailBlock: Binding<AssistantBlock?> {
@@ -7883,6 +7906,7 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
     // must not be rendered by this row, or it would go stale.
     static func == (lhs: MinisLegacyTranscriptRow, rhs: MinisLegacyTranscriptRow) -> Bool {
         lhs.readOnly == rhs.readOnly
+            && lhs.groupSoul == rhs.groupSoul
             && lhs.message === rhs.message
             && lhs.message.content == rhs.message.content
             && lhs.message.blocks.count == rhs.message.blocks.count
@@ -7983,14 +8007,14 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                spacing: message.role == .user ? 6 : 8) {
             if message.role == .assistant {
                 HStack(spacing: 6) {
-                    SoulIconView(icon: groupIcon ?? SoulStore.cachedMetadata.icon, size: 26)
+                    SoulIconView(icon: (groupSoul == nil ? groupIcon : groupSoul?.icon) ?? SoulStore.cachedMetadata.icon, size: 26)
                         .accessibilityHidden(true)
                         .task(id: vm.sessionId) {
-                            guard let id = vm.sessionId else { groupIcon = nil; return }
+                            guard groupSoul == nil, let id = vm.sessionId else { groupIcon = nil; return }
                             let folder = await ChatStore.shared.getSession(id)?.folderId
-                            groupIcon = folder.flatMap { MinisGroupConfigurationStore.load($0).soulIcon }
+                            groupIcon = folder.flatMap { MinisGroupConfigurationStore.soulIdentity(for: $0).icon }
                         }
-                    AssistantSoulName()
+                    AssistantSoulName(overrideName: groupSoul?.name)
                         .font(.body.weight(.semibold))
                         .foregroundStyle(ChatColors.primaryText)
                 }

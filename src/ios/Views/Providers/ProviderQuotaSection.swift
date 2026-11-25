@@ -179,16 +179,28 @@ struct ProviderQuotaSection: View {
     // MARK: - Text
 
     static func poolName(_ pool: QuotaPool) -> String {
+        // Translate our own adapter fallback labels without changing the
+        // persisted pool or translating provider-supplied names.
+        let label: String?
+        switch pool.vendorLabel {
+        case "Relay billing": label = AppLocalized("Relay billing")
+        case "New API token quota": label = AppLocalized("New API token quota")
+        case "Key limit": label = AppLocalized("Key limit")
+        case "Credits": label = AppLocalized("Credits")
+        case "Claude subscription": label = AppLocalized("Claude subscription")
+        case "ChatGPT subscription": label = AppLocalized("ChatGPT subscription")
+        default: label = pool.vendorLabel
+        }
         switch pool.kind {
         case .prepaidBalance:
             if case .currency(let code) = pool.unit {
-                return String(format: AppLocalized( "Balance · %@"), code)
+                return String(format: AppLocalized("Balance · %@"), code)
             }
-            return pool.vendorLabel ?? AppLocalized( "Balance")
-        case .spendCap: return pool.vendorLabel ?? AppLocalized( "Spend limit")
-        case .allowance: return pool.vendorLabel ?? AppLocalized( "Allowance")
-        case .usageWindow: return pool.vendorLabel ?? AppLocalized( "Usage limit")
-        case .rateLimit: return pool.vendorLabel ?? AppLocalized( "Rate limit")
+            return label ?? AppLocalized("Balance")
+        case .spendCap: return label ?? AppLocalized("Spend limit")
+        case .allowance: return label ?? AppLocalized("Allowance")
+        case .usageWindow: return label ?? AppLocalized("Usage limit")
+        case .rateLimit: return label ?? AppLocalized("Rate limit")
         }
     }
 
