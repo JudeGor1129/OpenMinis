@@ -320,6 +320,7 @@ private struct BridgedAssistantBlockV3: View {
         case .readImageTool: return "assistantReadImageBlock"
         case .memoryTool: return "assistantMemoryBlock"
         case .delegateTool: return "assistantDelegateBlock"
+        case .userAskTool: return "assistantUserAskBlock"
         case .info: return "assistantInfoBlock"
         }
     }

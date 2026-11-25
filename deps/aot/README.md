@@ -8,36 +8,34 @@ default); `libish` is built AOT-only (`-Djit=true -Djit_emit=false`), so
 nothing is translated at run time and no executable memory is mapped.
 
 The `.S` files are gitignored. A normal build requires all 25 files in
-`images.lock.json` and checks their ABI, module, family, build ID and admitted
-SHA-256. `AOJIT_OFF=1` is development-only: it generates a marker archive and
-never assembles the local images, even if present.
+`images.lock.json` and verifies their ABI, module, family, build ID and
+admitted SHA-256. `AOJIT_OFF=1` is development-only: it generates a marker
+archive and never assembles local images, even if they are present.
 
-## Recorder input for the build349 upgrade
+## Recorder run16 inputs
 
 [Recorder run #16](https://github.com/JudeGor1129/aojit-recorder/actions/runs/45401233464)
-([image ZIP](https://github.com/JudeGor1129/aojit-recorder/actions/runs/45401233464/artifacts/14923953426))
-recorded 28 modules at ABI `1f3bb5a0` with iSH `0fd17a135e78b7a0cf08a4f5831217bbb76ed22f`.
-We select 25 assembly sources; `gh`, `rg`, Python `_ssl`, and all preassembled
-objects are excluded. The ZIP and per-image SHA-256 are pinned in the lock.
-The `.S` names in the table are stable local names, not package version claims.
+used OpenMinis/ish-arm64 commit `0fd17a135e78b7a0cf08a4f5831217bbb76ed22f`,
+ABI `1f3bb5a0`, and Alpine 3.21. Its public artifacts (56-member source/object
+ZIP, 28-entry manifest, and 25-row catalog report) were downloaded from the
+user-mounted Downloads folder and checked against GitHub artifact digests. This
+checkout imports only the 25 catalog `.S` files; `gh`, `rg`, `_ssl`, and all
+preassembled `.o` files are excluded.
 
-```sh
-python3 deps/aot/tools/import_recorder.py /path/to/aojit-images-1.15-run16.zip
-python3 deps/aot/tools/verify_inputs.py deps
-```
+The 25 local sources were checked against the pinned full archive SHA-256, each
+selected file SHA-256, the 28-row run16 manifest, and the image headers. The
+normal build remains fail-closed: it requires all 25 sources and checks their
+ABI, module, family, build ID and SHA-256. `inputs_available: false` means the
+large assembly sources are ignored and not tracked by Git; it does not mean
+those verified sources are absent from this local workspace. Run `verify_inputs.py`
+after importing to check the exact local set. AOJIT-off development builds must
+not assemble or link these images.
 
-Alternatively, pass `AOJIT_RECORDER_ARCHIVE=/path/to/aojit-images-1.15-run16.zip`
-to `deps/build_ish.sh` or `deps/build_aot.sh`. The importer will not overwrite
-unrecognized local bytes. For GitHub Actions, configure the `AOJIT_ARTIFACT_TOKEN`
-secret in the App repository with Actions read permission on the recorder
-repository. The temporary GitHub artifact must still be available; expiry,
-missing access or a digest mismatch fails the build instead of omitting AOJIT.
-
-The catalog describes recorded package versions, not a replacement for the
-App's minirootfs. Existing guest packages are not changed by building or
-importing the images. Exact coverage requires the recorded ELF build ID;
-the existing runtime may reuse matching blocks for other builds in the same
-family. No acceleration claim is made until tested in the app.
+The run16 catalog is aligned to the recorded package builds. The app creates
+its Alpine minirootfs separately, so packages installed in a guest can differ;
+the existing runtime uses its exact-build and family-match logic. This is a
+source/build-input verification only, not proof of a successful signed IPA or
+on-device acceleration.
 
 ## Images
 

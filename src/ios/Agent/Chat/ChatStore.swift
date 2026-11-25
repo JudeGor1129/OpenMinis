@@ -5875,7 +5875,7 @@ extension RawMessage {
                     }
                 case "user_ask":
                     kind = .userAskTool
-                    content = tu.input["questions"].map { _ in "Awaiting your response…" } ?? "Awaiting your response…"
+                    content = "Awaiting your response…"
                 case SubAgentDefinition.toolName:
                     kind = .delegateTool(title: tu.description ?? "")
                     content = "Delegating..."
