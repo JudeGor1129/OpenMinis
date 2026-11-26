@@ -198,9 +198,9 @@ class Contracts(unittest.TestCase):
             namespace['component_libs'](str(directory))
     def test_experimental_lock_pins_lld_manifest(self):
         lock=json.loads((ROOT/'verified-toolchain-lock.json').read_text())
-        self.assertEqual(lock['workflow_run_id'], 43005259459)
-        self.assertEqual(lock['artifact']['id'], 13854399209)
-        self.assertEqual(lock['manifest']['sha256'], 'f746ee556e29cb092d49ecfff095e00cbd602d03b458d4c651210eb10c7adc12')
+        self.assertEqual(lock['workflow_run_id'], 45829292854)
+        self.assertEqual(lock['artifact']['id'], 15135440340)
+        self.assertEqual(lock['manifest']['sha256'], '1ade70fa53baf0cc7106ecbae9643add5fee448bb81efce62fa3671231ca0c2b')
     def test_runtime_evidence_matches_pinned_artifact_and_rejects_mutation(self):
         repo = ROOT.parent
         validator = repo/'scripts/ios15/verify-embedded-toolchain-runtime-evidence.py'

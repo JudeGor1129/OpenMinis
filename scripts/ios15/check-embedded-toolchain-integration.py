@@ -26,8 +26,8 @@ ld64_adapter = text("toolchain-build/scripts/build-ld64-inprocess.py")
 project = text("src/ios/Minis.xcodeproj/project.pbxproj")
 lock_path = ROOT / "toolchain-build/verified-toolchain-lock.json"
 lock = json.loads(lock_path.read_text(encoding="utf-8"))
-require(lock["workflow_run_id"] == 43005259459, "experimental LLD kit lock is stale")
-require(lock["artifact"]["id"] == 13854399209, "experimental LLD artifact is not pinned")
+require(lock["workflow_run_id"] == 45829292854, "experimental LLD kit lock is stale")
+require(lock["artifact"]["id"] == 15135440340, "experimental LLD artifact is not pinned")
 require(project.count('LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../deps/libs";') == 2,
         "expected exactly two main-App library search path anchors")
 require(project.count('"-lfakefs",') == 2,
