@@ -68,6 +68,7 @@ struct ChatShareSelectionView: View {
             }
             .navigationTitle("选择消息").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { exportTask?.cancel(); dismiss() } } }
+            .minisNavigationChrome()
         }
         .navigationViewStyle(.stack)
         .onAppear { options.dark = colorScheme == .dark }

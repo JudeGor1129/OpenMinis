@@ -143,6 +143,7 @@ struct SessionSkillsView: View {
                 }
             }
             .disabled(!groupDefaultsReady)
+            .minisNavigationChrome()
             .navigationTitle("Skills in Session")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchQuery, placement: .navigationBarDrawer(displayMode: .always),
@@ -210,6 +211,7 @@ private struct SessionSkillDetailView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(skill.name)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -268,6 +270,7 @@ private struct SkillFilePreviewView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(fileName)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -392,6 +395,7 @@ struct MinisGroupConfigurationView: View {
                             }
                             Button("恢复全部继承全局") { configuration.skillDefaults = [:] }
                         }
+                        .minisNavigationChrome()
                         .navigationTitle("技能")
                     } label: { Label("技能", systemImage: "puzzlepiece.extension") }
                     NavigationLink {
@@ -430,7 +434,9 @@ struct MinisGroupConfigurationView: View {
                                 configuration.soulLanguage = nil
                                 configuration.soulIcon = nil
                             }
-                        }.navigationTitle("灵魂")
+                        }
+                        .minisNavigationChrome()
+                        .navigationTitle("灵魂")
                         .modifier(SoulIconEditing(
                             icon: Binding(get: { configuration.soulIcon ?? "" }, set: { configuration.soulIcon = $0 }),
                             showEmojiPrompt: $showEmojiPrompt, emojiDraft: $emojiDraft,
@@ -444,6 +450,7 @@ struct MinisGroupConfigurationView: View {
                     Text("保存后在下一次任务启动时生效。技能：会话覆盖优先于分组默认；灵魂留空继承全局；分组记忆独立读写，记忆开关仍有效。分组配置及记忆暂不云同步。")
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle(folder.name)
             .alert("保存失败", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
                 Button("确定") { saveError = nil }
@@ -498,6 +505,7 @@ private struct MinisGroupMemorySettings: View {
             Section("记忆文件") {
                 NavigationLink {
                     TextEditor(text: $configuration.memory).padding()
+                        .minisNavigationChrome()
                         .navigationTitle("GLOBAL.md")
                 } label: {
                     fileLabel("GLOBAL.md", content: configuration.memory, date: nil)
@@ -523,6 +531,7 @@ private struct MinisGroupMemorySettings: View {
                     .font(.caption).foregroundColor(.secondary)
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("记忆")
         .onAppear(perform: reload)
         .alert("文件操作失败", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
@@ -561,6 +570,7 @@ private struct MinisGroupMemoryFileEditor: View {
 
     var body: some View {
         TextEditor(text: $text).padding()
+            .minisNavigationChrome()
             .navigationTitle(url.lastPathComponent)
             .onAppear {
                 guard !loaded else { return }

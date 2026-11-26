@@ -72,6 +72,7 @@ struct BackupAndRestoreView: View {
                     .accessibilityHidden(tab != .restore)
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Backup & Restore")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -128,6 +129,7 @@ struct StandaloneTitle: ViewModifier {
     func body(content: Content) -> some View {
         if active {
             content
+                .minisNavigationChrome()
                 .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.inline)
         } else {

@@ -61,6 +61,7 @@ struct BackupDestinationDetailView: View {
             case .folder(let f): folderSections(f)
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         // These MUST hang off the Form, not off a Section inside
@@ -644,6 +645,7 @@ struct RcloneFolderBrowser: View {
 
             }
             .backupHUD($errorText)
+            .minisNavigationChrome()
             .navigationTitle("Backup Folder")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -813,6 +815,7 @@ struct RcloneConnectionEditor: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Edit Connection")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

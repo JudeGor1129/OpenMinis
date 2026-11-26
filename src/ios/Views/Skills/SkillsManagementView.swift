@@ -101,6 +101,7 @@ struct SkillsManagementView: View {
                 for id in ids { store.deleteSkill(id) }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Skills")
         .searchable(text: $searchQuery, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: Text(AppLocalized("Search skills")))
@@ -274,6 +275,7 @@ private struct ImportSkillSheet: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle(AppLocalized("Import Skill"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -656,6 +658,7 @@ private struct SkillDetailView: View {
                 Text(AppLocalized("Skill not found.")).foregroundStyle(.secondary)
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(skill?.name ?? "Skill")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -878,6 +881,7 @@ private struct SkillFileDetailView: View {
                         .padding()
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle(fileName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -928,6 +932,7 @@ struct MinisSkillsBrowserView: View {
                     .animation(MinisMotion.feedback, value: coordinator.hudState)
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Minis Skills")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

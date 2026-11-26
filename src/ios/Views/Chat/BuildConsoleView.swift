@@ -23,6 +23,7 @@ struct BuildConsoleView: View {
             content
         }
         .background(Color(UIColor.systemBackground))
+        .minisNavigationChrome()
         .navigationTitle("控制台")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

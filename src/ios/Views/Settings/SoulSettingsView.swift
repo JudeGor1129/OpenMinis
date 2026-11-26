@@ -112,6 +112,7 @@ struct SoulSettingsView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(AppLocalized("Soul"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -482,6 +483,7 @@ private struct SoulEmojiPickerSheet: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 20)
+            .minisNavigationChrome()
             .navigationTitle(AppLocalized("Choose Emoji"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -134,6 +134,7 @@ struct FaceIDProtectionSettingsView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("\(BiometricAuth.biometryDisplayName) Protection")
         .navigationBarTitleDisplayMode(.inline)
     }

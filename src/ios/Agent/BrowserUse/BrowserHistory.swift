@@ -130,6 +130,7 @@ struct BrowserHistoryView: View {
                     historyList
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("History")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

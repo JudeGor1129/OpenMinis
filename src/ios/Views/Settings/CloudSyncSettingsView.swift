@@ -27,6 +27,7 @@ struct CloudSyncSettingsView: View {
             advancedSection
             dangerZoneSection
         }
+        .minisNavigationChrome()
         .navigationTitle("iCloud Sync")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { refresh() }
@@ -504,6 +505,7 @@ struct RemoteDeviceSessionsView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(deviceName)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -585,6 +587,7 @@ struct RemoteSkillsListView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Skills from \(deviceName)")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -644,6 +647,7 @@ struct RemoteMemoriesListView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Memories from \(deviceName)")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -717,6 +721,7 @@ struct SyncLogView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("iCloud Sync Logs")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

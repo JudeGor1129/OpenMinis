@@ -1,6 +1,49 @@
 import SwiftUI
 import UIKit
 
+/// Restricts translucent material to navigation chrome; destination content remains opaque.
+private struct MinisNavigationChromeScope: ViewModifier {
+    private let keepNativeBackdropVisible: Bool
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    init(keepNativeBackdropVisible: Bool) {
+        self.keepNativeBackdropVisible = keepNativeBackdropVisible
+    }
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            // Use the system's material and accessibility handling on Liquid Glass.
+            if keepNativeBackdropVisible {
+                content.toolbarBackgroundVisibility(.visible, for: .navigationBar)
+            } else {
+                content
+            }
+        } else if #available(iOS 16.0, *) {
+            // Change the style value, not the view branch, so toggling an
+            // accessibility setting does not replace a stateful destination.
+            let backdrop = reduceTransparency || colorSchemeContrast == .increased
+                ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
+                : AnyShapeStyle(Material.ultraThin)
+            content
+                .toolbarBackground(backdrop, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+        } else {
+            // iOS 15 keeps its native navigation chrome; avoid global UIKit mutations.
+            content
+        }
+    }
+}
+
+extension View {
+    /// Set the preference on the hosted page, not on the surrounding stack.
+    /// Full-screen previews can ask for a visible native backdrop on iOS 26+.
+    func minisNavigationChrome(keepNativeBackdropVisible: Bool = false) -> some View {
+        modifier(MinisNavigationChromeScope(keepNativeBackdropVisible: keepNativeBackdropVisible))
+    }
+}
+
 /// A navigation Module for modal roots without programmatic path bindings.
 ///
 /// Its Interface intentionally accepts only content: no NavigationPath,
@@ -17,7 +60,9 @@ struct MinisNavigationContainer<Content: View>: View {
     var body: some View {
         if #available(iOS 16.0, *) {
             NavigationStack {
-                content.minisMotionAccessibility()
+                content
+                    .minisMotionAccessibility()
+                    .minisNavigationChrome()
             }
         } else {
             NavigationView {
@@ -120,34 +165,6 @@ extension View {
     func minisScrollBackgroundHidden() -> some View {
         if #available(iOS 16.0, *) {
             self.scrollContentBackground(.hidden)
-        } else {
-            self
-        }
-    }
-}
-
-extension View {
-    /// Material navigation-bar backdrop for full-screen presentation roots. The
-    /// Interface names only the material; iOS 15 callers cannot express
-    /// ToolbarBackground visibility or placement types, so their bar simply
-    /// keeps its native backdrop.
-    @ViewBuilder
-    func minisNavigationBarBackdropMaterial() -> some View {
-        if #available(iOS 16.0, *) {
-            self.toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-        } else {
-            self
-        }
-    }
-
-    /// Declares that a presentation root wants a visible navigation-bar
-    /// backdrop without choosing its style. A no-op on iOS 15, where the
-    /// native bar already draws one.
-    @ViewBuilder
-    func minisNavigationBarBackdropVisible() -> some View {
-        if #available(iOS 16.0, *) {
-            self.toolbarBackground(.visible, for: .navigationBar)
         } else {
             self
         }
@@ -278,6 +295,7 @@ private struct MinisTextPrompt: View {
                     Text(message)
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

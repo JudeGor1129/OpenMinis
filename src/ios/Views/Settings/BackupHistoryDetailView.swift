@@ -24,6 +24,7 @@ struct BackupHistoryDetailView: View {
             if !record.destinations.isEmpty { destinationsSection }
             logSection
         }
+        .minisNavigationChrome()
         .navigationTitle(record.startedAt.formatted(date: .abbreviated, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { keepScreenAwake = BackupScreenAwake.isEnabled }

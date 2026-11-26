@@ -37,6 +37,7 @@ struct BrowserManagementView: View {
             domainListSection
         }
         .searchable(text: $searchText, prompt: "Filter by domain")
+        .minisNavigationChrome()
         .navigationTitle("Browser Settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

@@ -59,7 +59,7 @@ struct ChatScreenshotPreviewSheet: View {
                     }
                 }
             }
-            .minisNavigationBarBackdropVisible()
+            .minisNavigationChrome(keepNativeBackdropVisible: true)
             .overlay(alignment: .bottom) {
                 if let toast {
                     Text(toast)

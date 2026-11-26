@@ -114,6 +114,7 @@ struct ICloudBackupView: View {
                 Text("Backups are stored in iCloud Drive and sync across your devices. Restoring will replace your current local data.")
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("iCloud Backup")
         .navigationBarTitleDisplayMode(.inline)
         .task {

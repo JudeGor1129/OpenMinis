@@ -884,9 +884,9 @@ struct MinisLinkPreviewView: View {
                 // laid the web view out under the toolbar, so the ChatGPT
                 // header etc. ended up hidden behind our own toolbar.
                 .ignoresSafeArea(.keyboard)
+                .minisNavigationChrome(keepNativeBackdropVisible: true)
                 .navigationTitle(holder.pageTitle.isEmpty ? (url.host ?? url.absoluteString) : holder.pageTitle)
                 .navigationBarTitleDisplayMode(.inline)
-                .minisNavigationBarBackdropMaterial()
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button { dismiss() } label: {

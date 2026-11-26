@@ -478,6 +478,7 @@ struct SyncMigrationDetailView: View {
             // butt up against the sheet edge / show-through content.
             Color.clear.frame(height: 24)
         }
+        .minisNavigationChrome()
         .navigationTitle("iCloud Sync")
 #if !os(macOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -1089,6 +1090,7 @@ private struct PauseSyncSheet: View {
                     Text("Pending changes are preserved locally and pushed once the pause ends.")
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Pause iCloud Sync")
 #if !os(macOS)
             .navigationBarTitleDisplayMode(.inline)

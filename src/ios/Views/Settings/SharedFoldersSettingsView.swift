@@ -43,6 +43,7 @@ struct SharedFoldersSettingsView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Shared Folders")
         .navigationBarTitleDisplayMode(.inline)
     }

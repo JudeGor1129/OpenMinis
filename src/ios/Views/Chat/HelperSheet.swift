@@ -137,10 +137,8 @@ struct HelperTranscriptPage: View {
             }
             .background(ChatColors.background)
             // [T-agent-transcript-navbar] The same nav bar the main chat has:
-            // liquid-glass with content behind the bar on iOS 26, opaque
-            // ChatColors.background on iOS 16–18 (NavBarStyleModifier), and
-            // the 46 pt principal frame so the two-row title is never clipped
-            // (NavTitleFrameModifier).
+            // native Liquid Glass on iOS 26+, adaptive material on iOS 16–25,
+            // and a 46 pt principal frame to fit the two-row title.
             .modifier(NavBarStyleModifier(topSafeAreaInset: $topSafeAreaInset, measuresSafeArea: false))
             .navigationBarTitleDisplayMode(.inline)
             // [T-agent-transcript-navbar-lost] Pin the bar visible. This page

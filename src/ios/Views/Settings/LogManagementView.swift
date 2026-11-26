@@ -71,6 +71,7 @@ struct LogManagementView: View {
                 logsBody
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Logs")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -236,6 +237,7 @@ struct LogDetailView: View {
                 LogTextView(text: content)
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

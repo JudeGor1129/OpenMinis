@@ -176,6 +176,7 @@ private struct LegacyContentView: View {
                 }
             }
             .listStyle(PlainListStyle())
+            .minisNavigationChrome()
             .navigationTitle(selectionMode ? "Selected: \(selectedSessions.count)" : "Minis")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -555,6 +556,7 @@ private struct LegacySettingsSheet: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -774,6 +776,7 @@ private struct LegacySessionRow: View {
                     Button(folder.name) { moveToFolder(folder.id) }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Move to Group")
             .task { folders = await ChatStore.shared.listFolders() }
             .toolbar {
@@ -890,6 +893,7 @@ private struct LegacyGroupManagerView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("会话分组")
         .onAppear(perform: reload)
         .sheet(isPresented: $creating, onDismiss: reload) {
@@ -923,6 +927,7 @@ private struct LegacyGroupNameSheet: View {
     var body: some View {
         MinisNavigationContainer {
             Form { TextField("分组名称", text: $name) }
+                .minisNavigationChrome()
                 .navigationTitle(title)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
@@ -975,6 +980,7 @@ private struct LegacyGroupDetailView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(folder.name)
         .onAppear(perform: reload)
         .sheet(isPresented: $configuring, onDismiss: reload) { MinisGroupConfigurationView(folder: folder) }
@@ -1035,6 +1041,7 @@ private struct LegacyGroupSessionPicker: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("添加会话到分组")
             .task { sessions = await ChatStore.shared.listSessions().filter { !$0.isChild } }
             .toolbar {

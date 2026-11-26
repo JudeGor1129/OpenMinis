@@ -50,6 +50,7 @@ struct SessionMemoryView: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Memories in Session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -273,6 +274,7 @@ private struct MemoryContentView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -374,6 +376,7 @@ private struct MemoryWriteDetailView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(item.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -528,6 +531,7 @@ private struct MemoryGetDetailView: View {
             }
             .padding(.bottom)
         }
+        .minisNavigationChrome()
         .navigationTitle(item.title)
         .navigationBarTitleDisplayMode(.inline)
     }

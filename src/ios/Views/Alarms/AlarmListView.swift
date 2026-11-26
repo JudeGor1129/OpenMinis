@@ -262,6 +262,7 @@ struct AlarmListView: View {
                     .listStyle(.insetGrouped)
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Alarms")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {

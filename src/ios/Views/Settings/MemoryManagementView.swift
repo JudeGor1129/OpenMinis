@@ -67,6 +67,7 @@ struct MemoryManagementView: View {
                 deleteFiles(at: offsets)
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Memory")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -254,6 +255,7 @@ private struct MemoryFileEditView: View {
         // blank pane under "2026-05-21.md" nav title). Anchor the VStack
         // to the available space so the TextEditor has somewhere to live.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .minisNavigationChrome()
         .navigationTitle(fileName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -387,6 +389,7 @@ struct StructuredMemoryCenterView: View {
                 .onDelete(perform: delete)
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("结构化记忆")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "搜索记忆")
@@ -456,6 +459,7 @@ private struct StructuredMemoryDetailView: View {
                 Button("删除记忆", role: .destructive) { confirmDelete = true }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("记忆详情")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

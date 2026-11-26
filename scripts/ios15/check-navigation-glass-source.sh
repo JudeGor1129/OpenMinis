@@ -1,0 +1,72 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+nav=src/ios/Shared/MinisNavigationContainer.swift
+chat=src/ios/Views/Chat/AIChatView.swift
+modern=src/ios/Views/ContentView.swift
+legacy=src/ios/Views/LegacyContentView.swift
+share=src/ios/Views/Chat/ChatShareSelectionView.swift
+media=src/ios/Views/Chat/MinisMediaViews.swift
+message=src/ios/Views/Chat/ChatMessageViews.swift
+orb=src/ios/Shared/ThinkingOrb.swift
+req(){ grep -Fq "$2" "$1" || { printf 'FAIL: %s\n' "$3"; exit 1; }; }
+req "$nav" 'struct MinisNavigationChromeScope: ViewModifier' 'shared navigation style'
+req "$nav" 'AnyShapeStyle(Material.ultraThin)' 'iOS16-25 navigation material'
+req "$nav" 'reduceTransparency || colorSchemeContrast == .increased' 'opaque accessibility fallback'
+# iOS15 intentionally keeps its native NavigationView chrome (no global UIKit overrides).
+req "$nav" 'iOS 15 keeps its native navigation chrome' 'iOS15 local fallback avoids global appearance mutations'
+req "$nav" 'func minisNavigationChrome(' 'navigation style entry point'
+req "$modern" '.minisNavigationChrome()' 'modern navigation roots'
+req "$legacy" '.minisNavigationChrome()' 'legacy navigation roots'
+req "$chat" 'button.showsMenuAsPrimaryAction = true' 'native session menu'
+req "$chat" 'onSessionAccess()' 'session permission menu action'
+req "$chat" 'SiriFlowBorder(' 'colored composer border'
+req "$chat" 'AngularGradient(' 'colored border gradient'
+req "$chat" 'TimelineView(.periodic(from: .now, by: 1.0 / 30.0))' 'composer animation'
+req "$orb" 'public struct ThinkingOrb: View' 'ThinkingOrb resource'
+req "$orb" 'TimelineView(.animation(minimumInterval: 1.0 / 30.0))' 'ThinkingOrb timeline'
+req "$share" '.minisNavigationChrome()' 'session share submenu'
+req "$media" '.minisNavigationChrome()' 'file preview submenus'
+if grep -Fq 'glassEffect(' "$message"; then echo 'FAIL: message content glass'; exit 1; fi
+folder=$(sed -n '/private struct FolderSurface:/,/private struct FolderCardBackground:/p' "$modern")
+if printf '%s' "$folder" | grep -Fq 'glassEffect('; then echo 'FAIL: conversation group content glass'; exit 1; fi
+req "$modern" 'content.background(shape.fill(Color(UIColor.secondarySystemBackground)))' 'folder rows use opaque semantic fill'
+menu=$(sed -n '/private static func buildMenu(key:/,/return UIMenu(children: groups)/p' "$chat")
+for action in 'Share Conversation' 'Search in Conversation' 'Compact Messages' 'Clear Chat' 'Open Terminal' '编译器' 'Open Browser' 'Browse Chat Files' 'Skills in Session' 'MCPs in Session' 'Memories in Session' 'Token Usage'; do
+    printf '%s' "$menu" | grep -Fq "$action" || { printf 'FAIL: session menu action missing: %s\n' "$action"; exit 1; }
+done
+req "$modern" 'navigationDestination(for: SettingsDestination.self)' 'settings push destinations remain registered'
+req "$modern" 'SettingsDestination.providerDetail' 'settings deep-link destinations remain available'
+req "$chat" 'static let userBubbleBackground = Color(UIColor.secondarySystemBackground)' 'solid sent message fill'
+req "$message" 'shape.fill(ChatColors.userBubbleBackground)' 'sent bubble uses solid fill'
+req "$chat" '.fill(message.isQueued ? Color.clear : ChatColors.userBubbleBackground)' 'legacy bubble uses solid fill'
+# Check attachment within each hosted page's modifier chain (not once per file).
+python3 - <<'CHECK_PAGES'
+from pathlib import Path
+import re
+
+root = Path("src/ios")
+checked = 0
+missing = []
+for path in sorted(root.rglob("*.swift")):
+    parts = path.relative_to(root).parts
+    if parts[0] not in {"Views", "Agent", "Shared", "WebApp"} or "Debug" in parts:
+        continue
+    lines = path.read_text().splitlines()
+    for i, line in enumerate(lines):
+        title = re.match(r"^([ \t]*)\.navigation(?:Bar)?Title\(", line)
+        if not title:
+            continue
+        indent = title.group(1)
+        # Allow a local mount either adjacent to the title or immediately
+        # after title display mode / a one-line toolbar declaration.
+        neighbors = lines[max(0, i - 1):i] + lines[i + 1:i + 4]
+        if not any(s.startswith(indent + ".minisNavigationChrome(") for s in neighbors):
+            missing.append(f"{path}:{i + 1}: {line.strip()}")
+        checked += 1
+if missing:
+    raise SystemExit("FAIL: page-local navigation chrome missing:\n" + "\n".join(missing))
+print(f"PASS: {checked} production title chains have a page-local navigation preference.")
+CHECK_PAGES
+printf 'PASS: navigation-only material, opaque messages, native menus, SiriFlowBorder and ThinkingOrb.\n'
+printf 'NOTE: source contract is not a Swift build or device test.\n'

@@ -122,6 +122,7 @@ struct SessionMCPsView: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("MCPs in Session")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchQuery, placement: .navigationBarDrawer(displayMode: .always),

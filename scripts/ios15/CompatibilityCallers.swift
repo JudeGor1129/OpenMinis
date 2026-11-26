@@ -43,7 +43,6 @@ private struct IOS15CompatibilityCallers: View {
         .minisResizableSheet()
         .minisFixedSheetHeight(240)
         .minisInteractiveKeyboardDismissal()
-        .minisNavigationBarBackdropMaterial()
-        .minisNavigationBarBackdropVisible()
+        .minisNavigationChrome(keepNativeBackdropVisible: true)
     }
 }

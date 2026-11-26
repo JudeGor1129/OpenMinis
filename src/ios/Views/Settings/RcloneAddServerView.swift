@@ -108,6 +108,7 @@ struct RcloneAddServerView: View {
             .backupHUD(Binding(
                 get: { connectedRemote == nil ? nil : errorText },
                 set: { if $0 == nil { errorText = nil } }))
+            .minisNavigationChrome()
             .navigationTitle(connectedRemote == nil ? "Add Server" : "Choose Folder")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

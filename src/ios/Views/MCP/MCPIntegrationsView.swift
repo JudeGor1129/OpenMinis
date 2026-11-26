@@ -61,6 +61,7 @@ struct MCPIntegrationsView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(Text("MCP Integrations"))
         .navigationBarTitleDisplayMode(.inline)
         // [T-ios-mcp-list-reload-on-appear] Re-read servers.json on appear so a
@@ -212,6 +213,7 @@ struct MCPToolsSheet: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle(Text(verbatim: serverName))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

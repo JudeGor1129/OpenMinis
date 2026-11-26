@@ -83,6 +83,7 @@ struct WebAppAddToHomeSheet: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Add to Home Screen")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -908,6 +908,7 @@ struct FolderPackageListView: View {
             }
         }
         .refreshable { await reload() }
+        .minisNavigationChrome()
         .navigationTitle(folder.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await reload() }
@@ -977,6 +978,7 @@ struct ServerRestorePickerSheet: View {
                     Text("Add the server your backups were saved to. Servers added here are also available as backup destinations.")
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Restore from Server")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1100,6 +1102,7 @@ struct ServerPackageListView: View {
             }
             .refreshable { await reload() }
         }
+        .minisNavigationChrome()
         .navigationTitle(remote.name)
         .navigationBarTitleDisplayMode(.inline)
         // A modal, not an inline spinner. Downloading a backup can run for

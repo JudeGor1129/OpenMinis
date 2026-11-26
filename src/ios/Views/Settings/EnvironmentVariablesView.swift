@@ -62,6 +62,7 @@ struct EnvironmentVariablesView: View {
         }
         .listStyle(.insetGrouped)
         .searchable(text: $searchText, prompt: "Filter by name")
+        .minisNavigationChrome()
         .navigationTitle("Environment Variables")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -293,6 +294,7 @@ private struct EnvVarFormSheet: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle(mode == .add ? "Add Variable" : "Edit Variable")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

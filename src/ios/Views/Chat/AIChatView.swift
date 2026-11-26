@@ -91,6 +91,7 @@ enum ChatColors {
     static let secondaryText = Color(UIColor.secondaryLabel)
     static let tertiaryText = Color(UIColor.tertiaryLabel)
     static let userBubble = Color(UIColor.tertiarySystemFill)
+    static let userBubbleBackground = Color(UIColor.secondarySystemBackground)
     static let toolBg = Color(UIColor.tertiarySystemGroupedBackground)
     static let toolBorder = Color(UIColor.separator).opacity(0.5)
     static let accent = Color(UIColor.label)
@@ -5663,10 +5664,8 @@ struct NavBarStyleModifier: ViewModifier {
                 // MessageListViewController.
                 .modifier(MacOS27OpaqueNavigationBar(background: ChatColors.background))
         } else if #available(iOS 16.0, *) {
-            // iOS 16–25: opaque navbar background
             content
-                .toolbarBackground(ChatColors.background, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
+                .minisNavigationChrome()
                 .overlay(alignment: .top) {
                     if measuresSafeArea {
                         // [T-ios-geometry-observer-crash] onGeometryChange
@@ -6402,6 +6401,7 @@ private struct MoveToSessionSheet: View {
             }
             .searchable(text: $searchText, prompt: AppLocalized("Search chats..."))
             .onChange(of: searchText) { _ in scheduleSearch() }
+            .minisNavigationChrome()
             .navigationTitle(AppLocalized("Move to…"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -6796,6 +6796,7 @@ private struct SpeechLanguagePickerSheet: View {
                 }
             }
             .searchable(text: $searchText, prompt: Text("Search Languages", comment: "Search field placeholder for speech language picker"))
+            .minisNavigationChrome()
             .navigationTitle(Text("Voice Language", comment: "Navigation title for speech language picker"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -6868,6 +6869,7 @@ struct CompactSummarySheet: View {
                     .foregroundStyle(.red)
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Compact Summary")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -6995,6 +6997,7 @@ private struct TokenUsageSheet: View {
                     StatRow(label: "Total Loops", value: "\(s.loopCount)", icon: "repeat")
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Session Token Usage")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -7365,6 +7368,7 @@ private struct MinisSessionSearchSheet: View {
                 }
             }
             .searchable(text: $query)
+            .minisNavigationChrome()
             .navigationTitle("Search in Conversation")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -7955,7 +7959,7 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 18)
-                        .fill(message.isQueued ? Color.clear : ChatColors.userBubble)
+                        .fill(message.isQueued ? Color.clear : ChatColors.userBubbleBackground)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 18)

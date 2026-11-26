@@ -411,29 +411,8 @@ private struct FolderSurface: ViewModifier {
     enum Kind { case lone, top, middle, bottom }
     let kind: Kind
 
-    /// The collapsed card's ACTUAL rendered color, eyedropper-sampled from
-    /// device screenshots. Dark: RGB 18/18/18 — re-sampled with a probe
-    /// build rendering REAL glass over a pure-black list with no pinned rows
-    /// behind it (24 points, zero variance). The earlier 57/57/60 was
-    /// contaminated: that screenshot's card had blurred colorful content
-    /// showing through the glass, and the too-light constant is what read as
-    /// a heavy solid slab against the black page. True glass sits nearly on
-    /// the background and lets the edge hairline do the lifting — that IS
-    /// the lightweight look. Light: RGB 252/252/252 (sampled over a clean
-    /// light background, unaffected).
-    /// Used for the expanded segments on iOS 26 instead of per-row
-    /// glassEffect: glass pieces cannot merge across List rows (edge lines
-    /// between every segment — twice rejected), and in THIS context glass
-    /// has nothing to blur behind it (the container sits on the flat list
-    /// background), so its rendered output IS effectively this constant
-    /// color. Sampling it gives pixel-level brightness parity with the
-    /// collapsed card, perfectly seamless tiling, and zero perf risk —
-    /// chosen by the user over a preference-propagation spike.
-    static let sampledGlassColor = Color(UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 18/255.0, green: 18/255.0, blue: 18/255.0, alpha: 1)
-            : UIColor(red: 252/255.0, green: 252/255.0, blue: 252/255.0, alpha: 1)
-    })
+    /// Group and session rows stay on an opaque semantic surface. Only navigation
+    /// chrome and input controls receive the adaptive glass treatment.
 
     private var shape: AnyShape {
         switch kind {
@@ -453,33 +432,7 @@ private struct FolderSurface: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        Group {
-            // Two states, two deliberate treatments (user decision):
-            // - COLLAPSED lone card: the sampled constant. glassEffect is a
-            //   live material and a collapsed card scrolls past heterogeneous
-            //   content (blurred colorful pinned rows), so live glass
-            //   flickered frame to frame; the constant is what that glass
-            //   rendered over the flat background anyway.
-            // - EXPANDED segments: a real material for translucency. Member
-            //   rows sit over the STABLE list background only — nothing
-            //   colorful ever passes behind them — so the flicker mechanism
-            //   doesn't apply, and the material keeps the container from
-            //   reading as a dull solid slab. regularMaterial (the brighter
-            //   tier; ultraThin ran too dark here before).
-            if kind == .lone {
-                if #available(iOS 26.0, *) {
-                    content.background(shape.fill(Self.sampledGlassColor))
-                } else {
-                    content.background(shape.fill(Color(UIColor.secondarySystemBackground)))
-                }
-            } else {
-                if #available(iOS 26.0, *) {
-                    content.background(shape.fill(.regularMaterial))
-                } else {
-                    content.background(shape.fill(Color(UIColor.secondarySystemBackground)))
-                }
-            }
-        }
+        content.background(shape.fill(Color(UIColor.secondarySystemBackground)))
         .overlay {
             // Border: full hairline on the lone card (its existing look, sub-26
             // only — glass carries its own edge); tiled outer-perimeter
@@ -699,6 +652,7 @@ private struct FolderAlertsModifier: ViewModifier {
                         // Keep the auto-grouping context editable with the name.
                         TextField("Description (optional)", text: $renameFolderDesc)
                     }
+                    .minisNavigationChrome()
                     .navigationTitle("Rename Group")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -1003,6 +957,7 @@ private struct FolderPickerSheet: View {
             // ship the English source text to every locale. As
             // `LocalizedStringKey` both branches keep their `%lld` interpolation
             // and resolve through Localizable.xcstrings.
+            .minisNavigationChrome()
             .navigationTitle(anyFiled
                              ? LocalizedStringKey("Change Group for \(sessionCount)")
                              : LocalizedStringKey("Move \(sessionCount) to Group"))
@@ -3487,6 +3442,7 @@ struct ModernContentView: View {
         .ignoresSafeArea(.keyboard, edges: showSearchBar ? [] : .bottom)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { sidebarToolbarContent }
+        .minisNavigationChrome()
         )
     }
 
@@ -3674,6 +3630,7 @@ struct ModernContentView: View {
         .ignoresSafeArea(.keyboard, edges: showSearchBar ? [] : .bottom)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { sidebarToolbarContent }
+        .minisNavigationChrome()
         }
     }
     // MARK: - Sidebar Toolbar
@@ -6540,6 +6497,7 @@ private struct DeleteConfirmSheet: View {
             }
             .navigationTitle("Confirm Deletion")
             .navigationBarTitleDisplayMode(.inline)
+            .minisNavigationChrome()
         }
     }
 
@@ -6641,6 +6599,7 @@ private struct ExportPreviewSheet: View {
                 .padding(.vertical, 12)
                 .background(Color(UIColor.systemBackground))
             }
+            .minisNavigationChrome()
             .navigationTitle(AppLocalized("Export Preview"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -7693,6 +7652,7 @@ struct SessionEditSheet: View {
                     .disabled(isRegenerating)
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Edit Session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -8188,6 +8148,7 @@ struct AppearanceSettingsView: View {
             }
 
         }
+        .minisNavigationChrome()
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
         .background(InteractivePopGestureDisabler())
@@ -8604,6 +8565,7 @@ private struct SettingsSheet: View {
                 }
 
             }
+            .minisNavigationChrome()
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -9025,6 +8987,7 @@ private struct NewGroupSheet: View {
                     if duplicateName { Text("已有同名分组，请换一个名称").foregroundStyle(.secondary) }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("新建分组")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

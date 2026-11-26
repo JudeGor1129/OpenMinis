@@ -939,6 +939,7 @@ struct MinisTextPreviewView: View {
                     MinisTextView(text: text)
                 }
             }
+            .minisNavigationChrome()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -970,6 +971,7 @@ struct MinisTextPreviewView: View {
                 MinisShareSheet(url: fileURL)
             }
         }
+        .navigationViewStyle(.stack)
         // Re-read when the file's mtime/size changes, not just on first
         // appearance, so an in-place rewrite shows current bytes.
         // [T-ios-file-preview-stale-cache]
@@ -1067,6 +1069,7 @@ struct MinisMarkdownPreviewView: View {
                     PaginatedMarkdownView(markdown: markdownContent)
                 }
             }
+            .minisNavigationChrome()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1105,6 +1108,7 @@ struct MinisMarkdownPreviewView: View {
                 MinisShareSheet(url: fileURL)
             }
         }
+        .navigationViewStyle(.stack)
         .modifier(WideSheetSizingModifier())
         // Re-read on in-place rewrite (mtime/size change), not just first
         // appearance. [T-ios-file-preview-stale-cache]
@@ -1150,6 +1154,7 @@ struct MinisHTMLPreviewView: View {
             ReusableWebView(webView: holder.webView)
                 .onAppear { holder.startIfNeeded() }
                 .ignoresSafeArea()
+                .minisNavigationChrome()
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -1192,6 +1197,7 @@ struct MinisHTMLPreviewView: View {
                                       sourceSessionId: AIChatViewModel.activeSessionId)
                 }
         }
+        .navigationViewStyle(.stack)
         .minisChatSheetSize(.large)
         // [T-ios-html-preview-wide-sheet] Widen to a page-style sheet on
         // iPad/Mac, matching MinisMarkdownPreviewView. iPhone unaffected.

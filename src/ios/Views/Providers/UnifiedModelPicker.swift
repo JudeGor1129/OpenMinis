@@ -678,6 +678,7 @@ struct UnifiedModelPicker: View {
             }
         }
         .onDisappear { searchDebounceTask?.cancel() }
+        .minisNavigationChrome()
         .navigationTitle(config.title)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {

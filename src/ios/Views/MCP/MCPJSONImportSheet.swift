@@ -58,6 +58,7 @@ struct MCPJSONImportSheet: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle(Text("Import JSON"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

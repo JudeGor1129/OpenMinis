@@ -78,6 +78,7 @@ struct CopilotDeviceLoginSheet: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding()
+            .minisNavigationChrome()
             .navigationTitle(AppLocalized("GitHub Copilot Login"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

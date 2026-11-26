@@ -194,6 +194,7 @@ struct EnhancedBackgroundSettingsView: View {
                 Text("How long the app can keep working after moving to the background. Without any keep-alive mechanism, iOS suspends apps after roughly 30 seconds; enabling Location Tracking (and granting location permission) or Background Speak extends this for the duration of a task.")
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Background")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {

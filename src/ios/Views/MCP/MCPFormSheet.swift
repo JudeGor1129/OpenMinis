@@ -121,6 +121,7 @@ struct MCPFormSheet: View {
                                         maximumLines: 4)
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle(Text(isEditing ? "Edit Server" : "Add Server"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

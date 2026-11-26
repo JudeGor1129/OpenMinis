@@ -29,6 +29,7 @@ struct UserAskSettingsView: View {
                 Text(AppLocalized("A neutral notification asks you to return to Minis. It never shows the question or allows approval from the lock screen."))
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(AppLocalized("User questions"))
         .navigationBarTitleDisplayMode(.inline)
     }

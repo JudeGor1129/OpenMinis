@@ -76,6 +76,7 @@ struct QuotaDetailSheet: View {
             .sheet(item: $consoleURL) { url in
                 MinisLinkPreviewView(url: url, browserPool: nil)
             }
+            .minisNavigationChrome()
             .navigationTitle(ProviderConfigStore.shared.instance(for: instanceId)?.label ?? AppLocalized( "Quota"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

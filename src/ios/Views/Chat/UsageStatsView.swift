@@ -291,6 +291,7 @@ struct UsageStatsView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Usage")
         .task {
             await vm.load()

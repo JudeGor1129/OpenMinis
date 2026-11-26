@@ -85,6 +85,7 @@ struct ModelGroupDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(group?.name ?? "Group")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

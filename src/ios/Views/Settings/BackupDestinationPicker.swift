@@ -45,6 +45,7 @@ struct BackupDestinationPicker: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("Backup Destination")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

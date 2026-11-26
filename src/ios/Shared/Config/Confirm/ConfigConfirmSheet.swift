@@ -54,6 +54,7 @@ struct ConfigConfirmSheet: View {
                 }
                 .listStyle(.insetGrouped)
             }
+            .minisNavigationChrome()
             .navigationTitle(workingItems.count > 1
                              ? "Confirm \(workingItems.count) changes"
                              : "Confirm change")

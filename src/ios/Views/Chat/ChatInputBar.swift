@@ -300,6 +300,7 @@ private struct AttachmentChip: View {
         .sheet(isPresented: $showPreview) {
             MinisNavigationContainer {
                 AttachmentPreviewView(url: attachment.cacheURL)
+                    .minisNavigationChrome()
                     .navigationTitle(attachment.fileName)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -586,6 +587,7 @@ struct PastedTextChipRow: View {
                     LazyLongTextView(text: entry.text)
                         .padding()
                 }
+                .minisNavigationChrome()
                 .navigationTitle("Pasted#\(entry.id) · " + String(format: AppLocalized("%d chars"), entry.charCount))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

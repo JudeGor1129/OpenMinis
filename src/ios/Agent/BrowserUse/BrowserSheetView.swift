@@ -153,6 +153,7 @@ struct BrowserSheetView: View {
                     .allowsHitTesting(!isAgentBusy)
                 }
             }
+            .minisNavigationChrome()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -545,6 +546,7 @@ struct BrowserDownloadPanelSheet: View {
                     .listStyle(.plain)
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle(Text("Downloads", comment: "Downloads panel title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

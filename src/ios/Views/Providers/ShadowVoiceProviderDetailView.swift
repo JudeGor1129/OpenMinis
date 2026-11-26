@@ -79,6 +79,7 @@ struct ShadowVoiceProviderDetailView: View {
                      comment: "Shadow voice toggle note")
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(shadow?.displayName ?? instance?.label ?? AppLocalized("Voice Service"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $quickTestEntry) { entry in

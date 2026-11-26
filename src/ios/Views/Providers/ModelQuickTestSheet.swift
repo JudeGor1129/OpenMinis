@@ -55,6 +55,7 @@ struct ModelQuickTestSheet: View {
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .minisNavigationChrome()
             .navigationTitle("Quick Test")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

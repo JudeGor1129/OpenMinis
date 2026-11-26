@@ -586,9 +586,9 @@ struct SessionSystemAccessSheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .minisNavigationChrome(keepNativeBackdropVisible: true)
             .navigationTitle("本会话权限")
             .navigationBarTitleDisplayMode(.inline)
-            .minisNavigationBarBackdropMaterial()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -736,9 +736,9 @@ private struct SystemApprovalPanel: View {
                     else { Rectangle().fill(.regularMaterial) }
                 }
             }
+            .minisNavigationChrome(keepNativeBackdropVisible: true)
             .navigationTitle("确认系统文件操作")
             .navigationBarTitleDisplayMode(.inline)
-            .minisNavigationBarBackdropMaterial()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { decision.finish(false) }

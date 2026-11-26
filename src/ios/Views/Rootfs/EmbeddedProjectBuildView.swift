@@ -147,6 +147,7 @@ struct EmbeddedProjectBuildView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("受限工程编译")
         .navigationBarTitleDisplayMode(.inline)
         .fileImporter(isPresented: $pickerPresented, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in

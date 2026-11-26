@@ -148,6 +148,7 @@ struct FileBrowserView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Files")
         .navigationBarTitleDisplayMode(.inline)
         // [T-ios-copy-abs-path-copied-toast] Self-dismissing "Copied" capsule.
@@ -420,6 +421,7 @@ private struct FilePreviewSheet: View {
     var body: some View {
         MinisNavigationContainer {
             content
+                .minisNavigationChrome()
                 .navigationTitle(item.name)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -1665,6 +1667,7 @@ private struct DirectoryPickerView: View {
                 .listStyle(.plain)
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

@@ -92,6 +92,7 @@ struct MountedFoldersSettingsView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Mount External Folders")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -381,6 +382,7 @@ private struct AddMountSheet: View {
                         .font(.caption)
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle("New Mount")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

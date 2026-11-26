@@ -103,59 +103,20 @@ struct MessageContextMenuPreview: View {
     }
 }
 
-/// Background for the long-press preview platter.
-///
-/// Matches `UserBubbleSurface` so lifting a bubble doesn't jump from Liquid
-/// Glass to a flat colour card — the shape (`RoundedRectangle(cornerRadius: 18)`,
-/// non-`.continuous`) is deliberately the same one the bubble and the row's
-/// `.contentShape(.contextMenuPreview, …)` already use.
-///
-/// **The opaque base stays.** [T-ios-longpress-menu-preview-background] exists
-/// because the platter was showing through to the messages underneath: cells are
-/// hosted on a clear background and the menus hang off either a zero-size
-/// `Color.clear` overlay or a `tertiarySystemFill` bubble, so SwiftUI's snapshot
-/// of the attached view was effectively transparent. Glass is a translucent
-/// material, so using it ALONE would risk re-opening exactly that bug. Painting
-/// it over `ChatColors.background` keeps the platter opaque no matter what the
-/// system composites behind it, while the material still supplies the glass
-/// highlight and edge that make it read as continuous with the bubble.
+/// The long-press preview mirrors the bubble's shape, but uses a solid
+/// backdrop so the detached snapshot cannot show the live transcript through it.
 private struct ContextMenuPreviewSurface: ViewModifier {
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: 18)
     }
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content
-                // Opaque floor first — see the note above.
-                .background(shape.fill(ChatColors.background))
-                .glassEffect(.regular, in: shape)
-        } else {
-            content.background(ChatColors.background)
-        }
+        // Detached previews stay opaque so text never samples message content.
+        content.background(shape.fill(ChatColors.background))
     }
 }
 
-/// Preference key carrying the laid-out preview text size up to the platter.
-/// Background for the user message bubble.
-///
-/// Two states that must stay tellable apart at a glance:
-///
-///  - **Sent** (`isQueued == false`) — Liquid Glass on iOS 26+. These bubbles
-///    scroll over other messages, images and code blocks, so the material has
-///    genuinely varied content to sample; this is the case glass is for, the
-///    same as the tool-status bar and unlike `FolderSurface`, which had to fall
-///    back to a sampled constant for want of anything behind it.
-///  - **Queued** (`isQueued == true`) — deliberately NOT glass, on either OS.
-///    Glass reads as a settled, physical surface, which is the opposite of what
-///    a not-yet-sent message means. It keeps the existing empty fill + dashed
-///    border, so "queued" still looks provisional next to the solid glass of
-///    everything already sent.
-///
-/// The text is the modified content rather than an `.overlay`, which is what
-/// keeps it above the material: `.glassEffect` composites the material over the
-/// view it modifies, so an overlaid label would be painted underneath it and
-/// disappear (the FAB regression).
+/// Sent messages have a solid semantic fill; unsent ones keep a dashed outline.
 private struct UserBubbleSurface: ViewModifier {
     let isQueued: Bool
 
@@ -169,7 +130,7 @@ private struct UserBubbleSurface: ViewModifier {
 
     func body(content: Content) -> some View {
         if isQueued {
-            // Provisional look, identical on every OS version.
+            // Queued messages remain visibly provisional.
             content
                 .background(shape.fill(Color.clear))
                 .overlay(
@@ -177,14 +138,13 @@ private struct UserBubbleSurface: ViewModifier {
                         .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
                         .foregroundStyle(ChatColors.secondaryText.opacity(0.5))
                 )
-        } else if #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: shape)
         } else {
-            content.background(shape.fill(ChatColors.userBubble))
+            content.background(shape.fill(ChatColors.userBubbleBackground))
         }
     }
 }
 
+/// Carries the laid-out preview text size up to the platter.
 private struct PreviewContentSizeKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) {

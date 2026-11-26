@@ -153,6 +153,7 @@ struct CloudSyncSettingsV2View: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("iCloud Sync")
 #if !os(macOS)
         .navigationBarTitleDisplayMode(.inline)

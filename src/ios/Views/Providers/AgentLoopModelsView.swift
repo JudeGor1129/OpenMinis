@@ -260,6 +260,7 @@ struct AddAgentLoopGroupsSheet: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Add Groups")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

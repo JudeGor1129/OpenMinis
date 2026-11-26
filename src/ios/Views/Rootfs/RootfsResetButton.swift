@@ -208,6 +208,7 @@ struct RootfsResetToolbarItem: ToolbarContent {
         VStack {
             RootfsResetButton(style: .compact)
         }
+        .minisNavigationChrome()
         .navigationTitle("Compact Style")
     }
 }
@@ -219,6 +220,7 @@ struct RootfsResetToolbarItem: ToolbarContent {
                 RootfsResetButton(style: .normal)
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Normal Style")
     }
 }
@@ -233,6 +235,7 @@ struct RootfsResetToolbarItem: ToolbarContent {
             RootfsResetButton(style: .prominent)
         }
         .padding()
+        .minisNavigationChrome()
         .navigationTitle("Prominent Style")
     }
 }

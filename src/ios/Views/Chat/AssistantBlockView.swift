@@ -1152,6 +1152,7 @@ struct ThinkingLevelSheetView: View {
                     }
                 }
             }
+            .minisNavigationChrome()
             .navigationTitle(AppLocalized("Thinking Intensity"))
             .navigationBarTitleDisplayMode(.inline)
         }

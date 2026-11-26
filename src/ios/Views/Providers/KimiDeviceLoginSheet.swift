@@ -62,6 +62,7 @@ struct KimiDeviceLoginSheet: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding()
+            .minisNavigationChrome()
             .navigationTitle(AppLocalized("Kimi Code Login"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -284,6 +284,7 @@ struct AddProviderView: View {
             steppedContent
         }
         .animation(MinisMotion.transition, value: currentStep)
+        .minisNavigationChrome()
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

@@ -191,6 +191,7 @@ struct RootfsManagementView: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle("Rootfs Management")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -479,6 +480,7 @@ private struct MinisEnvironmentPresetDetail: View {
                 }
             }
         }
+        .minisNavigationChrome()
         .navigationTitle(preset.title)
         .alert("安装 \(preset.title)？", isPresented: $confirmingInstall) {
             Button("打开终端") { openTerminal("apk add --no-cache \(preset.packages)") }

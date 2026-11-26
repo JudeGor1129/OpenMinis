@@ -119,6 +119,7 @@ struct ProviderInstancesView: View {
 
     var body: some View {
         providerList
+        .minisNavigationChrome()
         .navigationTitle("Providers")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

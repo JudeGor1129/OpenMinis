@@ -43,6 +43,7 @@ struct SystemAccessSettingsView: View {
             }
 
         }
+        .minisNavigationChrome()
         .navigationTitle("系统目录访问")
         .navigationBarTitleDisplayMode(.inline)
     }
