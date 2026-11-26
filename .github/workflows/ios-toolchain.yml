@@ -32,13 +32,17 @@ on:
 permissions:
   contents: read
 
+# Pin the host SDK selection for both jobs; do not use the image default.
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+
 concurrency:
   group: ios-toolchain-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   check-disabled-bridge:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +55,7 @@ jobs:
 
   build-toolchain:
     needs: check-disabled-bridge
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +66,13 @@ jobs:
       - name: Show host toolchain
         run: |
           set -euo pipefail
-          xcodebuild -version
+          sw_vers -productVersion
+          uname -m
+          [[ "$(sw_vers -productVersion)" == 26.* && "$(uname -m)" == arm64 ]]
+          xcode_version="$(xcodebuild -version)"
+          echo "$xcode_version"
+          [[ "${xcode_version%%$'\n'*}" == 'Xcode 26.3' ]]
+          xcrun --sdk iphoneos --show-sdk-version
           xcrun --sdk iphoneos --show-sdk-path
           cmake --version
           ninja --version
