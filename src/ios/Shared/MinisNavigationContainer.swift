@@ -385,15 +385,15 @@ struct MinisBottomRoundedShape: Shape {
     }
 }
 
-private struct MinisGeometryValue<Value: Equatable>: Equatable {
+private struct MinisGeometryValue<Value: Equatable & Sendable>: Equatable, Sendable {
     let value: Value
 }
 
 extension View {
     @ViewBuilder
-    func minisOnGeometryChange<Value: Equatable>(
+    func minisOnGeometryChange<Value: Equatable & Sendable>(
         for type: Value.Type,
-        of transform: @escaping (GeometryProxy) -> Value,
+        of transform: @escaping @Sendable (GeometryProxy) -> Value,
         action: @escaping (Value) -> Void
     ) -> some View {
         if #available(iOS 16.0, *) {
@@ -431,6 +431,7 @@ extension View {
 // feedback). Apply at the changed control, never at the app root: streaming,
 // progress and restored history have no animation. Native navigation/sheets
 // keep their system transitions and interactive cancellation.
+@MainActor
 enum MinisMotion {
     private static let base = Animation.spring(response: 0.30, dampingFraction: 0.86)
 

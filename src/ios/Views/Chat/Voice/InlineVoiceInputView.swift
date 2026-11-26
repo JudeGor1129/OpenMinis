@@ -1304,7 +1304,10 @@ private final class DeleteButtonState: ObservableObject {
     func startHoldTimer(after seconds: TimeInterval) {
         stopHoldTimer()
         let t = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
-            withAnimation(MinisMotion.feedback) { self?.canClearAll = true }
+            // This timer is scheduled only on the main run loop below.
+            MainActor.assumeIsolated {
+                withAnimation(MinisMotion.feedback) { self?.canClearAll = true }
+            }
         }
         RunLoop.main.add(t, forMode: .common)
         holdTimer = t
