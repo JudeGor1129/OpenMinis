@@ -38,7 +38,7 @@ concurrency:
 
 jobs:
   check-disabled-bridge:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +51,7 @@ jobs:
 
   build-toolchain:
     needs: check-disabled-bridge
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
