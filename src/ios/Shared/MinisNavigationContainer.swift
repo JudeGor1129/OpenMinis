@@ -16,7 +16,7 @@ private struct MinisNavigationChromeScope: ViewModifier {
         if #available(iOS 26.0, *) {
             // Use the system's material and accessibility handling on Liquid Glass.
             if keepNativeBackdropVisible {
-                content.toolbarBackgroundVisibility(.visible, for: .navigationBar)
+                content.toolbarBackground(.visible, for: .navigationBar)
             } else {
                 content
             }

@@ -217,6 +217,7 @@ swiftc -swift-version 6 -strict-concurrency=complete -typecheck \
   -sdk "$IOS_SDK" -target arm64-apple-ios15.0 \
   -import-objc-header src/ios/Vendor/OMToolchain/OMToolchain.h \
   "$TMP/Models.swift" "$SNAPSHOT" "$MATERIALIZER" "$ADAPTER" "$REQUEST" "$RESTRICTED_EXECUTION" "$PUBLISHER" "$UNIVERSAL" "$DEB_PACKAGE" \
+  src/ios/Shared/MinisNavigationContainer.swift \
   src/ios/Views/Rootfs/EmbeddedProjectBuildView.swift
 echo 'PASS: actual restricted project screen typechecked with iOS 15 SwiftUI/UIKit SDK.'
 # Strict Swift 6 checks compile the actual snapshot/materializer/request,
