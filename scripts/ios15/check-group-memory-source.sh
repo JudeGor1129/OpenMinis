@@ -37,7 +37,7 @@ printf 'PASS: group memory/soul, edit/revoke, legacy menu and share-visibility s
 printf 'NOTE: full Swift compilation and device share/scroll/isolation tests are still required.\n'
 
 # Full scrollable history, bulk skills and scoped UI.
-grep -Fq 'ForEach(vm.messages.reversed())' src/ios/Views/Chat/AIChatView.swift
+grep -Fq 'ForEach(rows.reversed())' src/ios/Views/Chat/AIChatView.swift
 # Native latest-edge layout retains every record without a restoration scroll.
 grep -Fq '.id(vm.latestSessionAnchorRequest)' src/ios/Views/Chat/AIChatView.swift
 grep -Fq 'proxy.scrollTo(bottomAnchor, anchor: .top)' src/ios/Views/Chat/AIChatView.swift

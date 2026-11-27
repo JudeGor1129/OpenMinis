@@ -19,11 +19,13 @@ legacy = chat.split('struct MinisLegacyTranscript:', 1)[1].split('private struct
 container = legacy.split('private struct MinisLegacyToolDetailTarget:', 1)[0]
 probe = legacy.split('private struct MinisLegacyScrollFollow:', 1)[1]
 row = chat.split('private struct MinisLegacyTranscriptRow:', 1)[1]
-require('ForEach(vm.messages.reversed())' in container and '.rotationEffect(.degrees(180))' in container,
-        'latest messages must be laid out at native offset zero')
-require('Timer(' not in legacy and 'setContentOffset(' not in legacy and 'scrollTo(' not in probe,
+require('ForEach(rows.reversed())' in container and '.rotationEffect(.degrees(180))' in container,
+        'latest paged messages must remain at native offset zero')
+require('private let displayPageSize = 64' in container and 'loadOlderDisplayPageIfNeeded' in container,
+        'iOS15 paginates rows without trimming the ViewModel history')
+require('Timer(' not in legacy and 'setContentOffset(' not in container and 'setContentOffset(' not in probe and 'scrollTo(' not in probe,
         'legacy viewport must never chase lazy numeric offsets or content growth')
-# Only the two explicit user jump handlers can command scrolling.
+# Only explicit latest/search/history navigation can command SwiftUI scrolling.
 require(container.count('proxy.scrollTo(') == 2 and
         'proxy.scrollTo(bottomAnchor, anchor: .top)' in container,
         'entry and history replacement must not issue automatic scroll commands')

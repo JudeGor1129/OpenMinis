@@ -70,7 +70,8 @@ grep -Fq 'rotationEffect(.degrees(180))' "$view"
 area=$(sed -n '/private var messagesArea:/,/private struct MinisLegacyTranscript:/p' "$view")
 grep -Fq 'if #available(iOS 16.0, *)' <<< "$area"
 grep -Fq 'MinisLegacyTranscript(' <<< "$area"
-grep -Fq 'ForEach(vm.messages.reversed())' "$view"
+grep -Fq 'ForEach(rows.reversed())' "$view"
+grep -Fq 'private let displayPageSize = 64' "$view"
 ! grep -Fq 'visibleLimit' "$view"
 grep -Fq 'scroll.isTracking || scroll.isDragging || scroll.isDecelerating' "$view"
 attachments=src/ios/Views/Chat/ChatInputBar.swift

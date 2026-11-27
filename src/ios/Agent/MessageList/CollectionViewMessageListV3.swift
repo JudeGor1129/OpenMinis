@@ -974,6 +974,17 @@ extension CollectionViewMessageListV3 {
         /// one. Pruned alongside `cellBridges`.
         private var lastFooterShapeByMessage: [UUID: FooterHeightShape] = [:]
         private var snapshotMessages: [ChatMessage] = []
+        private let displayWindowSize = 64
+        private let displayWindowStep = 32
+        private var displayWindowSessionID: String?
+        private var displayWindowStartID: UUID?
+        private var displayWindowStartIndex: Int?
+        private var displayWindowEndID: UUID?
+        private var displayWindowEndIndex: Int?
+        private var displayBrowseEndID: UUID?
+        private var displayBrowseEndIndex: Int?
+        private var olderDisplayRequestScheduled = false
+        private var displayWindowLastExpansion: CFTimeInterval = 0
 
         // === Bridges ===
         private var cellBridges: [UUID: CellStateBridgeV2] = [:]
@@ -1663,7 +1674,7 @@ extension CollectionViewMessageListV3 {
         private func updateBridge(_ bridge: CellStateBridgeV2, message: ChatMessage, in messages: [ChatMessage],
                                   isInitialBridgeSetup: Bool = false) {
             guard let vm else { return }
-            let isLast = message.id == messages.last?.id
+            let isLast = message.id == vm.messages.last?.id
             let isActive = isLast && vm.isProcessing
 
             // [T-ios-plaf-cache-footer-staleness] Snapshot the height-BEARING
@@ -1912,6 +1923,9 @@ extension CollectionViewMessageListV3 {
             lastMessageBlockCountSub?.cancel(); lastMessageBlockCountSub = nil
             lastMessageId = nil
             lastSessionAnchorRequest = 0
+            searchNavigationGeneration &+= 1
+            pendingScrollWork?.cancel(); pendingScrollWork = nil
+            scrollMode = .autoScrolling
             vm = newVM
             bindViewModel(newVM)
             // Re-apply from the new VM's authoritative messages (identity may
@@ -2739,8 +2753,142 @@ extension CollectionViewMessageListV3 {
             return unique
         }
 
+        private func boundedDisplayMessages(from all: [ChatMessage]) -> [ChatMessage] {
+            let sessionID = vm?.sessionId
+            if displayWindowSessionID != sessionID || all.isEmpty {
+                displayWindowSessionID = sessionID
+                displayWindowStartID = nil
+                displayWindowStartIndex = nil
+                displayWindowEndID = nil
+                displayWindowEndIndex = nil
+                displayBrowseEndID = nil
+                displayBrowseEndIndex = nil
+            }
+            guard !all.isEmpty else { return [] }
+            if scrollMode == .autoScrolling {
+                let start = max(0, all.count - displayWindowSize)
+                displayWindowStartIndex = start
+                displayWindowEndIndex = all.count - 1
+                displayWindowStartID = all[start].id
+                displayWindowEndID = all.last?.id
+                displayBrowseEndID = all.last?.id
+                displayBrowseEndIndex = all.count - 1
+                return Array(all[start...])
+            }
+            // The loaded VM array can grow while the user reads in the middle.
+            // Freeze its visible upper edge at the last stable ID captured on
+            // drag start; newly appended SSE rows stay hidden until the user
+            // returns to bottom or explicitly jumps to newest.
+            let browseEnd = displayBrowseEndIndex.flatMap { idx in
+                all.indices.contains(idx) && all[idx].id == displayBrowseEndID ? idx : nil
+            } ?? displayBrowseEndID.flatMap { id in all.firstIndex(where: { $0.id == id }) }
+                ?? displayWindowEndIndex ?? (all.count - 1)
+            var start = displayWindowStartIndex.flatMap { index in
+                all.indices.contains(index) && all[index].id == displayWindowStartID ? index : nil
+            } ?? displayWindowStartID.flatMap { id in all.firstIndex(where: { $0.id == id }) }
+                ?? max(0, browseEnd + 1 - displayWindowSize)
+            var end = displayWindowEndIndex.flatMap { index in
+                all.indices.contains(index) && all[index].id == displayWindowEndID ? index : nil
+            } ?? displayWindowEndID.flatMap { id in all.firstIndex(where: { $0.id == id }) }
+                ?? browseEnd
+            end = max(0, min(end, browseEnd))
+            if end < start {
+                // A sync deletion can remove the saved start ID. Fall back to
+                // a valid tail ending at the frozen browse boundary.
+                start = max(0, end + 1 - displayWindowSize)
+            }
+            start = min(max(0, start), all.count - 1)
+            end = min(max(start, end), all.count - 1)
+            displayWindowStartIndex = start
+            displayWindowEndIndex = end
+            displayWindowStartID = all[start].id
+            displayWindowEndID = all[end].id
+            return Array(all[start...end])
+        }
+
+        private typealias DisplayAnchor = (item: MessageListItem, screenY: CGFloat)
+
+        private func visibleDisplayAnchor() -> DisplayAnchor? {
+            guard let cv = viewController?.collectionView, let ds = dataSource else { return nil }
+            let visibleTop = cv.contentOffset.y + cv.adjustedContentInset.top
+            let visibleBottom = cv.contentOffset.y + cv.bounds.height - cv.adjustedContentInset.bottom
+            for path in cv.indexPathsForVisibleItems.sorted() {
+                guard let item = ds.itemIdentifier(for: path),
+                      let attrs = cv.layoutAttributesForItem(at: path),
+                      attrs.frame.height > 0, attrs.frame.maxY > visibleTop,
+                      attrs.frame.minY < visibleBottom else { continue }
+                return (item, attrs.frame.minY - cv.contentOffset.y)
+            }
+            return nil
+        }
+
+        private func restoreDisplayAnchor(_ anchor: DisplayAnchor?, in cv: UICollectionView) {
+            guard scrollMode == .userBrowsing, !cv.isTracking, !cv.isDragging, !cv.isDecelerating,
+                  let anchor, let path = dataSource?.indexPath(for: anchor.item),
+                  let attrs = cv.layoutAttributesForItem(at: path) else { return }
+            let minY = -cv.adjustedContentInset.top
+            let maxY = max(minY, cv.contentSize.height - cv.bounds.height + cv.adjustedContentInset.bottom)
+            let y = min(maxY, max(minY, attrs.frame.minY - anchor.screenY))
+            guard abs(y - cv.contentOffset.y) > 0.25 else { return }
+            cv.setContentOffset(CGPoint(x: cv.contentOffset.x, y: y), animated: false)
+        }
+
+        private func requestDisplayWindowExpansionIfNeeded() {
+            guard CACurrentMediaTime() - displayWindowLastExpansion > 0.35,
+                  scrollMode == .userBrowsing,
+                  let cv = viewController?.collectionView,
+                  !cv.isTracking, !cv.isDragging, !cv.isDecelerating,
+                  let vm, !vm.isLoadingSession, visibleDisplayAnchor() != nil else { return }
+            let all = vm.messages
+            if isAtContentTop(24), let startID = displayWindowStartID,
+               let start = all.firstIndex(where: { $0.id == startID }), start > 0 {
+                let target = max(0, start - displayWindowStep)
+                let lower = max(0, target - 24)
+                let aligned = (lower...target).last(where: { all[$0].isUserTurnAnchor }) ?? target
+                displayWindowStartIndex = aligned
+                displayWindowStartID = all[aligned].id
+                displayWindowLastExpansion = CACurrentMediaTime()
+                applySnapshot(messages: all, caller: "display-page-older")
+            } else if isWithinBottom(reacquireAutoScrollThreshold), let endID = displayWindowEndID,
+                      let end = all.firstIndex(where: { $0.id == endID }), end < all.count - 1 {
+                // A detached search page can be scrolled forward. Extend only
+                // on a settled gesture at its edge, never on message arrival.
+                let next = min(end + displayWindowStep, all.count - 1)
+                displayWindowEndIndex = next
+                displayWindowEndID = all[next].id
+                displayBrowseEndIndex = all.count - 1
+                displayBrowseEndID = all.last?.id
+                displayWindowLastExpansion = CACurrentMediaTime()
+                applySnapshot(messages: all, caller: "display-page-newer")
+            }
+        }
+
+        private func scheduleDisplayWindowExpansion() {
+            guard !olderDisplayRequestScheduled else { return }
+            olderDisplayRequestScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.olderDisplayRequestScheduled = false
+                self.requestDisplayWindowExpansionIfNeeded()
+            }
+        }
+
+        private func isAtLoadedHistoryBeginning() -> Bool {
+            guard isAtContentTop(), let vm, let first = vm.messages.first else { return false }
+            return displayWindowStartID == first.id
+        }
+
         private func applySnapshot(messages rawMessages: [ChatMessage], caller: String = "?") {
             guard let vm, !vm.isLoadingSession || vm.isShowingHistoryPreview else { return }
+            if let cv = viewController?.collectionView,
+               cv.isTracking || cv.isDragging || cv.isDecelerating {
+                hasPendingSnapshot = true
+                AppLogger(category: "PendingSnap").debug("[PendingSnap] defer snapshot during user scroll caller=\(caller)")
+                return
+            }
+            // Capture after interaction has ended, immediately before modifying layout.
+            let browseAnchor = scrollMode == .userBrowsing && caller != "display-page-target"
+                ? visibleDisplayAnchor() : nil
 
             // [T-bridge-message-ui-leak] Single UI-collection sink for EVERY
             // path that pushes messages to the list (loadSession, live inject,
@@ -2749,9 +2897,16 @@ extension CollectionViewMessageListV3 {
             // chat bubble regardless of which path produced it — replacing the
             // former reliance on a single filter inside loadSession, which other
             // rebuild paths bypassed (the leak seen 2026-07-24).
-            let messages = rawMessages.contains(where: { $0.isInternalBridge })
-                ? rawMessages.filter { !$0.isInternalBridge }
-                : rawMessages
+            // Bound first, then apply the defensive bridge filter to this page;
+            // never scan/allocate a filtered copy of the entire transcript for a
+            // token-level streaming snapshot. loadSession keeps every bridge in
+            // agentHistory but already omits it from vm.messages.
+            let displaySource = boundedDisplayMessages(from: rawMessages)
+            let messages = displaySource.contains(where: { $0.isInternalBridge })
+                ? displaySource.filter { !$0.isInternalBridge }
+                : displaySource
+            let latestMessageID = rawMessages.last(where: { !$0.isInternalBridge })?.id
+            let latestAssistantID = rawMessages.last(where: { $0.role == .assistant && !$0.isInternalBridge })?.id
             // [T-subagent-callback-visible] Every sub agent callback renders,
             // progress and final alike.
             //
@@ -2938,7 +3093,7 @@ extension CollectionViewMessageListV3 {
             // ordinary user turn mid-history is untouched.
             let orphanTailUserId: UUID? = {
                 guard vm.canResume, !vm.isProcessing,
-                      let last = messages.last, last.role == .user else { return nil }
+                      let last = messages.last, last.role == .user, last.id == latestMessageID else { return nil }
                 return last.id
             }()
             // [T-assistant-header-dedup] The avatar + name header opens a
@@ -2983,7 +3138,7 @@ extension CollectionViewMessageListV3 {
                     // footer IS needed later (e.g. showUsage toggled by
                     // double-tap), the toggle triggers a snapshot refresh
                     // which re-evaluates this condition.
-                    let isLastAssistant = (message.id == messages.last(where: { $0.role == .assistant })?.id)
+                    let isLastAssistant = (message.id == latestAssistantID)
                     let needsFooter = isLastAssistant
                         || message.error != nil
                         || message.streamInterruptCount > 0
@@ -3138,7 +3293,7 @@ extension CollectionViewMessageListV3 {
                         let footerMsg = messageIndex[footerMsgId].flatMap {
                             $0 < messages.count ? messages[$0] : nil
                         }
-                        let isLastMsg = messages.last?.id == footerMsgId
+                        let isLastMsg = latestMessageID == footerMsgId
                         let hasError = footerMsg?.error != nil
                         let showsResume = isLastMsg && !hasError
                             && vm.canResume && !vm.isProcessing
@@ -3565,6 +3720,10 @@ extension CollectionViewMessageListV3 {
                 if caller.hasPrefix("flushPending") || caller.hasPrefix("suspend-resume")
                     || caller == "bind3-sessionLoad" {
                     remeasureVisibleCells(reason: "skip-after-defer(\(caller))")
+                    if let cv = viewController?.collectionView, browseAnchor != nil {
+                        cv.layoutIfNeeded()
+                        restoreDisplayAnchor(browseAnchor, in: cv)
+                    }
                 }
                 return
             }
@@ -3750,6 +3909,10 @@ extension CollectionViewMessageListV3 {
                     // the top-inset compensation tracking contentSize so the
                     // last cell stays pinned to the overlay top.
                     applySubViewportCompensation(caller: "snapshot-subVP")
+                }
+                if browseAnchor != nil {
+                    cv.layoutIfNeeded()
+                    restoreDisplayAnchor(browseAnchor, in: cv)
                 }
                 // Sync isNearBottom after snapshot apply. applySnapshot runs
                 // under isFlushing=true, which suppresses the contentSize KVO
@@ -4448,7 +4611,7 @@ extension CollectionViewMessageListV3 {
         }
 
         func isNearBottom() -> Bool {
-            return isWithinBottom(nearBottomThreshold)
+            return displayWindowEndID == vm?.messages.last?.id && isWithinBottom(nearBottomThreshold)
         }
 
         /// True when the viewport is at (or within `threshold` of) the very top
@@ -4511,9 +4674,40 @@ extension CollectionViewMessageListV3 {
 
         /// Always resolve the CURRENT diffable item by message/block UUID. No saved
         /// indexPath survives an async layout or streaming snapshot replacement.
+        /// Search/turn-navigation may target a valid VM message outside the
+        /// current transcript window. Reveal a turn-aligned window first; this
+        /// changes only the display slice, never VM.messages or agentHistory.
+        private func revealDisplayWindow(containing messageID: UUID) -> Bool {
+            guard let vm, let target = vm.messages.firstIndex(where: { $0.id == messageID }) else { return false }
+            let currentStart = displayWindowStartID.flatMap { id in vm.messages.firstIndex(where: { $0.id == id }) }
+            let currentEnd = displayWindowEndID.flatMap { id in vm.messages.firstIndex(where: { $0.id == id }) }
+            if let currentStart, let currentEnd, target >= currentStart, target <= currentEnd { return false }
+            var start = max(0, target - displayWindowStep)
+            if start > 0 {
+                let lower = max(0, start - 24)
+                if let turn = (lower..<start).last(where: { vm.messages[$0].isUserTurnAnchor }) { start = turn }
+            }
+            var end = min(vm.messages.count - 1, max(target + displayWindowStep, start + displayWindowSize - 1))
+            if end + 1 < vm.messages.count {
+                let upper = min(vm.messages.count, end + 25)
+                if let turn = (end + 1..<upper).first(where: { vm.messages[$0].isUserTurnAnchor }) { end = turn }
+            }
+            displayWindowStartIndex = start
+            displayWindowEndIndex = end
+            displayWindowStartID = vm.messages[start].id
+            displayWindowEndID = vm.messages[end].id
+            displayWindowSessionID = vm.sessionId
+            displayBrowseEndIndex = vm.messages.count - 1
+            displayBrowseEndID = vm.messages.last?.id
+            clampAfterSessionLoad = false
+            scrollMode = .userBrowsing
+            applySnapshot(messages: vm.messages, caller: "display-page-target")
+            return true
+        }
+
         private func navigateSearch(_ hit: ChatSearchMatch, attempt: Int) {
             guard chatSearch?.currentMatch == hit, let cv = viewController?.collectionView,
-                  let ds = dataSource else { return }
+                  let ds = dataSource, !cv.isTracking, !cv.isDragging, !cv.isDecelerating else { return }
             if attempt == 0 {
                 searchNavigationGeneration += 1
                 scrollMode = .userBrowsing
@@ -4523,6 +4717,13 @@ extension CollectionViewMessageListV3 {
             let generation = searchNavigationGeneration
             let item: MessageListItem = hit.key.blockId.map { .assistantBlock(hit.key.messageId, $0) }
                 ?? .wholeMessage(hit.key.messageId)
+            if attempt < 3, ds.indexPath(for: item) == nil, revealDisplayWindow(containing: hit.key.messageId) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+                    guard let self, generation == self.searchNavigationGeneration else { return }
+                    self.navigateSearch(hit, attempt: attempt + 1)
+                }
+                return
+            }
             guard let path = ds.indexPath(for: item), path.section < cv.numberOfSections,
                   path.item < cv.numberOfItems(inSection: path.section) else {
                 if attempt < 3 {
@@ -4653,6 +4854,27 @@ extension CollectionViewMessageListV3 {
                 target = currentAnchor
             }
 
+            guard !cv.isTracking, !cv.isDragging, !cv.isDecelerating else { return }
+            searchNavigationGeneration &+= 1
+            let generation = searchNavigationGeneration
+            clampAfterSessionLoad = false
+            pendingScrollWork?.cancel(); pendingScrollWork = nil
+            scrollMode = .userBrowsing
+            if !ds.snapshot().itemIdentifiers.contains(.wholeMessage(target)),
+               revealDisplayWindow(containing: target) {
+                lastJumpedUserId = target
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+                    guard let self, generation == self.searchNavigationGeneration,
+                          let cv = self.viewController?.collectionView,
+                          !cv.isTracking, !cv.isDragging, !cv.isDecelerating,
+                          let path = self.dataSource?.indexPath(for: .wholeMessage(target)),
+                          path.section < cv.numberOfSections,
+                          path.item < cv.numberOfItems(inSection: path.section) else { return }
+                    cv.scrollToItem(at: path, at: .top, animated: shouldAnimate)
+                    self.syncScrollFlags()
+                }
+                return
+            }
             guard let targetItem = ds.snapshot().itemIdentifiers.first(where: {
                 if case .wholeMessage(let id) = $0, id == target { return true }
                 return false
@@ -4860,7 +5082,26 @@ extension CollectionViewMessageListV3 {
         }
 
         func scrollToBottomNow(animated: Bool = false) {
-            guard let cv = viewController?.collectionView else { return }
+            guard let cv = viewController?.collectionView,
+                  !cv.isTracking, !cv.isDragging, !cv.isDecelerating else { return }
+            let wasBrowsing = scrollMode != .autoScrolling
+            scrollMode = .autoScrolling
+            if let vm, !vm.messages.isEmpty {
+                let start = max(0, vm.messages.count - displayWindowSize)
+                let needsWindowReset = wasBrowsing
+                    || displayWindowStartID != vm.messages[start].id
+                    || displayWindowEndID != vm.messages.last?.id
+                displayWindowSessionID = vm.sessionId
+                displayWindowStartIndex = start
+                displayWindowEndIndex = vm.messages.count - 1
+                displayBrowseEndIndex = vm.messages.count - 1
+                displayWindowStartID = vm.messages[start].id
+                displayWindowEndID = vm.messages.last?.id
+                displayBrowseEndID = vm.messages.last?.id
+                if needsWindowReset {
+                    applySnapshot(messages: vm.messages, caller: "display-window-bottom")
+                }
+            }
             // Sub-viewport overflow path: re-evaluate compensation, then pin.
             if applySubViewportCompensation(caller: "scrollToBottom") {
                 syncScrollFlags()
@@ -4902,7 +5143,7 @@ extension CollectionViewMessageListV3 {
                 AppLogger(category: "ScrollDiag").info("[ScrollDiag][syncScrollFlags] isNearBottom \(vm.isNearBottom)→\(nb) \(Self.nbDump(viewController?.collectionView))")
                 vm.isNearBottom = nb
             }
-            let atTop = isAtContentTop()
+            let atTop = isAtLoadedHistoryBeginning()
             if vm.isAtFirstTurn != atTop { vm.isAtFirstTurn = atTop }
         }
 
@@ -5544,6 +5785,16 @@ extension CollectionViewMessageListV3 {
             stopDecelDisplayLink()
             #endif
             scrollMode = .userBrowsing
+            if let endIndex = displayWindowEndIndex,
+               vm?.messages.indices.contains(endIndex) == true {
+                displayBrowseEndIndex = endIndex
+                displayBrowseEndID = vm?.messages[endIndex].id
+            } else if let endID = displayWindowEndID,
+                      let endIndex = vm?.messages.firstIndex(where: { $0.id == endID }) {
+                displayWindowEndIndex = endIndex
+                displayBrowseEndIndex = endIndex
+                displayBrowseEndID = endID
+            }
             // Cancel session-load clamp AND any queued entry request as soon
             // as the user interacts; do not replay it after momentum ends.
             clampAfterSessionLoad = false
@@ -5755,6 +6006,7 @@ extension CollectionViewMessageListV3 {
                offsetY < lastDidScrollOffsetY - indirectScrollExitThreshold {
                 AppLogger(category: "ScrollDiag").info("[ScrollDiag][indirectScrollExit] offset \(String(format: "%.0f", lastDidScrollOffsetY))→\(String(format: "%.0f", offsetY)) panState=\(scrollView.panGestureRecognizer.state.rawValue) touches=\(scrollView.panGestureRecognizer.numberOfTouches) tracking=\(scrollView.isTracking) decel=\(scrollView.isDecelerating) — auto→browse")
                 scrollMode = .userBrowsing
+                clampAfterSessionLoad = false
                 // Same follow-ups willBeginDragging performs for a touch drag.
                 lastJumpedUserId = nil
                 viewController?.messageListLayout?.deferSelfSizing = true
@@ -5798,7 +6050,7 @@ extension CollectionViewMessageListV3 {
                     #endif
                     vm.isNearBottom = nb
                 }
-                let atTop = isAtContentTop()
+                let atTop = isAtLoadedHistoryBeginning()
                 if vm.isAtFirstTurn != atTop { vm.isAtFirstTurn = atTop }
                 vm.contentOffsetYSignal.send(scrollView.contentOffset.y)
             }
@@ -5857,6 +6109,8 @@ extension CollectionViewMessageListV3 {
 
         func scrollViewDidScrollToTop(_ scrollView: UIScrollView) {
             scrollMode = .userBrowsing
+            clampAfterSessionLoad = false
+            scheduleDisplayWindowExpansion()
         }
 
         /// [T-ios-defer-retry-never-consumed] Recursively walks a cell's subview
@@ -5872,17 +6126,19 @@ extension CollectionViewMessageListV3 {
         }
 
         private func settleAfterInteraction(_ scrollView: UIScrollView) {
+            guard let layout = viewController?.messageListLayout,
+                  let cv = viewController?.collectionView, cv === scrollView,
+                  !cv.isTracking, !cv.isDragging, !cv.isDecelerating else { return }
             // Re-acquire auto-scroll only when the user settled essentially at
             // the bottom (tight threshold), not merely "near" it. This stops
             // small trackpad scrolls on iPad from snapping back to the bottom
             // and jittering. [T-ios-trackpad-scroll-jitter]
-            let atBottom = isWithinBottom(reacquireAutoScrollThreshold)
+            let atBottom = displayWindowEndID == vm?.messages.last?.id && isWithinBottom(reacquireAutoScrollThreshold)
             let nearBottom = isNearBottom()
             if atBottom {
                 scrollMode = .autoScrolling
             }
-            guard let layout = viewController?.messageListLayout,
-                  let cv = viewController?.collectionView else { return }
+            let settledAnchor = visibleDisplayAnchor()
 
             let deferredCount = layout.deferredHeightCount
             AppLogger(category: "Settle").debug("[Settle] BEGIN mode=\(scrollMode == .autoScrolling ? "auto" : "browse") nearBottom=\(nearBottom) offset=\(String(format: "%.1f", cv.contentOffset.y)) contentSize=\(String(format: "%.1f", cv.contentSize.height)) deferredHeights=\(deferredCount) hasPendingSnapshot=\(hasPendingSnapshot)")
@@ -5930,9 +6186,10 @@ extension CollectionViewMessageListV3 {
             layout.suppressContentOffsetAdjustment = false
             isFlushing = false
 
-            // Restore offset
+            // Preserve the settled row, not the offset from before a height change.
             if scrollMode == .userBrowsing {
-                cv.contentOffset.y = savedOffset
+                cv.layoutIfNeeded()
+                restoreDisplayAnchor(settledAnchor, in: cv)
             }
 
             // [SettleJitter] Post-flush: same anchor item, new frame. screenΔ
@@ -5958,8 +6215,12 @@ extension CollectionViewMessageListV3 {
 
             if hasPendingSnapshot {
                 DispatchQueue.main.async { [weak self] in
-                    self?.flushPendingSnapshotIfNeeded(caller: "settle")
+                    guard let self else { return }
+                    self.flushPendingSnapshotIfNeeded(caller: "settle")
+                    self.scheduleDisplayWindowExpansion()
                 }
+            } else {
+                scheduleDisplayWindowExpansion()
             }
 
             lastLoggedOffset = cv.contentOffset.y

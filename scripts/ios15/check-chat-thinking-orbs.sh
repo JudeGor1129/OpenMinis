@@ -51,7 +51,7 @@ check "$VIEW" 'isCompacting: vm.isCompacting,' 'title cache key carries compacti
 forbid "$VIEW" '.fill(isAuthed ? Color.green : Color.orange)' 'plain status dot is gone'
 
 # 3. Transcript busy line and waiting-for-model line share the same language.
-check "$VIEW" 'ThinkingOrb(vm.isCompacting ? .weaving : .working,' 'busy line uses the orb'
+check "$VIEW" 'ThinkingOrb(status.compacting ? .weaving : .working,' 'busy line uses the orb'
 check "$VIEW" 'ThinkingOrb(.working, size: .small, speed: 0.8)' 'waiting-for-model line uses the orb'
 check "$VIEW" 'ThinkingOrb(.weaving, size: .small, diameter: 12, speed: 0.8)' 'compaction divider uses the weaving orb'
 check "$VIEW" 'LoadingDotsView(dotSize: 8)' 'session entry keeps its loading card'
@@ -111,12 +111,12 @@ PY
 
 # 4. Latest-message spacing: one tail spacer, message gaps preserved.
 check "$VIEW" 'LazyVStack(alignment: .leading, spacing: 0)' 'legacy stack owns spacing per row'
-check "$VIEW" '.padding(.top, (message.id == vm.messages.last?.id' 'newest row drops the tail gap'
+check "$VIEW" '.padding(.top, (message.id == rows.last?.id && !status.running)' 'newest row drops the tail gap'
 check "$VIEW" 'bottomInset: inputBarHeight + floatingBarHeight + 8' 'tail inset is composer plus 8pt'
 forbid "$VIEW" 'bottomInset: inputBarHeight + floatingBarHeight + 32' 'old 32pt tail inset is gone'
 
 # 5. ProgressView must not reappear in the two converted busy states.
-busy=$(sed -n '/if vm.isProcessing || vm.isCompacting {/,/^                        }$/p' "$VIEW" | head -20)
+busy=$(sed -n '/if status.running {/,/^                        }$/p' "$VIEW" | head -20)
 if printf '%s' "$busy" | grep -Fq 'ProgressView()'; then
     printf 'FAIL  %s\n' 'transcript busy line has no ProgressView'
     fail=$((fail + 1))

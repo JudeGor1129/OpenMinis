@@ -7432,10 +7432,81 @@ struct MinisLegacyTranscript: View {
     @State private var searchNavigationGeneration = 0
     @State private var followingBottom = true
     @State private var toolDetail: MinisLegacyToolDetailTarget?
+    @State private var displayStart = 0
+    @State private var browseEndIndex: Int?
+    @State private var legacyFollowing = true
+    @State private var browseStatus: (running: Bool, compacting: Bool)?
+    @State private var pendingHistoryJump: UUID?
+    @State private var pageAnchors = MinisLegacyPageAnchors()
+    @State private var pageRevision: UInt = 0
+    private let displayPageSize = 64
+    private let displayPageStep = 64
+
+    /// The SwiftUI iOS 15 renderer uses the same complete VM history as the
+    /// model, but only builds row views for the selected display window.
+    private var displayMessages: [ChatMessage] {
+        let count = vm.messages.count
+        guard count > 0 else { return [] }
+        if legacyFollowing {
+            let lower = max(0, count - displayPageSize)
+            return Array(vm.messages[lower..<count])
+        }
+        let end = min(count - 1, max(0, browseEndIndex ?? count - 1))
+        let start = min(max(0, displayStart), end)
+        return Array(vm.messages[start...end])
+    }
+
+    private func resetDisplayWindowToLatest() {
+        displayStart = max(0, vm.messages.count - displayPageSize)
+        browseEndIndex = vm.messages.count - 1
+        legacyFollowing = true
+        browseStatus = nil
+        pendingHistoryJump = nil
+    }
+
+    private func beginHistoryBrowse() {
+        if legacyFollowing {
+            displayStart = max(0, vm.messages.count - displayPageSize)
+            browseEndIndex = vm.messages.count - 1
+            browseStatus = (vm.isProcessing || vm.isCompacting, vm.isCompacting)
+            legacyFollowing = false
+        }
+    }
+
+    private func revealHistoryMessage(_ id: UUID) {
+        guard let index = vm.messages.firstIndex(where: { $0.id == id }) else { return }
+        beginHistoryBrowse()
+        displayStart = min(index, displayStart)
+        browseEndIndex = max(index, browseEndIndex ?? index)
+        followingBottom = false
+        if vm.isNearBottom { vm.isNearBottom = false }
+        if vm.isAtFirstTurn { vm.isAtFirstTurn = false }
+        pendingHistoryJump = id
+    }
+
+    private func loadOlderDisplayPageIfNeeded(isAtOldestEdge: Bool) {
+        guard isAtOldestEdge, !legacyFollowing, !vm.isLoadingSession, !vm.messages.isEmpty else { return }
+        let resolvedStart = min(max(0, displayStart), vm.messages.count - 1)
+        if resolvedStart == 0 {
+            if !vm.isAtFirstTurn { vm.isAtFirstTurn = true }
+            return
+        }
+        let target = max(0, resolvedStart - displayPageStep)
+        let lower = max(0, target - 24)
+        let aligned = (lower..<target).last(where: { vm.messages[$0].isUserTurnAnchor }) ?? target
+        guard aligned < resolvedStart else { return }
+        // Append at the native far edge of the inverted stack, without
+        // issuing an automatic scroll command or replacing existing IDs.
+        displayStart = aligned
+        pageRevision &+= 1
+        if vm.isAtFirstTurn { vm.isAtFirstTurn = false }
+    }
     private let bottomAnchor = "legacyTranscriptBottom"
 
     var body: some View {
-        GeometryReader { viewport in
+        let rows = displayMessages
+        let status = browseStatus ?? (running: vm.isProcessing || vm.isCompacting, compacting: vm.isCompacting)
+        return GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -7445,12 +7516,12 @@ struct MinisLegacyTranscript: View {
                         // message spacing to this tail spacer a second time.
                         Color.clear.frame(height: max(1, bottomInset))
                             .id(bottomAnchor)
-                        if vm.isProcessing || vm.isCompacting {
+                        if status.running {
                             HStack(spacing: 8) {
-                                ThinkingOrb(vm.isCompacting ? .weaving : .working,
+                                ThinkingOrb(status.compacting ? .weaving : .working,
                                             size: .small, speed: 0.8)
                                     .accessibilityHidden(true)
-                                Text(vm.isCompacting ? "正在整理上下文…" : "模型任务运行中（请求或工具处理中）…")
+                                Text(status.compacting ? "正在整理上下文…" : "模型任务运行中（请求或工具处理中）…")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -7458,7 +7529,7 @@ struct MinisLegacyTranscript: View {
                             .accessibilityElement(children: .combine)
                             .rotationEffect(.degrees(180))
                         }
-                        ForEach(vm.messages.reversed()) { message in
+                        ForEach(rows.reversed()) { message in
                             MinisLegacyTranscriptRow(
                                 message: message, vm: vm, readOnly: readOnly,
                                 detailTarget: $toolDetail, groupSoul: groupSoul
@@ -7470,8 +7541,8 @@ struct MinisLegacyTranscript: View {
                                 .rotationEffect(.degrees(180))
                                 // Native top is visual bottom. Keep 20pt
                                 // between messages, not after the newest edge.
-                                .padding(.top, (message.id == vm.messages.last?.id
-                                               && !(vm.isProcessing || vm.isCompacting)) ? 0 : 20)
+                                .padding(.top, (message.id == rows.last?.id && !status.running) ? 0 : 20)
+                                .background(MinisLegacyPageRowMarker(id: message.id, anchors: pageAnchors))
                                 .id(message.id)
                         }
                         Color.clear.frame(height: 32)
@@ -7480,11 +7551,21 @@ struct MinisLegacyTranscript: View {
                     .padding(.horizontal, 18)
                     .background(MinisLegacyScrollFollow(
                         enabled: followingBottom,
+                        anchors: pageAnchors,
+                        pageRevision: pageRevision,
                         onFollowingChanged: { follows in
                             if followingBottom != follows { followingBottom = follows }
+                            if legacyFollowing != follows {
+                                if follows {
+                                    resetDisplayWindowToLatest()
+                                } else {
+                                    beginHistoryBrowse()
+                                }
+                            }
                             if vm.isNearBottom != follows { vm.isNearBottom = follows }
                             if follows && vm.isAtFirstTurn { vm.isAtFirstTurn = false }
-                        }
+                        },
+                        onOlderEdge: { atOlderEdge in loadOlderDisplayPageIfNeeded(isAtOldestEdge: atOlderEdge) }
                     ))
                 }
                 // The inverted viewport is a layout transform, not a user
@@ -7502,37 +7583,50 @@ struct MinisLegacyTranscript: View {
                 .id(vm.latestSessionAnchorRequest)
                 .onAppear {
                     followingBottom = true
+                    resetDisplayWindowToLatest()
                     if !vm.isNearBottom { vm.isNearBottom = true }
                     chatSearch?.onNavigate = { hit in
-                        guard vm.messages.contains(where: { $0.id == hit.key.messageId }) else { return }
-                        followingBottom = false
-                        vm.isNearBottom = false
-                        searchNavigationGeneration += 1
-                        proxy.scrollTo(hit.key.messageId, anchor: .center)
+                        revealHistoryMessage(hit.key.messageId)
                     }
                 }
-                .onDisappear { chatSearch?.onNavigate = nil }
+                .onDisappear {
+                    chatSearch?.onNavigate = nil
+                    pendingHistoryJump = nil
+                    searchNavigationGeneration &+= 1
+                }
                 .simultaneousGesture(DragGesture(minimumDistance: 3).onChanged { _ in
                     searchNavigationGeneration += 1
+                    pendingHistoryJump = nil
                 })
+                .onChange(of: pendingHistoryJump) { target in
+                    guard let target else { return }
+                    let generation = searchNavigationGeneration
+                    DispatchQueue.main.async {
+                        guard pendingHistoryJump == target, generation == searchNavigationGeneration else { return }
+                        guard vm.messages.contains(where: { $0.id == target }) else {
+                            pendingHistoryJump = nil
+                            return
+                        }
+                        proxy.scrollTo(target, anchor: target == vm.messages.first?.id ? .bottom : .center)
+                        pendingHistoryJump = nil
+                    }
+                }
                 .onChange(of: vm.latestSessionAnchorRequest) { _ in
                     followingBottom = true
+                    resetDisplayWindowToLatest()
                     if !vm.isNearBottom { vm.isNearBottom = true }
                 }
                 // These are EXPLICIT user actions, not session entry or load.
                 .onReceive(vm.forceScrollToBottom) { _ in
                     followingBottom = true
+                    resetDisplayWindowToLatest()
                     if !vm.isNearBottom { vm.isNearBottom = true }
                     withAnimation(MinisMotion.transition) {
                         proxy.scrollTo(bottomAnchor, anchor: .top)
                     }
                 }
                 .onReceive(vm.forceScrollToTop) { _ in
-                    followingBottom = false
-                    if vm.isNearBottom { vm.isNearBottom = false }
-                    guard let first = vm.messages.first?.id else { return }
-                    withAnimation(MinisMotion.transition) { proxy.scrollTo(first, anchor: .bottom) }
-                    vm.isAtFirstTurn = true
+                    if let first = vm.messages.first?.id { revealHistoryMessage(first) }
                 }
             }
         }
@@ -7750,30 +7844,127 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
     }
 }
 
+// Lightweight row markers are owned by SwiftUI. The registry never retains a
+// row or subscribes to per-frame layout/scroll notifications.
+private final class MinisLegacyPageAnchors {
+    private let rows = NSMapTable<NSUUID, UIView>(keyOptions: .strongMemory, valueOptions: .weakMemory)
+
+    func register(_ id: UUID, view: UIView) { rows.setObject(view, forKey: id as NSUUID) }
+    func unregister(_ id: UUID, view: UIView) {
+        let key = id as NSUUID
+        if rows.object(forKey: key) === view { rows.removeObject(forKey: key) }
+    }
+    func capture(in scroll: UIScrollView) -> (id: UUID, y: CGFloat)? {
+        let low = scroll.contentOffset.y + scroll.adjustedContentInset.top
+        let high = scroll.contentOffset.y + scroll.bounds.height - scroll.adjustedContentInset.bottom
+        var best: (id: UUID, y: CGFloat, edge: CGFloat)?
+        for case let key as NSUUID in rows.keyEnumerator().allObjects {
+            guard let row = rows.object(forKey: key), row.isDescendant(of: scroll) else { continue }
+            let rect = row.convert(row.bounds, to: scroll)
+            guard rect.height > 0, rect.maxY > low, rect.minY < high else { continue }
+            // The viewport is inverted: largest native Y is visually highest.
+            if best.map({ $0.edge < rect.maxY }) ?? true {
+                best = (key as UUID, rect.minY - scroll.contentOffset.y, rect.maxY)
+            }
+        }
+        return best.map { (id: $0.id, y: $0.y) }
+    }
+    func restore(_ anchor: (id: UUID, y: CGFloat), in scroll: UIScrollView) {
+        guard let row = rows.object(forKey: anchor.id as NSUUID), row.isDescendant(of: scroll) else { return }
+        let rect = row.convert(row.bounds, to: scroll)
+        let low = -scroll.adjustedContentInset.top
+        let high = max(low, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        let offset = min(high, max(low, rect.minY - anchor.y))
+        let pixel = 1 / (scroll.window?.screen.scale ?? 2)
+        if abs(scroll.contentOffset.y - offset) > pixel {
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: offset), animated: false)
+        }
+    }
+}
+
+private struct MinisLegacyPageRowMarker: UIViewRepresentable {
+    let id: UUID
+    let anchors: MinisLegacyPageAnchors
+    final class Coordinator {
+        var id: UUID?
+        weak var anchors: MinisLegacyPageAnchors?
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        view.isAccessibilityElement = false
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) {
+        let coordinator = context.coordinator
+        if coordinator.id != id || coordinator.anchors !== anchors {
+            if let previous = coordinator.id { coordinator.anchors?.unregister(previous, view: view) }
+            coordinator.id = id
+            coordinator.anchors = anchors
+            anchors.register(id, view: view)
+        }
+    }
+    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) {
+        if let id = coordinator.id { coordinator.anchors?.unregister(id, view: view) }
+    }
+}
+
 // Observe SwiftUI's native scroll view without replacing its delegate. The
-// inverted list stays at the newest edge naturally, so this probe NEVER
-// writes an offset or requests another tail scroll on layout/content growth.
+// inverted list follows the newest edge naturally. This probe only allows
+// an anchor correction for a committed older-page insertion.
 private struct MinisLegacyScrollFollow: UIViewRepresentable {
     let enabled: Bool
+    let anchors: MinisLegacyPageAnchors
+    let pageRevision: UInt
     let onFollowingChanged: (Bool) -> Void
+    let onOlderEdge: (Bool) -> Void
 
     func makeUIView(context: Context) -> Probe { Probe() }
     func updateUIView(_ view: Probe, context: Context) {
         view.following = enabled
+        view.anchors = anchors
+        view.commitPage(pageRevision)
         view.onFollowingChanged = onFollowingChanged
+        view.onOlderEdge = onOlderEdge
         view.connectIfNeeded()
     }
     static func dismantleUIView(_ view: Probe, coordinator: ()) {
         view.stop()
         view.onFollowingChanged = nil
+        view.onOlderEdge = nil
     }
 
     final class Probe: UIView {
         var following = true
+        var anchors: MinisLegacyPageAnchors?
+        private var appliedPageRevision: UInt?
+        private var pendingPageAnchor: (id: UUID, y: CGFloat)?
+        private var gestureGeneration: UInt = 0
+
+        // A correction is only allowed for an explicit older-page insertion.
+        // The same marker has to survive the commit in the same scroll view.
+        func commitPage(_ revision: UInt) {
+            guard appliedPageRevision != revision else { return }
+            appliedPageRevision = revision
+            guard let anchor = pendingPageAnchor else { return }
+            pendingPageAnchor = nil
+            let generation = gestureGeneration
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.appliedPageRevision == revision,
+                      self.gestureGeneration == generation, self.window != nil,
+                      let scroll = self.scrollView,
+                      !scroll.isTracking, !scroll.isDragging, !scroll.isDecelerating else { return }
+                scroll.layoutIfNeeded()
+                self.anchors?.restore(anchor, in: scroll)
+            }
+        }
         var onFollowingChanged: ((Bool) -> Void)?
+        var onOlderEdge: ((Bool) -> Void)?
         private weak var scrollView: UIScrollView?
         private var userInteractionActive = false
         private var updateScheduled = false
+        private var olderEdgePending = false
         // Only checks for the terminal UIKit drag/deceleration event; idle
         // screens have no timer and this never moves the content.
         private var interactionEndCheck: DispatchWorkItem?
@@ -7808,15 +7999,24 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             interactionEndCheck?.cancel()
             interactionEndCheck = nil
             scrollView = nil
+            gestureGeneration &+= 1
+            pendingPageAnchor = nil
+            olderEdgePending = false
             userInteractionActive = false
         }
         @objc private func panChanged(_ pan: UIPanGestureRecognizer) {
             switch pan.state {
             case .began, .changed:
-                guard !userInteractionActive else { return }
-                userInteractionActive = true
-                following = false
-                onFollowingChanged?(false)
+                if pan.state == .began {
+                    gestureGeneration &+= 1
+                    pendingPageAnchor = nil
+                    olderEdgePending = false
+                }
+                if !userInteractionActive {
+                    userInteractionActive = true
+                    following = false
+                    onFollowingChanged?(false)
+                }
             case .ended, .cancelled, .failed:
                 // Do not enqueue a main-actor sample for every changed event.
                 // The UIScrollView will continue decelerating; sample() polls
@@ -7859,6 +8059,17 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             // In inverted native coordinates, the newest edge is the TOP.
             following = abs(scroll.contentOffset.y + scroll.adjustedContentInset.top) <= 24
             onFollowingChanged?(following)
+            let oldestOffset = max(-scroll.adjustedContentInset.top,
+                                   scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+            let isAtOldestEdge = scroll.contentOffset.y >= oldestOffset - 8
+            if isAtOldestEdge, !olderEdgePending {
+                olderEdgePending = true
+                pendingPageAnchor = anchors?.capture(in: scroll)
+                onOlderEdge?(true)
+            } else if !isAtOldestEdge {
+                pendingPageAnchor = nil
+                olderEdgePending = false
+            }
         }
     }
 }
