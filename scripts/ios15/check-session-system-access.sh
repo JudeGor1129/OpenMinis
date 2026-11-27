@@ -47,7 +47,7 @@ def contract(type_name, decl, call, end_marker):
                 '() -> Void':'{}','(Bool) -> Void':'{ _ in }','NavTitleKey':'NavTitleKey()'}[t.strip()]
     return '@MainActor\nprivate func '+type_name+'InitializerContract() {\n _ = '+type_name+'(\n'+',\n'.join(n+': '+value(t) for n,t in fields)+'\n)\n}\n'
 u=menus[menus.index('private struct ChatTrailingMenuButton:'):]
-u=u[:u.index('    /// The displayed-state snapshot')]
+u=u[:u.index('    /// Stable UIKit target')]
 ctor=contract('ChatTrailingMenuButton',u,'ChatTrailingMenuButton(','    // MARK: - New Chat (menu entry)')
 ctor+=contract('ChatToolbarKey',key,'ChatToolbarKey(','    /// [T-codex-fast-mode] True when the session')
 Path(sys.argv[1]).write_text('import SwiftUI\nimport UIKit\nprivate struct NavTitleKey: Equatable {}\n'+key+menus+ctor)

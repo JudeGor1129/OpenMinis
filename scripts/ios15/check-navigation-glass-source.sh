@@ -23,8 +23,14 @@ req "$chat" '.modifier(MinisLegacyControlSurface(shape: shape))' 'legacy compose
 req "$nav" 'func minisNavigationChrome(' 'navigation style entry point'
 req "$modern" '.minisNavigationChrome()' 'modern navigation roots'
 req "$legacy" '.minisNavigationChrome()' 'legacy navigation roots'
-req "$chat" 'button.showsMenuAsPrimaryAction = true' 'native session menu'
-req "$chat" 'onSessionAccess()' 'session permission menu action'
+req "$chat" 'MinisToolbarMenu.present(from: button, items: parent.menuItems())' 'session menu uses persistent UIKit button'
+req "$chat" 'attributes: sessionAccessAvailable ? [] : [.disabled], action: onSessionAccess' 'session permission menu action respects availability'
+req "$chat" 'onClearChat: { showClearChatConfirm = true }' 'Clear Chat retains confirmation'
+req "$chat" 'if #available(iOS 17.0, *), iCloudSyncEnabled {' 'sync menu stays gated by OS and preference'
+req "$chat" 'checked: screenAwake, action: onToggleSessionAwake' 'Keep Screen Awake state is shown'
+req "$nav" 'controller.modalPresentationStyle = .popover' 'menu stays anchored to the toolbar'
+req "$nav" 'popover.sourceView = source' 'popover is anchored to the presenting button'
+req "$nav" 'controller.dismiss(animated: true) { [weak source] in' 'menu closes before executing the action'
 req "$chat" 'SiriFlowBorder(' 'colored composer border'
 req "$chat" 'AngularGradient(' 'colored border gradient'
 req "$chat" 'TimelineView(.periodic(from: .now, by: 1.0 / 30.0))' 'composer animation'
@@ -34,11 +40,22 @@ req "$share" '.minisNavigationChrome()' 'session share submenu'
 req "$media" '.minisNavigationChrome()' 'file preview submenus'
 if grep -Fq 'glassEffect(' "$message"; then echo 'FAIL: message content glass'; exit 1; fi
 folder=$(sed -n '/private struct FolderSurface:/,/private struct FolderCardBackground:/p' "$modern")
-if printf '%s' "$folder" | grep -Fq 'glassEffect('; then echo 'FAIL: conversation group content glass'; exit 1; fi
-req "$modern" 'content.background(shape.fill(Color(UIColor.secondarySystemBackground)))' 'folder rows use opaque semantic fill'
-menu=$(sed -n '/private static func buildMenu(key:/,/return UIMenu(children: groups)/p' "$chat")
-for action in 'Share Conversation' 'Search in Conversation' 'Compact Messages' 'Clear Chat' 'Open Terminal' '编译器' 'Open Browser' 'Browse Chat Files' 'Skills in Session' 'MCPs in Session' 'Memories in Session' 'Token Usage'; do
+printf '%s' "$folder" | grep -Fq 'content.background(shape.fill(MinisHomeGroupInk.modern))'
+if printf '%s' "$folder" | grep -Eq 'glassEffect\(|\.stroke\('; then echo 'FAIL: conversation group decoration'; exit 1; fi
+panel=$(sed -n '/private struct MinisToolbarMenuPanel:/,/struct MinisToolbarMenuTrigger:/p' "$nav")
+if printf '%s' "$panel" | grep -Eq '(Divider|List|Form)\s*[(\{]'; then echo 'FAIL: toolbar menu row separators'; exit 1; fi
+menu=$(sed -n '/private func menuItems()/,/return items/p' "$chat")
+for action in 'Share Conversation' 'Search in Conversation' 'Keep Screen Awake' 'New Chat' 'Compact Messages' 'Clear Chat' 'Force iCloud Sync' 'Force Pull Messages' 'Open Terminal' '编译器' 'Open Browser' 'Browse Chat Files' 'Skills in Session' 'MCPs in Session' 'Memories in Session' 'Speak Responses' '本会话权限' 'Enhanced Cache' 'Enable Fast Mode' 'Token Usage' 'Copy Requests' 'Copy Session Data'; do
     printf '%s' "$menu" | grep -Fq "$action" || { printf 'FAIL: session menu action missing: %s\n' "$action"; exit 1; }
+done
+for view in "$legacy" "$modern"; do
+    menu=$(sed -n '/MinisToolbarMenuTrigger(/,/Keep Screen Awake/p' "$view")
+    for action in 'Shell Terminal' 'Rootfs Management' 'Open Browser' 'Browser Settings' 'Keep Screen Awake'; do
+        printf '%s' "$menu" | grep -Fq "$action" || { printf 'FAIL: home menu action missing: %s\n' "$action"; exit 1; }
+    done
+done
+for page in ProviderInstancesView ModelGroupsView; do
+    if grep -Fq 'MinisPageIntro(' "src/ios/Views/Providers/$page.swift"; then echo "FAIL: $page still has its summary card"; exit 1; fi
 done
 req "$modern" 'navigationDestination(for: SettingsDestination.self)' 'settings push destinations remain registered'
 req "$modern" 'SettingsDestination.providerDetail' 'settings deep-link destinations remain available'
@@ -73,5 +90,5 @@ if missing:
     raise SystemExit("FAIL: page-local navigation chrome missing:\n" + "\n".join(missing))
 print(f"PASS: {checked} production title chains have a page-local navigation preference.")
 CHECK_PAGES
-printf 'PASS: navigation-only material, opaque messages, native menus, SiriFlowBorder and ThinkingOrb.\n'
+printf 'PASS: navigation-only material, opaque messages, anchored menus, SiriFlowBorder and ThinkingOrb.\n'
 printf 'NOTE: source contract is not a Swift build or device test.\n'

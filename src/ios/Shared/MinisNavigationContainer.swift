@@ -1,6 +1,24 @@
 import SwiftUI
 import UIKit
 
+/// A subtle opaque band derived from each home list’s system canvas.
+enum MinisHomeGroupInk {
+    static let legacy = fill(on: .systemGroupedBackground)
+    static let modern = fill(on: .systemBackground)
+
+    private static func fill(on canvas: UIColor) -> Color {
+        Color(UIColor { traits in
+            let color = canvas.resolvedColor(with: traits)
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return color }
+            let dark = traits.userInterfaceStyle == .dark
+            let blend: CGFloat = traits.accessibilityContrast == .high ? 0.12 : (dark ? 0.045 : 0.035)
+            func channel(_ value: CGFloat) -> CGFloat { value * (1 - blend) + (dark ? blend : 0) }
+            return UIColor(red: channel(red), green: channel(green), blue: channel(blue), alpha: 1)
+        })
+    }
+}
+
 /// Content design for navigation destinations. Lists stay native (including
 /// swipe actions, selection and edit mode); text and editors get an opaque floor.
 enum MinisPageInk {
@@ -151,12 +169,14 @@ struct MinisCountBadge: View {
 /// Restricts translucent material to navigation chrome; destination content remains opaque.
 private struct MinisNavigationChromeScope: ViewModifier {
     private let keepNativeBackdropVisible: Bool
+    private let legacyCanvas: UIColor?
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
-    init(keepNativeBackdropVisible: Bool) {
+    init(keepNativeBackdropVisible: Bool, legacyCanvas: UIColor?) {
         self.keepNativeBackdropVisible = keepNativeBackdropVisible
+        self.legacyCanvas = legacyCanvas
     }
 
     func body(content: Content) -> some View {
@@ -178,7 +198,7 @@ private struct MinisNavigationChromeScope: ViewModifier {
                 .toolbarBackground(.visible, for: .navigationBar)
         } else {
             content.background {
-                MinisLegacyBarBackdrop(solid: reduceTransparency || colorSchemeContrast == .increased)
+                MinisLegacyBarBackdrop(solid: reduceTransparency || colorSchemeContrast == .increased, canvas: legacyCanvas)
                     .frame(width: 0, height: 0)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
@@ -191,10 +211,12 @@ private struct MinisNavigationChromeScope: ViewModifier {
 /// never change the shared navigation bar, its delegate, or its buttons.
 private struct MinisLegacyBarBackdrop: UIViewControllerRepresentable {
     let solid: Bool
+    let canvas: UIColor?
 
     func makeUIViewController(context: Context) -> BackdropController { BackdropController() }
     func updateUIViewController(_ controller: BackdropController, context: Context) {
         controller.solid = solid
+        controller.canvas = canvas
         controller.applyIfAttached()
     }
     static func dismantleUIViewController(_ controller: BackdropController, coordinator: ()) {
@@ -203,6 +225,7 @@ private struct MinisLegacyBarBackdrop: UIViewControllerRepresentable {
 
     final class BackdropController: UIViewController {
         var solid = false
+        var canvas: UIColor?
         private weak var item: UINavigationItem?
         private var lastSolid: Bool?
         private typealias Slot = ReferenceWritableKeyPath<UINavigationItem, UINavigationBarAppearance?>
@@ -250,8 +273,8 @@ private struct MinisLegacyBarBackdrop: UIViewControllerRepresentable {
                 let base = original ?? nav.navigationBar.standardAppearance
                 guard let style = base.copy() as? UINavigationBarAppearance else { continue }
                 style.backgroundImage = nil
-                style.backgroundEffect = solid ? nil : UIBlurEffect(style: .systemThinMaterial)
-                style.backgroundColor = solid ? .secondarySystemBackground : .clear
+                style.backgroundEffect = solid || canvas != nil ? nil : UIBlurEffect(style: .systemThinMaterial)
+                style.backgroundColor = canvas ?? (solid ? .secondarySystemBackground : .clear)
                 style.shadowImage = nil
                 style.shadowColor = .clear
                 target[keyPath: slot] = style
@@ -277,8 +300,8 @@ struct MinisLegacyControlSurface<S: Shape>: ViewModifier {
 extension View {
     /// Set the preference on the hosted page, not on the surrounding stack.
     /// Full-screen previews can ask for a visible native backdrop on iOS 26+.
-    func minisNavigationChrome(keepNativeBackdropVisible: Bool = false) -> some View {
-        modifier(MinisNavigationChromeScope(keepNativeBackdropVisible: keepNativeBackdropVisible))
+    func minisNavigationChrome(keepNativeBackdropVisible: Bool = false, legacyCanvas: UIColor? = nil) -> some View {
+        modifier(MinisNavigationChromeScope(keepNativeBackdropVisible: keepNativeBackdropVisible, legacyCanvas: legacyCanvas))
     }
 }
 
@@ -711,5 +734,144 @@ struct MinisPressFeedbackStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .opacity(configuration.isPressed ? 0.82 : 1)
             .animation(MinisMotion.feedback, value: configuration.isPressed)
+    }
+}
+// Only the home Tools and chat More buttons use this separator-free action panel.
+// UIKit owns anchoring, outside-tap dismissal and rotation; no window or timer is retained.
+struct MinisToolbarMenuItem {
+    let title: String
+    let icon: String
+    var attributes: UIMenuElement.Attributes = []
+    var checked = false
+    let action: () -> Void
+}
+
+@MainActor enum MinisToolbarMenu {
+    private final class PanelReference {
+        weak var controller: UIViewController?
+        var choosing = false
+    }
+
+    static func present(from source: UIView, items: [MinisToolbarMenuItem]) {
+        guard let window = source.window, var presenter = window.rootViewController,
+              window.windowScene?.activationState == .foregroundActive, !items.isEmpty else { return }
+        while let presented = presenter.presentedViewController {
+            guard !presented.isBeingDismissed, !presented.isBeingPresented,
+                  !(presented is UIHostingController<MinisToolbarMenuPanel>) else { return }
+            presenter = presented
+        }
+        guard presenter.viewIfLoaded?.window === window else { return }
+        let reference = PanelReference()
+        let panel = MinisToolbarMenuPanel(items: items) { action in
+            guard let controller = reference.controller, !controller.isBeingDismissed,
+                  !reference.choosing else { return }
+            reference.choosing = true
+            controller.dismiss(animated: true) { [weak source] in
+                guard source?.window?.windowScene?.activationState == .foregroundActive else { return }
+                action?()
+            }
+        }
+        let controller = MenuHost(rootView: panel)
+        reference.controller = controller
+        controller.modalPresentationStyle = .popover
+        let usableWidth = window.bounds.width - window.safeAreaInsets.left - window.safeAreaInsets.right
+        let usableHeight = window.bounds.height - window.safeAreaInsets.top - window.safeAreaInsets.bottom
+        let rowHeight = max(44, UIFontMetrics(forTextStyle: .body).scaledValue(for: 44, compatibleWith: source.traitCollection))
+        controller.preferredContentSize = CGSize(width: min(340, max(1, usableWidth - 24)),
+                                                 height: min(CGFloat(items.count) * rowHeight + 16, max(1, usableHeight - 96)))
+        guard let popover = controller.popoverPresentationController else { return }
+        popover.delegate = controller
+        popover.sourceView = source
+        popover.sourceRect = source.bounds
+        popover.permittedArrowDirections = [.up, .down]
+        popover.backgroundColor = .secondarySystemBackground
+        controller.view.backgroundColor = .secondarySystemBackground
+        controller.view.accessibilityViewIsModal = true
+        presenter.present(controller, animated: true)
+    }
+
+    private final class MenuHost: UIHostingController<MinisToolbarMenuPanel>, UIPopoverPresentationControllerDelegate {
+        func adaptivePresentationStyle(for controller: UIPresentationController,
+                                       traitCollection: UITraitCollection) -> UIModalPresentationStyle { .none }
+    }
+}
+
+private struct MinisToolbarMenuPanel: View {
+    let items: [MinisToolbarMenuItem]
+    let choose: ((() -> Void)?) -> Void
+    @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 44
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(items.indices, id: \.self) { index in
+                    let item = items[index]
+                    let disabled = item.attributes.contains(.disabled)
+                    Button { choose(item.action) } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: item.icon)
+                                .font(.body)
+                                .frame(width: 26)
+                                .accessibilityHidden(true)
+                            Text(verbatim: item.title)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if item.checked {
+                                Image(systemName: "checkmark")
+                                    .font(.footnote.weight(.semibold))
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .font(.body)
+                        .foregroundStyle(disabled ? Color.secondary : (item.attributes.contains(.destructive) ? Color.red : Color.primary))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .frame(minHeight: max(44, rowHeight))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(disabled)
+                    .accessibilityAddTraits(item.checked ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .background(Color(UIColor.secondarySystemBackground))
+        .accessibilityAction(.escape) { choose(nil) }
+    }
+}
+
+/// The button itself anchors the popover, including when hosted in an iOS 15 toolbar.
+struct MinisToolbarMenuTrigger: UIViewRepresentable {
+    let image: UIImage?
+    let accessibilityTitle: String
+    let items: () -> [MinisToolbarMenuItem]
+
+    @MainActor final class Coordinator: NSObject {
+        var items: () -> [MinisToolbarMenuItem]
+        init(items: @escaping () -> [MinisToolbarMenuItem]) { self.items = items }
+
+        @objc func open(_ sender: UIButton) {
+            MinisToolbarMenu.present(from: sender, items: items())
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(items: items) }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.addTarget(context.coordinator, action: #selector(Coordinator.open(_:)), for: .touchUpInside)
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.items = items
+        button.setImage(image, for: .normal)
+        button.accessibilityLabel = accessibilityTitle
+    }
+
+    @available(iOS 16.0, *)
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+        uiView.intrinsicContentSize
     }
 }

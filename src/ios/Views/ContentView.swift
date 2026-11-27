@@ -257,64 +257,6 @@ private struct FolderHeaderVisibilityProbe: View {
     }
 }
 
-/// Folder card container: what visually separates a folder from the flat
-/// session rows around it. On iOS 26+ this is the system Liquid Glass
-/// material (`glassEffect`) in a continuous rounded rect; on earlier systems
-/// it degrades to a deliberately plain filled card with a hairline stroke —
-/// no custom blur, since `.blur` is an offscreen pass and this list is the
-/// site of two archived scroll-perf incidents. The drop-target state draws an
-/// accent tint + stroke ON TOP of either material, so drag feedback reads the
-/// same on both OS generations.
-/// One row's share of the expanded container's OUTER border. The top kind
-/// draws the top arc + upper side walls, middle draws side walls only, and
-/// bottom draws the lower walls + bottom arc — tiled across the group's rows
-/// they form one continuous rounded-rect highlight, with no horizontal lines
-/// at the row boundaries (which a per-segment full stroke would create).
-private struct FolderSegmentBorder: Shape {
-    enum Kind { case top, middle, bottom }
-    let kind: Kind
-    var radius: CGFloat = 16
-
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        switch kind {
-        case .top:
-            p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-            p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
-            p.addArc(center: CGPoint(x: rect.minX + radius, y: rect.minY + radius),
-                     radius: radius, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
-            p.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
-            p.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.minY + radius),
-                     radius: radius, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        case .middle:
-            p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-            p.move(to: CGPoint(x: rect.maxX, y: rect.minY))
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        case .bottom:
-            p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - radius))
-            p.addArc(center: CGPoint(x: rect.minX + radius, y: rect.maxY - radius),
-                     radius: radius, startAngle: .degrees(180), endAngle: .degrees(90), clockwise: true)
-            p.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.maxY))
-            p.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius),
-                     radius: radius, startAngle: .degrees(90), endAngle: .degrees(0), clockwise: true)
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        }
-        return p
-    }
-}
-
-/// Edge highlight for the simulated glass: bright hairline in dark mode
-/// (the reference system-folder look), a subtle dark line in light mode
-/// (white would vanish on the light page).
-private let folderEdgeHighlight = Color(UIColor { traits in
-    traits.userInterfaceStyle == .dark
-        ? UIColor(white: 1, alpha: 0.30)
-        : UIColor(white: 0, alpha: 0.08)
-})
-
 /// Background for the expanded FAB search bar. Liquid Glass capsule on iOS 26+,
 /// the original opaque capsule + hand-rolled shadow below it.
 ///
@@ -432,35 +374,7 @@ private struct FolderSurface: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content.background(shape.fill(Color(UIColor.secondarySystemBackground)))
-        .overlay {
-            // Border: full hairline on the lone card (its existing look, sub-26
-            // only — glass carries its own edge); tiled outer-perimeter
-            // segments on expanded rows so the pieces read as one outline
-            // without horizontal lines at the row boundaries.
-            switch kind {
-            case .lone:
-                // With glass gone the card needs an explicit edge for
-                // definition — the same highlight the expanded segments tile,
-                // as a full perimeter here.
-                if #available(iOS 26.0, *) {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(folderEdgeHighlight, lineWidth: 0.75)
-                } else {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color(UIColor.separator).opacity(0.5), lineWidth: 0.5)
-                }
-            case .top:
-                FolderSegmentBorder(kind: .top)
-                    .stroke(folderEdgeHighlight, lineWidth: 0.75)
-            case .middle:
-                FolderSegmentBorder(kind: .middle)
-                    .stroke(folderEdgeHighlight, lineWidth: 0.75)
-            case .bottom:
-                FolderSegmentBorder(kind: .bottom)
-                    .stroke(folderEdgeHighlight, lineWidth: 0.75)
-            }
-        }
+        content.background(shape.fill(MinisHomeGroupInk.modern))
     }
 }
 
@@ -3993,53 +3907,21 @@ struct ModernContentView: View {
         }
         ToolbarItem(placement: .topBarTrailing) {
             if !isSelecting {
-                Menu {
-                    Button {
-                        showTerminal = true
-                    } label: {
-                        Label("Shell Terminal", systemImage: "terminal")
-                    }
-                    Button {
-                        activeToolSheet = .rootfsManagement
-                    } label: {
-                        Label("Rootfs Management", systemImage: "externaldrive")
-                    }
-                    Button {
-                        activeToolSheet = .browser
-                    } label: {
-                        Label("Open Browser", systemImage: "globe")
-                    }
-                    Button {
-                        activeToolSheet = .browserManagement
-                    } label: {
-                        Label("Browser Settings", systemImage: "globe.badge.chevron.backward")
-                    }
+                // Use the existing 24pt intrinsic image rather than the 200px asset.
+                MinisToolbarMenuTrigger(image: Self.terminalCircleIcon, accessibilityTitle: AppLocalized("Tools")) {
+                    var items = [
+                        MinisToolbarMenuItem(title: AppLocalized("Shell Terminal"), icon: "terminal") { showTerminal = true },
+                        MinisToolbarMenuItem(title: AppLocalized("Rootfs Management"), icon: "externaldrive") { activeToolSheet = .rootfsManagement },
+                        MinisToolbarMenuItem(title: AppLocalized("Open Browser"), icon: "globe") { activeToolSheet = .browser },
+                        MinisToolbarMenuItem(title: AppLocalized("Browser Settings"), icon: "gearshape") { activeToolSheet = .browserManagement }
+                    ]
                     #if DEBUG
-                    // [debug] Keep Screen Awake — disables auto-lock while the app
-                    // is foregrounded. Tap toggles; a checkmark shows the current
-                    // state. Memory-only (not persisted). DEBUG builds only.
-                    Button {
+                    items.append(MinisToolbarMenuItem(title: AppLocalized("Keep Screen Awake"), icon: "sun.max", checked: keepScreenAwake) {
                         keepScreenAwake.toggle()
                         UIApplication.shared.isIdleTimerDisabled = keepScreenAwake
-                    } label: {
-                        Label("Keep Screen Awake", systemImage: keepScreenAwake ? "checkmark.circle.fill" : "sun.max")
-                    }
+                    })
                     #endif
-                } label: {
-                    // [T-ios-mac-toolbar-image-intrinsic] TerminalCircle is a
-                    // 200x200 bitmap. SwiftUI's `.frame` only constrains the
-                    // SwiftUI view; when this label is bridged to a
-                    // UIBarButtonItem (Mac / iPad navigation bar) UIKit builds
-                    // the button from the IMAGE's intrinsic size, so it came out
-                    // 200pt wide and squeezed the `.principal` title down to
-                    // 60pt (measured on a 416pt sidebar navbar: gear 44 + this
-                    // item 212 + sidebar toggle 44, leaving 60 for the title,
-                    // which truncated the SOUL name to "Minif..."). Every other
-                    // toolbar item uses an SF Symbol, whose intrinsic size is
-                    // already correct — which is why only this one broke.
-                    // A pre-scaled UIImage makes the intrinsic size 24pt at the
-                    // source, independent of SwiftUI layout.
-                    Image(uiImage: Self.terminalCircleIcon)
+                    return items
                 }
             }
         }

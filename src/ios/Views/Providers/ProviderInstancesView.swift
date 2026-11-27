@@ -22,20 +22,6 @@ struct ProviderInstancesView: View {
 
     private var providerList: some View {
         List {
-            if !store.instances.isEmpty {
-                Section {
-                    MinisPageIntro(
-                        title: "Provider Accounts",
-                        message: "Credentials and model catalogs are managed per account. Voice-capable accounts also appear in Voice Services below.",
-                        systemImage: "key.horizontal",
-                        tint: .blue,
-                        facts: [
-                            .init(label: "Configured", value: "\(store.instances.count)"),
-                            .init(label: "Enabled", value: "\(store.instances.filter(\.isEnabled).count)")
-                        ]
-                    )
-                }
-            }
             // [T-mimo-shadow-voice] EVERY instance appears under its providerType
             // section now (no voice-only exclusion) — a mixed vendor like MiMo
             // shows its text models here AND a shadow voice row below ("dual

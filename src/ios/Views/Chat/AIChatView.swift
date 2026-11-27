@@ -2073,18 +2073,8 @@ struct AIChatView: View {
 
     @ViewBuilder
     private var trailingMenu: some View {
-        // [T-ios-navbar-uikit-menu] FINAL: UIKit-owned button+menu. The
-        // SwiftUI route is exhausted — with .equatable() the toolbar host
-        // provably stopped ALL ToolbarContent rebuilds (device log
-        // 2026-07-18 01:33: toolbarHostEval=1 across an entire session)
-        // and the open menu STILL refreshed on tool-render/streaming
-        // passes: SwiftUI's toolbar bridge re-pushes bar items on host
-        // updates unconditionally, independent of content diffing. Only a
-        // persistent UIKit anchor (the UIButton instance survives SwiftUI
-        // updates; the presented UIMenu hangs off it) is immune — user-
-        // verified to stop the refresh on 2026-07-17. sizeThatFits reports
-        // the intrinsic icon size so the system wraps it in the same round
-        // glass as a plain toolbar icon (fixes the earlier capsule).
+        // Keep the persistent UIKit anchor. The open panel is a snapshot made
+        // on tap, so streaming updates cannot rebuild or re-present it.
         ChatTrailingMenuButton(
             onShareSession: { showsChatShare = true },
             onSearchSession: beginSessionSearch,
@@ -2092,6 +2082,7 @@ struct AIChatView: View {
                 manualScreenAwake.toggle()
                 UIApplication.shared.isIdleTimerDisabled = manualScreenAwake
             },
+            screenAwake: manualScreenAwake,
             messagesEmpty: vm.messages.isEmpty,
             hasSession: vm.sessionId != nil,
             isForcePulling: isForcePulling,
@@ -2288,6 +2279,7 @@ struct AIChatView: View {
     private var chatToolbarKey: ChatToolbarKey {
         ChatToolbarKey(
             navTitle: navTitleKey,
+            screenAwake: manualScreenAwake,
             messagesEmpty: vm.messages.isEmpty,
             hasSession: vm.sessionId != nil,
             isForcePulling: isForcePulling,
@@ -5547,6 +5539,7 @@ private struct NavTitleKey: Equatable {
 /// ToolbarContent builder — never re-runs.
 private struct ChatToolbarKey: Equatable {
     let navTitle: NavTitleKey
+    let screenAwake: Bool
     let messagesEmpty: Bool
     let hasSession: Bool
     let isForcePulling: Bool
@@ -5570,7 +5563,7 @@ private struct ChatToolbarKey: Equatable {
 /// inputs — its body (the ToolbarContent builder) only re-runs when something
 /// the toolbar actually shows changes. Streaming ticks leave the key equal,
 /// the builder never re-runs, the bridge gets no new ToolbarContent to push,
-/// and the OPEN native SwiftUI Menu stays untouched. Content closures are
+/// and the open anchored menu stays untouched. Content closures are
 /// recreated by every parent pass (excluded from ==, same pattern as
 /// EquatableByValue/ChatTrailingMenu) so a key change always renders through
 /// the freshest parent state.
@@ -5811,6 +5804,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
     let onShareSession: () -> Void
     let onSearchSession: () -> Void
     let onToggleSessionAwake: () -> Void
+    let screenAwake: Bool
     let messagesEmpty: Bool
     let hasSession: Bool
     let isForcePulling: Bool
@@ -5848,40 +5842,14 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
     let onCopySessionData: () -> Void
     let onSessionAccess: () -> Void
 
-    /// The displayed-state snapshot — the ONLY trigger for a menu rebuild.
-    struct Key: Equatable {
-        let messagesEmpty: Bool
-        let hasSession: Bool
-        let isForcePulling: Bool
-        let iCloudSyncEnabled: Bool
-        let memoryEnabled: Bool
-        let speakEnabled: Bool
-        let showEnhancedCacheToggle: Bool
-        let enhancedCacheEnabled: Bool
-        let showFastModeToggle: Bool
-        let fastModeEnabled: Bool
-        let sessionAccessMode: SessionSystemAccessMode
-    let sessionAccessAvailable: Bool
-    let permissionSessionID: String?
-    }
-
-    private var key: Key {
-        Key(messagesEmpty: messagesEmpty, hasSession: hasSession,
-            isForcePulling: isForcePulling, iCloudSyncEnabled: iCloudSyncEnabled,
-            memoryEnabled: memoryEnabled, speakEnabled: speakEnabled,
-            showEnhancedCacheToggle: showEnhancedCacheToggle,
-            enhancedCacheEnabled: enhancedCacheEnabled,
-            showFastModeToggle: showFastModeToggle,
-            fastModeEnabled: fastModeEnabled,
-            sessionAccessMode: sessionAccessMode,
-            sessionAccessAvailable: sessionAccessAvailable,
-            permissionSessionID: permissionSessionID)
-    }
-
-    final class Coordinator {
-        var lastKey: Key?
+    /// Stable UIKit target; created once with the toolbar button, not per token.
+    @MainActor final class Coordinator: NSObject {
         var parent: ChatTrailingMenuButton
         init(parent: ChatTrailingMenuButton) { self.parent = parent }
+
+        @objc func openMenu(_ button: UIButton) {
+            MinisToolbarMenu.present(from: button, items: parent.menuItems())
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -5899,8 +5867,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
     /// built with `setImage` carries no UIButtonConfiguration padding, so the
     /// hittable box is roughly the glyph itself.
     ///
-    /// Overriding `point(inside:)` grows only the hit test. Nothing about
-    /// layout, the glass chrome, or the menu anchor changes.
+    /// Overriding `point(inside:)` grows only the hit test. The popover remains anchored to the original bounds.
     final class HitPaddedButton: UIButton {
         static let minimumTouchSize: CGFloat = 44
 
@@ -5918,10 +5885,8 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
         if #available(iOS 26, *) { glyph = "ellipsis" } else { glyph = "ellipsis.circle" }
         button.setImage(UIImage(systemName: glyph, withConfiguration: cfg), for: .normal)
         button.tintColor = UIColor(ChatColors.primaryText)
-        button.showsMenuAsPrimaryAction = true
         button.accessibilityLabel = AppLocalized("More options")
-        button.menu = Self.buildMenu(key: key, coordinator: context.coordinator)
-        context.coordinator.lastKey = key
+        button.addTarget(context.coordinator, action: #selector(Coordinator.openMenu(_:)), for: .touchUpInside)
         return button
     }
 
@@ -5935,140 +5900,60 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
     }
 
     func updateUIView(_ button: UIButton, context: Context) {
-        // Closures capture view state -- refresh them every pass so actions
-        // always see the latest values (excluded from the rebuild decision,
-        // exactly like ChatTrailingMenu's ==).
         context.coordinator.parent = self
-        guard context.coordinator.lastKey != key else { return }
-        context.coordinator.lastKey = key
-        button.menu = Self.buildMenu(key: key, coordinator: context.coordinator)
     }
 
-    private static func buildMenu(key: Key, coordinator: Coordinator) -> UIMenu {
-        var groups: [UIMenuElement] = []
-        groups.append(UIMenu(options: .displayInline, children: [
-            UIAction(title: AppLocalized("Share Conversation"), image: UIImage(systemName: "square.and.arrow.up")) { _ in
-                coordinator.parent.onShareSession()
-            },
-            UIAction(title: AppLocalized("Search in Conversation"), image: UIImage(systemName: "magnifyingglass")) { _ in
-                coordinator.parent.onSearchSession()
-            },
-            UIAction(title: AppLocalized("Keep Screen Awake"), image: UIImage(systemName: "sun.max")) { _ in
-                coordinator.parent.onToggleSessionAwake()
-            }
-        ]))
-
-        groups.append(UIMenu(options: .displayInline, children: [
-            UIAction(title: AppLocalized("New Chat"),
-                     image: UIImage(systemName: "square.and.pencil")) { _ in coordinator.parent.onNewChat() },
-        ]))
-
-        // Keep Compact above Clear Chat and sync actions after Clear Chat.
-        groups.append(UIMenu(options: .displayInline, children: [
-            UIAction(title: AppLocalized("Compact Messages"),
-                     image: UIImage(systemName: "arrow.down.right.and.arrow.up.left"),
-                     attributes: key.messagesEmpty ? [.disabled] : []) { _ in coordinator.parent.onCompact() },
-            UIAction(title: AppLocalized("Clear Chat"),
-                     image: UIImage(systemName: "trash"),
-                     attributes: key.messagesEmpty ? [.destructive, .disabled] : [.destructive]) { _ in coordinator.parent.onClearChat() },
-        ]))
-
-        // Same gate as before: iOS 17+ (v2 sync engine) AND the user's
-        // iCloud Sync toggle on.
-        if #available(iOS 17.0, *), key.iCloudSyncEnabled {
-            let disabled: UIMenuElement.Attributes = (!key.hasSession || key.isForcePulling) ? [.disabled] : []
-            groups.append(UIMenu(options: .displayInline, children: [
-                UIAction(title: AppLocalized("Force iCloud Sync"),
-                         image: UIImage(systemName: "icloud.and.arrow.up"),
-                         attributes: disabled) { _ in coordinator.parent.onForceSync() },
-                UIAction(title: AppLocalized("Force Pull Messages"),
-                         image: UIImage(systemName: "icloud.and.arrow.down"),
-                         attributes: disabled) { _ in coordinator.parent.onForcePull() },
-            ]))
-        }
-
-        groups.append(UIMenu(options: .displayInline, children: [
-            UIAction(title: AppLocalized("Open Terminal"),
-                     image: UIImage(systemName: "terminal")) { _ in coordinator.parent.onOpenTerminal() },
-            UIAction(title: "编译器",
-                     image: UIImage(systemName: "hammer")) { _ in coordinator.parent.onOpenCompiler() },
-            UIAction(title: AppLocalized("Open Browser"),
-                     image: UIImage(systemName: "globe")) { _ in coordinator.parent.onOpenBrowser() },
-            UIAction(title: AppLocalized("Browse Chat Files"),
-                     image: UIImage(systemName: "folder")) { _ in coordinator.parent.onBrowseFiles() },
-        ]))
-
-        var sessionGroup: [UIMenuElement] = [
-            UIAction(title: AppLocalized("Skills in Session"),
-                     image: UIImage(systemName: "puzzlepiece.extension")) { _ in coordinator.parent.onSkills() },
-            UIAction(title: AppLocalized("MCPs in Session"),
-                     image: UIImage(systemName: "wrench.and.screwdriver")) { _ in coordinator.parent.onMCPs() },
+    private func menuItems() -> [MinisToolbarMenuItem] {
+        var items = [
+            MinisToolbarMenuItem(title: AppLocalized("Share Conversation"), icon: "square.and.arrow.up", action: onShareSession),
+            MinisToolbarMenuItem(title: AppLocalized("Search in Conversation"), icon: "magnifyingglass", action: onSearchSession),
+            MinisToolbarMenuItem(title: AppLocalized("Keep Screen Awake"), icon: "sun.max", checked: screenAwake, action: onToggleSessionAwake),
+            MinisToolbarMenuItem(title: AppLocalized("New Chat"), icon: "square.and.pencil", action: onNewChat),
+            MinisToolbarMenuItem(title: AppLocalized("Compact Messages"), icon: "arrow.down.right.and.arrow.up.left",
+                                 attributes: messagesEmpty ? [.disabled] : [], action: onCompact),
+            MinisToolbarMenuItem(title: AppLocalized("Clear Chat"), icon: "trash",
+                                 attributes: messagesEmpty ? [.destructive, .disabled] : [.destructive], action: onClearChat)
         ]
-        if key.memoryEnabled {
-            sessionGroup.append(UIAction(title: AppLocalized("Memories in Session"),
-                                         image: UIImage(systemName: "brain.head.profile")) { _ in coordinator.parent.onMemories() })
+        if #available(iOS 17.0, *), iCloudSyncEnabled {
+            let disabled: UIMenuElement.Attributes = (!hasSession || isForcePulling) ? [.disabled] : []
+            items.append(MinisToolbarMenuItem(title: AppLocalized("Force iCloud Sync"), icon: "icloud.and.arrow.up",
+                                              attributes: disabled, action: onForceSync))
+            items.append(MinisToolbarMenuItem(title: AppLocalized("Force Pull Messages"), icon: "icloud.and.arrow.down",
+                                              attributes: disabled, action: onForcePull))
         }
-        sessionGroup.append(UIAction(title: AppLocalized("Speak Responses"),
-                                     image: UIImage(systemName: "speaker.wave.2"),
-                                     state: key.speakEnabled ? .on : .off) { _ in
-            coordinator.parent.setSpeakEnabled(!key.speakEnabled)
+        items += [
+            MinisToolbarMenuItem(title: AppLocalized("Open Terminal"), icon: "terminal", action: onOpenTerminal),
+            MinisToolbarMenuItem(title: "编译器", icon: "hammer", action: onOpenCompiler),
+            MinisToolbarMenuItem(title: AppLocalized("Open Browser"), icon: "globe", action: onOpenBrowser),
+            MinisToolbarMenuItem(title: AppLocalized("Browse Chat Files"), icon: "folder", action: onBrowseFiles),
+            MinisToolbarMenuItem(title: AppLocalized("Skills in Session"), icon: "puzzlepiece.extension", action: onSkills),
+            MinisToolbarMenuItem(title: AppLocalized("MCPs in Session"), icon: "wrench.and.screwdriver", action: onMCPs)
+        ]
+        if memoryEnabled {
+            items.append(MinisToolbarMenuItem(title: AppLocalized("Memories in Session"), icon: "brain.head.profile", action: onMemories))
+        }
+        items.append(MinisToolbarMenuItem(title: AppLocalized("Speak Responses"), icon: "speaker.wave.2", checked: speakEnabled) {
+            setSpeakEnabled(!speakEnabled)
         })
-        sessionGroup.append(UIAction(title: "本会话权限：\(key.sessionAccessMode.title)",
-                                     image: UIImage(systemName: key.sessionAccessMode.icon),
-                                     attributes: key.sessionAccessAvailable ? [] : [.disabled]) { _ in
-            coordinator.parent.onSessionAccess()
-        })
-        groups.append(UIMenu(options: .displayInline, children: sessionGroup))
-
-        // [T-codex-fast-mode-menu-group] Model-control toggles (they shape how
-        // the MODEL is invoked, unlike the session-scoped rows above) live in
-        // their own inline group so dividers separate them on both sides.
-        var modelControlGroup: [UIMenuElement] = []
-        if key.showEnhancedCacheToggle {
-            modelControlGroup.append(UIAction(title: AppLocalized("Enhanced Cache"),
-                                              image: UIImage(systemName: "clock.arrow.circlepath"),
-                                              state: key.enhancedCacheEnabled ? .on : .off) { _ in
-                coordinator.parent.setEnhancedCache(!key.enhancedCacheEnabled)
+        items.append(MinisToolbarMenuItem(title: "本会话权限：\(sessionAccessMode.title)", icon: sessionAccessMode.icon,
+                                          attributes: sessionAccessAvailable ? [] : [.disabled], action: onSessionAccess))
+        if showEnhancedCacheToggle {
+            items.append(MinisToolbarMenuItem(title: AppLocalized("Enhanced Cache"), icon: "clock.arrow.circlepath", checked: enhancedCacheEnabled) {
+                setEnhancedCache(!enhancedCacheEnabled)
             })
         }
-        // [T-codex-fast-mode] Only for Codex OAuth models. Injects
-        // service_tier=priority (the wire value codex_cli_rs sends for its
-        // Fast mode) into Codex requests while enabled; 2x credit burn.
-        if key.showFastModeToggle {
-            modelControlGroup.append(UIAction(title: AppLocalized("Enable Fast Mode"),
-                                              image: UIImage(systemName: "bolt.fill"),
-                                              state: key.fastModeEnabled ? .on : .off) { _ in
-                coordinator.parent.setFastMode(!key.fastModeEnabled)
+        if showFastModeToggle {
+            items.append(MinisToolbarMenuItem(title: AppLocalized("Enable Fast Mode"), icon: "bolt.fill", checked: fastModeEnabled) {
+                setFastMode(!fastModeEnabled)
             })
         }
-        if !modelControlGroup.isEmpty {
-            groups.append(UIMenu(options: .displayInline, children: modelControlGroup))
-        }
-
-        var tailGroup: [UIMenuElement] = [
-            UIAction(title: AppLocalized("Token Usage"),
-                     image: UIImage(systemName: "number")) { _ in coordinator.parent.onTokenUsage() },
-        ]
+        items.append(MinisToolbarMenuItem(title: AppLocalized("Token Usage"), icon: "number", action: onTokenUsage))
         #if DEBUG
-        tailGroup.append(UIDeferredMenuElement.uncached { completion in
-            let n = LastAPIRequestBody.shared.getAll().count
-            completion([
-                UIAction(title: "Copy Requests (\(n))",
-                         image: UIImage(systemName: "arrow.up.doc")) { _ in coordinator.parent.onCopyRequests() },
-                UIAction(title: "Copy Session Data",
-                         image: UIImage(systemName: "tray.and.arrow.up")) { _ in coordinator.parent.onCopySessionData() },
-            ])
-        })
+        let count = LastAPIRequestBody.shared.getAll().count
+        items.append(MinisToolbarMenuItem(title: "Copy Requests (\(count))", icon: "arrow.up.doc", action: onCopyRequests))
+        items.append(MinisToolbarMenuItem(title: "Copy Session Data", icon: "tray.and.arrow.up", action: onCopySessionData))
         #endif
-        groups.append(UIMenu(options: .displayInline, children: tailGroup))
-
-        // UIKit renders a hairline between inline groups. Flatten only those
-        // wrappers; keep the original native actions, gates and disabled states.
-        groups = groups.flatMap { element -> [UIMenuElement] in
-            guard let menu = element as? UIMenu, menu.options.contains(.displayInline) else { return [element] }
-            return menu.children
-        }
-        return UIMenu(children: groups)
+        return items
     }
 }
 

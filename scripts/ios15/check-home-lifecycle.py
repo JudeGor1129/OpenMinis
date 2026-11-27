@@ -27,7 +27,9 @@ check('所有会话都已归入分组；展开分组即可查看。' not in home
 check('ForEach(memberIDs, id: \\.self)' in home and 'ForEach(members(of:' not in home,'grouped List diffs stable session IDs')
 check('if let session = groupedSessionsByID[sessionID]' in home,'row content resolves current lookup')
 check('selectionMode: .constant(false)' in home and 'selectedSessions: .constant([])' in home,'grouped row opens instead of selecting')
-check('memberCount: groupSessionIDs[folder.id]?.count ?? 0' in home,'collapsed group counts retained')
+check('let memberIDs = groupSessionIDs[folder.id] ?? []' in home and 'memberCount: memberIDs.count' in home,'collapsed counts and expanded rows use the same member IDs')
+check(home.count('MinisHomeGroupInk.legacy') == 5,'all group row variants use the same opaque band color')
+check('.minisNavigationChrome(legacyCanvas: .systemGroupedBackground)' in home,'legacy home nav and list share the same canvas')
 check('activity.$activeSessions\n            .removeDuplicates()' in legacy and 'concurrency.$suspendedSessions\n            .map { Set($0) }\n            .removeDuplicates()' in legacy,'unchanged activity sets deduplicated')
 check('legacySessionListPreview(session.lastMessage)' in legacy,'bounded display preview wired')
 for call in ('showPrivacyScreen = true','clearAllUnlocks()','noteAppBackgrounded()'):

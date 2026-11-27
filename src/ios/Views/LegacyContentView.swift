@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import Combine
 
 /// Stable root Module. Its Interface remains `ContentView()` while navigation
@@ -110,6 +111,8 @@ private struct LegacyContentView: View {
                         }
                         .frame(minHeight: 48).contentShape(Rectangle())
                     }
+                    .listRowBackground(LegacyHomeGroupBand(top: true, bottom: !groupsExpanded || folders.isEmpty).fill(MinisHomeGroupInk.legacy))
+                    .listRowSeparator(.hidden)
                     .contextMenu {
                         Button { creatingGroup = true } label: {
                             Label("新建分组", systemImage: "folder.badge.plus")
@@ -122,22 +125,30 @@ private struct LegacyContentView: View {
                         // exactly why "开始新会话" and the member rows inside a
                         // group stopped opening.
                         ForEach(folders) { folder in
+                            let expanded = expandedGroups.contains(folder.id)
+                            let lastGroup = folders.last?.id == folder.id
+                            let memberIDs = groupSessionIDs[folder.id] ?? []
                             DisclosuredGroupHeader(
                                 folder: folder,
-                                memberCount: groupSessionIDs[folder.id]?.count ?? 0,
-                                expanded: expandedGroups.contains(folder.id),
+                                memberCount: memberIDs.count,
+                                expanded: expanded,
                                 onToggle: { toggleGroup(folder.id) },
                                 onManage: { managingFolder = folder }
                             )
-                            if expandedGroups.contains(folder.id) {
+                            .listRowBackground(LegacyHomeGroupBand(bottom: lastGroup && !expanded).fill(MinisHomeGroupInk.legacy))
+                            .listRowSeparator(.hidden)
+                            if expanded {
                                 Button { startDraft(in: folder.id) } label: {
                                     Label("开始新会话", systemImage: "plus.bubble")
                                 }
-                                let memberIDs = groupSessionIDs[folder.id] ?? []
+                                .listRowBackground(MinisHomeGroupInk.legacy)
+                                .listRowSeparator(.hidden)
                                 if memberIDs.isEmpty {
                                     Text("组内暂无会话")
                                         .font(.footnote)
                                         .foregroundColor(.secondary)
+                                        .listRowBackground(LegacyHomeGroupBand(bottom: lastGroup).fill(MinisHomeGroupInk.legacy))
+                                        .listRowSeparator(.hidden)
                                 }
                                 ForEach(memberIDs, id: \.self) { sessionID in
                                     if let session = groupedSessionsByID[sessionID] {
@@ -151,6 +162,8 @@ private struct LegacyContentView: View {
                                             isActiveOverride: sessionIsActive(session.id),
                                             isSuspendedOverride: sessionIsSuspended(session.id)
                                         )
+                                        .listRowBackground(LegacyHomeGroupBand(bottom: lastGroup && sessionID == memberIDs.last).fill(MinisHomeGroupInk.legacy))
+                                        .listRowSeparator(.hidden)
                                     }
                                 }
                             }
@@ -188,7 +201,7 @@ private struct LegacyContentView: View {
                 }
             }
             .minisCatalogList()
-            .minisNavigationChrome()
+            .minisNavigationChrome(legacyCanvas: .systemGroupedBackground)
             .navigationTitle(selectionMode ? "Selected: \(selectedSessions.count)" : "Minis")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -214,29 +227,23 @@ private struct LegacyContentView: View {
                     .buttonStyle(.plain)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button { showingTerminal = true } label: {
-                            Label("Shell Terminal", systemImage: "terminal")
-                        }
-                        Button { showingRootfs = true } label: {
-                            Label("Rootfs Management", systemImage: "externaldrive")
-                        }
-                        Button { showingBrowser = true } label: {
-                            Label("Open Browser", systemImage: "globe")
-                        }
-                        Button { showingBrowserSettings = true } label: {
-                            Label("Browser Settings", systemImage: "globe")
-                        }
-                        Toggle("Keep Screen Awake", isOn: $keepScreenAwake)
-                    } label: {
-                        Image(systemName: "terminal")
-                            .font(.callout.weight(.semibold))
-                            .frame(width: 34, height: 34)
-                            .modifier(MinisLegacyControlSurface(shape: Circle()))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                    MinisToolbarMenuTrigger(
+                        image: UIImage(systemName: "terminal", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)),
+                        accessibilityTitle: AppLocalized("Tools")
+                    ) {
+                        [
+                            MinisToolbarMenuItem(title: AppLocalized("Shell Terminal"), icon: "terminal") { showingTerminal = true },
+                            MinisToolbarMenuItem(title: AppLocalized("Rootfs Management"), icon: "externaldrive") { showingRootfs = true },
+                            MinisToolbarMenuItem(title: AppLocalized("Open Browser"), icon: "globe") { showingBrowser = true },
+                            MinisToolbarMenuItem(title: AppLocalized("Browser Settings"), icon: "gearshape") { showingBrowserSettings = true },
+                            MinisToolbarMenuItem(title: AppLocalized("Keep Screen Awake"), icon: "sun.max", checked: keepScreenAwake) { keepScreenAwake.toggle() }
+                        ]
                     }
-                    .accessibilityLabel("Tools")
+                    .frame(width: 44, height: 44)
+                    .background {
+                        Circle().fill(Color.clear).frame(width: 34, height: 34)
+                            .modifier(MinisLegacyControlSurface(shape: Circle()))
+                    }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { startDraft() } label: {
@@ -535,6 +542,21 @@ private struct DisclosuredGroupHeader: View {
             .accessibilityLabel(Text("Manage Group"))
             .buttonStyle(MinisPressFeedbackStyle())
         }
+    }
+}
+
+// Draw corners only at the outer ends of this native List section.
+private struct LegacyHomeGroupBand: Shape {
+    var top = false
+    var bottom = false
+
+    func path(in rect: CGRect) -> Path {
+        var corners: UIRectCorner = []
+        if top { corners.formUnion([.topLeft, .topRight]) }
+        if bottom { corners.formUnion([.bottomLeft, .bottomRight]) }
+        guard !corners.isEmpty else { return Path(rect) }
+        return Path(UIBezierPath(roundedRect: rect, byRoundingCorners: corners,
+                                 cornerRadii: CGSize(width: 14, height: 14)).cgPath)
     }
 }
 
