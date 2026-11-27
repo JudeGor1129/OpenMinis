@@ -490,7 +490,7 @@ struct SpeechPlayerControl: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(Capsule().fill(Color.accentColor))
+                    .minisCapsuleSurface(Color.accentColor)
                     .offset(x: 6, y: 4)
             }
         }
@@ -548,7 +548,7 @@ struct SpeechPlayerControl: View {
                     // through speeds doesn't change the chip width (→ no jitter).
                     .frame(width: 34)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                    .minisCapsuleSurface(Color.secondary.opacity(0.15))
             }
             .buttonStyle(.plain)
 
@@ -565,7 +565,7 @@ struct SpeechPlayerControl: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
-        .background(Capsule().fill(.ultraThinMaterial))
+        .minisMaterialCapsule(raised: true)
         // Drag to reposition. Highest priority so the outer tap-to-dismiss layer
         // doesn't steal it.
         .highPriorityGesture(dragGesture)
@@ -609,7 +609,7 @@ private struct RotatingArc: View {
     private let period: Double = 0.9
 
     var body: some View {
-        TimelineView(.animation) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             let angle = Angle(degrees: (t / period).truncatingRemainder(dividingBy: 1) * 360)
             Circle()

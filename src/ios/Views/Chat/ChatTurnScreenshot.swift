@@ -67,8 +67,7 @@ struct ChatScreenshotPreviewSheet: View {
                         .foregroundStyle(Color(UIColor.systemBackground))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color(UIColor.label).opacity(0.75))
-                        .clipShape(Capsule())
+                        .minisCapsuleSurface(Color(UIColor.label).opacity(0.75))
                         .padding(.bottom, 32)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }

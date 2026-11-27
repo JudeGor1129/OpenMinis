@@ -50,7 +50,7 @@ struct SwipeToSendHint: View {
                     .foregroundStyle(chipFg)
                     .padding(.horizontal, 14)
                     .frame(height: 34)
-                    .background(Capsule().fill(chipBg))
+                    .minisCapsuleSurface(chipBg)
                     .shadow(color: Color.black.opacity(0.15), radius: 5, y: 2)
                     .opacity(Double(capsuleAlpha))
             }

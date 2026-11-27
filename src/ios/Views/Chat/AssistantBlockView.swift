@@ -462,7 +462,7 @@ struct ToolCapsuleView: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 36)
-            .background(Color(UIColor.systemGray6))
+            .minisCapsuleSurface(Color(UIColor.systemGray6))
             .clipShape(Capsule())
             .overlay(
                 Group {

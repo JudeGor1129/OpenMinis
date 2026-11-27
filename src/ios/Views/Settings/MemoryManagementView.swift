@@ -106,7 +106,7 @@ struct MemoryManagementView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.accentColor, in: Capsule())
+                    .minisCapsuleSurface(Color.accentColor)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }

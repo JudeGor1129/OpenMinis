@@ -257,64 +257,6 @@ private struct FolderHeaderVisibilityProbe: View {
     }
 }
 
-/// Folder card container: what visually separates a folder from the flat
-/// session rows around it. On iOS 26+ this is the system Liquid Glass
-/// material (`glassEffect`) in a continuous rounded rect; on earlier systems
-/// it degrades to a deliberately plain filled card with a hairline stroke —
-/// no custom blur, since `.blur` is an offscreen pass and this list is the
-/// site of two archived scroll-perf incidents. The drop-target state draws an
-/// accent tint + stroke ON TOP of either material, so drag feedback reads the
-/// same on both OS generations.
-/// One row's share of the expanded container's OUTER border. The top kind
-/// draws the top arc + upper side walls, middle draws side walls only, and
-/// bottom draws the lower walls + bottom arc — tiled across the group's rows
-/// they form one continuous rounded-rect highlight, with no horizontal lines
-/// at the row boundaries (which a per-segment full stroke would create).
-private struct FolderSegmentBorder: Shape {
-    enum Kind { case top, middle, bottom }
-    let kind: Kind
-    var radius: CGFloat = 16
-
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        switch kind {
-        case .top:
-            p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-            p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
-            p.addArc(center: CGPoint(x: rect.minX + radius, y: rect.minY + radius),
-                     radius: radius, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
-            p.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
-            p.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.minY + radius),
-                     radius: radius, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        case .middle:
-            p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-            p.move(to: CGPoint(x: rect.maxX, y: rect.minY))
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        case .bottom:
-            p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - radius))
-            p.addArc(center: CGPoint(x: rect.minX + radius, y: rect.maxY - radius),
-                     radius: radius, startAngle: .degrees(180), endAngle: .degrees(90), clockwise: true)
-            p.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.maxY))
-            p.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius),
-                     radius: radius, startAngle: .degrees(90), endAngle: .degrees(0), clockwise: true)
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        }
-        return p
-    }
-}
-
-/// Edge highlight for the simulated glass: bright hairline in dark mode
-/// (the reference system-folder look), a subtle dark line in light mode
-/// (white would vanish on the light page).
-private let folderEdgeHighlight = Color(UIColor { traits in
-    traits.userInterfaceStyle == .dark
-        ? UIColor(white: 1, alpha: 0.30)
-        : UIColor(white: 0, alpha: 0.08)
-})
-
 /// Background for the expanded FAB search bar. Liquid Glass capsule on iOS 26+,
 /// the original opaque capsule + hand-rolled shadow below it.
 ///
@@ -330,9 +272,7 @@ private struct SearchBarSurface: ViewModifier {
             content.glassEffect(.regular, in: .capsule)
         } else {
             content
-                .background(Color(UIColor.secondarySystemBackground))
-                .clipShape(Capsule())
-                .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 2)
+                .minisCapsuleSurface(Color(UIColor.secondarySystemBackground), raised: true)
         }
     }
 }
@@ -364,8 +304,7 @@ private struct FABGlassMorphID: ViewModifier {
 /// group. Per the user's directive after several rounds of expanded-only
 /// material tuning: there is NO expanded-specific material/tint/opacity
 /// definition anymore. The only thing that varies by position is the SHAPE
-/// (lone / top / middle / bottom corner segmentation) and how the border is
-/// tiled; the fill comes from one place.
+/// (lone / top / middle / bottom corner segmentation); all segments share one fill.
 // File-local compatibility shapes keep existing call sites available on iOS 15.
 private struct AnyShape: Shape {
     private let makePath: (CGRect) -> Path
@@ -432,35 +371,7 @@ private struct FolderSurface: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content.background(shape.fill(Color(UIColor.secondarySystemBackground)))
-        .overlay {
-            // Border: full hairline on the lone card (its existing look, sub-26
-            // only — glass carries its own edge); tiled outer-perimeter
-            // segments on expanded rows so the pieces read as one outline
-            // without horizontal lines at the row boundaries.
-            switch kind {
-            case .lone:
-                // With glass gone the card needs an explicit edge for
-                // definition — the same highlight the expanded segments tile,
-                // as a full perimeter here.
-                if #available(iOS 26.0, *) {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(folderEdgeHighlight, lineWidth: 0.75)
-                } else {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color(UIColor.separator).opacity(0.5), lineWidth: 0.5)
-                }
-            case .top:
-                FolderSegmentBorder(kind: .top)
-                    .stroke(folderEdgeHighlight, lineWidth: 0.75)
-            case .middle:
-                FolderSegmentBorder(kind: .middle)
-                    .stroke(folderEdgeHighlight, lineWidth: 0.75)
-            case .bottom:
-                FolderSegmentBorder(kind: .bottom)
-                    .stroke(folderEdgeHighlight, lineWidth: 0.75)
-            }
-        }
+        content.background(shape.fill(MinisHomeGroupInk.modern))
     }
 }
 
@@ -481,17 +392,15 @@ private struct FolderCardBackground: ViewModifier {
             .modifier(FolderSurface(kind: isExpanded ? .top : .lone))
             .overlay {
                 if isDropTarget {
-                    ZStack {
-                        dropShape.fill(Color.accentColor.opacity(0.15))
-                        dropShape.stroke(Color.accentColor, lineWidth: 1.5)
-                    }
+                    dropShape.fill(Color.accentColor.opacity(0.24))
+                        .allowsHitTesting(false)
                 }
             }
     }
 }
 
 /// Middle/bottom rows of an expanded group: the SAME FolderSurface as the
-/// collapsed card, with the corner segmentation and border tiling that
+/// collapsed card, with the corner segmentation that
 /// multi-row composition needs.
 private struct FolderMemberRowBackground: View {
     let isLast: Bool
@@ -3126,8 +3035,7 @@ struct ModernContentView: View {
         .padding(.trailing, 8)
         .frame(height: 48)
         .frame(maxWidth: 320)
-        .background(.ultraThinMaterial, in: Capsule())
-        .shadow(color: Color.black.opacity(0.15), radius: 8, y: 2)
+        .minisMaterialCapsule(raised: true)
         .padding(.top, 8)
         .padding(.horizontal, 24)
     }
@@ -3806,7 +3714,7 @@ struct ModernContentView: View {
         .lineLimit(1)
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(Color.secondary.opacity(0.12), in: Capsule())
+        .minisCapsuleSurface(Color.secondary.opacity(0.12))
     }
 
     @ViewBuilder
@@ -7699,7 +7607,7 @@ private struct SpinningRing: View {
     let color: Color
 
     var body: some View {
-        TimelineView(.animation) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
             let angle = timeline.date.timeIntervalSinceReferenceDate.remainder(dividingBy: 1.0) * 360
             Circle()
                 .trim(from: 0, to: 0.3)

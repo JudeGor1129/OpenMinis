@@ -246,7 +246,7 @@ struct ProviderInstancesView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.accentColor, in: Capsule())
+                    .minisCapsuleSurface(Color.accentColor)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -480,8 +480,7 @@ private struct InstanceRow: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color(UIColor.quaternarySystemFill))
-                    .clipShape(Capsule())
+                    .minisCapsuleSurface(Color(UIColor.quaternarySystemFill))
             }
         }
         .padding(.vertical, 2)

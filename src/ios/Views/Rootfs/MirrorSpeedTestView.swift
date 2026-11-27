@@ -514,8 +514,7 @@ struct MirrorsSectionView: View {
                     .foregroundStyle(ms < 200 ? .green : ms < 500 ? .orange : .red)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background((ms < 200 ? Color.green : ms < 500 ? Color.orange : Color.red).opacity(0.12))
-                    .clipShape(Capsule())
+                    .minisCapsuleSurface((ms < 200 ? Color.green : ms < 500 ? Color.orange : Color.red).opacity(0.12))
             }
         }
     }
@@ -619,8 +618,7 @@ struct MirrorCategoryDetailView: View {
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.12))
-                            .clipShape(Capsule())
+                            .minisCapsuleSurface(Color.secondary.opacity(0.12))
                     }
                     Text(mirror.region)
                         .font(.caption2)
@@ -653,8 +651,7 @@ struct MirrorCategoryDetailView: View {
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.12))
-                            .clipShape(Capsule())
+                            .minisCapsuleSurface(Color.secondary.opacity(0.12))
                     }
                     Text(result.mirror.region)
                         .font(.caption2)

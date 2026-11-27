@@ -188,7 +188,7 @@ struct ModelGroupsView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.accentColor, in: Capsule())
+                    .minisCapsuleSurface(Color.accentColor)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -429,7 +429,6 @@ private struct GroupRow: View {
             .foregroundStyle(color)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(color.opacity(0.12))
-            .clipShape(Capsule())
+            .minisCapsuleSurface(color.opacity(0.12))
     }
 }

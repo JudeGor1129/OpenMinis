@@ -161,7 +161,7 @@ struct FileBrowserView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(.black.opacity(0.8), in: Capsule())
+                        .minisCapsuleSurface(Color.black.opacity(0.8))
                         .padding(.bottom, 32)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }

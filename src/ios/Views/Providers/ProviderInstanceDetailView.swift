@@ -392,7 +392,7 @@ struct ProviderInstanceDetailView: View {
                                 .font(.caption)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
-                                .background(Color.secondary.opacity(0.15), in: Capsule())
+                                .minisCapsuleSurface(Color.secondary.opacity(0.15))
                             }
                         }
                         .disabled(isFetchingModels)

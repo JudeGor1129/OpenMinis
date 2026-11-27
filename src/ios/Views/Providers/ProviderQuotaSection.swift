@@ -318,7 +318,7 @@ struct QuotaStatusChip: View {
         .foregroundStyle(tone == .normal ? Color.secondary : tone.color)
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .background(tone.color.opacity(tone == .normal ? 0.08 : 0.12), in: Capsule())
+        .minisCapsuleSurface(tone.color.opacity(tone == .normal ? 0.08 : 0.12))
         .fixedSize()
     }
 }

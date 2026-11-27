@@ -148,7 +148,7 @@ struct SoulSettingsView: View {
                 Text(AppLocalized("Saved"))
                     .font(.footnote.weight(.medium))
                     .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(Color.green.opacity(0.85), in: Capsule())
+                    .minisCapsuleSurface(Color.green.opacity(0.85))
                     .foregroundStyle(.white)
                     .padding(.bottom, 24)
                     .transition(.opacity)

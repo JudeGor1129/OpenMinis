@@ -75,7 +75,7 @@ struct QuotaSectionHeaderBadge: View {
                     .foregroundStyle(QuotaTagStyle.foreground(level, normal: tone.color))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
-                    .background(QuotaTagStyle.background(level), in: Capsule())
+                    .minisCapsuleSurface(QuotaTagStyle.background(level))
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -134,7 +134,7 @@ struct ModelQuotaMemberPill: View {
                     // height (31 pt rendered before and after).
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
-                    .background(QuotaTagStyle.background(pill.level), in: Capsule())
+                    .minisCapsuleSurface(QuotaTagStyle.background(pill.level))
                     .contentShape(Capsule())
                 }
                 // Borderless: inside a List row only the capsule takes the tap,

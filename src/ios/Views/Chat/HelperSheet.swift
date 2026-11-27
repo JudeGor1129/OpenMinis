@@ -99,7 +99,6 @@ struct HelperTranscriptPage: View {
     /// only writes on a real change, so idle ticks still leave the body (and
     /// the toolbar key) untouched.
     @State private var isRunning = false
-    @State private var topSafeAreaInset: CGFloat = 59
     /// [T-agent-model-identity] tier + effective model for the second title
     /// row. Live from the registry while the job runs; recovered from the
     /// parent's persisted payload (or the child's own rows) after a restart.
@@ -139,7 +138,7 @@ struct HelperTranscriptPage: View {
             // [T-agent-transcript-navbar] The same nav bar the main chat has:
             // native Liquid Glass on iOS 26+, adaptive material on iOS 16–25,
             // and a 46 pt principal frame to fit the two-row title.
-            .modifier(NavBarStyleModifier(topSafeAreaInset: $topSafeAreaInset, measuresSafeArea: false))
+            .modifier(NavBarStyleModifier())
             .navigationBarTitleDisplayMode(.inline)
             // [T-agent-transcript-navbar-lost] Pin the bar visible. This page
             // is the ROOT of its NavigationStack, and SwiftUI auto-hides a
@@ -328,8 +327,7 @@ struct HelperTranscriptPage: View {
                     Text(tier)
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .padding(.horizontal, 6).padding(.vertical, 1)
-                        .background(ChatColors.secondaryBg)
-                        .clipShape(Capsule())
+                        .minisCapsuleSurface(ChatColors.secondaryBg)
                         .fixedSize()
                 }
                 // [T-agent-model-identity] Effective model once confirmed,
@@ -399,7 +397,7 @@ private struct HelperTranscriptTitleKey: Equatable {
 }
 
 /// [T-agent-transcript-navbar-lost] Value-keyed wrapper for the principal
-/// title, mirroring EquatableByValue on the main chat. Skipping a re-render of
+/// title, like the main chat toolbar. Skipping a re-render of
 /// the title cannot remove the navigation bar; skipping a rebuild of the whole
 /// ToolbarContent could, and did.
 private struct HelperTranscriptTitle<Content: View>: View, Equatable {

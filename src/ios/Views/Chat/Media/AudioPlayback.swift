@@ -327,27 +327,7 @@ struct AudioPiPCapsule: View {
         }
         .padding(.horizontal, 16)
         .frame(width: 160, height: 40)
-        .background {
-            Capsule()
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.15),
-                                    Color.white.opacity(0.05),
-                                    Color.clear
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                )
-                .opacity(0.85)
-        }
-        .clipShape(Capsule())
-        .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
+        .minisMaterialCapsule(raised: true)
     }
 }
 

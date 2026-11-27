@@ -78,6 +78,16 @@ final class TextFadeAnimator {
     private var words: [FadeWord] = []
     private var displayLink: CADisplayLink?
 
+    @MainActor private final class FrameTarget: NSObject {
+        weak var owner: TextFadeAnimator?
+        init(owner: TextFadeAnimator) { self.owner = owner }
+
+        @objc func tick(_ link: CADisplayLink) {
+            guard let owner else { link.invalidate(); return }
+            owner.tick()
+        }
+    }
+
     // MARK: - Init
 
     /// - Parameter requestRedraw: invoked on the main thread after each frame's
@@ -87,8 +97,7 @@ final class TextFadeAnimator {
     }
 
     deinit {
-        // CADisplayLink retains its target; we invalidate in cancelAll, but
-        // guard here too in case the owner is torn down mid-animation.
+        // The frame target holds us weakly, so teardown also works mid-fade.
         displayLink?.invalidate()
     }
 
@@ -100,7 +109,7 @@ final class TextFadeAnimator {
     /// the NSRange of the freshly-appended tail. Safe to call repeatedly while
     /// streaming — each call adds its words to the shared in-flight set.
     func scheduleAnimation(for range: NSRange, in targetStorage: NSTextStorage) {
-        guard range.length > 0 else { return }
+        guard range.length > 0, !UIAccessibility.isReduceMotionEnabled else { return }
         let storageLen = targetStorage.length
         // Defensive clamp: the caller computed `range` from the same storage,
         // but a racing edit could have shrunk it. Never index out of bounds.
@@ -186,10 +195,9 @@ final class TextFadeAnimator {
 
     private func startDisplayLinkIfNeeded() {
         guard displayLink == nil, !words.isEmpty else { return }
-        let link = CADisplayLink(target: self, selector: #selector(tick))
-        // Allow the system to pick within 30–120Hz, preferring 60. The fade is
-        // smooth at 30 and we don't need to force 120Hz battery cost.
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 120, preferred: 60)
+        let link = CADisplayLink(target: FrameTarget(owner: self), selector: #selector(FrameTarget.tick(_:)))
+        // Streaming is not a gesture or page transition; never request high refresh here.
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
         link.add(to: .main, forMode: .common)
         displayLink = link
     }
@@ -199,7 +207,11 @@ final class TextFadeAnimator {
         displayLink = nil
     }
 
-    @objc private func tick() {
+    private func tick() {
+        if UIApplication.shared.applicationState != .active || UIAccessibility.isReduceMotionEnabled {
+            cancelAll()
+            return
+        }
         guard let storage else {
             stopDisplayLink()
             words.removeAll(keepingCapacity: true)

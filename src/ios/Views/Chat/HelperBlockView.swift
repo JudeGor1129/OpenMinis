@@ -470,8 +470,7 @@ struct HelperBlockView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(HelperAccent.color)
                         .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(HelperAccent.color.opacity(0.15))
-                        .clipShape(Capsule())
+                        .minisCapsuleSurface(HelperAccent.color.opacity(0.15))
                     Text(info.title)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(ChatColors.primaryText)
@@ -644,8 +643,7 @@ struct HelperBlockView: View {
                     Text(tier)
                         .font(.system(size: 9, weight: .semibold, design: .monospaced))
                         .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(ChatColors.secondaryBg)
-                        .clipShape(Capsule())
+                        .minisCapsuleSurface(ChatColors.secondaryBg)
                         .fixedSize()
                 }
                 if let model = info.model, let line = model.compactLine() {
@@ -924,7 +922,7 @@ struct HelperDetailCard: View {
                                 .foregroundStyle(ChatColors.secondaryText)
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
-                                .background(Capsule().fill(Color.secondary.opacity(0.10)))
+                                .minisCapsuleSurface(Color.secondary.opacity(0.10))
                             }
                         }
                     }
@@ -955,9 +953,8 @@ struct HelperDetailCard: View {
                     Text(tier)
                         .font(.system(size: 9, weight: .semibold, design: .monospaced))
                         .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(HelperAccent.color.opacity(0.15))
+                        .minisCapsuleSurface(HelperAccent.color.opacity(0.15))
                         .foregroundStyle(HelperAccent.color)
-                        .clipShape(Capsule())
                 }
                 if let elapsed {
                     Text(HelperBlockInfo.elapsedLabel(elapsed))
@@ -1185,7 +1182,7 @@ struct ReattachingSpinner: View {
     var color: Color = .accentColor
 
     var body: some View {
-        TimelineView(.animation) { ctx in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
             let angle = t.truncatingRemainder(dividingBy: 1.0) * 360
             Circle()

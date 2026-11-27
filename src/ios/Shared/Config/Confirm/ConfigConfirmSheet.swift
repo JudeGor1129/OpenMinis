@@ -95,7 +95,7 @@ private struct ConfigConfirmRow: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(verbBackground, in: Capsule())
+                    .minisCapsuleSurface(verbBackground)
                 Text(item.displayName)
                     .font(.system(.body, design: .default))
                     .foregroundStyle(.primary)

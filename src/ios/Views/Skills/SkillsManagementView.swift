@@ -188,7 +188,7 @@ struct SkillsManagementView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.accentColor, in: Capsule())
+                    .minisCapsuleSurface(Color.accentColor)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -1023,7 +1023,7 @@ struct MinisSkillsBrowserView: View {
         .font(.subheadline.weight(.medium))
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.black.opacity(0.75), in: Capsule())
+        .minisCapsuleSurface(Color.black.opacity(0.75))
     }
 }
 

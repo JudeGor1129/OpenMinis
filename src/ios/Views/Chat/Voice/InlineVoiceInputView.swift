@@ -651,7 +651,7 @@ struct InlineVoiceInputView: View {
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 3)
-                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                            .minisCapsuleSurface(Color.secondary.opacity(0.15))
                     }
                     .buttonStyle(.plain)
                 }
@@ -727,7 +727,7 @@ struct InlineVoiceInputView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
-                .background(Capsule().fill(Color.orange.opacity(0.12)))
+                .minisCapsuleSurface(Color.orange.opacity(0.12))
                 .transition(.opacity)
             }
             // [voice-correction] Non-error one-off status ("No corrections
@@ -937,7 +937,7 @@ struct InlineVoiceInputView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(Capsule().fill(Color.secondary.opacity(0.1)))
+            .minisCapsuleSurface(Color.secondary.opacity(0.1))
         }
     }
 
@@ -1131,7 +1131,7 @@ struct InlineVoiceInputView: View {
                     .shadow(color: .black.opacity(0.18), radius: expanded ? 7 : 5, y: expanded ? 3 : 2)
 
                 if viewModel.isTranscribing {
-                    TimelineView(.animation) { context in
+                    TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
                         let t = context.date.timeIntervalSinceReferenceDate
                         let angle = Angle(degrees: (t / 0.9).truncatingRemainder(dividingBy: 1) * 360)
                         Circle()

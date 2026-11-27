@@ -128,7 +128,7 @@ struct ThinkingRulesSection: View {
                         .font(.caption)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                        .minisCapsuleSurface(Color.secondary.opacity(0.15))
                         .foregroundStyle(.secondary)
                 }
             }

@@ -865,8 +865,7 @@ struct UnifiedModelPicker: View {
                     .foregroundStyle(.blue)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(Color.blue.opacity(0.1))
-                    .clipShape(Capsule())
+                    .minisCapsuleSurface(Color.blue.opacity(0.1))
             }
 
             Button {
@@ -947,8 +946,7 @@ struct UnifiedModelPicker: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 4)
         .padding(.vertical, 1)
-        .background(Color(UIColor.quaternarySystemFill))
-        .clipShape(Capsule())
+        .minisCapsuleSurface(Color(UIColor.quaternarySystemFill))
     }
 
     private func availableMemberEntryIds(_ group: ModelGroup) -> [String] {
@@ -1120,8 +1118,7 @@ struct UnifiedModelPicker: View {
                     .foregroundStyle(.green)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(Color.green.opacity(0.1))
-                    .clipShape(Capsule())
+                    .minisCapsuleSurface(Color.green.opacity(0.1))
             }
 
             quickTestButton(entry)
@@ -1389,8 +1386,7 @@ struct UnifiedModelPicker: View {
                         .foregroundStyle(.green)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
-                        .background(Color.green.opacity(0.1))
-                        .clipShape(Capsule())
+                        .minisCapsuleSurface(Color.green.opacity(0.1))
                 }
 
                 quickTestButton(entry)

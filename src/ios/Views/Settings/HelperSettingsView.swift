@@ -106,7 +106,7 @@ struct HelperSettingsView: View {
                         Text(AppLocalized("Built-in"))
                             .font(.caption2)
                             .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.15), in: Capsule())
+                            .minisCapsuleSurface(Color.secondary.opacity(0.15))
                             .foregroundStyle(.secondary)
                     }
                 }

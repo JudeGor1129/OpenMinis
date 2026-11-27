@@ -450,7 +450,7 @@ private struct BackupRunningIndicator: View {
         // and the rotation is a pure function of the timestamp, so there is no
         // animation in flight to duplicate, restart, or leave running — the
         // failure mode below is unrepresentable rather than merely avoided.
-        TimelineView(.animation) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             let turns = t / Self.secondsPerTurn
             Image(systemName: "arrow.triangle.2.circlepath")

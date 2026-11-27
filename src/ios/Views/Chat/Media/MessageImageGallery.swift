@@ -117,7 +117,7 @@ struct MessageImageGallery: View {
                         .truncationMode(.middle)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .minisMaterialCapsule()
                         .padding(.bottom, 24)
                         .allowsHitTesting(false)
                 }

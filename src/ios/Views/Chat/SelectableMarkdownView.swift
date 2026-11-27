@@ -7164,9 +7164,12 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
         return nil
     }
 
+    var onLeaveWindow: (() -> Void)?
+
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if window == nil {
+            onLeaveWindow?()
             // Release CALayer backing stores when removed from view tree
             layer.contents = nil
             for sub in attachmentViews {
@@ -8498,6 +8501,7 @@ struct SelectableMarkdownView: UIViewRepresentable {
         // prefix of the NEW text — true for every streamed token. [T-ios-word-fade-animation]
         var fadeRevealRange: NSRange? = nil
         if let oldStorage = textView.textStorage as? NSTextStorage,
+           textView.window != nil, !UIAccessibility.isReduceMotionEnabled,
            oldStorage.length > 0,
            attributed.length > oldStorage.length {
             let oldLen = oldStorage.length
@@ -8544,10 +8548,12 @@ struct SelectableMarkdownView: UIViewRepresentable {
         // fade the revealed range in word-by-word. Decoupled from fastPathTaken
         // so a full-replace token still animates. A scene-deferred / background
         // frame never reaches here; isNewMessage / rotation already cancelAll'd.
-        if let revealRange = fadeRevealRange,
+        if let revealRange = fadeRevealRange, textView.window != nil,
            let liveStorage = textView.textStorage as? NSTextStorage {
-            context.coordinator.fadeTextView = textView
-            context.coordinator.fadeAnimator.scheduleAnimation(for: revealRange, in: liveStorage)
+            let coordinator = context.coordinator
+            textView.onLeaveWindow = { [weak coordinator] in coordinator?.fadeAnimator.cancelAll() }
+            coordinator.fadeTextView = textView
+            coordinator.fadeAnimator.scheduleAnimation(for: revealRange, in: liveStorage)
         }
         let assignElapsed = (CFAbsoluteTimeGetCurrent() - assignStart) * 1000
         textView.rawMarkdown = markdown

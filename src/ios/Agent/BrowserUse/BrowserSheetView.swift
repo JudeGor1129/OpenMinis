@@ -285,8 +285,7 @@ struct BrowserSheetView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(isSelected ? Color.accentColor.opacity(0.15) : Color(UIColor.systemGray5))
-            .clipShape(Capsule())
+            .minisCapsuleSurface(isSelected ? Color.accentColor.opacity(0.15) : Color(UIColor.systemGray5))
         }
         .buttonStyle(.plain)
     }
@@ -375,10 +374,7 @@ private struct AgentBrowsingOverlay: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
-            .background(
-                Capsule()
-                    .fill(Color.black.opacity(0.7))
-            )
+            .minisCapsuleSurface(Color.black.opacity(0.7), raised: true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle()) // capture all touches
@@ -458,7 +454,7 @@ struct BrowserDownloadFloatingButton: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, badge > 9 ? 4 : 0)
                                 .frame(minWidth: 16, minHeight: 16)
-                                .background(Color.red, in: Capsule())
+                                .minisCapsuleSurface(Color.red)
                                 .offset(x: 5, y: -5)
                         }
                     }

@@ -145,7 +145,7 @@ struct ConfigAuditView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
-            .background(badgeColor(status), in: Capsule())
+            .minisCapsuleSurface(badgeColor(status))
     }
 
     private func badgeColor(_ status: ConfigAuditStatus) -> Color {

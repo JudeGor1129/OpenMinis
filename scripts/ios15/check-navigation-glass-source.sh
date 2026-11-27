@@ -17,7 +17,11 @@ req "$nav" 'reduceTransparency || colorSchemeContrast == .increased' 'opaque acc
 req "$nav" 'MinisLegacyBarBackdrop(solid: reduceTransparency' 'iOS15 installs a page-scoped backdrop'
 req "$nav" 'target[keyPath: slot] = style' 'navigation item receives the appearance'
 req "$legacy" '.modifier(MinisLegacyControlSurface(shape: Capsule()))' 'legacy home toolbar capsule'
-req "$legacy" '.background(Circle().fill(Color(UIColor.systemBlue)))' 'legacy new conversation button'
+req "$legacy" '.modifier(MinisLegacyPrimarySurface(shape: Circle()))' 'legacy new conversation button'
+req "$nav" 'fill: Color(UIColor.systemBlue), raised: true' 'primary control keeps system blue'
+req "$legacy" 'LegacyHomeGroupBand(bottom: lastGroup && sessionID == memberIDs.last).fill(MinisHomeGroupInk.legacy)' 'expanded legacy members share the home card fill'
+req "$nav" 'static let legacy = groupFill(on: .systemGroupedBackground)' 'legacy fill follows the grouped page'
+req "$nav" 'static let modern = groupFill(on: .systemBackground)' 'modern fill follows the plain page'
 req "$legacy" '.labelStyle(LegacySettingsLabelStyle(' 'legacy settings rows'
 req "$chat" '.modifier(MinisLegacyControlSurface(shape: shape))' 'legacy composer surface'
 req "$nav" 'func minisNavigationChrome(' 'navigation style entry point'
@@ -35,7 +39,8 @@ req "$media" '.minisNavigationChrome()' 'file preview submenus'
 if grep -Fq 'glassEffect(' "$message"; then echo 'FAIL: message content glass'; exit 1; fi
 folder=$(sed -n '/private struct FolderSurface:/,/private struct FolderCardBackground:/p' "$modern")
 if printf '%s' "$folder" | grep -Fq 'glassEffect('; then echo 'FAIL: conversation group content glass'; exit 1; fi
-req "$modern" 'content.background(shape.fill(Color(UIColor.secondarySystemBackground)))' 'folder rows use opaque semantic fill'
+if printf '%s' "$folder" | grep -Fq '.stroke('; then echo 'FAIL: decorative conversation-group outline'; exit 1; fi
+req "$modern" 'content.background(shape.fill(MinisHomeGroupInk.modern))' 'folder rows use opaque home-relative fill'
 menu=$(sed -n '/private static func buildMenu(key:/,/return UIMenu(children: groups)/p' "$chat")
 for action in 'Share Conversation' 'Search in Conversation' 'Compact Messages' 'Clear Chat' 'Open Terminal' '编译器' 'Open Browser' 'Browse Chat Files' 'Skills in Session' 'MCPs in Session' 'Memories in Session' 'Token Usage'; do
     printf '%s' "$menu" | grep -Fq "$action" || { printf 'FAIL: session menu action missing: %s\n' "$action"; exit 1; }

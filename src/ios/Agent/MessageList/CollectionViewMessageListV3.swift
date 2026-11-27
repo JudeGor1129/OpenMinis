@@ -612,7 +612,7 @@ private struct BridgedAssistantFooterV3: View {
                 Text("\(bridge.autoRetryCountdown) 秒后重试（\(bridge.autoRetryAttempt)/\(AIChatViewModel.retryDelays.count)）")
                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(Color.secondary.opacity(0.12)).clipShape(Capsule())
+                    .minisCapsuleSurface(Color.secondary.opacity(0.12))
             } else if let onRetry = bridge.onRetry {
                 Button(action: onRetry) {
                     HStack(spacing: 4) {
@@ -621,7 +621,7 @@ private struct BridgedAssistantFooterV3: View {
                     }
                     .foregroundStyle(ChatColors.primaryText)
                     .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(ChatColors.primaryText.opacity(0.15)).clipShape(Capsule())
+                    .minisCapsuleSurface(ChatColors.primaryText.opacity(0.15))
                 }
             }
         }
@@ -644,7 +644,7 @@ private struct BridgedAssistantFooterV3: View {
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(Color.orange).clipShape(Capsule())
+                    .minisCapsuleSurface(Color.orange)
                 }
             }
         }
@@ -673,7 +673,7 @@ private struct BridgedAssistantFooterV3: View {
         }
         .foregroundStyle(ChatColors.tertiaryText)
         .padding(.horizontal, 8).padding(.vertical, 3)
-        .background(ChatColors.userBubble.opacity(0.6)).clipShape(Capsule())
+        .minisCapsuleSurface(ChatColors.userBubble.opacity(0.6))
         .transition(.opacity.combined(with: .scale(scale: 0.8)))
     }
 
@@ -685,7 +685,7 @@ private struct BridgedAssistantFooterV3: View {
         }
         .foregroundStyle(Color.orange.opacity(0.8))
         .padding(.horizontal, 7).padding(.vertical, 3)
-        .background(Color.orange.opacity(0.12)).clipShape(Capsule())
+        .minisCapsuleSurface(Color.orange.opacity(0.12))
     }
 
     private func usageSummary(_ u: TokenUsage) -> String {

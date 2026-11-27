@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import Combine
 
 /// Stable root Module. Its Interface remains `ContentView()` while navigation
@@ -110,6 +111,8 @@ private struct LegacyContentView: View {
                         }
                         .frame(minHeight: 48).contentShape(Rectangle())
                     }
+                    .listRowBackground(LegacyHomeGroupBand(top: true, bottom: !groupsExpanded || folders.isEmpty).fill(MinisHomeGroupInk.legacy))
+                    .listRowSeparator(.hidden)
                     .contextMenu {
                         Button { creatingGroup = true } label: {
                             Label("新建分组", systemImage: "folder.badge.plus")
@@ -122,22 +125,30 @@ private struct LegacyContentView: View {
                         // exactly why "开始新会话" and the member rows inside a
                         // group stopped opening.
                         ForEach(folders) { folder in
+                            let expanded = expandedGroups.contains(folder.id)
+                            let lastGroup = folders.last?.id == folder.id
+                            let memberIDs = groupSessionIDs[folder.id] ?? []
                             DisclosuredGroupHeader(
                                 folder: folder,
-                                memberCount: groupSessionIDs[folder.id]?.count ?? 0,
-                                expanded: expandedGroups.contains(folder.id),
+                                memberCount: memberIDs.count,
+                                expanded: expanded,
                                 onToggle: { toggleGroup(folder.id) },
                                 onManage: { managingFolder = folder }
                             )
-                            if expandedGroups.contains(folder.id) {
+                            .listRowBackground(LegacyHomeGroupBand(bottom: lastGroup && !expanded).fill(MinisHomeGroupInk.legacy))
+                            .listRowSeparator(.hidden)
+                            if expanded {
                                 Button { startDraft(in: folder.id) } label: {
                                     Label("开始新会话", systemImage: "plus.bubble")
                                 }
-                                let memberIDs = groupSessionIDs[folder.id] ?? []
+                                .listRowBackground(LegacyHomeGroupBand().fill(MinisHomeGroupInk.legacy))
+                                .listRowSeparator(.hidden)
                                 if memberIDs.isEmpty {
                                     Text("组内暂无会话")
                                         .font(.footnote)
                                         .foregroundColor(.secondary)
+                                        .listRowBackground(LegacyHomeGroupBand(bottom: lastGroup).fill(MinisHomeGroupInk.legacy))
+                                        .listRowSeparator(.hidden)
                                 }
                                 ForEach(memberIDs, id: \.self) { sessionID in
                                     if let session = groupedSessionsByID[sessionID] {
@@ -151,6 +162,8 @@ private struct LegacyContentView: View {
                                             isActiveOverride: sessionIsActive(session.id),
                                             isSuspendedOverride: sessionIsSuspended(session.id)
                                         )
+                                        .listRowBackground(LegacyHomeGroupBand(bottom: lastGroup && sessionID == memberIDs.last).fill(MinisHomeGroupInk.legacy))
+                                        .listRowSeparator(.hidden)
                                     }
                                 }
                             }
@@ -244,7 +257,7 @@ private struct LegacyContentView: View {
                             .font(.callout.weight(.semibold))
                             .foregroundColor(.white)
                             .frame(width: 34, height: 34)
-                            .background(Circle().fill(Color(UIColor.systemBlue)))
+                            .modifier(MinisLegacyPrimarySurface(shape: Circle()))
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
@@ -535,6 +548,21 @@ private struct DisclosuredGroupHeader: View {
             .accessibilityLabel(Text("Manage Group"))
             .buttonStyle(MinisPressFeedbackStyle())
         }
+    }
+}
+
+// Separate native List rows share one continuous card silhouette.
+private struct LegacyHomeGroupBand: Shape {
+    var top = false
+    var bottom = false
+
+    func path(in rect: CGRect) -> Path {
+        var corners: UIRectCorner = []
+        if top { corners.formUnion([.topLeft, .topRight]) }
+        if bottom { corners.formUnion([.bottomLeft, .bottomRight]) }
+        guard !corners.isEmpty else { return Path(rect) }
+        return Path(UIBezierPath(roundedRect: rect, byRoundingCorners: corners,
+                                 cornerRadii: CGSize(width: 14, height: 14)).cgPath)
     }
 }
 

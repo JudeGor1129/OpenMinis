@@ -21,13 +21,13 @@ for SOURCE in "$B/PrivilegedHelperBridge.m" tools/privileged-helper/MinisPrivile
     -fobjc-arc -fblocks -Wall -Wextra -Werror -fsyntax-only "$SOURCE"
 done
 
-# Extract the real menu structs; verify the REAL call-site argument list and
+# Extract the live UIKit menu; verify the REAL call-site argument list and
 # typecheck its matching initializer without unrelated chat-renderer code.
 python3 - "$WORK/menus.swift" <<'PY'
 from pathlib import Path
 import re, sys
 s=Path('src/ios/Views/Chat/AIChatView.swift').read_text()
-a=s.index('private struct ChatTrailingMenu:')
+a=s.index('private struct ChatTrailingMenuButton:')
 z=s.index('// MARK: - Move To Session Sheet',a)
 menus=s[a:z]
 k=s.index('private struct ChatToolbarKey:')
@@ -46,8 +46,7 @@ def contract(type_name, decl, call, end_marker):
         return {'Bool':'false','SessionSystemAccessMode':'.disabled','String?':'nil',
                 '() -> Void':'{}','(Bool) -> Void':'{ _ in }','NavTitleKey':'NavTitleKey()'}[t.strip()]
     return '@MainActor\nprivate func '+type_name+'InitializerContract() {\n _ = '+type_name+'(\n'+',\n'.join(n+': '+value(t) for n,t in fields)+'\n)\n}\n'
-u=menus[menus.index('private struct ChatTrailingMenuButton:'):]
-u=u[:u.index('    /// The displayed-state snapshot')]
+u=menus[:menus.index('    /// The displayed-state snapshot')]
 ctor=contract('ChatTrailingMenuButton',u,'ChatTrailingMenuButton(','    // MARK: - New Chat (menu entry)')
 ctor+=contract('ChatToolbarKey',key,'ChatToolbarKey(','    /// [T-codex-fast-mode] True when the session')
 Path(sys.argv[1]).write_text('import SwiftUI\nimport UIKit\nprivate struct NavTitleKey: Equatable {}\n'+key+menus+ctor)

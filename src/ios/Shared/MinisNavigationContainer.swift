@@ -139,12 +139,100 @@ struct MinisSectionGlyph: View {
     }
 }
 
+// Use a soft gradient inside the shape, not a stroke or a blur pass.
+// Shadows are reserved for floating controls; dense list badges stay cheap.
+private struct MinisReliefSurface<Outline: Shape, Fill: ShapeStyle>: View {
+    let outline: Outline
+    let fill: Fill
+    let raised: Bool
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    init(outline: Outline, fill: Fill, raised: Bool) {
+        self.outline = outline
+        self.fill = fill
+        self.raised = raised
+    }
+
+    @ViewBuilder private var face: some View {
+        if contrast == .increased {
+            outline.fill(fill)
+        } else {
+            let dark = scheme == .dark
+            outline.fill(fill)
+                .overlay {
+                    outline.fill(LinearGradient(stops: [
+                        .init(color: Color.white.opacity(dark ? 0.12 : 0.25), location: 0),
+                        .init(color: .clear, location: 0.44),
+                        .init(color: .clear, location: 0.59),
+                        .init(color: Color.black.opacity(dark ? 0.16 : 0.075), location: 1)
+                    ], startPoint: .topLeading, endPoint: .bottomTrailing))
+                }
+        }
+    }
+
+    var body: some View {
+        Group {
+            if raised && contrast != .increased {
+                face.shadow(color: Color.black.opacity(scheme == .dark ? 0.32 : 0.13), radius: 5, x: 0, y: 2)
+            } else {
+                face
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct MinisCapsuleMaterial: ViewModifier {
+    let material: Material
+    let raised: Bool
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        let fill = reduceTransparency || contrast == .increased
+            ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
+            : AnyShapeStyle(material)
+        content.minisCapsuleSurface(fill, raised: raised)
+    }
+}
+
+extension View {
+    func minisCapsuleSurface<S: ShapeStyle>(_ fill: S, raised: Bool = false) -> some View {
+        background { MinisReliefSurface(outline: Capsule(), fill: fill, raised: raised) }
+    }
+
+    func minisMaterialCapsule(_ material: Material = .ultraThinMaterial, raised: Bool = false) -> some View {
+        modifier(MinisCapsuleMaterial(material: material, raised: raised))
+    }
+}
+
+enum MinisHomeGroupInk {
+    // Match the different system canvases rather than imposing a page tint.
+    static let legacy = groupFill(on: .systemGroupedBackground)
+    static let modern = groupFill(on: .systemBackground)
+
+    private static func groupFill(on page: UIColor) -> Color {
+        Color(UIColor { traits in
+            let base = page.resolvedColor(with: traits)
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            guard base.getRed(&r, green: &g, blue: &b, alpha: &a) else { return base }
+            let dark = traits.userInterfaceStyle == .dark
+            let amount: CGFloat = traits.accessibilityContrast == .high ? 0.13 : (dark ? 0.075 : 0.038)
+            let tone: CGFloat = dark ? 1 : 0
+            func blend(_ channel: CGFloat) -> CGFloat { channel * (1 - amount) + tone * amount }
+            return UIColor(red: blend(r), green: blend(g), blue: blend(b), alpha: 1)
+        })
+    }
+}
+
 struct MinisCountBadge: View {
     let value: Int
     var body: some View {
         Text(verbatim: String(value)).font(.caption.weight(.semibold)).monospacedDigit()
             .foregroundStyle(.secondary).padding(.horizontal, 8).padding(.vertical, 3)
-            .background(Capsule().fill(Color(UIColor.secondarySystemFill)))
+            .minisCapsuleSurface(Color(UIColor.secondarySystemFill))
     }
 }
 
@@ -270,7 +358,14 @@ struct MinisLegacyControlSurface<S: Shape>: ViewModifier {
         let fill = reduceTransparency || contrast == .increased
             ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
             : AnyShapeStyle(Material.thin)
-        content.background(shape.fill(fill))
+        content.background { MinisReliefSurface(outline: shape, fill: fill, raised: true) }
+    }
+}
+
+struct MinisLegacyPrimarySurface<S: Shape>: ViewModifier {
+    let shape: S
+    func body(content: Content) -> some View {
+        content.background { MinisReliefSurface(outline: shape, fill: Color(UIColor.systemBlue), raised: true) }
     }
 }
 

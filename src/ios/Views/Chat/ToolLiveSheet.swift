@@ -830,8 +830,7 @@ private struct CopyableURLCapsule: View {
             .truncationMode(.middle)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(showCopied ? Color.green : Color(white: 0.85))
-            .clipShape(Capsule())
+            .minisCapsuleSurface(showCopied ? Color.green : Color(white: 0.85))
             .animation(MinisMotion.feedback, value: showCopied)
             .onTapGesture {
                 UIPasteboard.general.string = url
@@ -1485,8 +1484,7 @@ struct ToolLiveSheet: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
-                                .background(Color.blue)
-                                .clipShape(Capsule())
+                                .minisCapsuleSurface(Color.blue)
                         }
                         if !url.isEmpty {
                             CopyableURLCapsule(url: url)
@@ -1589,8 +1587,7 @@ struct ToolLiveSheet: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
-                                .background(Color.blue)
-                                .clipShape(Capsule())
+                                .minisCapsuleSurface(Color.blue)
                         }
                         if !url.isEmpty {
                             CopyableURLCapsule(url: url)
@@ -2485,8 +2482,7 @@ struct ToolLiveSheet: View {
                                         .foregroundStyle(.white)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 5)
-                                        .background(Color.blue)
-                                        .clipShape(Capsule())
+                                        .minisCapsuleSurface(Color.blue)
                                 }
                                 if !url.isEmpty {
                                     CopyableURLCapsule(url: url)
@@ -2534,8 +2530,7 @@ struct ToolLiveSheet: View {
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
-                                    .background(Color.blue)
-                                    .clipShape(Capsule())
+                                    .minisCapsuleSurface(Color.blue)
                             }
                             if !url.isEmpty {
                                 CopyableURLCapsule(url: url)

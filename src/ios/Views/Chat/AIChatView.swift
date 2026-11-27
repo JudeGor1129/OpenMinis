@@ -86,7 +86,6 @@ enum ChatColors {
     static let inputIconBg = Color(UIColor.secondarySystemBackground)
     static let inputIconBorder = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.35, alpha: 1) : UIColor(white: 0, alpha: 0) })
     static let inputBg = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.12, alpha: 1) : .white })
-    static let inputBorder = Color(UIColor.separator)
     static let primaryText = Color(UIColor.label)
     static let secondaryText = Color(UIColor.secondaryLabel)
     static let tertiaryText = Color(UIColor.tertiaryLabel)
@@ -421,7 +420,6 @@ struct AIChatView: View {
     /// Tracks how much of recognizedText has already been appended to inputText.
     @State private var lastRecognizedLength: Int = 0
     /// Intent-based auto-scroll: stays true until the user actively scrolls up
-    @State private var topSafeAreaInset: CGFloat = 59
     @Environment(\.horizontalSizeClass) private var hSizeClass
 
     /// [T-ios-de-voice-toolbar] Measured width of the composer's bottom row,
@@ -820,7 +818,7 @@ struct AIChatView: View {
             }
         }
         .environment(\.chatSessionId, vm.sessionId)
-        .modifier(NavBarStyleModifier(topSafeAreaInset: $topSafeAreaInset))
+        .modifier(NavBarStyleModifier())
         .navigationBarTitleDisplayMode(.inline)
         // [T-ios-navbar-toolbar-host] The ENTIRE toolbar now lives inside an
         // equatable-gated host child. Root cause of the mid-streaming "..."
@@ -894,7 +892,7 @@ struct AIChatView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(Color.accentColor, in: Capsule())
+                        .minisCapsuleSurface(Color.accentColor)
                         .padding(.top, 8)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
@@ -2480,7 +2478,7 @@ struct AIChatView: View {
         .foregroundStyle(ChatColors.secondaryText)
         .padding(.horizontal, 4)
         .padding(.vertical, 1)
-        .background(Capsule().fill(Color.secondary.opacity(0.10)))
+        .minisCapsuleSurface(Color.secondary.opacity(0.10))
         .onTapGesture {
             showThinkingLevelSheet = true
         }
@@ -3409,9 +3407,8 @@ struct AIChatView: View {
             .foregroundStyle(on ? Color.accentColor : .secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(
-                Capsule().fill(on ? Color.accentColor.opacity(0.15)
-                                  : Color.secondary.opacity(0.10))
+            .minisCapsuleSurface(on ? Color.accentColor.opacity(0.15)
+                                  : Color.secondary.opacity(0.10)
             )
         }
         .buttonStyle(.plain)
@@ -3467,8 +3464,7 @@ struct AIChatView: View {
                 .foregroundStyle(ChatColors.secondaryText)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(ChatColors.inputIconBg)
-                .clipShape(Capsule())
+                .minisCapsuleSurface(ChatColors.inputIconBg)
         }
     }
 
@@ -3900,8 +3896,7 @@ struct AIChatView: View {
                             .foregroundStyle(ChatColors.secondaryText)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Capsule())
+                            .minisMaterialCapsule()
                     }
                     .padding(.top, 6)
                     .padding(.trailing, 10)
@@ -4282,15 +4277,6 @@ struct AIChatView: View {
     /// `@`-mention). Kept in one overlay slot to avoid compounding SwiftUI
     /// generic types on the body, which previously caused a runtime
     /// type-metadata recursion crash.
-    /// [T-slash-picker-constant-band] Fixed top reserve for the slash /
-    /// mention popup. Dynamic Island + navbar + a comfortable visual
-    /// gap below the title block. Using a constant beats reading
-    /// `topSafeAreaInset` because that value reports the bare safe-area
-    /// inset (status bar + Dynamic Island, ~59pt) and skips the
-    /// principal-toolbar title — so any computation off it leaves the
-    /// popup overlapping the title row. 260pt covers the worst case
-    /// (iOS 18, 3-line custom titleView).
-    private static let slashPickerTopReserve: CGFloat = 260
     private static let slashPickerBottomMargin: CGFloat = 16
     /// [T-slash-picker-fixed-height] Locked popup height: shows up to
     /// 4 rows, then scrolls. Row visual height ≈ 46pt (13pt title +
@@ -4642,12 +4628,10 @@ struct AIChatView: View {
                     .foregroundStyle(isSelected ? Color.white.opacity(0.9) : ChatColors.secondaryText)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(
-                        Capsule().fill(
+                    .minisCapsuleSurface(
                             isSelected
                             ? Color.white.opacity(0.2)
                             : Color.primary.opacity(0.07)
-                        )
                     )
             }
             .padding(.horizontal, 12)
@@ -5394,26 +5378,6 @@ struct NavTitleFrameModifier: ViewModifier {
 
 // [T-agent-transcript-navbar] Shared with HelperTranscriptPage; logic unchanged.
 struct NavBarStyleModifier: ViewModifier {
-    @Binding var topSafeAreaInset: CGFloat
-
-    /// [T-agent-transcript-navbar-lost] When false, the iOS 16-18 branch skips
-    /// the safe-area measuring overlay entirely.
-    ///
-    /// That overlay writes `topSafeAreaInset` from an `onGeometryChange`
-    /// action. A tool sheet presented from OUTSIDE the page's NavigationStack
-    /// (SheetOverlayView, a child VC of the message list) changes the top inset
-    /// as it presents and dismisses, so the action fires DURING the dismissal's
-    /// view-graph update. On the agent transcript page that update ends with
-    /// SwiftUI calling `setNavigationBarHidden(true, animated: false)` -- an
-    /// all-SwiftUI call stack, no app frames, once per dismissal,
-    /// deterministically -- and the bar never comes back.
-    ///
-    /// `topSafeAreaInset` has no readers on either page: the one site that
-    /// would use it deliberately prefers a constant (see slashPickerTopReserve),
-    /// so on the transcript page the overlay is pure cost. The main chat keeps
-    /// it (default true) rather than change behaviour that is not implicated.
-    var measuresSafeArea: Bool = true
-
     func body(content: Content) -> some View {
         if #available(iOS 26, *) {
             // iOS 26: extend content behind nav bar so liquid-glass has
@@ -5435,26 +5399,6 @@ struct NavBarStyleModifier: ViewModifier {
                 // here is toolbarBackground. No change needed in
                 // MessageListViewController.
                 .modifier(MacOS27OpaqueNavigationBar(background: ChatColors.background))
-        } else if #available(iOS 16.0, *) {
-            content
-                .minisNavigationChrome()
-                .overlay(alignment: .top) {
-                    if measuresSafeArea {
-                        // [T-ios-geometry-observer-crash] onGeometryChange
-                        // replaces the GeometryReader scaffold (async-renderer
-                        // SIGTRAP — see the floating-bar site). The proxy
-                        // measures the same Color.clear the reader wrapped;
-                        // ignoresSafeArea/frame stay outside it exactly as
-                        // before, and the action's initial fire covers the old
-                        // onAppear seed.
-                        Color.clear
-                            .onGeometryChange(for: CGFloat.self) { proxy in
-                                proxy.safeAreaInsets.top
-                            } action: { topSafeAreaInset = $0 }
-                            .ignoresSafeArea()
-                            .frame(height: 0)
-                    }
-                }
         } else {
             content.minisNavigationChrome()
         }
@@ -5463,41 +5407,6 @@ struct NavBarStyleModifier: ViewModifier {
 
 
 // MARK: - Chat Trailing "…" Menu
-
-/// [T-ios-trailing-menu-streaming-stability] The chat page's "…" menu,
-/// extracted from AIChatView into an Equatable child so an OPEN menu stays
-/// stable during streaming. AIChatView.body re-evaluates on every streaming
-/// tick (the whole view observes the view model); with the Menu declared
-/// inline, each tick pushed rebuilt menu content into the presented UIMenu,
-/// which could reshuffle/reset it right as the user tapped — the reported
-/// mis-taps on menu items mid-stream.
-///
-/// `.equatable()` at the call site makes SwiftUI diff with `==` below, which
-/// compares ONLY the values that change what the menu displays — none of
-/// which mutate during a stream — so streaming ticks stop invalidating this
-/// subtree entirely. Action closures are recreated by every parent body pass
-/// but never change behavior, so they're deliberately excluded from `==`.
-/// [T-ios-navbar-principal-streaming-stability] Generic value-keyed equatable
-/// wrapper. SwiftUI skips re-evaluating `content` while `key` compares equal —
-/// the same guard ChatTrailingMenu gets from its custom `==`, made reusable
-/// for views (like the navbar titleView) that are too entangled with local
-/// @State/onChange plumbing to extract wholesale. The content closure is
-/// recreated every parent pass but is excluded from equality, exactly like
-/// ChatTrailingMenu's action closures. Internal @State / onReceive updates
-/// inside `content` still fire on their own — only parent-driven invalidation
-/// is gated. Anything the content READS from the parent/vm must therefore be
-/// represented in `key`, or its changes will not render.
-private struct EquatableByValue<Key: Equatable, Content: View>: View, Equatable {
-    let key: Key
-    @ViewBuilder let content: () -> Content
-
-    static func == (lhs: Self, rhs: Self) -> Bool { lhs.key == rhs.key }
-
-    @ViewBuilder
-    var body: some View {
-        content()
-    }
-}
 
 /// [T-ios-navbar-principal-streaming-stability] Every display input the navbar
 /// principal titleView renders, snapshotted as an Equatable key. While this is
@@ -5571,8 +5480,8 @@ private struct ChatToolbarKey: Equatable {
 /// the toolbar actually shows changes. Streaming ticks leave the key equal,
 /// the builder never re-runs, the bridge gets no new ToolbarContent to push,
 /// and the OPEN native SwiftUI Menu stays untouched. Content closures are
-/// recreated by every parent pass (excluded from ==, same pattern as
-/// EquatableByValue/ChatTrailingMenu) so a key change always renders through
+/// recreated by every parent pass and excluded from equality, so a key
+/// change always renders through
 /// the freshest parent state.
 private struct ChatToolbarHost<Title: View, Trailing: View>: View, Equatable {
     let key: ChatToolbarKey
@@ -5594,219 +5503,8 @@ private struct ChatToolbarHost<Title: View, Trailing: View>: View, Equatable {
     }
 }
 
-/// [T-ios-navbar-uikit-menu] UIKit-owned replacement for ChatTrailingMenu.
-///
-/// Instrumented device run (NavbarEval, 2026-07-17 19:35): during a streaming
-/// reply the toolbar builder ran 34 times while BOTH equatable gates held
-/// (titleEval=3, menuEval=2) — yet the presented menu still refreshed. The
-/// leak is below SwiftUI: the toolbar bridge re-pushes the navigation item's
-/// bar buttons every host pass even when the content views compare equal, and
-/// UIKit refreshes/re-anchors a presented UIMenu whenever its bar's items are
-/// re-set. No amount of view-level Equatable can stop that.
-///
-/// Fix: own the button AND the menu in UIKit. The UIViewRepresentable's
-/// UIButton instance survives SwiftUI updates, the presented UIMenu is
-/// anchored to that stable instance, and updateUIView only touches
-/// `button.menu` when the DISPLAYED state actually changed — a no-op SwiftUI
-/// pass physically cannot reach the menu. Field names/order are identical to
-/// ChatTrailingMenu so the call site only swaps the type name. The DEBUG
-/// request-count rows use UIDeferredMenuElement.uncached to stay fresh at
-/// each open, matching the SwiftUI Menu's lazy content read.
-/// [T-ios-navbar-toolbar-host] Native SwiftUI "..." menu, restored. The
-/// UIKit ChatTrailingMenuButton below remains as the proven fallback (it
-/// verifiably stops the mid-stream refresh but loses the system's round
-/// Liquid-Glass chrome); with the toolbar now hosted in the equatable-gated
-/// ChatToolbarHost the ToolbarContent is never rebuilt during streaming, so
-/// the native Menu — and its native appearance — should be stable. Item set
-/// mirrors the UIKit buildMenu exactly (incl. Compact Messages + the divider
-/// between Clear Chat and the iCloud actions from T-chat-menu-compact-entry).
-private struct ChatTrailingMenu: View, Equatable {
-    let messagesEmpty: Bool
-    let hasSession: Bool
-    let isForcePulling: Bool
-    let iCloudSyncEnabled: Bool
-    let memoryEnabled: Bool
-    let speakEnabled: Bool
-    let showEnhancedCacheToggle: Bool
-    let enhancedCacheEnabled: Bool
-    /// [T-codex-fast-mode] Mirrors ChatTrailingMenuButton.
-    let showFastModeToggle: Bool
-    let fastModeEnabled: Bool
-    let sessionAccessMode: SessionSystemAccessMode
-    let sessionAccessAvailable: Bool
-    let permissionSessionID: String?
-
-    let onNewChat: () -> Void
-    let onCompact: () -> Void
-    let onClearChat: () -> Void
-    let onForceSync: () -> Void
-    let onForcePull: () -> Void
-    let onOpenTerminal: () -> Void
-    /// Opens the compiler console (build log page).
-    let onOpenCompiler: () -> Void
-    let onOpenBrowser: () -> Void
-    let onBrowseFiles: () -> Void
-    let onSkills: () -> Void
-    let onMCPs: () -> Void
-    let onMemories: () -> Void
-    let setSpeakEnabled: (Bool) -> Void
-    let setEnhancedCache: (Bool) -> Void
-    let setFastMode: (Bool) -> Void
-    let onTokenUsage: () -> Void
-    let onCopyRequests: () -> Void
-    let onCopySessionData: () -> Void
-    let onSessionAccess: () -> Void
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.messagesEmpty == rhs.messagesEmpty
-            && lhs.hasSession == rhs.hasSession
-            && lhs.isForcePulling == rhs.isForcePulling
-            && lhs.iCloudSyncEnabled == rhs.iCloudSyncEnabled
-            && lhs.memoryEnabled == rhs.memoryEnabled
-            && lhs.speakEnabled == rhs.speakEnabled
-            && lhs.showEnhancedCacheToggle == rhs.showEnhancedCacheToggle
-            && lhs.enhancedCacheEnabled == rhs.enhancedCacheEnabled
-            && lhs.showFastModeToggle == rhs.showFastModeToggle
-            && lhs.fastModeEnabled == rhs.fastModeEnabled
-            && lhs.sessionAccessMode == rhs.sessionAccessMode
-            && lhs.sessionAccessAvailable == rhs.sessionAccessAvailable
-            && lhs.permissionSessionID == rhs.permissionSessionID
-    }
-
-    var body: some View {
-        return Menu {
-            Button { onNewChat() } label: {
-                Label(AppLocalized("New Chat"), systemImage: "square.and.pencil")
-            }
-
-
-            // [T-chat-menu-compact-entry] Compact above Clear Chat.
-            Button { onCompact() } label: {
-                Label(AppLocalized("Compact Messages"), systemImage: "arrow.down.right.and.arrow.up.left")
-            }
-            .disabled(messagesEmpty)
-
-            Button(role: .destructive) { onClearChat() } label: {
-                Label(AppLocalized("Clear Chat"), systemImage: "trash")
-            }
-            .disabled(messagesEmpty)
-
-
-            // iCloud sync actions: iOS 17+ (v2 sync engine) AND the user's
-            // iCloud Sync toggle on.
-            if #available(iOS 17.0, *), iCloudSyncEnabled {
-                Button { onForceSync() } label: {
-                    Label(AppLocalized("Force iCloud Sync"), systemImage: "icloud.and.arrow.up")
-                }
-                .disabled(!hasSession || isForcePulling)
-
-                Button { onForcePull() } label: {
-                    Label(AppLocalized("Force Pull Messages"), systemImage: "icloud.and.arrow.down")
-                }
-                .disabled(!hasSession || isForcePulling)
-
-            }
-
-            Button { onOpenTerminal() } label: {
-                Label(AppLocalized("Open Terminal"), systemImage: "terminal")
-            }
-
-            Button { onOpenCompiler() } label: {
-                Label("编译器", systemImage: "hammer")
-            }
-
-            Button { onOpenBrowser() } label: {
-                Label(AppLocalized("Open Browser"), systemImage: "globe")
-            }
-
-            Button { onBrowseFiles() } label: {
-                Label(AppLocalized("Browse Chat Files"), systemImage: "folder")
-            }
-
-
-            Button { onSkills() } label: {
-                Label(AppLocalized("Skills in Session"), systemImage: "puzzlepiece.extension")
-            }
-
-            Button { onMCPs() } label: {
-                Label(AppLocalized("MCPs in Session"), systemImage: "wrench.and.screwdriver")
-            }
-
-            if memoryEnabled {
-                Button { onMemories() } label: {
-                    Label(AppLocalized("Memories in Session"), systemImage: "brain.head.profile")
-                }
-            }
-
-            Toggle(isOn: Binding(
-                get: { speakEnabled },
-                set: { setSpeakEnabled($0) }
-            )) {
-                Label(AppLocalized("Speak Responses"), systemImage: "speaker.wave.2")
-            }
-
-            Button { onSessionAccess() } label: {
-                Label("本会话权限：\(sessionAccessMode.title)", systemImage: sessionAccessMode.icon)
-            }
-            .disabled(!sessionAccessAvailable)
-
-            // [T-codex-fast-mode-menu-group] Model-control toggles in their
-            // own divider-separated section (mirrors the UIKit buildMenu).
-            if showEnhancedCacheToggle || showFastModeToggle {
-
-                if showEnhancedCacheToggle {
-                    Toggle(isOn: Binding(
-                        get: { enhancedCacheEnabled },
-                        set: { setEnhancedCache($0) }
-                    )) {
-                        Label(AppLocalized("Enhanced Cache"), systemImage: "clock.arrow.circlepath")
-                    }
-                }
-
-                if showFastModeToggle {
-                    Toggle(isOn: Binding(
-                        get: { fastModeEnabled },
-                        set: { setFastMode($0) }
-                    )) {
-                        Label(AppLocalized("Enable Fast Mode"), systemImage: "bolt.fill")
-                    }
-                }
-            }
-
-
-            Button { onTokenUsage() } label: {
-                Label(AppLocalized("Token Usage"), systemImage: "number")
-            }
-
-            #if DEBUG
-
-            Button { onCopyRequests() } label: {
-                let n = LastAPIRequestBody.shared.getAll().count
-                Label("Copy Requests (\(n))", systemImage: "arrow.up.doc")
-            }
-
-            Button { onCopySessionData() } label: {
-                Label("Copy Session Data", systemImage: "tray.and.arrow.up")
-            }
-            #endif
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(ChatColors.primaryText)
-        }
-        // [T-ios-voiceover-labels] Matches the label the UIKit ellipsis button
-        // elsewhere in this file already sets, so both read the same.
-        .accessibilityLabel(Text("More options", comment: "VoiceOver label for the overflow menu button"))
-    }
-}
-
-/// [T-ios-navbar-uikit-menu] PROVEN FALLBACK, currently unused: swaps in for
-/// ChatTrailingMenu at the trailingMenu call site if the ChatToolbarHost
-/// approach ever regresses. Verified on-device (2026-07-17) to stop the
-/// mid-stream menu refresh; its remaining flaw was appearance (no native
-/// round glass chrome — mitigated here by sizeThatFits reporting the
-/// button's intrinsic size so the system container wraps it like a plain
-/// toolbar icon).
+/// Keep the UIKit menu anchored to a persistent button. Refresh the actions
+/// only when their displayed state changes, even while chat is streaming.
 private struct ChatTrailingMenuButton: UIViewRepresentable {
     let onShareSession: () -> Void
     let onSearchSession: () -> Void
@@ -5936,8 +5634,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
 
     func updateUIView(_ button: UIButton, context: Context) {
         // Closures capture view state -- refresh them every pass so actions
-        // always see the latest values (excluded from the rebuild decision,
-        // exactly like ChatTrailingMenu's ==).
+        // always see the latest values. Only displayed state rebuilds the menu.
         context.coordinator.parent = self
         guard context.coordinator.lastKey != key else { return }
         context.coordinator.lastKey = key
@@ -6387,7 +6084,7 @@ private struct SessionLockGateOverlay: View {
                           systemImage: "faceid")
                         .font(.system(size: 16, weight: .semibold))
                         .padding(.horizontal, 22).padding(.vertical, 10)
-                        .background(.tint, in: Capsule())
+                        .minisCapsuleSurface(TintShapeStyle())
                         .foregroundStyle(.white)
                 }
             }
@@ -6862,9 +6559,7 @@ private struct EmptyChatDirectoryTimeline: View {
                     .foregroundStyle(ChatColors.primaryText)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(
-                        Capsule().fill(ChatColors.secondaryBg)
-                    )
+                    .minisCapsuleSurface(ChatColors.secondaryBg)
                 }
                 .buttonStyle(.plain)
             }
@@ -7207,7 +6902,6 @@ struct MinisLegacyTranscript: View {
     var readOnly = false
     var chatSearch: ChatSearchController? = nil
     var groupSoul: GroupSoulIdentity? = nil
-    @State private var searchNavigationGeneration = 0
     @State private var followingBottom = true
     @State private var toolDetail: MinisLegacyToolDetailTarget?
     private let bottomAnchor = "legacyTranscriptBottom"
@@ -7285,14 +6979,10 @@ struct MinisLegacyTranscript: View {
                         guard vm.messages.contains(where: { $0.id == hit.key.messageId }) else { return }
                         followingBottom = false
                         vm.isNearBottom = false
-                        searchNavigationGeneration += 1
                         proxy.scrollTo(hit.key.messageId, anchor: .center)
                     }
                 }
                 .onDisappear { chatSearch?.onNavigate = nil }
-                .simultaneousGesture(DragGesture(minimumDistance: 3).onChanged { _ in
-                    searchNavigationGeneration += 1
-                })
                 .onChange(of: vm.latestSessionAnchorRequest) { _ in
                     followingBottom = true
                     if !vm.isNearBottom { vm.isNearBottom = true }
@@ -7892,7 +7582,7 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                                 .font(.caption.weight(.semibold))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
-                                .background(Color.orange.opacity(0.16), in: Capsule())
+                                .minisCapsuleSurface(Color.orange.opacity(0.16))
                         }
                         .buttonStyle(.plain)
                         .disabled(vm.isProcessing || vm.isRestoringFullHistory)

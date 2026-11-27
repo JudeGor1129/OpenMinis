@@ -366,7 +366,7 @@ struct RcloneAddServerView: View {
                             .lineLimit(1)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(Color(.secondarySystemFill), in: Capsule())
+                            .minisCapsuleSurface(Color(.secondarySystemFill))
                     }
                 }
                 .buttonStyle(.plain)

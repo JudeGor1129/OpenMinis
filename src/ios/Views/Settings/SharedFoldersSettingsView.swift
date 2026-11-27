@@ -95,9 +95,7 @@ private struct SharedFolderRow: View {
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(
-                                Capsule().fill(Color.secondary.opacity(0.12))
-                            )
+                            .minisCapsuleSurface(Color.secondary.opacity(0.12))
                     }
                 }
                 Text(entry.linuxPath)
@@ -119,18 +117,14 @@ private struct SharedFolderRow: View {
                 .foregroundStyle(.green)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
-                .background(
-                    Capsule().fill(Color.green.opacity(0.12))
-                )
+                .minisCapsuleSurface(Color.green.opacity(0.12))
         } else {
             Text("Read-only")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.orange)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
-                .background(
-                    Capsule().fill(Color.orange.opacity(0.12))
-                )
+                .minisCapsuleSurface(Color.orange.opacity(0.12))
         }
     }
 }

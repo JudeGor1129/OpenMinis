@@ -286,7 +286,7 @@ struct MinisAudioPreviewView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 3)
                         .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.accentColor))
+                        .minisCapsuleSurface(Color.accentColor)
                         .offset(x: 4, y: -2)
                 }
                 .frame(width: 56, height: 56)
