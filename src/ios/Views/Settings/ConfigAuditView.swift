@@ -43,7 +43,7 @@ struct ConfigAuditView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .minisCatalogList()
         .onAppear { reload() }
         .onChange(of: log.revision) { _ in reload() }
         .alert(item: $revertResult) { msg in

@@ -122,6 +122,7 @@ struct SessionMCPsView: View {
                     }
                 }
             }
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle("MCPs in Session")
             .navigationBarTitleDisplayMode(.inline)

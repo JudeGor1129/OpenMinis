@@ -115,6 +115,7 @@ struct ProviderInstancesView: View {
                 }
             }
         }
+        .minisCatalogList()
     }
 
     var body: some View {
@@ -433,14 +434,12 @@ private struct InstanceRow: View {
     var body: some View {
         let _ = store.authRevision  // subscribe to OAuth state changes
         HStack(spacing: 12) {
-            Circle()
-                .fill(credentialDisplay.needsReauth ? Color.red
-                      : isConfigured && instance.isEnabled ? Color.green : Color(UIColor.quaternaryLabel))
-                .frame(width: 8, height: 8)
+            MinisSectionGlyph(name: instance.credentialType == .apiKey ? "key.fill" : "person.crop.circle",
+                              tint: credentialDisplay.needsReauth ? .red : (isConfigured && instance.isEnabled ? .teal : .secondary))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(instance.label)
-                    .font(.body.weight(.medium))
+                    .font(.headline)
                 HStack(spacing: 6) {
                     Text(instance.credentialType == .apiKey ? "API Key" : "OAuth")
                         .font(.caption)

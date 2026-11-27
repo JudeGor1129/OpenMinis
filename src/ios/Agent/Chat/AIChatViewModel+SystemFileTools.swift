@@ -586,6 +586,7 @@ struct SessionSystemAccessSheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .minisCatalogList()
             .minisNavigationChrome(keepNativeBackdropVisible: true)
             .navigationTitle("本会话权限")
             .navigationBarTitleDisplayMode(.inline)

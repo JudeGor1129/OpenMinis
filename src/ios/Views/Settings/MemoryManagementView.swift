@@ -67,6 +67,7 @@ struct MemoryManagementView: View {
                 deleteFiles(at: offsets)
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("Memory")
         .navigationBarTitleDisplayMode(.inline)
@@ -237,7 +238,8 @@ private struct MemoryFileEditView: View {
             }
 
             TextEditor(text: $content)
-                .font(.system(.caption, design: .monospaced))
+                .font(.system(.callout, design: .monospaced))
+                .minisReadingSurface()
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onChange(of: content) { _ in
@@ -378,10 +380,11 @@ struct StructuredMemoryCenterView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Text(record.content)
+                                .font(.body).lineSpacing(2)
                                 .lineLimit(3)
                             Text(structuredMemorySource(record))
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                     }
@@ -389,6 +392,7 @@ struct StructuredMemoryCenterView: View {
                 .onDelete(perform: delete)
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("结构化记忆")
         .navigationBarTitleDisplayMode(.inline)
@@ -459,6 +463,7 @@ private struct StructuredMemoryDetailView: View {
                 Button("删除记忆", role: .destructive) { confirmDelete = true }
             }
         }
+        .minisCatalogForm()
         .minisNavigationChrome()
         .navigationTitle("记忆详情")
         .navigationBarTitleDisplayMode(.inline)

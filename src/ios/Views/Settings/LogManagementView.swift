@@ -82,6 +82,18 @@ struct LogManagementView: View {
         }
     }
 
+    private func fileLabel(_ file: LogManagementViewModel.LogFile, isCrash: Bool) -> some View {
+        HStack(spacing: 12) {
+            MinisSectionGlyph(name: isCrash ? "exclamationmark.triangle.fill" : "doc.text", tint: isCrash ? .orange : .indigo)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(verbatim: file.name).font(.body.weight(.semibold)).lineLimit(1).truncationMode(.middle)
+                Text(file.date, style: .date).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+            Text(vm.format(file.size)).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+        }
+    }
+
     @ViewBuilder
     private var logsBody: some View {
         List {
@@ -118,13 +130,7 @@ struct LogManagementView: View {
                         NavigationLink {
                             LogDetailView(url: file.url, name: file.name)
                         } label: {
-                            HStack {
-                                Text(file.name)
-                                    .lineLimit(1)
-                                Spacer()
-                                Text(vm.format(file.size))
-                                    .foregroundStyle(.secondary)
-                            }
+                            fileLabel(file, isCrash: false)
                         }
                     }
                     .onDelete { indexSet in
@@ -143,13 +149,7 @@ struct LogManagementView: View {
                         NavigationLink {
                             LogDetailView(url: file.url, name: file.name)
                         } label: {
-                            HStack {
-                                Text("⚠️ \(file.name)")
-                                    .lineLimit(1)
-                                Spacer()
-                                Text(vm.format(file.size))
-                                    .foregroundStyle(.secondary)
-                            }
+                            fileLabel(file, isCrash: true)
                         }
                     }
                     .onDelete { indexSet in
@@ -194,6 +194,7 @@ struct LogManagementView: View {
                 }
             }
         }
+        .minisCatalogList()
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if !vm.logFiles.isEmpty && tab == "logs" {
@@ -234,7 +235,7 @@ struct LogDetailView: View {
             if isLoading {
                 ProgressView()
             } else {
-                LogTextView(text: content)
+                LogTextView(text: content).minisReadingSurface()
             }
         }
         .minisNavigationChrome()

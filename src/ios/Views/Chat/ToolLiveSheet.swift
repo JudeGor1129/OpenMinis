@@ -3167,22 +3167,11 @@ private struct ToolPreviewThumbnail: View {
 /// That was the FAB regression; keeping the content as the modifier's `content`
 /// is what avoids it here.
 private struct ToolStatusBarSurface: ViewModifier {
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-    }
-
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: shape)
+            content.glassEffect(.regular, in: Capsule())
         } else {
-            content
-                .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.systemBackground }))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color(UIColor.separator).opacity(0.3), lineWidth: 0.5)
-                )
-                .shadow(color: Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.08, alpha: 0.75) : UIColor(white: 0, alpha: 0.12) }), radius: 8, x: 0, y: 4)
+            content.modifier(MinisLegacyControlSurface(shape: Capsule()))
         }
     }
 }
@@ -3199,7 +3188,7 @@ private struct ToolStatusBar: View {
     var leadingInset: CGFloat = 0
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 8) {
             statusIcon
 
             // [T-step-timestamp v2 aa8b1128] Inline HH:mm:ss prefix removed
@@ -3208,7 +3197,7 @@ private struct ToolStatusBar: View {
             // detail sheet so the always-visible status bar stays clean.
 
             Text(displayTitle)
-                .font(.system(size: 13, weight: .medium))
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(ChatColors.secondaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -3253,7 +3242,7 @@ private struct ToolStatusBar: View {
         .padding(.leading, leadingInset > 0 ? leadingInset : 12)
         .padding(.trailing, 12)
         .padding(.vertical, 5)
-        .frame(minHeight: 38)
+        .frame(minHeight: 44)
         .frame(maxWidth: .infinity)
         .modifier(ToolStatusBarSurface())
     }

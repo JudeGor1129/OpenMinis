@@ -393,6 +393,7 @@ struct SyncMigrationDetailView: View {
             // deleting whole zones they no longer need.
             iCloudZonesSection
         }
+        .minisCatalogForm()
         .confirmationDialog("Request Migration", isPresented: $showRequestMigrationConfirm, titleVisibility: .visible) {
             Button("Start Migration") {
                 if #available(iOS 17.0, *) {
@@ -1090,6 +1091,7 @@ private struct PauseSyncSheet: View {
                     Text("Pending changes are preserved locally and pushed once the pause ends.")
                 }
             }
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle("Pause iCloud Sync")
 #if !os(macOS)

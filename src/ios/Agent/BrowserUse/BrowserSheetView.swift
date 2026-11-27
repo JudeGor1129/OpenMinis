@@ -543,6 +543,7 @@ struct BrowserDownloadPanelSheet: View {
                             )
                         }
                     }
+                    .minisPickerRows()
                     .listStyle(.plain)
                 }
             }

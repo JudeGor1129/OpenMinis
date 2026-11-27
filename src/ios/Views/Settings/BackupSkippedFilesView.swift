@@ -79,6 +79,7 @@ struct BackupSkippedFilesView: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("Excluded Files")
         .navigationBarTitleDisplayMode(.inline)

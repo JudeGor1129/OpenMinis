@@ -74,10 +74,11 @@ struct SkillsManagementView: View {
                 NavigationLink {
                     SkillDetailView(skillId: skill.id)
                 } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 12) {
+                        MinisSectionGlyph(name: "puzzlepiece.extension", tint: skill.isEnabled ? .indigo : .secondary)
+                        VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 4) {
-                                Text(skill.name).font(.body)
+                                Text(skill.name).font(.body.weight(.semibold))
                                 importSourceBadge(skill.importSource)
                             }
                             if !skill.description.isEmpty {
@@ -101,6 +102,7 @@ struct SkillsManagementView: View {
                 for id in ids { store.deleteSkill(id) }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("Skills")
         .searchable(text: $searchQuery, placement: .navigationBarDrawer(displayMode: .always),
@@ -275,6 +277,7 @@ private struct ImportSkillSheet: View {
                     }
                 }
             }
+            .minisCatalogForm()
             .minisNavigationChrome()
             .navigationTitle(AppLocalized("Import Skill"))
             .navigationBarTitleDisplayMode(.inline)
@@ -658,6 +661,7 @@ private struct SkillDetailView: View {
                 Text(AppLocalized("Skill not found.")).foregroundStyle(.secondary)
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle(skill?.name ?? "Skill")
         .navigationBarTitleDisplayMode(.inline)
@@ -868,8 +872,9 @@ private struct SkillFileDetailView: View {
 
     var body: some View {
         TextEditor(text: $content)
-            .font(.system(.caption, design: .monospaced))
-            .padding(.horizontal, 8)
+            .font(.system(.callout, design: .monospaced))
+            .padding(.horizontal, 14)
+            .minisReadingSurface()
             .onChange(of: content) { _ in hasChanges = true }
             .overlay(alignment: .bottom) {
                 if let saveError {

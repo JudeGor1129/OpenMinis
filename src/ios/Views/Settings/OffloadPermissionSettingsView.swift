@@ -72,6 +72,7 @@ struct OffloadPermissionSettingsView: View {
                 Button("OK") {}
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("Permissions")
         .navigationBarTitleDisplayMode(.inline)

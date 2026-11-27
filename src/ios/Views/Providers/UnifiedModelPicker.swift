@@ -656,6 +656,7 @@ struct UnifiedModelPicker: View {
                 }
             }
         }
+        .minisPickerRows()
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search models")
         // [T-picker-search-debounce] Drive the debounced query (GH#271).
         //

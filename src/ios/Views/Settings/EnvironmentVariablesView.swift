@@ -60,7 +60,7 @@ struct EnvironmentVariablesView: View {
                 .onDelete(perform: deleteEntries)
             }
         }
-        .listStyle(.insetGrouped)
+        .minisCatalogList()
         .searchable(text: $searchText, prompt: "Filter by name")
         .minisNavigationChrome()
         .navigationTitle("Environment Variables")
@@ -294,6 +294,7 @@ private struct EnvVarFormSheet: View {
                     }
                 }
             }
+            .minisCatalogForm()
             .minisNavigationChrome()
             .navigationTitle(mode == .add ? "Add Variable" : "Edit Variable")
             .navigationBarTitleDisplayMode(.inline)

@@ -78,6 +78,7 @@ struct RootfsBuildSettingsView: View {
                 Text("工程编译")
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("Theos 与 SDK")
         .navigationBarTitleDisplayMode(.inline)

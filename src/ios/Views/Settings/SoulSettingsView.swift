@@ -112,6 +112,7 @@ struct SoulSettingsView: View {
                 }
             }
         }
+        .minisCatalogForm()
         .minisNavigationChrome()
         .navigationTitle(AppLocalized("Soul"))
         .navigationBarTitleDisplayMode(.inline)

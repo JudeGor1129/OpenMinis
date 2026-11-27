@@ -134,6 +134,7 @@ struct ThinkingRuleEditorView: View {
                     Text("The thinking fields this rule adds to a request at the High level.")
                 }
             }
+            .minisCatalogForm()
             .minisNavigationChrome()
             .navigationTitle(existing == nil ? Text("New Rule") : Text("Edit Rule"))
             .navigationBarTitleDisplayMode(.inline)

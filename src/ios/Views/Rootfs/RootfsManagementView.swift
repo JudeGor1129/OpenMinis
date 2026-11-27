@@ -191,6 +191,7 @@ struct RootfsManagementView: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("Rootfs Management")
         .navigationBarTitleDisplayMode(.inline)
@@ -480,6 +481,7 @@ private struct MinisEnvironmentPresetDetail: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle(preset.title)
         .alert("安装 \(preset.title)？", isPresented: $confirmingInstall) {

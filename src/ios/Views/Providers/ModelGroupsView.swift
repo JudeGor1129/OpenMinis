@@ -135,6 +135,7 @@ struct ModelGroupsView: View {
             AgentLoopModelsSection(showAddModels: $showAddAgentModels,
                                    showAddGroups: $showAddAgentGroups)
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("Model Groups")
         .navigationBarTitleDisplayMode(.inline)

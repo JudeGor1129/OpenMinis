@@ -24,6 +24,7 @@ struct BackupHistoryDetailView: View {
             if !record.destinations.isEmpty { destinationsSection }
             logSection
         }
+        .minisCatalogForm()
         .minisNavigationChrome()
         .navigationTitle(record.startedAt.formatted(date: .abbreviated, time: .shortened))
         .navigationBarTitleDisplayMode(.inline)
@@ -321,7 +322,7 @@ struct BackupHistoryDetailView: View {
                                           : "exclamationmark.triangle.fill")
                 .foregroundStyle(d.succeeded ? .green : .orange)
             VStack(alignment: .leading, spacing: 2) {
-                Text(d.name)
+                Text(d.name).font(.body.weight(.semibold))
                 // [T-backup-destination-detail] The saved name alone
                 // ("HomeLab") doesn't say where the file went. Show the
                 // backend and the folder underneath, so a user checking
@@ -470,6 +471,7 @@ struct BackupHistoryRow: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.startedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.headline)
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(record.status == .failed ? .red : .secondary)

@@ -147,6 +147,7 @@ struct EmbeddedProjectBuildView: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("受限工程编译")
         .navigationBarTitleDisplayMode(.inline)

@@ -13,8 +13,13 @@ req(){ grep -Fq "$2" "$1" || { printf 'FAIL: %s\n' "$3"; exit 1; }; }
 req "$nav" 'struct MinisNavigationChromeScope: ViewModifier' 'shared navigation style'
 req "$nav" 'AnyShapeStyle(Material.ultraThin)' 'iOS16-25 navigation material'
 req "$nav" 'reduceTransparency || colorSchemeContrast == .increased' 'opaque accessibility fallback'
-# iOS15 intentionally keeps its native NavigationView chrome (no global UIKit overrides).
-req "$nav" 'iOS 15 keeps its native navigation chrome' 'iOS15 local fallback avoids global appearance mutations'
+# Guard the actual iOS 15 surfaces, not just the presence of page annotations.
+req "$nav" 'MinisLegacyBarBackdrop(solid: reduceTransparency' 'iOS15 installs a page-scoped backdrop'
+req "$nav" 'target[keyPath: slot] = style' 'navigation item receives the appearance'
+req "$legacy" '.modifier(MinisLegacyControlSurface(shape: Capsule()))' 'legacy home toolbar capsule'
+req "$legacy" '.background(Circle().fill(Color(UIColor.systemBlue)))' 'legacy new conversation button'
+req "$legacy" '.labelStyle(LegacySettingsLabelStyle(' 'legacy settings rows'
+req "$chat" '.modifier(MinisLegacyControlSurface(shape: shape))' 'legacy composer surface'
 req "$nav" 'func minisNavigationChrome(' 'navigation style entry point'
 req "$modern" '.minisNavigationChrome()' 'modern navigation roots'
 req "$legacy" '.minisNavigationChrome()' 'legacy navigation roots'
@@ -37,7 +42,7 @@ for action in 'Share Conversation' 'Search in Conversation' 'Compact Messages' '
 done
 req "$modern" 'navigationDestination(for: SettingsDestination.self)' 'settings push destinations remain registered'
 req "$modern" 'SettingsDestination.providerDetail' 'settings deep-link destinations remain available'
-req "$chat" 'static let userBubbleBackground = Color(UIColor.secondarySystemBackground)' 'solid sent message fill'
+req "$chat" 'static let userBubbleBackground = MinisPageInk.sentMessage' 'solid sent message fill'
 req "$message" 'shape.fill(ChatColors.userBubbleBackground)' 'sent bubble uses solid fill'
 req "$chat" '.fill(message.isQueued ? Color.clear : ChatColors.userBubbleBackground)' 'legacy bubble uses solid fill'
 # Check attachment within each hosted page's modifier chain (not once per file).

@@ -72,6 +72,7 @@ struct QuotaDetailSheet: View {
                     }
                 }
             }
+            .minisCatalogList()
             .refreshable { await refresh() }
             .sheet(item: $consoleURL) { url in
                 MinisLinkPreviewView(url: url, browserPool: nil)

@@ -100,7 +100,15 @@ private struct LegacyContentView: View {
                         withAnimation(MinisMotion.transition) { groupsExpanded.toggle() }
                         if groupsExpanded { reloadFolders() }
                     } label: {
-                        Label("会话分组", systemImage: groupsExpanded ? "folder.fill" : "folder")
+                        HStack(spacing: 12) {
+                            MinisSectionGlyph(name: groupsExpanded ? "folder.fill" : "folder", tint: .blue)
+                            Text("会话分组").font(.headline).foregroundStyle(.primary)
+                            Spacer()
+                            MinisCountBadge(value: folders.count)
+                            Image(systemName: groupsExpanded ? "chevron.down" : "chevron.right")
+                                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        }
+                        .frame(minHeight: 48).contentShape(Rectangle())
                     }
                     .contextMenu {
                         Button { creatingGroup = true } label: {
@@ -155,7 +163,7 @@ private struct LegacyContentView: View {
                             .font(.system(size: 38))
                             .foregroundColor(.secondary)
                         Text("No Conversations")
-                            .font(.headline)
+                            .font(.title3.weight(.semibold))
                         Text("Start a new chat or refresh the list.")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
@@ -163,19 +171,23 @@ private struct LegacyContentView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 36)
                 } else {
-                    ForEach(ungroupedSessions) { session in
-                        LegacySessionRow(
-                            session: session,
-                            selectionMode: $selectionMode,
-                            selectedSessions: $selectedSessions,
-                            onChange: reload,
-                            isActiveOverride: sessionIsActive(session.id),
-                            isSuspendedOverride: sessionIsSuspended(session.id)
-                        )
+                    Section {
+                        ForEach(ungroupedSessions) { session in
+                            LegacySessionRow(
+                                session: session,
+                                selectionMode: $selectionMode,
+                                selectedSessions: $selectedSessions,
+                                onChange: reload,
+                                isActiveOverride: sessionIsActive(session.id),
+                                isSuspendedOverride: sessionIsSuspended(session.id)
+                            )
+                        }
+                    } header: {
+                        if !ungroupedSessions.isEmpty { Text("Conversations") }
                     }
                 }
             }
-            .listStyle(PlainListStyle())
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle(selectionMode ? "Selected: \(selectedSessions.count)" : "Minis")
             .toolbar {
@@ -185,16 +197,20 @@ private struct LegacyContentView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: reload) {
-                        Image(systemName: "arrow.clockwise")
+                    HStack(spacing: 0) {
+                        Button(action: reload) {
+                            Image(systemName: "arrow.clockwise").frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel("Refresh conversations")
+                        Button { showingSettings = true } label: {
+                            Image(systemName: "gearshape").frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel("Settings")
                     }
-                    .accessibilityLabel("Refresh conversations")
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showingSettings = true } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .accessibilityLabel("Settings")
+                    .font(.body.weight(.semibold))
+                    .background { Capsule().fill(Color.clear).frame(height: 34)
+                        .modifier(MinisLegacyControlSurface(shape: Capsule())) }
+                    .buttonStyle(.plain)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
@@ -214,12 +230,23 @@ private struct LegacyContentView: View {
                         Toggle("Keep Screen Awake", isOn: $keepScreenAwake)
                     } label: {
                         Image(systemName: "terminal")
+                            .font(.callout.weight(.semibold))
+                            .frame(width: 34, height: 34)
+                            .modifier(MinisLegacyControlSurface(shape: Circle()))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel("Tools")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { startDraft() } label: {
                         Image(systemName: "square.and.pencil")
+                            .font(.callout.weight(.semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 34, height: 34)
+                            .background(Circle().fill(Color(UIColor.systemBlue)))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel("New conversation")
                 }
@@ -488,12 +515,10 @@ private struct DisclosuredGroupHeader: View {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Image(systemName: folder.icon ?? "folder")
-                    Text(folder.name)
-                    Spacer()
-                    Text("\(memberCount)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    MinisSectionGlyph(name: folder.icon ?? "folder.fill", tint: .indigo)
+                    Text(folder.name).font(.body.weight(.semibold)).foregroundStyle(.primary)
+                    Spacer(minLength: 4)
+                    MinisCountBadge(value: memberCount)
                 }
                 .contentShape(Rectangle())
             }
@@ -501,10 +526,28 @@ private struct DisclosuredGroupHeader: View {
             // Sibling of the toggle, not inside its label: a Button nested in
             // another Button's label swallows the inner tap.
             Button(action: onManage) {
-                Image(systemName: "ellipsis.circle")
+                Image(systemName: "ellipsis.circle").font(.title3)
+                    .foregroundStyle(.secondary).frame(width: 44, height: 44)
             }
+            .accessibilityLabel(Text("Manage Group"))
             .buttonStyle(MinisPressFeedbackStyle())
         }
+    }
+}
+
+private struct LegacySettingsLabelStyle: LabelStyle {
+    let tint: Color
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 12) {
+            configuration.icon
+                .font(.callout.weight(.semibold))
+                .foregroundColor(tint)
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(tint.opacity(0.13)))
+                .accessibilityHidden(true)
+            configuration.title.foregroundColor(.primary)
+        }
+        .padding(.vertical, 2)
     }
 }
 
@@ -519,6 +562,7 @@ private struct LegacySettingsSheet: View {
                 Section("Appearance") {
                     NavigationLink(destination: AppearanceSettingsView()) {
                         Label("Appearance", systemImage: "paintbrush.fill")
+                        .labelStyle(LegacySettingsLabelStyle(tint: .indigo))
                     }
                 }
                 runtimeSection
@@ -526,42 +570,55 @@ private struct LegacySettingsSheet: View {
                 Section("Permissions") {
                     NavigationLink(destination: OffloadPermissionSettingsView()) {
                         Label("Permissions", systemImage: "hand.raised.fill")
+                        .labelStyle(LegacySettingsLabelStyle(tint: .orange))
                     }
                     if BiometricAuth.isAvailable {
                         NavigationLink(destination: FaceIDProtectionSettingsView()) {
                             Label("\(BiometricAuth.biometryDisplayName) Protection", systemImage: BiometricAuth.biometryIconName)
+                            .labelStyle(LegacySettingsLabelStyle(tint: .blue))
                         }
                     }
                 }
                 Section("Logs") {
                     NavigationLink(destination: LogManagementView()) {
                         Label("Logs", systemImage: "doc.text")
+                        .labelStyle(LegacySettingsLabelStyle(tint: .indigo))
                     }
                 }
                 Section("About") {
                     NavigationLink(destination: AboutView()) {
                         Label("About Minis", systemImage: "info.circle")
+                        .labelStyle(LegacySettingsLabelStyle(tint: .blue))
                     }
                     Link(destination: URL(string: "https://openminis.github.io/privacy-policy.html")!) {
                         Label("Privacy Policy", systemImage: "hand.raised")
+                        .labelStyle(LegacySettingsLabelStyle(tint: .blue))
                     }
                     Link(destination: URL(string: "mailto:dev@openminis.app?subject=Minis%20Feedback")!) {
                         Label("Feedback (Email)", systemImage: "envelope")
+                        .labelStyle(LegacySettingsLabelStyle(tint: .blue))
                     }
                     Link(destination: URL(string: "https://github.com/OpenMinis/OpenMinis/issues/new")!) {
                         Label("Report a Bug", systemImage: "ladybug")
+                        .labelStyle(LegacySettingsLabelStyle(tint: .blue))
                     }
                     Link(destination: URL(string: "https://t.me/+2NzhOJuzRyI1YmM1")!) {
                         Label("Feedback (Telegram)", systemImage: "bubble.left.and.bubble.right")
+                        .labelStyle(LegacySettingsLabelStyle(tint: .blue))
                     }
                 }
             }
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button { dismiss() } label: {
+                        Text("Done").font(.callout.weight(.semibold)).padding(.horizontal, 14)
+                            .frame(minHeight: 32).modifier(MinisLegacyControlSurface(shape: Capsule()))
+                            .frame(minHeight: 44)
+                    }
                 }
             }
         }
@@ -571,12 +628,15 @@ private struct LegacySettingsSheet: View {
         Section {
             NavigationLink(destination: ProviderInstancesView()) {
                 Label("Manage Providers", systemImage: "lock.circle.fill")
+                .labelStyle(LegacySettingsLabelStyle(tint: .blue))
             }
             NavigationLink(destination: ModelGroupsView()) {
                 Label("Model Groups", systemImage: "gearshape.circle.fill")
+                .labelStyle(LegacySettingsLabelStyle(tint: .indigo))
             }
             NavigationLink(destination: UsageStatsView()) {
                 Label("Token Usage", systemImage: "chart.line.uptrend.xyaxis.circle.fill")
+                .labelStyle(LegacySettingsLabelStyle(tint: .teal))
             }
         } header: {
             Text("LLM Providers")
@@ -589,27 +649,35 @@ private struct LegacySettingsSheet: View {
         Section("Agent Runtime") {
             NavigationLink(destination: ToolsSettingsView()) {
                 Label("Agent Tools", systemImage: "wrench.and.screwdriver.fill")
+                .labelStyle(LegacySettingsLabelStyle(tint: .blue))
             }
             NavigationLink(destination: HelperSettingsView()) {
                 Label("Sub Agents", systemImage: "person.2.fill")
+                .labelStyle(LegacySettingsLabelStyle(tint: .teal))
             }
             NavigationLink(destination: SkillsManagementView()) {
                 Label("Skills", systemImage: "puzzlepiece.extension")
+                .labelStyle(LegacySettingsLabelStyle(tint: .orange))
             }
             NavigationLink(destination: SoulSettingsView()) {
                 Label("Soul", systemImage: "sparkles")
+                .labelStyle(LegacySettingsLabelStyle(tint: .blue))
             }
             NavigationLink(destination: MemoryManagementView()) {
                 Label("Memory", systemImage: "brain.head.profile")
+                .labelStyle(LegacySettingsLabelStyle(tint: .purple))
             }
             NavigationLink(destination: MCPIntegrationsView()) {
                 Label("MCP Integrations", systemImage: "square.stack.3d.up")
+                .labelStyle(LegacySettingsLabelStyle(tint: .blue))
             }
             NavigationLink(destination: EnvironmentVariablesView()) {
                 Label("Environment Variables", systemImage: "terminal")
+                .labelStyle(LegacySettingsLabelStyle(tint: .blue))
             }
             NavigationLink(destination: EnhancedBackgroundSettingsView()) {
                 Label("Background", systemImage: "moon.fill")
+                .labelStyle(LegacySettingsLabelStyle(tint: .blue))
             }
         }
     }
@@ -618,12 +686,15 @@ private struct LegacySettingsSheet: View {
         Section("Storage") {
             NavigationLink(destination: StorageManagementView()) {
                 Label("Storage", systemImage: "archivebox")
+                .labelStyle(LegacySettingsLabelStyle(tint: .blue))
             }
             NavigationLink(destination: SharedFoldersSettingsView()) {
                 Label("Shared Folders", systemImage: "folder.fill.badge.person.crop")
+                .labelStyle(LegacySettingsLabelStyle(tint: .blue))
             }
             NavigationLink(destination: MountedFoldersSettingsView()) {
                 Label("Mount External Folders", systemImage: "externaldrive.badge.plus")
+                .labelStyle(LegacySettingsLabelStyle(tint: .blue))
             }
             Label {
                 VStack(alignment: .leading) {
@@ -636,6 +707,7 @@ private struct LegacySettingsSheet: View {
             }
             NavigationLink(destination: BackupAndRestoreView()) {
                 Label("Backup & Restore", systemImage: "arrow.triangle.2.circlepath")
+                .labelStyle(LegacySettingsLabelStyle(tint: .blue))
             }
         }
     }
@@ -736,12 +808,15 @@ private struct LegacySessionRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 5) {
-                    Text(title).font(.headline).lineLimit(1)
+                    Text(title).font(.body.weight(.semibold)).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(session.updatedAt, style: .date)
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     if session.isPinned { Image(systemName: "pin.fill").font(.caption2) }
                     if busy { ProgressView().scaleEffect(0.75) }
                 }
                 if let preview = legacySessionListPreview(session.lastMessage) {
-                    Text(preview).font(.caption).foregroundColor(.secondary).lineLimit(2)
+                    Text(preview).font(.subheadline).foregroundColor(.secondary).lineLimit(2)
                 }
             }
         }
@@ -776,6 +851,7 @@ private struct LegacySessionRow: View {
                     Button(folder.name) { moveToFolder(folder.id) }
                 }
             }
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle("Move to Group")
             .task { folders = await ChatStore.shared.listFolders() }
@@ -893,6 +969,7 @@ private struct LegacyGroupManagerView: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("会话分组")
         .onAppear(perform: reload)
@@ -927,6 +1004,7 @@ private struct LegacyGroupNameSheet: View {
     var body: some View {
         MinisNavigationContainer {
             Form { TextField("分组名称", text: $name) }
+                .minisCatalogForm()
                 .minisNavigationChrome()
                 .navigationTitle(title)
                 .toolbar {
@@ -980,6 +1058,7 @@ private struct LegacyGroupDetailView: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle(folder.name)
         .onAppear(perform: reload)
@@ -1041,6 +1120,7 @@ private struct LegacyGroupSessionPicker: View {
                     }
                 }
             }
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle("添加会话到分组")
             .task { sessions = await ChatStore.shared.listSessions().filter { !$0.isChild } }

@@ -61,6 +61,7 @@ struct MCPIntegrationsView: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle(Text("MCP Integrations"))
         .navigationBarTitleDisplayMode(.inline)
@@ -134,12 +135,10 @@ struct MCPIntegrationsView: View {
 
     private func row(for server: MCPServerConfig) -> some View {
         HStack(spacing: 12) {
-            Circle()
-                .fill(server.enabled ? Color.green : Color.gray)
-                .frame(width: 9, height: 9)
+            MinisSectionGlyph(name: server.isSTDIO ? "terminal" : "globe", tint: server.enabled ? .teal : .secondary)
             VStack(alignment: .leading, spacing: 3) {
                 Text(server.id)
-                    .font(.body)
+                    .font(.headline)
                     .foregroundStyle(.primary)
                 HStack(spacing: 4) {
                     Text(server.isHTTP ? "HTTP" : (server.isSTDIO ? "STDIO" : "—"))
@@ -201,7 +200,7 @@ struct MCPToolsSheet: View {
                         ForEach(tools) { tool in
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(tool.name)
-                                    .font(.body.monospaced())
+                                    .font(.system(.subheadline, design: .monospaced).weight(.semibold))
                                 if !tool.description.isEmpty {
                                     Text(tool.description)
                                         .font(.caption)
@@ -213,6 +212,7 @@ struct MCPToolsSheet: View {
                     }
                 }
             }
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle(Text(verbatim: serverName))
             .navigationBarTitleDisplayMode(.inline)

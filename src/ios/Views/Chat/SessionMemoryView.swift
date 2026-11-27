@@ -50,6 +50,7 @@ struct SessionMemoryView: View {
                     }
                 }
             }
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle("Memories in Session")
             .navigationBarTitleDisplayMode(.inline)
@@ -262,18 +263,19 @@ private struct MemoryContentView: View {
         Group {
             if isEditing {
                 TextEditor(text: $editedContent)
-                    .font(.system(.caption, design: .monospaced))
-                    .padding(.horizontal, 8)
+                    .font(.system(.callout, design: .monospaced))
+                    .padding(.horizontal, 14)
             } else {
                 ScrollView {
                     Text(content)
-                        .font(.system(.caption, design: .monospaced))
+                        .font(.system(.callout, design: .monospaced))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                         .textSelection(.enabled)
                 }
             }
         }
+        .minisReadingSurface()
         .minisNavigationChrome()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
@@ -350,15 +352,15 @@ private struct MemoryWriteDetailView: View {
         Group {
             if isEditing {
                 TextEditor(text: $editedContent)
-                    .font(.system(.caption, design: .monospaced))
-                    .padding(.horizontal, 8)
+                    .font(.system(.callout, design: .monospaced))
+                    .padding(.horizontal, 14)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         if let written = item.writtenContent {
                             SectionHeader(title: "Written Content")
                             Text(written)
-                                .font(.system(.caption, design: .monospaced))
+                                .font(.system(.callout, design: .monospaced))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal)
                                 .textSelection(.enabled)
@@ -366,7 +368,7 @@ private struct MemoryWriteDetailView: View {
 
                         SectionHeader(title: "Tool Result")
                         Text(item.content)
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.system(.callout, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal)
@@ -376,6 +378,7 @@ private struct MemoryWriteDetailView: View {
                 }
             }
         }
+        .minisReadingSurface()
         .minisNavigationChrome()
         .navigationTitle(item.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -524,13 +527,14 @@ private struct MemoryGetDetailView: View {
                 }
 
                 Text(item.content)
-                    .font(.system(.caption, design: .monospaced))
+                    .font(.system(.callout, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
                     .textSelection(.enabled)
             }
             .padding(.bottom)
         }
+        .minisReadingSurface()
         .minisNavigationChrome()
         .navigationTitle(item.title)
         .navigationBarTitleDisplayMode(.inline)

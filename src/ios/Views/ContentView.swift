@@ -652,6 +652,7 @@ private struct FolderAlertsModifier: ViewModifier {
                         // Keep the auto-grouping context editable with the name.
                         TextField("Description (optional)", text: $renameFolderDesc)
                     }
+                    .minisCatalogForm()
                     .minisNavigationChrome()
                     .navigationTitle("Rename Group")
                     .navigationBarTitleDisplayMode(.inline)
@@ -952,6 +953,7 @@ private struct FolderPickerSheet: View {
                     }
                 }
             }
+            .minisCatalogList()
             // Explicitly typed: a bare ternary of two literals infers `String`,
             // which would pick the non-localizing navigationTitle overload and
             // ship the English source text to every locale. As
@@ -7652,6 +7654,7 @@ struct SessionEditSheet: View {
                     .disabled(isRegenerating)
                 }
             }
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle("Edit Session")
             .navigationBarTitleDisplayMode(.inline)
@@ -8148,6 +8151,7 @@ struct AppearanceSettingsView: View {
             }
 
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
@@ -8565,6 +8569,7 @@ private struct SettingsSheet: View {
                 }
 
             }
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -8987,6 +8992,7 @@ private struct NewGroupSheet: View {
                     if duplicateName { Text("已有同名分组，请换一个名称").foregroundStyle(.secondary) }
                 }
             }
+            .minisCatalogForm()
             .minisNavigationChrome()
             .navigationTitle("新建分组")
             .navigationBarTitleDisplayMode(.inline)

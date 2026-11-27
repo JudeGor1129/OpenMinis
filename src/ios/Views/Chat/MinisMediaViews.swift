@@ -936,7 +936,7 @@ struct MinisTextPreviewView: View {
                 if isLoading {
                     ProgressView()
                 } else {
-                    MinisTextView(text: text)
+                    MinisTextView(text: text).minisReadingSurface()
                 }
             }
             .minisNavigationChrome()
@@ -1012,9 +1012,10 @@ private struct MinisTextView: UIViewRepresentable {
         textView.isEditable = false
         textView.isSelectable = true
         textView.backgroundColor = .clear
-        textView.font = .monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .caption1).pointSize, weight: .regular)
+        textView.font = UIFontMetrics(forTextStyle: .callout).scaledFont(for: .monospacedSystemFont(ofSize: 15, weight: .regular))
+        textView.adjustsFontForContentSizeCategory = true
         textView.textColor = .label
-        textView.textContainerInset = UIEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        textView.textContainerInset = UIEdgeInsets(top: 16, left: 16, bottom: 20, right: 16)
         textView.dataDetectorTypes = []
         return textView
     }
@@ -1066,7 +1067,7 @@ struct MinisMarkdownPreviewView: View {
                     // huge documents (> 50K chars) get split into
                     // LazyVStack segments so we don't trip CALayer's
                     // backing-store ceiling.
-                    PaginatedMarkdownView(markdown: markdownContent)
+                    PaginatedMarkdownView(markdown: markdownContent).minisReadingSurface()
                 }
             }
             .minisNavigationChrome()

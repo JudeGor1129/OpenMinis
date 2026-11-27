@@ -482,6 +482,7 @@ struct BackupSettingsView: View {
                 }
             }
         }
+        .minisCatalogForm()
         .modifier(StandaloneTitle(title: AppLocalized("Backup"),
                                  active: !embedded))
         .onAppear {

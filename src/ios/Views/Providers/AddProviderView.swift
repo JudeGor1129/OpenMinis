@@ -283,6 +283,7 @@ struct AddProviderView: View {
         List {
             steppedContent
         }
+        .minisCatalogList()
         .animation(MinisMotion.transition, value: currentStep)
         .minisNavigationChrome()
         .navigationTitle(navigationTitle)

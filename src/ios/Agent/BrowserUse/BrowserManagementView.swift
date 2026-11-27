@@ -36,6 +36,7 @@ struct BrowserManagementView: View {
             cookiesSection
             domainListSection
         }
+        .minisCatalogList()
         .searchable(text: $searchText, prompt: "Filter by domain")
         .minisNavigationChrome()
         .navigationTitle("Browser Settings")

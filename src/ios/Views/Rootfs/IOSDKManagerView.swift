@@ -20,6 +20,7 @@ struct IOSDKManagerView: View {
             downloadSection
             noteSection
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("iPhoneSDK")
         .navigationBarTitleDisplayMode(.inline)

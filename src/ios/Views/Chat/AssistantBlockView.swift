@@ -834,7 +834,7 @@ struct ThinkingBlockView: View {
                     .frame(width: 14, height: 14)
                     .foregroundStyle(.blue)
                 Text(AppLocalized("Deep Thinking"))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.blue)
                 if isStreaming {
                     ThinkingOrb(.solving, size: .small, speed: 1.1)
@@ -926,8 +926,8 @@ struct ThinkingBlockView: View {
                             // moving is useless anyway — enable it only once
                             // streaming finished.
                             let thinkingText = Text(displayContent)
-                                .font(.system(size: 13))
-                                .foregroundStyle(ChatColors.tertiaryText)
+                                .font(.footnote)
+                                .foregroundStyle(ChatColors.secondaryText)
                                 .lineSpacing(3)
                             Group {
                                 if isStreaming {
@@ -1017,11 +1017,11 @@ struct ThinkingBlockView: View {
         .onDisappear {
             ThinkingHitchMonitor.shared.stop(owner: block.id)
         }
-        .background(Color.blue.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .background(MinisPageInk.thought)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.blue.opacity(0.15), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color(UIColor.separator), lineWidth: 0.5)
         )
         .task(id: block.id) {
             // One-shot per-block auto-expand. Runs when this cell first hosts

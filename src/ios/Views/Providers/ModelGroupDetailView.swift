@@ -357,6 +357,7 @@ struct ModelGroupDetailView: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisInteractiveKeyboardDismissal()
         .environment(\.editMode, $editMode)
         .sheet(isPresented: $showAddModels) {

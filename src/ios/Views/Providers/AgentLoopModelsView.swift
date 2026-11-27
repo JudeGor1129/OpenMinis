@@ -260,6 +260,7 @@ struct AddAgentLoopGroupsSheet: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("Add Groups")
         .navigationBarTitleDisplayMode(.inline)

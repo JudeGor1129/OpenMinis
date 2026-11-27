@@ -259,7 +259,7 @@ struct AlarmListView: View {
                             }
                         }
                     }
-                    .listStyle(.insetGrouped)
+                    .minisCatalogList()
                 }
             }
             .minisNavigationChrome()

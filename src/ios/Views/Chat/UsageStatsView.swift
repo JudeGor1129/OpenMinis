@@ -291,6 +291,7 @@ struct UsageStatsView: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("Usage")
         .task {

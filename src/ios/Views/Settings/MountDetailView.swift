@@ -131,6 +131,7 @@ struct MountDetailView: View {
                 unmountSection
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle(context.canRename ? AppLocalized("Edit Mount") : AppLocalized("Folder Details"))
         .navigationBarTitleDisplayMode(.inline)

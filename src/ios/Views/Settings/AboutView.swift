@@ -141,6 +141,7 @@ struct AboutView: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)

@@ -52,7 +52,7 @@ struct ConfigConfirmSheet: View {
                         ConfigConfirmRow(item: $item)
                     }
                 }
-                .listStyle(.insetGrouped)
+                .minisCatalogList()
             }
             .minisNavigationChrome()
             .navigationTitle(workingItems.count > 1

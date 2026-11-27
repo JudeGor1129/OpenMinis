@@ -46,8 +46,7 @@ struct MCPJSONImportSheet: View {
                             .font(.subheadline.weight(.semibold))
                         ForEach(parsed) { server in
                             HStack(spacing: 8) {
-                                Image(systemName: server.isSTDIO ? "terminal" : "globe")
-                                    .foregroundStyle(.secondary)
+                                MinisSectionGlyph(name: server.isSTDIO ? "terminal" : "globe", tint: .teal)
                                 Text(server.id)
                                 Spacer()
                                 Text(server.isSTDIO ? "STDIO" : "HTTP")
@@ -58,6 +57,7 @@ struct MCPJSONImportSheet: View {
                     }
                 }
             }
+            .minisCatalogForm()
             .minisNavigationChrome()
             .navigationTitle(Text("Import JSON"))
             .navigationBarTitleDisplayMode(.inline)

@@ -1,6 +1,60 @@
 import SwiftUI
 import UIKit
 
+/// Content design for navigation destinations. Lists stay native (including
+/// swipe actions, selection and edit mode); text and editors get an opaque floor.
+enum MinisPageInk {
+    static let thought = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0.09, green: 0.14, blue: 0.20, alpha: 1) : UIColor(red: 0.94, green: 0.97, blue: 1, alpha: 1)
+    })
+    static let sentMessage = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0.14, green: 0.19, blue: 0.25, alpha: 1) : UIColor(red: 0.90, green: 0.94, blue: 0.98, alpha: 1)
+    })
+}
+
+private struct MinisCatalogRhythm: ViewModifier {
+    @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 50
+    func body(content: Content) -> some View {
+        content.environment(\.defaultMinListRowHeight, rowHeight)
+            .headerProminence(.increased)
+    }
+}
+
+extension View {
+    func minisCatalogList() -> some View {
+        listStyle(InsetGroupedListStyle()).modifier(MinisCatalogRhythm())
+    }
+    func minisCatalogForm() -> some View { modifier(MinisCatalogRhythm()) }
+    // No listStyle here: search results, multi-select and file trees keep their layout.
+    func minisPickerRows() -> some View { environment(\.defaultMinListRowHeight, 44) }
+    func minisReadingSurface() -> some View {
+        frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color(UIColor.systemBackground))
+    }
+}
+
+struct MinisSectionGlyph: View {
+    let name: String
+    let tint: Color
+    var body: some View {
+        Image(systemName: name)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(tint)
+            .frame(width: 34, height: 34)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.opacity(0.13)))
+            .accessibilityHidden(true)
+    }
+}
+
+struct MinisCountBadge: View {
+    let value: Int
+    var body: some View {
+        Text(verbatim: String(value)).font(.caption.weight(.semibold)).monospacedDigit()
+            .foregroundStyle(.secondary).padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Capsule().fill(Color(UIColor.secondarySystemFill)))
+    }
+}
+
 /// Restricts translucent material to navigation chrome; destination content remains opaque.
 private struct MinisNavigationChromeScope: ViewModifier {
     private let keepNativeBackdropVisible: Bool
@@ -30,9 +84,100 @@ private struct MinisNavigationChromeScope: ViewModifier {
                 .toolbarBackground(backdrop, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
         } else {
-            // iOS 15 keeps its native navigation chrome; avoid global UIKit mutations.
-            content
+            content.background {
+                MinisLegacyBarBackdrop(solid: reduceTransparency || colorSchemeContrast == .increased)
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
+    }
+}
+
+/// iOS 15 has no toolbarBackground. Style the owning page's item only;
+/// never change the shared navigation bar, its delegate, or its buttons.
+private struct MinisLegacyBarBackdrop: UIViewControllerRepresentable {
+    let solid: Bool
+
+    func makeUIViewController(context: Context) -> BackdropController { BackdropController() }
+    func updateUIViewController(_ controller: BackdropController, context: Context) {
+        controller.solid = solid
+        controller.applyIfAttached()
+    }
+    static func dismantleUIViewController(_ controller: BackdropController, coordinator: ()) {
+        controller.restore()
+    }
+
+    final class BackdropController: UIViewController {
+        var solid = false
+        private weak var item: UINavigationItem?
+        private var lastSolid: Bool?
+        private typealias Slot = ReferenceWritableKeyPath<UINavigationItem, UINavigationBarAppearance?>
+        private var overrides: [(Slot, UINavigationBarAppearance?, UINavigationBarAppearance?)] = []
+
+        override func loadView() {
+            let anchor = UIView()
+            anchor.isUserInteractionEnabled = false
+            anchor.isAccessibilityElement = false
+            view = anchor
+        }
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            applyIfAttached()
+        }
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            applyIfAttached()
+        }
+        func restore() {
+            if let item = item {
+                for (slot, original, applied) in overrides where item[keyPath: slot] === applied {
+                    item[keyPath: slot] = original
+                }
+            }
+            overrides.removeAll()
+            item = nil
+            lastSolid = nil
+        }
+        func applyIfAttached() {
+            guard let nav = navigationController else { return }
+            var owner = parent
+            while let candidate = owner, !nav.viewControllers.contains(where: { $0 === candidate }) {
+                owner = candidate.parent
+            }
+            guard let target = owner?.navigationItem else { return }
+            guard item !== target || lastSolid != solid else { return }
+            restore()
+            item = target
+            lastSolid = solid
+            let slots: [Slot] = [\.standardAppearance, \.scrollEdgeAppearance,
+                                 \.compactAppearance, \.compactScrollEdgeAppearance]
+            for slot in slots {
+                let original = target[keyPath: slot]
+                let base = original ?? nav.navigationBar.standardAppearance
+                guard let style = base.copy() as? UINavigationBarAppearance else { continue }
+                style.backgroundImage = nil
+                style.backgroundEffect = solid ? nil : UIBlurEffect(style: .systemThinMaterial)
+                style.backgroundColor = solid ? .secondarySystemBackground : .clear
+                style.shadowColor = .separator
+                target[keyPath: slot] = style
+                overrides.append((slot, original, target[keyPath: slot]))
+            }
+        }
+    }
+}
+
+/// A shaped control surface; opaque when the user requests more contrast.
+struct MinisLegacyControlSurface<S: Shape>: ViewModifier {
+    let shape: S
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    func body(content: Content) -> some View {
+        let fill = reduceTransparency || contrast == .increased
+            ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
+            : AnyShapeStyle(Material.thin)
+        content.background(shape.fill(fill))
+            .overlay(shape.stroke(Color(UIColor.separator), lineWidth: 0.5).allowsHitTesting(false))
     }
 }
 

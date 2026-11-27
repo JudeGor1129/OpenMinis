@@ -144,6 +144,7 @@ struct ProviderInstanceDetailView: View {
                         Text("Paste the bearer token. Whitespace and newlines will be stripped automatically.")
                     }
                 }
+                .minisCatalogForm()
                 .minisNavigationChrome()
                 .navigationTitle("Manual Bearer Token")
                 .navigationBarTitleDisplayMode(.inline)
@@ -452,6 +453,7 @@ struct ProviderInstanceDetailView: View {
                 }
             }
         }
+        .minisCatalogList()
         .sheet(isPresented: $showExportShare) {
             if let json = store.exportInstanceJSON(instanceId) {
                 let label = store.instance(for: instanceId).map(\.label) ?? "provider"
@@ -1385,6 +1387,7 @@ struct AddCustomModelSheet: View {
                     Text("Enable for models that generate images (e.g. gpt-image-1, dall-e-3, flux) or audio (e.g. TTS models). Text output is always enabled.")
                 }
             }
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle("Add Custom Model")
             .navigationBarTitleDisplayMode(.inline)
@@ -1685,6 +1688,7 @@ struct ModelEntryDetailSheet: View {
                     Text(AppLocalized("Run a quick test matching this model's main capability."))
                 }
             }
+            .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle("Model Details")
             .navigationBarTitleDisplayMode(.inline)

@@ -61,6 +61,7 @@ struct BackupDestinationDetailView: View {
             case .folder(let f): folderSections(f)
             }
         }
+        .minisCatalogForm()
         .minisNavigationChrome()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
@@ -644,6 +645,7 @@ struct RcloneFolderBrowser: View {
                 }
 
             }
+            .minisCatalogForm()
             .backupHUD($errorText)
             .minisNavigationChrome()
             .navigationTitle("Backup Folder")
@@ -815,6 +817,7 @@ struct RcloneConnectionEditor: View {
                     }
                 }
             }
+            .minisCatalogForm()
             .minisNavigationChrome()
             .navigationTitle("Edit Connection")
             .navigationBarTitleDisplayMode(.inline)

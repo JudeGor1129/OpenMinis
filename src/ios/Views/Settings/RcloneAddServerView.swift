@@ -105,6 +105,7 @@ struct RcloneAddServerView: View {
                     }
                 }
             }
+            .minisCatalogForm()
             .backupHUD(Binding(
                 get: { connectedRemote == nil ? nil : errorText },
                 set: { if $0 == nil { errorText = nil } }))

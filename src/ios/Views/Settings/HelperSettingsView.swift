@@ -86,6 +86,7 @@ struct HelperSettingsView: View {
             // rule the other tool switches follow.
             .opacity(agentsEnabled ? 1 : 0.5)
         }
+        .minisCatalogForm()
         .environment(\.editMode, $editMode)
         .minisNavigationChrome()
         .navigationTitle(AppLocalized("Sub Agents"))
@@ -309,6 +310,7 @@ struct SubAgentEditorView: View {
                          : AppLocalized("Every run of this sub agent uses this level, overriding the Model Group's own default. Models that cannot reason this hard are clamped to their own ceiling."))
                 }
             }
+            .minisCatalogForm()
             .minisNavigationChrome()
             .navigationTitle(existing == nil ? AppLocalized("New Sub Agent") : AppLocalized("Edit Sub Agent"))
             .navigationBarTitleDisplayMode(.inline)

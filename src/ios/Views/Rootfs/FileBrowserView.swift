@@ -140,6 +140,7 @@ struct FileBrowserView: View {
                             )
                         }
                     }
+                    .minisPickerRows()
                     .listStyle(.plain)
                     .onAppear { locateHighlightTarget(proxy: proxy) }
                     .onChange(of: viewModel.items.map(\.name)) { _ in
@@ -728,6 +729,7 @@ private struct FileInfoView: View {
                 }
             }
         }
+        .minisPickerRows()
     }
 }
 
@@ -1664,6 +1666,7 @@ private struct DirectoryPickerView: View {
                         }
                     }
                 }
+                .minisPickerRows()
                 .listStyle(.plain)
             }
         }

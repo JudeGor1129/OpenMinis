@@ -89,6 +89,7 @@ struct BackupRestoreView: View {
                 }
             }
         }
+        .minisCatalogForm()
         .modifier(StandaloneTitle(title: AppLocalized("Restore"),
                                  active: !embedded))
         .fileImporter(isPresented: $showPicker,
@@ -907,6 +908,7 @@ struct FolderPackageListView: View {
                 }
             }
         }
+        .minisCatalogList()
         .refreshable { await reload() }
         .minisNavigationChrome()
         .navigationTitle(folder.name)
@@ -978,6 +980,7 @@ struct ServerRestorePickerSheet: View {
                     Text("Add the server your backups were saved to. Servers added here are also available as backup destinations.")
                 }
             }
+            .minisCatalogForm()
             .minisNavigationChrome()
             .navigationTitle("Restore from Server")
             .navigationBarTitleDisplayMode(.inline)
@@ -1100,6 +1103,7 @@ struct ServerPackageListView: View {
                     Text("Open folders to browse. Only .minisbak files are shown.")
                 }
             }
+            .minisCatalogList()
             .refreshable { await reload() }
         }
         .minisNavigationChrome()

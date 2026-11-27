@@ -23,20 +23,24 @@ struct ChatShareSelectionView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                HStack {
+                HStack(spacing: 14) {
                     Button("全选") { model.selectAll() }
                     Button("清空") { model.clear() }
                     Spacer()
-                    Text("已选 \(model.selected.count) / \(model.items.count)").font(.caption)
-                }.padding()
+                    Text("已选 \(model.selected.count) / \(model.items.count)")
+                        .font(.subheadline.weight(.semibold)).monospacedDigit()
+                }
+                .padding(.horizontal, 18).frame(minHeight: 48)
+                .background(Color(UIColor.secondarySystemGroupedBackground))
+                Divider()
                 List(model.items) { item in
                     Button { model.toggle(item) } label: {
                         HStack(alignment: .top, spacing: 12) {
                             Image(systemName: model.selected.contains(item.id) ? "checkmark.circle.fill" : "circle")
                                 .foregroundColor(model.selected.contains(item.id) ? .accentColor : .secondary)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(item.label).font(.caption).foregroundColor(.secondary)
-                                Text(String(item.markdown.prefix(240))).lineLimit(4).foregroundColor(.primary)
+                                Text(item.label).font(.subheadline.weight(.semibold)).foregroundColor(.primary)
+                                Text(String(item.markdown.prefix(240))).font(.callout).lineLimit(4).foregroundColor(.secondary)
                                 if !item.attachments.isEmpty {
                                     Text(item.attachments.map(\.name).joined(separator: " · ")).font(.caption).foregroundColor(.secondary)
                                 }
@@ -46,6 +50,7 @@ struct ChatShareSelectionView: View {
                     .accessibilityLabel(item.label + ": " + String(item.markdown.prefix(80)))
                     .accessibilityValue(model.selected.contains(item.id) ? "已选择" : "未选择")
                 }.listStyle(.plain).disabled(exporting)
+                .minisPickerRows()
                 Picker("导出格式", selection: $options.format) {
                     Text("长图").tag(ChatExportOptions.Format.image)
                     Text("可搜索 PDF").tag(ChatExportOptions.Format.pdf)

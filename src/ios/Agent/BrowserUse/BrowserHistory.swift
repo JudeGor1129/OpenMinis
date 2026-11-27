@@ -188,24 +188,21 @@ struct BrowserHistoryView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .minisCatalogList()
     }
 
     private func historyRow(_ entry: BrowserHistoryEntry) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "globe")
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-                .frame(width: 24)
+            MinisSectionGlyph(name: "globe", tint: .blue)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.title.isEmpty ? entry.domain : entry.title)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(Color(UIColor.label))
                     .lineLimit(1)
 
                 Text(entry.url)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -213,7 +210,7 @@ struct BrowserHistoryView: View {
             Spacer()
 
             Text(timeLabel(entry.timestamp))
-                .font(.system(size: 11))
+                .font(.caption).monospacedDigit()
                 .foregroundStyle(.tertiary)
         }
         .contentShape(Rectangle())

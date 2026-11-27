@@ -169,6 +169,7 @@ struct ToolsSettingsView: View {
             // even a read-only pointer row: the switch belongs to the Sub Agents
             // page, next to the definitions it governs.
         }
+        .minisCatalogForm()
         .minisNavigationChrome()
         .navigationTitle(AppLocalized("Agent Tools"))
         .navigationBarTitleDisplayMode(.inline)

@@ -597,6 +597,7 @@ struct MirrorCategoryDetailView: View {
                 }
             }
         }
+        .minisCatalogList()
         .minisNavigationChrome()
         .navigationTitle(category.displayName)
         .navigationBarTitleDisplayMode(.inline)

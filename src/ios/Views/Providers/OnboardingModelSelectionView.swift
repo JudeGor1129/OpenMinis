@@ -104,6 +104,7 @@ struct OnboardingModelSelectionView: View {
 
             }
         }
+        .minisCatalogList()
         .searchable(text: $searchText, prompt: "Filter models")
         .minisNavigationChrome()
         .navigationTitle("Select Models")

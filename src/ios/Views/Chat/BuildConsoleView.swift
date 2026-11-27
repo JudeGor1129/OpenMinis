@@ -47,16 +47,14 @@ struct BuildConsoleView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(statusColor)
             Text(state.status.title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
             if state.status == .running {
                 ProgressView().scaleEffect(0.7)
             }
-            Text("·").font(.system(size: 13)).foregroundStyle(.tertiary)
+            Spacer(minLength: 8)
             Text("\(state.lines.count) 行")
-                .font(.system(size: 13))
-                .foregroundStyle(.tertiary)
-            Spacer()
+                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -130,7 +128,7 @@ struct BuildConsoleView: View {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(state.lines) { line in
                         Text(line.text.isEmpty ? " " : line.text)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(.system(.footnote, design: .monospaced))
                             .foregroundStyle(lineColor(for: line.text))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -159,7 +157,7 @@ struct BuildConsoleView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text(path)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(.footnote, design: .monospaced))
                 .textSelection(.enabled)
                 .foregroundStyle(.primary)
         }
