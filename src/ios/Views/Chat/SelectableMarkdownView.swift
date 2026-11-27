@@ -8348,11 +8348,10 @@ struct SelectableMarkdownView: UIViewRepresentable {
         let _isFinalised = cachedAttributedString != nil || cachedContent != nil
         let _splitForUpdate = _isFinalised ? (prefix: markdown, plainSuffix: "") : splitStreamingTableTail(markdown)
         let _hasPlainSuffix = !_splitForUpdate.plainSuffix.isEmpty
-        let prepared = prepareMarkdownForRender(_splitForUpdate.prefix)
-        // If we split off a suffix, the prebuilt cache (which was rendered
-        // from the full markdown) no longer matches what we'll render —
-        // force a fresh MarkdownContent parse and skip cachedContent.
-        let content = (_hasPlainSuffix ? nil : cachedContent) ?? MarkdownContent(prepared)
+        // Reuse the parsed cache without also reprocessing the entire source.
+        // A split suffix invalidates the cache for the prefix.
+        let content = (_hasPlainSuffix ? nil : cachedContent)
+            ?? MarkdownContent(prepareMarkdownForRender(_splitForUpdate.prefix))
         let prepElapsed = (CFAbsoluteTimeGetCurrent() - prepStart) * 1000
         // Image-related diagnostics — only walk the parsed block tree when
         // the raw markdown actually contains image syntax. The block walk

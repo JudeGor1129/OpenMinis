@@ -482,7 +482,7 @@ struct MessageListTestView: View {
                 jitterOverlay
             }
 
-            Divider()
+            Divider().hidden()
 
             // Controls panel
             controlsPanel

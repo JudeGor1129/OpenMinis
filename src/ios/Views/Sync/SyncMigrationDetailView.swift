@@ -124,6 +124,20 @@ struct SyncMigrationDetailView: View {
                 }
             }
             let vm = vm ?? .empty
+            if vm.v2Enabled {
+                Section {
+                    MinisPageIntro(
+                        title: "iCloud Sync",
+                        message: "New changes and history migration are queued separately.",
+                        systemImage: "icloud",
+                        tint: .blue,
+                        facts: [
+                            .init(label: "Pending changes", value: vm.pendingPushNew.formatted()),
+                            .init(label: "Pending history", value: vm.pendingPushMigration.formatted())
+                        ]
+                    )
+                }
+            }
             // Top status — always visible while v2 is enabled.
             Section("Status") {
                 MinisLabeledRow("iCloud Sync") {

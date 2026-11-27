@@ -57,8 +57,34 @@ struct BackupDestinationDetailView: View {
     var body: some View {
         Form {
             switch target {
-            case .remote(let r): remoteSections(r)
-            case .folder(let f): folderSections(f)
+            case .remote(let r):
+                Section {
+                    MinisPageIntro(
+                        title: Text(verbatim: (edited ?? r).name),
+                        message: Text("Test the connection or browse backups stored on this server."),
+                        systemImage: "externaldrive.connected.to.line.below",
+                        tint: .blue,
+                        facts: [
+                            .init(label: "Backend", value: Text(verbatim: (edited ?? r).backend.uppercased())),
+                            .init(label: "Packages", value: Text(verbatim: isLoadingPackages ? "Loading…" : "\(packages.count)"))
+                        ]
+                    )
+                }
+                remoteSections(r)
+            case .folder(let f):
+                Section {
+                    MinisPageIntro(
+                        title: Text(verbatim: f.name),
+                        message: Text("Check write access and browse backups stored in this folder."),
+                        systemImage: "folder.fill",
+                        tint: .indigo,
+                        facts: [
+                            .init(label: "Access", value: Text(LocalizedStringKey(f.effectiveWritable ? "Writable" : "Read only"))),
+                            .init(label: "Packages", value: "\(folderPackages.count)")
+                        ]
+                    )
+                }
+                folderSections(f)
             }
         }
         .minisCatalogForm()

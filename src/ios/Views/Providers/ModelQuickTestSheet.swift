@@ -47,7 +47,16 @@ struct ModelQuickTestSheet: View {
         MinisNavigationContainer {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    header
+                    MinisPageIntro(
+                        title: Text(verbatim: entry.model.displayName),
+                        message: Text(verbatim: "\(entry.model.id) · Independent capability checks for this model and its configured credential."),
+                        systemImage: "bolt.badge.checkmark",
+                        tint: .orange,
+                        facts: [
+                            .init(label: "Checks", value: "\(model.runs.count)"),
+                            .init(label: "Finished checks", value: "\(model.runs.count - model.remaining)/\(model.runs.count)")
+                        ]
+                    )
                     ForEach(model.runs) { run in
                         TestCard(run: run, onPlay: playAudio)
                     }
@@ -73,22 +82,6 @@ struct ModelQuickTestSheet: View {
             }
         }
         .onAppear { model.runAllIfNeeded() }
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "bolt.badge.checkmark")
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .frame(width: 34, height: 34)
-                .background(Color.accentColor.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.model.displayName).font(.headline)
-                Text(entry.model.id).font(.caption2).foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
     }
 
     private func playAudio(_ data: Data) {
@@ -139,7 +132,8 @@ final class TestSession: ObservableObject {
     @Published private(set) var runs: [TestRun] = []
     private var started = false
 
-    var isRunning: Bool { runs.contains { $0.state == .running } }
+    @Published private(set) var remaining = 0
+    var isRunning: Bool { remaining > 0 }
 
     init(entry: ModelEntry) {
         self.entry = entry
@@ -168,12 +162,15 @@ final class TestSession: ObservableObject {
     }
 
     func runAll() {
+        guard !isRunning else { return }
+        remaining = runs.count
         for run in runs { run.state = .running; run.elapsed = 0 }
         let entry = self.entry
         for run in runs {
             let kind = run.kind
             qtLog.info("[QuickTest] start model=\(entry.model.id) kind=\(kind.rawValue)")
             Task { @MainActor in
+                defer { remaining -= 1 }
                 let start = Date()
                 do {
                     let state = try await Self.performTest(kind, entry: entry)

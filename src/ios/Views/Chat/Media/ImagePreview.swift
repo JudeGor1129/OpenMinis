@@ -170,6 +170,8 @@ final class ImagePreviewContentView: UIView, UIScrollViewDelegate, UIGestureReco
     /// contentOffset) so the scrollView's own clamping doesn't fight
     /// us.
     private var dismissTranslation: CGPoint = .zero
+    private var dismissDragOrigin: CGPoint?
+    private var dismissReturnAnimator: UIViewPropertyAnimator?
     /// Lateral drift factor so horizontal motion during dismiss still
     /// produces sideways movement (matches Photos.app feel).
     private let lateralDriftFactor: CGFloat = 0.5
@@ -302,32 +304,80 @@ final class ImagePreviewContentView: UIView, UIScrollViewDelegate, UIGestureReco
     // MARK: Dismiss pan
 
     @objc private func handleDismissPan(_ gr: UIPanGestureRecognizer) {
-        guard scrollView.zoomScale <= 1.01 else { return }
-
         switch gr.state {
-        case .began, .changed:
-            let t = gr.translation(in: self)
-            dismissTranslation = CGPoint(x: t.x * lateralDriftFactor, y: t.y)
-            applyDismissTransform()
-        case .ended, .cancelled, .failed:
-            let pulled = dismissTranslation.y
-            if pulled >= dismissThreshold {
-                onDismiss?()
+        case .began:
+            guard scrollView.zoomScale <= 1.01 else { return }
+            // Take over from the visible position, not the animator's model
+            // target (zero). Keep the new gesture's translation relative to it.
+            if let animator = dismissReturnAnimator {
+                let visible = scrollView.layer.presentation()?.affineTransform() ?? scrollView.transform
+                animator.stopAnimation(true)
+                dismissReturnAnimator = nil
+                dismissTranslation = CGPoint(x: visible.tx, y: visible.ty)
+            }
+            dismissDragOrigin = dismissTranslation
+            updateDismissDrag(gr)
+        case .changed:
+            guard scrollView.zoomScale <= 1.01, dismissDragOrigin != nil else { return }
+            updateDismissDrag(gr)
+        case .ended:
+            guard dismissDragOrigin != nil else { return }
+            defer { dismissDragOrigin = nil }
+            guard scrollView.zoomScale <= 1.01 else {
+                restoreAfterDismissPan(velocity: .zero)
                 return
             }
-            UIView.animate(
-                withDuration: 0.3,
-                delay: 0,
-                usingSpringWithDamping: 0.8,
-                initialSpringVelocity: 0,
-                options: [.curveEaseOut, .allowUserInteraction],
-                animations: {
-                    self.dismissTranslation = .zero
-                    self.applyDismissTransform()
-                }
-            )
+            updateDismissDrag(gr)
+            let velocity = gr.velocity(in: self)
+            let pulled = dismissTranslation.y
+            let projected = pulled + min(max(velocity.y * 0.12, -dismissThreshold), dismissThreshold)
+            if (pulled >= dismissThreshold && velocity.y >= 0
+                || pulled >= dismissThreshold * 0.25 && projected >= dismissThreshold), let onDismiss {
+                onDismiss()
+                return
+            }
+            restoreAfterDismissPan(velocity: velocity)
+        case .cancelled, .failed:
+            // Cancel only our own gesture; the gallery's horizontal pan can
+            // fail this recognizer without ever starting a dismissal.
+            guard dismissDragOrigin != nil else { return }
+            dismissDragOrigin = nil
+            restoreAfterDismissPan(velocity: .zero)
         default:
             break
+        }
+    }
+
+    private func updateDismissDrag(_ gr: UIPanGestureRecognizer) {
+        guard let origin = dismissDragOrigin else { return }
+        let delta = gr.translation(in: self)
+        dismissTranslation = CGPoint(x: origin.x + delta.x * lateralDriftFactor, y: origin.y + delta.y)
+        applyDismissTransform()
+    }
+
+    private func restoreAfterDismissPan(velocity: CGPoint) {
+        func relativeVelocity(_ speed: CGFloat, _ current: CGFloat) -> CGFloat {
+            abs(current) > 1 ? min(max(speed / -current, -4), 4) : 0
+        }
+        let initialVelocity = CGVector(dx: relativeVelocity(velocity.x * lateralDriftFactor, dismissTranslation.x),
+                                       dy: relativeVelocity(velocity.y, dismissTranslation.y))
+        let reset = { [weak self] in
+            guard let self else { return }
+            self.dismissTranslation = .zero
+            self.applyDismissTransform()
+        }
+        if UIAccessibility.isReduceMotionEnabled {
+            UIView.performWithoutAnimation(reset)
+        } else {
+            let timing = UISpringTimingParameters(dampingRatio: 0.8, initialVelocity: initialVelocity)
+            let animator = UIViewPropertyAnimator(duration: 0.3, timingParameters: timing)
+            animator.addAnimations(reset)
+            animator.addCompletion { [weak self, weak animator] _ in
+                guard let self, self.dismissReturnAnimator === animator else { return }
+                self.dismissReturnAnimator = nil
+            }
+            dismissReturnAnimator = animator
+            animator.startAnimation()
         }
     }
 

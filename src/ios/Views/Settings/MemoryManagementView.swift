@@ -21,6 +21,18 @@ struct MemoryManagementView: View {
     var body: some View {
         List {
             Section {
+                MinisPageIntro(
+                    title: "Memory Files",
+                    message: "Review persistent instructions and daily notes stored for the agent. Existing session-level memory switches are not changed here.",
+                    systemImage: "brain.head.profile",
+                    tint: .purple,
+                    facts: [
+                        .init(label: "Files", value: "\(memoryFiles.count)"),
+                        .init(label: "Scope", value: "Global + daily")
+                    ]
+                )
+            }
+            Section {
                 Toggle(AppLocalized("settings_memory_global_enabled"), isOn: $memoryGlobalEnabled)
             } footer: {
                 Text(AppLocalized("settings_memory_global_enabled_footer"))
@@ -219,8 +231,23 @@ private struct MemoryFileEditView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            MinisPageIntro(
+                title: fileName,
+                message: isGlobal
+                    ? "Persistent instructions and preferences visible in every session."
+                    : "A dated memory log. Edit the text below; saving keeps the original file scope.",
+                systemImage: isGlobal ? "brain.head.profile" : "calendar",
+                tint: .purple,
+                facts: [
+                    .init(label: "Scope", value: Text(LocalizedStringKey(isGlobal ? "All sessions" : "Daily log"))),
+                    .init(label: "Changes", value: Text(LocalizedStringKey(hasChanges ? "Unsaved" : "Saved")))
+                ]
+            )
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+
             if isGlobal {
-                Text("Persistent instructions and preferences visible to the agent in every session. You can edit it here, or just ask the agent to help organize and update this memory.")
+                Text("Ask the agent to help organize this memory, or edit it directly.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -352,6 +379,18 @@ struct StructuredMemoryCenterView: View {
     var body: some View {
         List {
             Section {
+                MinisPageIntro(
+                    title: "结构化记忆",
+                    message: "Records retain provenance, project scope, confidence and status. Credentials are filtered before admission.",
+                    systemImage: "brain.head.profile",
+                    tint: .purple,
+                    facts: [
+                        .init(label: "Visible records", value: "\(records.count)"),
+                        .init(label: "Admission", value: automaticMemory ? "Automatic on" : "Manual")
+                    ]
+                )
+            }
+            Section {
                 Toggle("自动项目记忆", isOn: $automaticMemory)
             } footer: {
                 Text("仅自动保存经项目工具验证的事实。普通对话及疑似凭证内容绝不会自动保存。")
@@ -432,6 +471,19 @@ private struct StructuredMemoryDetailView: View {
 
     var body: some View {
         Form {
+            Section {
+                MinisPageIntro(
+                    title: Text(verbatim: structuredMemoryScopeLabel(record.scope)),
+                    message: Text(verbatim: structuredMemorySource(record)),
+                    systemImage: record.isPinned ? "pin.fill" : "brain.head.profile",
+                    tint: .purple,
+                    facts: [
+                        .init(label: "Type", value: Text(verbatim: structuredMemoryTypeLabel(record.type))),
+                        .init(label: "Confidence", value: Text(verbatim: "\(Int(record.confidence * 100))%")),
+                        .init(label: "Status", value: Text(verbatim: structuredMemoryStatusLabel(record.status)))
+                    ]
+                )
+            }
             Section("内容") {
                 TextEditor(text: $record.content)
                     .frame(minHeight: 150)

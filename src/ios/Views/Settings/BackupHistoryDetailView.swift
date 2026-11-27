@@ -19,6 +19,19 @@ struct BackupHistoryDetailView: View {
 
     var body: some View {
         Form {
+            Section {
+                MinisPageIntro(
+                    title: Text(verbatim: BackupHistoryRow.statusText(record.status)),
+                    message: Text(verbatim: "Backup run started \(record.startedAt.formatted(date: .abbreviated, time: .shortened)). Review what was produced and where it was delivered."),
+                    systemImage: BackupHistoryRow.statusIcon(record.status),
+                    tint: BackupHistoryRow.statusColour(record.status),
+                    facts: [
+                        .init(label: "Duration", value: Text(verbatim: record.duration.map(durationText) ?? AppLocalized("In progress"))),
+                        .init(label: "Size", value: Text(verbatim: ByteCountFormatter.string(fromByteCount: record.totalBytes, countStyle: .file))),
+                        .init(label: "Destinations", value: "\(record.destinations.count)")
+                    ]
+                )
+            }
             if isLive { liveControlsSection }
             summarySection
             if !record.destinations.isEmpty { destinationsSection }

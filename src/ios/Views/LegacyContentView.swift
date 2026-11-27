@@ -190,6 +190,7 @@ private struct LegacyContentView: View {
             .minisCatalogList()
             .minisNavigationChrome()
             .navigationTitle(selectionMode ? "Selected: \(selectedSessions.count)" : "Minis")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     if selectionMode {
@@ -220,7 +221,6 @@ private struct LegacyContentView: View {
                         Button { showingRootfs = true } label: {
                             Label("Rootfs Management", systemImage: "externaldrive")
                         }
-                        Divider()
                         Button { showingBrowser = true } label: {
                             Label("Open Browser", systemImage: "globe")
                         }
@@ -475,7 +475,10 @@ private struct LegacyContentView: View {
         if openedSessionID.isEmpty {
             EmptyView()
         } else {
-            LegacySessionDestination(sessionID: openedSessionID)
+            LegacySessionDestination(
+                sessionID: openedSessionID,
+                initialSession: sessions.first { $0.id == openedSessionID }
+            )
         }
     }
 
@@ -762,7 +765,7 @@ private struct LegacySessionRow: View {
                     .buttonStyle(MinisPressFeedbackStyle())
             } else {
                 NavigationLink {
-                    LegacySessionDestination(sessionID: session.id)
+                    LegacySessionDestination(sessionID: session.id, initialSession: session)
                 } label: { rowLabel }
             }
         }
@@ -1143,5 +1146,6 @@ private struct LegacyGroupSessionPicker: View {
 // Keep AIChatView's VM acquisition out of eager NavigationLink row creation.
 private struct LegacySessionDestination: View {
     let sessionID: String
-    var body: some View { AIChatView(sessionId: sessionID) }
+    var initialSession: ChatSession? = nil
+    var body: some View { AIChatView(sessionId: sessionID, initialSession: initialSession) }
 }

@@ -201,6 +201,18 @@ struct ProviderInstanceDetailView: View {
     @ViewBuilder
     private func instanceContent(_ instance: ProviderInstance) -> some View {
         List {
+            Section {
+                MinisPageIntro(
+                    title: Text(verbatim: instance.label),
+                    message: Text(verbatim: "\(instance.providerType.displayName) · Credentials and model availability for this account."),
+                    systemImage: "server.rack",
+                    tint: .blue,
+                    facts: [
+                        .init(label: "Credential type", value: instance.credentialType == .apiKey ? "API key" : "OAuth"),
+                        .init(label: "Status", value: Text(LocalizedStringKey(instance.isEnabled ? "Enabled" : "Paused")))
+                    ]
+                )
+            }
             // MARK: Label
             Section("Label") {
                 TextField("Label", text: $editingLabel)
@@ -1519,6 +1531,18 @@ struct ModelEntryDetailSheet: View {
     var body: some View {
         MinisNavigationContainer {
             List {
+                Section {
+                    MinisPageIntro(
+                        title: Text(verbatim: entry.model.displayName),
+                        message: Text(verbatim: providerDisplayName),
+                        systemImage: "cpu",
+                        tint: .indigo,
+                        facts: [
+                            .init(label: "Context", value: entry.baseModel.contextWindowTokens.formatted()),
+                            .init(label: "Thinking", value: supportsThinking ? "Supported" : "Not enabled")
+                        ]
+                    )
+                }
                 Section("Identity") {
                     HStack {
                         Text("Model ID")

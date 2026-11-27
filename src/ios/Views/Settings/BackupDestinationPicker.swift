@@ -32,6 +32,18 @@ struct BackupDestinationPicker: View {
     var body: some View {
         MinisNavigationContainer {
             Form {
+                Section {
+                    MinisPageIntro(
+                        title: "Backup Destinations",
+                        message: "Enable one or more destinations. A backup is copied to each enabled target; existing backups are not replaced by this choice.",
+                        systemImage: "externaldrive.badge.timemachine",
+                        tint: .blue,
+                        facts: [
+                            .init(label: "Servers", value: "\(remotes.count)"),
+                            .init(label: "Folders", value: "\(folders.count)")
+                        ]
+                    )
+                }
                 if !remotes.isEmpty || !folders.isEmpty {
                     savedSection
                 }

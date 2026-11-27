@@ -22,14 +22,107 @@ private struct MinisCatalogRhythm: ViewModifier {
 
 extension View {
     func minisCatalogList() -> some View {
-        listStyle(InsetGroupedListStyle()).modifier(MinisCatalogRhythm())
+        listStyle(InsetGroupedListStyle())
+            .modifier(MinisCatalogRhythm())
+            .listRowSeparator(.hidden)
+            .listSectionSeparator(.hidden)
     }
-    func minisCatalogForm() -> some View { modifier(MinisCatalogRhythm()) }
+    func minisCatalogForm() -> some View {
+        modifier(MinisCatalogRhythm())
+            .listRowSeparator(.hidden)
+            .listSectionSeparator(.hidden)
+    }
     // No listStyle here: search results, multi-select and file trees keep their layout.
     func minisPickerRows() -> some View { environment(\.defaultMinListRowHeight, 44) }
     func minisReadingSurface() -> some View {
         frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color(UIColor.systemBackground))
+    }
+}
+
+/// Compact destination intro: one clear headline, a short purpose statement,
+/// and optional at-a-glance facts. Kept opaque; controls and lists remain native.
+struct MinisPageIntro: View {
+    struct Fact: Identifiable {
+        let label: Text
+        let value: Text
+        let id: String
+
+        init(label: String, value: String, id: String? = nil) {
+            self.label = Text(LocalizedStringKey(label))
+            self.value = Text(verbatim: value)
+            self.id = id ?? label
+        }
+
+        init(label: String, value: Text, id: String? = nil) {
+            self.label = Text(LocalizedStringKey(label))
+            self.value = value
+            self.id = id ?? label
+        }
+    }
+
+    let title: Text
+    let message: Text
+    var systemImage: String? = nil
+    var tint: Color = .accentColor
+    var facts: [Fact] = []
+
+    init(title: String, message: String,
+         systemImage: String? = nil, tint: Color = .accentColor, facts: [Fact] = []) {
+        self.title = Text(LocalizedStringKey(title))
+        self.message = Text(LocalizedStringKey(message))
+        self.systemImage = systemImage
+        self.tint = tint
+        self.facts = facts
+    }
+
+    init(title: Text, message: Text,
+         systemImage: String? = nil, tint: Color = .accentColor, facts: [Fact] = []) {
+        self.title = title
+        self.message = message
+        self.systemImage = systemImage
+        self.tint = tint
+        self.facts = facts
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(tint)
+                        .frame(width: 42, height: 42)
+                        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .accessibilityHidden(true)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    title.font(.headline).accessibilityAddTraits(.isHeader)
+                    message.font(.subheadline).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            if !facts.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(facts) { fact in
+                        VStack(alignment: .leading, spacing: 3) {
+                            fact.value.font(.subheadline.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                            fact.label.font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(9)
+                        .background(Color(UIColor.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(UIColor.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 }
 
@@ -159,7 +252,8 @@ private struct MinisLegacyBarBackdrop: UIViewControllerRepresentable {
                 style.backgroundImage = nil
                 style.backgroundEffect = solid ? nil : UIBlurEffect(style: .systemThinMaterial)
                 style.backgroundColor = solid ? .secondarySystemBackground : .clear
-                style.shadowColor = .separator
+                style.shadowImage = nil
+                style.shadowColor = .clear
                 target[keyPath: slot] = style
                 overrides.append((slot, original, target[keyPath: slot]))
             }
@@ -177,7 +271,6 @@ struct MinisLegacyControlSurface<S: Shape>: ViewModifier {
             ? AnyShapeStyle(Color(UIColor.secondarySystemBackground))
             : AnyShapeStyle(Material.thin)
         content.background(shape.fill(fill))
-            .overlay(shape.stroke(Color(UIColor.separator), lineWidth: 0.5).allowsHitTesting(false))
     }
 }
 

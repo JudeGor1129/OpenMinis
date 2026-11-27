@@ -3127,7 +3127,6 @@ struct ModernContentView: View {
         .frame(height: 48)
         .frame(maxWidth: 320)
         .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(Color(UIColor.separator).opacity(0.5), lineWidth: 0.5))
         .shadow(color: Color.black.opacity(0.15), radius: 8, y: 2)
         .padding(.top, 8)
         .padding(.horizontal, 24)
@@ -4005,7 +4004,6 @@ struct ModernContentView: View {
                     } label: {
                         Label("Rootfs Management", systemImage: "externaldrive")
                     }
-                    Divider()
                     Button {
                         activeToolSheet = .browser
                     } label: {
@@ -4017,7 +4015,6 @@ struct ModernContentView: View {
                         Label("Browser Settings", systemImage: "globe.badge.chevron.backward")
                     }
                     #if DEBUG
-                    Divider()
                     // [debug] Keep Screen Awake — disables auto-lock while the app
                     // is foregrounded. Tap toggles; a checkmark shows the current
                     // state. Memory-only (not persisted). DEBUG builds only.
@@ -5555,7 +5552,6 @@ struct ModernContentView: View {
                 } label: {
                     Label("新建分组", systemImage: "folder.badge.plus")
                 }
-                Divider()
                 Button {
                     Task { @MainActor in
                         await ChatStore.shared.toggleFolderPin(fid)
@@ -5592,7 +5588,6 @@ struct ModernContentView: View {
                 } label: {
                     Label("New Chat in Group", systemImage: "plus.bubble")
                 }
-                Divider()
                 // Dissolve is deliberately NOT destructive-tinted: it touches
                 // no user data (sessions move back to the main list). Tinting
                 // it red would train the eye to read it as the deleting item.
@@ -5601,7 +5596,6 @@ struct ModernContentView: View {
                 } label: {
                     Label("Dissolve Group", systemImage: "folder.badge.minus")
                 }
-                Divider()
                 // The one destructive item, last, with the count in the title
                 // so the consequence is visible in the menu itself, not only
                 // in the confirmation sheet.
@@ -6468,7 +6462,7 @@ private struct DeleteConfirmSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    Divider()
+                    Divider().hidden()
 
                     // Buttons
                     VStack(spacing: 10) {
@@ -6564,7 +6558,7 @@ private struct ExportPreviewSheet: View {
                     .background(Color(UIColor.secondarySystemBackground))
                 }
 
-                Divider()
+                Divider().hidden()
 
                 // File size info
                 if !fileSize.isEmpty {
@@ -7827,9 +7821,11 @@ private struct SteppedSlider: View {
     private let thumbSize: CGFloat = 22
     private let tickSize: CGFloat = 6
 
-    @State private var dragValue: Int?
+    @GestureState private var dragFraction: CGFloat?
 
-    private var displayValue: Int { dragValue ?? value }
+    private var displayedFraction: CGFloat {
+        dragFraction ?? CGFloat(value) / CGFloat(max(1, steps - 1))
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -7845,7 +7841,7 @@ private struct SteppedSlider: View {
                     .position(x: totalW / 2, y: midY)
 
                 // Filled portion
-                let fillW = maxStep > 0 ? totalW * CGFloat(displayValue) / maxStep : 0
+                let fillW = totalW * displayedFraction
                 Capsule()
                     .fill(Color.accentColor)
                     .frame(width: fillW, height: trackHeight)
@@ -7855,41 +7851,47 @@ private struct SteppedSlider: View {
                 ForEach(0..<steps, id: \.self) { i in
                     let x = maxStep > 0 ? totalW * CGFloat(i) / maxStep : 0
                     Circle()
-                        .fill(i <= displayValue ? Color.accentColor : Color(.systemFill))
+                        .fill(CGFloat(i) <= displayedFraction * maxStep ? Color.accentColor : Color(.systemFill))
                         .frame(width: tickSize, height: tickSize)
                         .position(x: x, y: midY)
                 }
 
                 // Thumb
-                let thumbX = maxStep > 0 ? totalW * CGFloat(displayValue) / maxStep : 0
+                let thumbX = totalW * displayedFraction
                 Circle()
                     .fill(.white)
                     .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
                     .frame(width: thumbSize, height: thumbSize)
                     .position(x: thumbX, y: midY)
             }
+            .animation(dragFraction == nil ? MinisMotion.transition : nil, value: displayedFraction)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged { drag in
-                        let step = stepFromX(drag.location.x, width: totalW)
-                        if step != dragValue { dragValue = step }
+                    .updating($dragFraction) { drag, position, transaction in
+                        transaction.animation = nil
+                        position = fraction(from: drag.location.x, width: totalW)
                     }
                     .onEnded { drag in
-                        let step = stepFromX(drag.location.x, width: totalW)
-                        dragValue = nil
-                        onChanged(step)
+                        guard totalW > 0, maxStep > 0 else { return }
+                        // A tap picks its nearest tick. A flick projects at
+                        // most one tick ahead of the finger's release point.
+                        let tickWidth = totalW / maxStep
+                        let projected = drag.predictedEndLocation.x - drag.location.x
+                        let momentum = abs(drag.translation.width) >= 4
+                            ? min(max(projected, -tickWidth), tickWidth) : 0
+                        let target = fraction(from: drag.location.x + momentum, width: totalW)
+                        let step = Int((target * maxStep).rounded())
+                        if step != value { onChanged(step) }
                     }
             )
         }
         .frame(height: thumbSize + 8)
     }
 
-    private func stepFromX(_ x: CGFloat, width: CGFloat) -> Int {
-        guard width > 0, steps > 1 else { return 0 }
-        let fraction = x / width
-        let clamped = min(max(fraction, 0), 1)
-        return Int((clamped * CGFloat(steps - 1)).rounded())
+    private func fraction(from x: CGFloat, width: CGFloat) -> CGFloat {
+        guard width > 0 else { return 0 }
+        return min(max(x / width, 0), 1)
     }
 }
 

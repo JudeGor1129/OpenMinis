@@ -96,7 +96,7 @@ private struct SharedFolderRow: View {
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(
-                                Capsule().strokeBorder(Color.secondary.opacity(0.5), lineWidth: 1)
+                                Capsule().fill(Color.secondary.opacity(0.12))
                             )
                     }
                 }
@@ -120,7 +120,7 @@ private struct SharedFolderRow: View {
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
                 .background(
-                    Capsule().strokeBorder(Color.green.opacity(0.5), lineWidth: 1)
+                    Capsule().fill(Color.green.opacity(0.12))
                 )
         } else {
             Text("Read-only")
@@ -129,7 +129,7 @@ private struct SharedFolderRow: View {
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
                 .background(
-                    Capsule().strokeBorder(Color.orange.opacity(0.5), lineWidth: 1)
+                    Capsule().fill(Color.orange.opacity(0.12))
                 )
         }
     }

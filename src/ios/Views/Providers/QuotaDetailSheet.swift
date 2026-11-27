@@ -43,10 +43,12 @@ struct QuotaDetailSheet: View {
                     }
                     switch display {
                     case .pools(let sid):
-                        accountSection(sid)
+                        // Lead with the data people came here to see. Account
+                        // diagnostics and refresh metadata remain below it.
                         ForEach(quota.pools(of: sid)) { pool in
                             poolSection(pool)
                         }
+                        accountSection(sid)
                         Section {
                             EmptyView()
                         } footer: {
@@ -156,6 +158,8 @@ struct QuotaDetailSheet: View {
         let scopes = quota.bindings.filter { $0.poolKey == pool.id }
         Section {
             QuotaPoolRow(pool: pool, status: status, detailed: true)
+                .padding(.vertical, 6)
+                .listRowSeparator(.hidden)
             QuotaLabeledContent(AppLocalized( "Source")) {
                 Text(Self.sourceText(pool.provenance))
                     .multilineTextAlignment(.trailing)

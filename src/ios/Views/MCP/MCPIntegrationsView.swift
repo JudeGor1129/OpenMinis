@@ -176,6 +176,15 @@ struct MCPToolsSheet: View {
     var body: some View {
         MinisNavigationContainer {
             List {
+                Section {
+                    MinisPageIntro(
+                        title: Text(verbatim: serverName),
+                        message: Text("Tools advertised by this server. Refresh to fetch the current list."),
+                        systemImage: "wrench.and.screwdriver",
+                        tint: .orange,
+                        facts: isLoading || errorText != nil ? [] : [.init(label: "Tools", value: tools.count.formatted())]
+                    )
+                }
                 if isLoading {
                     HStack(spacing: 10) {
                         ProgressView()
@@ -205,9 +214,10 @@ struct MCPToolsSheet: View {
                                     Text(tool.description)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(3)
+                                        .textSelection(.enabled)
                                 }
                             }
+                            .listRowSeparator(.hidden)
                         }
                     }
                 }

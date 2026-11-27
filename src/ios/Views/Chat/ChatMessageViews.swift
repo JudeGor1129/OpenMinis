@@ -275,7 +275,7 @@ struct ChatMessageRow: View {
 
     private var compactDividerRow: some View {
         HStack(spacing: 10) {
-            VStack { Divider() }
+            VStack { Divider().hidden() }
             HStack(spacing: 5) {
                 if message.isCompactLoading {
                     ThinkingOrb(.breathing, size: .small, speed: 0.9)
@@ -304,7 +304,7 @@ struct ChatMessageRow: View {
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .fixedSize()
-            VStack { Divider() }
+            VStack { Divider().hidden() }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
@@ -318,7 +318,7 @@ struct ChatMessageRow: View {
     /// Shared divider-style row for system info messages.
     private func systemDividerRow(icon: String?, loading: Bool, compact: Bool) -> some View {
         HStack(spacing: 10) {
-            VStack { Divider() }
+            VStack { Divider().hidden() }
             HStack(spacing: 5) {
                 if loading {
                     ThinkingOrb(.breathing, size: .small, speed: 0.9)
@@ -341,7 +341,7 @@ struct ChatMessageRow: View {
             // text wraps (UIKit breaks unspaced tokens like paths/URLs
             // mid-word) instead of clipping.
             .layoutPriority(1)
-            VStack { Divider() }
+            VStack { Divider().hidden() }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, compact ? 16 : 6)
@@ -432,9 +432,6 @@ struct ChatMessageRow: View {
                     } label: {
                         Label("Retry", systemImage: "arrow.counterclockwise")
                     }
-                }
-                if onDeleteFrom != nil || onCompact != nil {
-                    Divider()
                 }
                 if onDeleteFrom != nil {
                     Button(role: .destructive) {
@@ -632,7 +629,6 @@ struct ChatMessageRow: View {
                             }
                         }
                         if let onCompact {
-                            Divider()
                             Button(role: .destructive) {
                                 onCompact()
                             } label: {

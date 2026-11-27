@@ -74,6 +74,18 @@ struct BackupRestoreView: View {
                     // Cancel is the way out.
                     inspectingSection
                 } else {
+                    Section {
+                        MinisPageIntro(
+                            title: "Restore a Backup",
+                            message: "Choose a .minisbak package to inspect its contents. Restore merges selected data; it does not replace newer local data.",
+                            systemImage: "arrow.down.doc",
+                            tint: .blue,
+                            facts: [
+                                .init(label: "Restore mode", value: "Merge only"),
+                                .init(label: "Saved servers", value: "\(remotes.count)")
+                            ]
+                        )
+                    }
                     destinationsSection
                     otherSourcesSection
                 }
@@ -1201,7 +1213,7 @@ struct ServerPackageListView: View {
             // it, which is what a pinned location bar looks like on iOS.
             .background(.bar)
 
-            Divider()
+            Divider().hidden()
         }
     }
 

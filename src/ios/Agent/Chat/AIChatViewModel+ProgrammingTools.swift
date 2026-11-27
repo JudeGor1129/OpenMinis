@@ -220,14 +220,208 @@ enum ProgrammingPathPolicy {
     }
 }
 
+// Runs away from the UI actor. One search worker keeps simultaneous scans and
+// atomic index writes from competing for memory and disk with each other.
+actor ProgrammingSearchWorker {
+    static let shared = ProgrammingSearchWorker()
+    nonisolated static let programmingSearchExtensions: Set<String> = [
+        "swift", "m", "mm", "h", "c", "cc", "cpp", "cxx", "hpp", "rs", "py",
+        "js", "jsx", "ts", "tsx", "java", "kt", "kts", "sh", "rb", "go"
+    ]
+
+    func refreshIndex(root: String, rootURL: URL, commit: String, indexURL: URL, force: Bool) throws -> CodeIndexSnapshot {
+        let fm = FileManager.default
+        let old: CodeIndexSnapshot? = force ? nil : (try? Data(contentsOf: indexURL)).flatMap {
+            try? JSONDecoder().decode(CodeIndexSnapshot.self, from: $0)
+        }.flatMap { snapshot in
+            snapshot.schemaVersion == 1 && snapshot.projectPath == root ? snapshot : nil
+        }
+        var files: [String: IndexedCodeFile] = [:]
+        var indexedBytes = 0
+        var changed = old?.commit != commit
+        let maximumIndexedBytes = 48 * 1_024 * 1_024
+        for url in Self.projectFiles(rootURL: rootURL, maxDepth: 20, includeHidden: false, maxFiles: 12_000) {
+            try Task.checkCancellation()
+            guard Self.programmingSearchExtensions.contains(url.pathExtension.lowercased()),
+                  let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true, (values.fileSize ?? 0) <= 2_000_000 else { continue }
+            let fileSize = values.fileSize ?? 0
+            guard indexedBytes + fileSize <= maximumIndexedBytes else { continue }
+            guard let data = try? Data(contentsOf: url), !data.contains(0),
+                  let text = String(data: data, encoding: .utf8) else { continue }
+            let rel = Self.relative(url, to: rootURL)
+            indexedBytes += data.count
+            let hash = Self.sha256(data)
+            if let cached = old?.files[rel], cached.hash == hash {
+                files[rel] = cached
+            } else {
+                changed = true
+                files[rel] = IndexedCodeFile(relativePath: rel, hash: hash,
+                                             byteCount: data.count,
+                                             symbols: CodeSymbolExtractor.extract(text: text, extension: url.pathExtension))
+            }
+        }
+        try Task.checkCancellation()
+        // Identical hashes mean every entry was reused. A count change also
+        // detects removed files; a changed commit still needs a fresh snapshot.
+        if let old, !changed, files.count == old.files.count { return old }
+        let snapshot = CodeIndexSnapshot(schemaVersion: 1, projectPath: root,
+                                         commit: commit, generatedAt: Date(), files: files)
+        let encoded = try JSONEncoder().encode(snapshot)
+        try Task.checkCancellation()
+        try fm.createDirectory(at: indexURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try encoded.write(to: indexURL, options: .atomic)
+        return snapshot
+    }
+
+    func rankedHits(index: CodeIndexSnapshot, rootURL: URL, query: String,
+                    limit: Int, contextLines: Int, requestedMode: String) throws -> [CodeSearchHit] {
+        let terms = Self.tokens(in: query).filter { $0.count > 1 }.map(String.init)
+        let termSet = Set(terms)
+        let queryLower = query.lowercased()
+        var documentFrequency: [String: Int] = [:]
+        var searchable: [(IndexedCodeFile, String, [String: Int])] = []
+        for entry in index.files.values {
+            try Task.checkCancellation()
+            let url = rootURL.appendingPathComponent(entry.relativePath)
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let symbolCandidate = entry.symbols.contains {
+                $0.name.caseInsensitiveCompare(query) == .orderedSame
+                    || $0.name.range(of: query, options: .caseInsensitive) != nil
+            }
+            let lexicalCandidate = text.range(of: query, options: .caseInsensitive) != nil
+                || terms.contains { text.range(of: $0, options: .caseInsensitive) != nil }
+            guard symbolCandidate || lexicalCandidate else { continue }
+            let counts = Self.queryTokenCounts(in: text, terms: termSet)
+            for term in counts.keys { documentFrequency[term, default: 0] += 1 }
+            searchable.append((entry, text, counts))
+        }
+        let n = Double(max(1, searchable.count))
+        var hits: [CodeSearchHit] = []
+        for (entry, text, tokenCounts) in searchable {
+            try Task.checkCancellation()
+            let lines = text.components(separatedBy: .newlines)
+            var baseScore = 0.0
+            for term in terms {
+                let tf = Double(tokenCounts[term] ?? 0)
+                let df = Double(documentFrequency[term] ?? 0)
+                baseScore += (tf / (tf + 1.2)) * log(1.0 + (n - df + 0.5) / (df + 0.5))
+            }
+            let matchingSymbols = entry.symbols.filter {
+                $0.name.lowercased() == queryLower || $0.name.lowercased().contains(queryLower)
+            }
+            for symbol in matchingSymbols {
+                let exactBonus = symbol.name.lowercased() == queryLower ? 100.0 : 35.0
+                hits.append(makeHit(entry: entry, lines: lines, line: symbol.line,
+                                    contextLines: contextLines, kind: symbol.kind, symbol: symbol.name,
+                                    score: exactBonus + baseScore, commit: index.commit))
+            }
+            if matchingSymbols.isEmpty || requestedMode == "keyword" || requestedMode == "auto" || requestedMode == "semantic" {
+                for (lineOffset, line) in lines.enumerated() where line.lowercased().contains(queryLower) {
+                    hits.append(makeHit(entry: entry, lines: lines, line: lineOffset + 1,
+                                        contextLines: contextLines, kind: "text", symbol: nil,
+                                        score: 10.0 + baseScore, commit: index.commit))
+                    if hits.count > limit * 8 { break }
+                }
+            }
+        }
+        try Task.checkCancellation()
+        let sorted = hits.sorted { lhs, rhs in
+            lhs.score == rhs.score ? (lhs.path, lhs.line) < (rhs.path, rhs.line) : lhs.score > rhs.score
+        }
+        var deduped: [CodeSearchHit] = []
+        var seen: Set<String> = []
+        for hit in sorted where deduped.count < limit {
+            let key = "\(hit.path):\(hit.line):\(hit.symbol ?? "")"
+            if seen.insert(key).inserted { deduped.append(hit) }
+        }
+        return deduped
+    }
+
+    private nonisolated static func tokens(in text: String) -> [Substring] {
+        text.lowercased().split { !$0.isLetter && !$0.isNumber && $0 != "_" }
+    }
+
+    nonisolated static func queryTokenCounts(in text: String, terms: Set<String>) -> [String: Int] {
+        guard !terms.isEmpty else { return [:] }
+        // Preserve the original whole-string Unicode lowercase semantics, but
+        // scan slices directly instead of allocating an array of every token.
+        let folded = text.lowercased()
+        let wanted = Dictionary(uniqueKeysWithValues: terms.map { ($0[...], $0) })
+        var counts: [String: Int] = [:]
+        var start = folded.startIndex
+        var cursor = start
+        var atLeastTwo = false
+        var eligible = 0
+        while cursor < folded.endIndex {
+            let character = folded[cursor]
+            if character.isLetter || character.isNumber || character == "_" {
+                if cursor != start { atLeastTwo = true }
+                folded.formIndex(after: &cursor)
+                continue
+            }
+            if atLeastTwo {
+                if let term = wanted[folded[start..<cursor]] { counts[term, default: 0] += 1 }
+                eligible += 1
+                if eligible == 200_000 { return counts }
+            }
+            folded.formIndex(after: &cursor)
+            start = cursor
+            atLeastTwo = false
+        }
+        if atLeastTwo, let term = wanted[folded[start..<cursor]] { counts[term, default: 0] += 1 }
+        return counts
+    }
+
+    private func makeHit(entry: IndexedCodeFile, lines: [String], line: Int, contextLines: Int,
+                         kind: String, symbol: String?, score: Double, commit: String) -> CodeSearchHit {
+        let start = max(1, line - contextLines)
+        let end = min(lines.count, line + contextLines)
+        let snippet = (start...max(start, end)).compactMap { number -> String? in
+            guard number > 0, number <= lines.count else { return nil }
+            return "\(number): \(String(lines[number - 1].prefix(500)))"
+        }.joined(separator: "\n")
+        return CodeSearchHit(path: entry.relativePath, line: line, endLine: end,
+                             kind: kind, symbol: symbol, score: score,
+                             snippet: String(snippet.prefix(3000)), commit: commit, fileHash: entry.hash)
+    }
+
+    nonisolated static func projectFiles(rootURL: URL, maxDepth: Int, includeHidden: Bool, maxFiles: Int) -> [URL] {
+        let fm = FileManager.default
+        let rootComponents = rootURL.standardizedFileURL.pathComponents.count
+        let skipNames: Set<String> = [".git", ".build", "DerivedData", "Pods", "node_modules", "vendor", "build", "dist", ".theos"]
+        guard let enumerator = fm.enumerator(at: rootURL,
+                                             includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey],
+                                             options: includeHidden ? [] : [.skipsHiddenFiles]) else { return [] }
+        var result: [URL] = []
+        while let url = enumerator.nextObject() as? URL, result.count < maxFiles {
+            let depth = url.standardizedFileURL.pathComponents.count - rootComponents
+            if depth > maxDepth { enumerator.skipDescendants(); continue }
+            if skipNames.contains(url.lastPathComponent) { enumerator.skipDescendants(); continue }
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey])
+            if values?.isSymbolicLink == true { enumerator.skipDescendants(); continue }
+            if values?.isRegularFile == true { result.append(url) }
+        }
+        return result
+    }
+
+    nonisolated static func relative(_ url: URL, to root: URL) -> String {
+        let rootPath = root.standardizedFileURL.path.hasSuffix("/")
+            ? root.standardizedFileURL.path : root.standardizedFileURL.path + "/"
+        let path = url.standardizedFileURL.path
+        return path.hasPrefix(rootPath) ? String(path.dropFirst(rootPath.count)) : path
+    }
+
+    nonisolated static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+}
+
 // MARK: - Structured programming tool execution
 
 extension AIChatViewModel {
     private static let programmingOutputLimit = 14_000
-    private static let programmingSearchExtensions: Set<String> = [
-        "swift", "m", "mm", "h", "c", "cc", "cpp", "cxx", "hpp", "rs", "py",
-        "js", "jsx", "ts", "tsx", "java", "kt", "kts", "sh", "rb", "go"
-    ]
     private static let semanticSearchProvider: any CodeSemanticSearchProviding = UnavailableCodeSemanticSearchProvider()
 
     actor ProjectWriteLockRegistry {
@@ -308,11 +502,11 @@ extension AIChatViewModel {
         var dependencies: Set<String> = []
         var isTheos = false
 
-        for url in projectFiles(rootURL: rootURL, maxDepth: maxDepth, includeHidden: false, maxFiles: 12_000) {
-            let rel = relative(url, to: rootURL)
+        for url in ProgrammingSearchWorker.projectFiles(rootURL: rootURL, maxDepth: maxDepth, includeHidden: false, maxFiles: 12_000) {
+            let rel = ProgrammingSearchWorker.relative(url, to: rootURL)
             let name = url.lastPathComponent
             let ext = url.pathExtension.lowercased()
-            if Self.programmingSearchExtensions.contains(ext) {
+            if ProgrammingSearchWorker.programmingSearchExtensions.contains(ext) {
                 languages[languageName(ext), default: 0] += 1
             }
             if ["Package.swift", "project.yml", "Podfile", "Makefile", "Cargo.toml"].contains(name)
@@ -438,40 +632,10 @@ extension AIChatViewModel {
     // MARK: Incremental indexing and bounded search
 
     private func refreshCodeIndex(context: ProjectContext, force: Bool) async throws -> CodeIndexSnapshot {
-        let fm = FileManager.default
-        let rootURL = context.hostRoot
-        let indexURL = indexFileURL(project: context.root)
-        let old: CodeIndexSnapshot? = force ? nil : (try? Data(contentsOf: indexURL)).flatMap {
-            try? JSONDecoder().decode(CodeIndexSnapshot.self, from: $0)
-        }
-        var files: [String: IndexedCodeFile] = [:]
-        var indexedBytes = 0
-        let maximumIndexedBytes = 48 * 1_024 * 1_024
-        for url in projectFiles(rootURL: rootURL, maxDepth: 20, includeHidden: false, maxFiles: 12_000) {
-            guard Self.programmingSearchExtensions.contains(url.pathExtension.lowercased()),
-                  let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
-                  values.isRegularFile == true, (values.fileSize ?? 0) <= 2_000_000 else { continue }
-            let fileSize = values.fileSize ?? 0
-            guard indexedBytes + fileSize <= maximumIndexedBytes else { continue }
-            guard let data = try? Data(contentsOf: url), !data.contains(0),
-                  let text = String(data: data, encoding: .utf8) else { continue }
-            let rel = relative(url, to: rootURL)
-            indexedBytes += data.count
-            let hash = sha256(data)
-            if let cached = old?.files[rel], cached.hash == hash {
-                files[rel] = cached
-            } else {
-                files[rel] = IndexedCodeFile(relativePath: rel, hash: hash,
-                                             byteCount: data.count,
-                                             symbols: CodeSymbolExtractor.extract(text: text, extension: url.pathExtension))
-            }
-        }
-        let snapshot = CodeIndexSnapshot(schemaVersion: 1, projectPath: context.root,
-                                         commit: context.commit, generatedAt: Date(), files: files)
-        try fm.createDirectory(at: indexURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let encoded = try JSONEncoder().encode(snapshot)
-        try encoded.write(to: indexURL, options: .atomic)
-        return snapshot
+        try await ProgrammingSearchWorker.shared.refreshIndex(
+            root: context.root, rootURL: context.hostRoot, commit: context.commit,
+            indexURL: indexFileURL(project: context.root), force: force
+        )
     }
 
     private func searchCode(_ args: [String: Any]) async throws -> FileToolResult {
@@ -489,63 +653,10 @@ extension AIChatViewModel {
                                     "fallback": false, "hits": try jsonObject(hits)], success: true)
         }
 
-        let terms = tokenize(query)
-        let queryLower = query.lowercased()
-        let rootURL = context.hostRoot
-        var documentFrequency: [String: Int] = [:]
-        var searchable: [(IndexedCodeFile, String, [String])] = []
-        for entry in index.files.values {
-            let url = rootURL.appendingPathComponent(entry.relativePath)
-            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            let symbolCandidate = entry.symbols.contains {
-                $0.name.caseInsensitiveCompare(query) == .orderedSame
-                    || $0.name.range(of: query, options: .caseInsensitive) != nil
-            }
-            let lexicalCandidate = text.range(of: query, options: .caseInsensitive) != nil
-                || terms.contains { text.range(of: $0, options: .caseInsensitive) != nil }
-            guard symbolCandidate || lexicalCandidate else { continue }
-            let tokens = tokenize(text)
-            for term in Set(tokens).intersection(terms) { documentFrequency[term, default: 0] += 1 }
-            searchable.append((entry, text, tokens))
-        }
-        let n = Double(max(1, searchable.count))
-        var hits: [CodeSearchHit] = []
-        for (entry, text, tokens) in searchable {
-            let lines = text.components(separatedBy: .newlines)
-            let tokenCounts = Dictionary(grouping: tokens, by: { $0 }).mapValues(\.count)
-            var baseScore = 0.0
-            for term in terms {
-                let tf = Double(tokenCounts[term] ?? 0)
-                let df = Double(documentFrequency[term] ?? 0)
-                baseScore += (tf / (tf + 1.2)) * log(1.0 + (n - df + 0.5) / (df + 0.5))
-            }
-            let matchingSymbols = entry.symbols.filter {
-                $0.name.lowercased() == queryLower || $0.name.lowercased().contains(queryLower)
-            }
-            for symbol in matchingSymbols {
-                let exactBonus = symbol.name.lowercased() == queryLower ? 100.0 : 35.0
-                hits.append(makeHit(entry: entry, lines: lines, line: symbol.line,
-                                    contextLines: contextLines, kind: symbol.kind, symbol: symbol.name,
-                                    score: exactBonus + baseScore, commit: index.commit))
-            }
-            if matchingSymbols.isEmpty || requestedMode == "keyword" || requestedMode == "auto" || requestedMode == "semantic" {
-                for (lineOffset, line) in lines.enumerated() where line.lowercased().contains(queryLower) {
-                    hits.append(makeHit(entry: entry, lines: lines, line: lineOffset + 1,
-                                        contextLines: contextLines, kind: "text", symbol: nil,
-                                        score: 10.0 + baseScore, commit: index.commit))
-                    if hits.count > limit * 8 { break }
-                }
-            }
-        }
-        let sorted = hits.sorted { lhs, rhs in
-            lhs.score == rhs.score ? (lhs.path, lhs.line) < (rhs.path, rhs.line) : lhs.score > rhs.score
-        }
-        var deduped: [CodeSearchHit] = []
-        var seen: Set<String> = []
-        for hit in sorted where deduped.count < limit {
-            let key = "\(hit.path):\(hit.line):\(hit.symbol ?? "")"
-            if seen.insert(key).inserted { deduped.append(hit) }
-        }
+        let deduped = try await ProgrammingSearchWorker.shared.rankedHits(
+            index: index, rootURL: context.hostRoot, query: query,
+            limit: limit, contextLines: contextLines, requestedMode: requestedMode
+        )
         let semanticRequested = requestedMode == "semantic"
         return programmingJSON([
             "ok": true,
@@ -560,19 +671,6 @@ extension AIChatViewModel {
             "context_lines": contextLines,
             "hits": try jsonObject(deduped)
         ], success: true)
-    }
-
-    private func makeHit(entry: IndexedCodeFile, lines: [String], line: Int, contextLines: Int,
-                         kind: String, symbol: String?, score: Double, commit: String) -> CodeSearchHit {
-        let start = max(1, line - contextLines)
-        let end = min(lines.count, line + contextLines)
-        let snippet = (start...max(start, end)).compactMap { number -> String? in
-            guard number > 0, number <= lines.count else { return nil }
-            return "\(number): \(String(lines[number - 1].prefix(500)))"
-        }.joined(separator: "\n")
-        return CodeSearchHit(path: entry.relativePath, line: line, endLine: end,
-                             kind: kind, symbol: symbol, score: score,
-                             snippet: String(snippet.prefix(3000)), commit: commit, fileHash: entry.hash)
     }
 
     private func readProgrammingFile(_ args: [String: Any]) async throws -> FileToolResult {
@@ -596,10 +694,10 @@ extension AIChatViewModel {
         if content.utf8.count > maxBytes {
             content = String(content.prefix(maxBytes)); truncated = true
         }
-        let rel = relative(url, to: context.hostRoot)
+        let rel = ProgrammingSearchWorker.relative(url, to: context.hostRoot)
         return programmingJSON([
             "ok": true, "path": rel, "canonical_path": url.path,
-            "commit": context.commit, "file_hash": sha256(data),
+            "commit": context.commit, "file_hash": ProgrammingSearchWorker.sha256(data),
             "start_line": startLine, "end_line": end, "total_lines": all.count,
             "truncated": truncated, "content": content
         ], success: true)
@@ -633,7 +731,7 @@ extension AIChatViewModel {
             guard let original = String(data: originalData, encoding: .utf8) else {
                 throw ProgrammingToolError("target is not UTF-8 text")
             }
-            let currentHash = sha256(originalData)
+            let currentHash = ProgrammingSearchWorker.sha256(originalData)
             guard currentHash.caseInsensitiveCompare(expectedHash) == .orderedSame else {
                 throw ProgrammingToolError("hash_mismatch: expected \(expectedHash), current \(currentHash); re-read before patching")
             }
@@ -670,7 +768,7 @@ extension AIChatViewModel {
                 let verify = try Data(contentsOf: tempURL)
                 guard verify == updatedData else { throw ProgrammingToolError("temporary file verification failed") }
                 let preWriteData = try Data(contentsOf: hostURL)
-                let preWriteHash = sha256(preWriteData)
+                let preWriteHash = ProgrammingSearchWorker.sha256(preWriteData)
                 guard preWriteHash.caseInsensitiveCompare(expectedHash) == .orderedSame,
                       preWriteData == originalData else {
                     throw ProgrammingToolError("hash_mismatch: target changed while the patch was being prepared; re-read before patching")
@@ -687,7 +785,7 @@ extension AIChatViewModel {
             let diff = try await executeCommand("git -C \(shellQuote(context.root)) diff --no-ext-diff -- \(shellQuote(relativeFile))", timeout: 30) { _ in }
             return programmingJSON([
                 "ok": true, "project": context.root, "path": file,
-                "previous_hash": currentHash, "file_hash": sha256(landed),
+                "previous_hash": currentHash, "file_hash": ProgrammingSearchWorker.sha256(landed),
                 "preexisting_uncommitted_changes": dirty, "replacements": replaceAll ? matches : 1,
                 "atomic": true, "lock": "project_serial",
                 "diff": diff.output, "diff_exit_code": diff.exitCode
@@ -843,7 +941,7 @@ extension AIChatViewModel {
     }
 
     private func indexFileURL(project: String) -> URL {
-        let digest = sha256(Data(project.utf8))
+        let digest = ProgrammingSearchWorker.sha256(Data(project.utf8))
         let base: URL
         if let sid = fsSessionId {
             base = Self.minisOffloadsPersistentDir(for: sid)
@@ -854,32 +952,6 @@ extension AIChatViewModel {
             .appendingPathComponent("\(digest).json")
     }
 
-    private func projectFiles(rootURL: URL, maxDepth: Int, includeHidden: Bool, maxFiles: Int) -> [URL] {
-        let fm = FileManager.default
-        let rootComponents = rootURL.standardizedFileURL.pathComponents.count
-        let skipNames: Set<String> = [".git", ".build", "DerivedData", "Pods", "node_modules", "vendor", "build", "dist", ".theos"]
-        guard let enumerator = fm.enumerator(at: rootURL,
-                                             includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey],
-                                             options: includeHidden ? [] : [.skipsHiddenFiles]) else { return [] }
-        var result: [URL] = []
-        while let url = enumerator.nextObject() as? URL, result.count < maxFiles {
-            let depth = url.standardizedFileURL.pathComponents.count - rootComponents
-            if depth > maxDepth { enumerator.skipDescendants(); continue }
-            if skipNames.contains(url.lastPathComponent) { enumerator.skipDescendants(); continue }
-            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey])
-            if values?.isSymbolicLink == true { enumerator.skipDescendants(); continue }
-            if values?.isRegularFile == true { result.append(url) }
-        }
-        return result
-    }
-
-    private func relative(_ url: URL, to root: URL) -> String {
-        let rootPath = root.standardizedFileURL.path.hasSuffix("/")
-            ? root.standardizedFileURL.path : root.standardizedFileURL.path + "/"
-        let path = url.standardizedFileURL.path
-        return path.hasPrefix(rootPath) ? String(path.dropFirst(rootPath.count)) : path
-    }
-
     private func regexCaptures(_ pattern: String, in text: String, limit: Int) -> [String] {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
@@ -887,11 +959,6 @@ extension AIChatViewModel {
             guard match.numberOfRanges > 1, let capture = Range(match.range(at: 1), in: text) else { return nil }
             return String(text[capture]).trimmingCharacters(in: .whitespacesAndNewlines)
         }.filter { !$0.isEmpty }
-    }
-
-    private func tokenize(_ text: String) -> [String] {
-        text.lowercased().split { !$0.isLetter && !$0.isNumber && $0 != "_" }
-            .map(String.init).filter { $0.count > 1 }.prefix(200_000).map { $0 }
     }
 
     private func languageName(_ ext: String) -> String {
@@ -910,10 +977,6 @@ extension AIChatViewModel {
         case "go": return "Go"
         default: return ext
         }
-    }
-
-    private func sha256(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     private func shellQuote(_ value: String) -> String {

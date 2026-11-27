@@ -1158,7 +1158,7 @@ struct AgentDetailCard<Trailing: View, Content: View>: View {
             .background(Self.barBg)
 
             if bodyPadding > 0 {
-                Divider()
+                Divider().hidden()
                 content()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(bodyPadding)

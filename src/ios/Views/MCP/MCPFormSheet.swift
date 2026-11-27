@@ -97,15 +97,23 @@ struct MCPFormSheet: View {
         MinisNavigationContainer {
             Form {
                 Section {
-                    TextField(AppLocalized("Server name"), text: $name)
-                        .disabled(isEditing)   // id is the key; renaming = delete+add
-                        .disableAutocorrection(true)
-                        .textInputAutocapitalization(.never)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Server name", systemImage: "server.rack")
+                            .font(.subheadline.weight(.semibold))
+                            .accessibilityHidden(true)
+                        TextField(AppLocalized("Server name"), text: $name)
+                            .disabled(isEditing)   // id is the key; renaming = delete+add
+                            .disableAutocorrection(true)
+                            .textInputAutocapitalization(.never)
+                    }
+                    .padding(.vertical, 4)
+                    .listRowSeparator(.hidden)
                     Picker(AppLocalized("Transport"), selection: $transport) {
                         ForEach(Transport.allCases) { t in
                             Text(t.rawValue).tag(t)
                         }
                     }
+                    .listRowSeparator(.hidden)
                 }
 
                 if transport == .stdio {
@@ -517,9 +525,9 @@ struct MCPFormSheet: View {
                 let pair = rowBinding(pairs, id: id)
                 HStack {
                     TextField(keyPlaceholder, text: pair.key)
+                        .font(.subheadline.weight(.semibold))
                         .disableAutocorrection(true)
                         .textInputAutocapitalization(.never)
-                    Divider()
                     TextField(valuePlaceholder, text: pair.value)
                         .disableAutocorrection(true)
                         .textInputAutocapitalization(.never)

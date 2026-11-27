@@ -107,7 +107,7 @@ struct BrowserSheetView: View {
 
                 if !isFullscreen {
                     // Separator
-                    Divider()
+                    Divider().hidden()
 
                     // Bottom navigation toolbar
                     HStack(spacing: 0) {
@@ -287,9 +287,6 @@ struct BrowserSheetView: View {
             .padding(.vertical, 5)
             .background(isSelected ? Color.accentColor.opacity(0.15) : Color(UIColor.systemGray5))
             .clipShape(Capsule())
-            .overlay(
-                Capsule().stroke(isSelected ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1)
-            )
         }
         .buttonStyle(.plain)
     }
@@ -369,10 +366,6 @@ private struct AgentBrowsingOverlay: View {
                     .foregroundStyle(.white.opacity(0.9))
 
                 if let onTakeover {
-                    Divider()
-                        .frame(height: 14)
-                        .overlay(Color.white.opacity(0.3))
-
                     Button("Takeover") {
                         onTakeover()
                     }

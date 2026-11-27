@@ -64,7 +64,6 @@ struct GroupSlotPicker: View {
                 }
             }
 
-            Divider()
             Button {
                 showCreate = true
             } label: {

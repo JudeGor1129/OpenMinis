@@ -114,6 +114,20 @@ struct ModelGroupDetailView: View {
     @ViewBuilder
     private func groupContent(_ group: ModelGroup) -> some View {
         List {
+            Section {
+                MinisPageIntro(
+                    title: Text(verbatim: group.name),
+                    message: Text(LocalizedStringKey(group.strategy == .fallback
+                        ? "Models are tried in order. Move members to change priority; per-model limits are respected."
+                        : "Sessions are distributed across this group and remain assigned unless the selected model fails.")),
+                    systemImage: group.strategy == .fallback ? "arrow.down.circle" : "arrow.triangle.branch",
+                    tint: group.strategy == .fallback ? .blue : .orange,
+                    facts: [
+                        .init(label: "Strategy", value: group.strategy == .fallback ? "Fallback" : "Load Balance"),
+                        .init(label: "Members", value: "\(group.memberEntryIds.count)")
+                    ]
+                )
+            }
             // MARK: Name
             Section("Name") {
                 HStack {

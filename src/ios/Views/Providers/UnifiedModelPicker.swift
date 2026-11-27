@@ -555,19 +555,20 @@ struct UnifiedModelPicker: View {
 
     var body: some View {
         List {
-            if let note = config.headerNote {
-                Section {
-                    HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "info.circle")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(note)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            Section {
+                MinisPageIntro(
+                    title: Text(config.title),
+                    message: config.headerNote.map { Text(verbatim: $0) } ?? Text(LocalizedStringKey(isMulti
+                        ? "Select the models to add. The Add button becomes available after a selection."
+                        : "Choose one model. Search and capability filters narrow the available catalog.")),
+                    systemImage: isMulti ? "checklist" : "cpu",
+                    tint: .indigo,
+                    facts: [
+                        .init(label: "Catalog entries", value: "\(sections?.reduce(0) { $0 + $1.entries.count } ?? 0)"),
+                        .init(label: isMulti ? "Selected" : "Groups", value: isMulti ? "\(selectedEntryIds.count)" : "\(visibleGroups.count)")
+                    ]
+                )
             }
-
             // System now renders through the generic instanceSection loop below
             // (its synthetic instance leads entriesByInstance) — no parallel section.
 

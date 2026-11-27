@@ -565,9 +565,7 @@ struct SpeechPlayerControl: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
-        // No shadow — a faint border instead, matching the scroll-to-bottom pill.
         .background(Capsule().fill(.ultraThinMaterial))
-        .overlay(Capsule().stroke(Color.gray.opacity(0.25), lineWidth: 0.5))
         // Drag to reposition. Highest priority so the outer tap-to-dismiss layer
         // doesn't steal it.
         .highPriorityGesture(dragGesture)

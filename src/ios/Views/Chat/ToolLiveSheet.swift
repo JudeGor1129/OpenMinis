@@ -986,7 +986,7 @@ struct ToolLiveSheet: View {
             // Top nav bar
             sheetNavBar
 
-            Divider().foregroundStyle(Color(white: 0.2))
+            Divider().hidden().foregroundStyle(Color(white: 0.2))
 
             // Content area — `blockUpdateTick` dependency ensures live refresh
             let _ = blockUpdateTick
@@ -1541,7 +1541,7 @@ struct ToolLiveSheet: View {
                             .padding(.vertical, 10)
                             .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 1) : UIColor(white: 0.92, alpha: 1) }))
 
-                            Divider()
+                            Divider().hidden()
 
                             // Result content — chunked + windowed, and now
                             // sanitized: this path used to feed raw text
@@ -1622,7 +1622,7 @@ struct ToolLiveSheet: View {
                         .padding(.vertical, 10)
                         .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 1) : UIColor(white: 0.92, alpha: 1) }))
 
-                        Divider()
+                        Divider().hidden()
 
                         // Result content — chunked + windowed (was one Text
                         // holding the whole result).
@@ -1832,7 +1832,7 @@ struct ToolLiveSheet: View {
                             .padding(.vertical, 10)
                             .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 1) : UIColor(white: 0.92, alpha: 1) }))
 
-                            Divider()
+                            Divider().hidden()
 
                             // Diff body — lines are flush against each other
                             // and against the title divider so the red/green
@@ -1877,7 +1877,7 @@ struct ToolLiveSheet: View {
                             // streaming layout (no footer) is unchanged.
                             if !isStreaming {
                                 Spacer(minLength: 0)
-                                Divider()
+                                Divider().hidden()
 
                                 // Status-aware footer: success → "Edited <path> (1 replacement, …)";
                                 // failed → "Failed to edit <path>" + full error message from
@@ -2031,7 +2031,7 @@ struct ToolLiveSheet: View {
             .padding(.vertical, 10)
             .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 1) : UIColor(white: 0.92, alpha: 1) }))
 
-            Divider()
+            Divider().hidden()
 
             // Script content — chunked + windowed; execute_js scripts are
             // usually small but nothing bounds them.
@@ -2080,7 +2080,7 @@ struct ToolLiveSheet: View {
                     .padding(.vertical, 10)
                     .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 1) : UIColor(white: 0.92, alpha: 1) }))
 
-                    Divider()
+                    Divider().hidden()
 
                     // Memory content body. Streaming keeps the full live tail
                     // (liveChunkedLines already caps at 500 lines); completed
@@ -2155,7 +2155,7 @@ struct ToolLiveSheet: View {
                     .padding(.vertical, 10)
                     .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 1) : UIColor(white: 0.92, alpha: 1) }))
 
-                    Divider()
+                    Divider().hidden()
 
                     // File content — chunked rendering. Streaming keeps the
                     // live tail (already capped at 500 lines); completed
@@ -2574,7 +2574,7 @@ struct ToolLiveSheet: View {
 
     private var bottomBar: some View {
         VStack(spacing: 0) {
-            Divider()
+            Divider().hidden()
 
             // Tool info row
             HStack(spacing: 8) {

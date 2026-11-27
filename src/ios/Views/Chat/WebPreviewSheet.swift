@@ -782,7 +782,6 @@ struct MinisSafariView: View {
             } label: {
                 Label(AppLocalized("Share"), systemImage: "square.and.arrow.up")
             }
-            Divider()
             Button(role: .destructive) {
                 exitFullscreen(returnToSheet: false)
             } label: {

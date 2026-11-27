@@ -23,12 +23,32 @@ require('ForEach(vm.messages.reversed())' in container and '.rotationEffect(.deg
         'latest messages must be laid out at native offset zero')
 require('Timer(' not in legacy and 'setContentOffset(' not in legacy and 'scrollTo(' not in probe,
         'legacy viewport must never chase lazy numeric offsets or content growth')
-# Only the two explicit user jump handlers can command scrolling.
-require(container.count('proxy.scrollTo(') == 2 and
-        'proxy.scrollTo(bottomAnchor, anchor: .top)' in container,
+# Installing the search callback on appear is not a scroll command. The
+# callback runs when search navigates to a match (initial result or next/prev).
+import re
+search_callback = re.compile(
+    r'^                    chatSearch\?\.onNavigate = \{ hit in\n'
+    r'(?P<body>.*?)^                    \}\n', re.MULTILINE | re.DOTALL
+)
+callbacks = list(search_callback.finditer(container))
+require(len(callbacks) == 1 and
+        re.findall(r'proxy\.scrollTo\([^\n]*', callbacks[0]['body']) ==
+        ['proxy.scrollTo(hit.key.messageId, anchor: .center)'],
+        'search may only scroll to its selected result')
+without_search_callback = search_callback.sub('', container, count=1)
+# The remaining commands must each live in the named user jump handler.
+for event, command in [
+    ('.onReceive(vm.forceScrollToBottom)', 'proxy.scrollTo(bottomAnchor, anchor: .top)'),
+    ('.onReceive(vm.forceScrollToTop)', 'proxy.scrollTo(first, anchor: .bottom)'),
+]:
+    require(event in without_search_callback, 'missing user jump handler: ' + event)
+    handler = without_search_callback.split(event, 1)[1].split('\n                }', 1)[0]
+    require(re.findall(r'proxy\.scrollTo\([^\n]*', handler.replace(' }', '')) == [command],
+            'only the expected scroll command is allowed in ' + event)
+require(without_search_callback.count('scrollTo(') == 2,
         'entry and history replacement must not issue automatic scroll commands')
 for event in ['.onAppear {', '.onChange(of: vm.latestSessionAnchorRequest) {']:
-    body = container.split(event, 1)[1].split('\n                }', 1)[0]
+    body = without_search_callback.split(event, 1)[1].split('\n                }', 1)[0]
     require('scrollTo(' not in body, 'session restoration must not scroll')
 require('scroll.isTracking || scroll.isDragging || scroll.isDecelerating' in probe,
         'native gestures and momentum take priority')

@@ -455,6 +455,14 @@ struct RemoteDeviceSessionsView: View {
 
     var body: some View {
         List {
+            Section {
+                MinisPageIntro(
+                    title: Text(verbatim: deviceName),
+                    message: Text("Fork creates a local copy. The original conversation stays on the other device."),
+                    systemImage: "iphone",
+                    tint: .indigo
+                )
+            }
             if sessions.isEmpty {
                 Text("No sessions synced from this device yet.")
                     .foregroundStyle(.secondary)
@@ -670,9 +678,16 @@ struct SyncLogView: View {
     var body: some View {
         List {
             Section {
-                Text("Sync events are recorded as iCloud sync sends and receives data. Up to 1,000 entries are kept.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                MinisPageIntro(
+                    title: "iCloud Sync Logs",
+                    message: "The latest 1,000 events are retained. Share exports a sanitized diagnostic report.",
+                    systemImage: "clock.arrow.circlepath",
+                    tint: .blue,
+                    facts: [
+                        .init(label: "Events", value: store.entries.count.formatted()),
+                        .init(label: "Errors", value: store.entries.filter { $0.direction == .error }.count.formatted())
+                    ]
+                )
             }
             if store.entries.isEmpty {
                 Text("No sync events yet.")

@@ -221,11 +221,15 @@ struct AIChatView: View {
         )
     }
 
-    init(sessionId: String? = nil, draftId: String? = nil, remoteDeviceId: String? = nil, initialGroupId: String? = nil) {
+    init(sessionId: String? = nil, draftId: String? = nil, remoteDeviceId: String? = nil, initialGroupId: String? = nil, initialSession: ChatSession? = nil) {
         self.sessionId = sessionId
         self.draftId = draftId
         self.remoteDeviceId = remoteDeviceId
         self.initialGroupId = initialGroupId
+        // Seed only the already available row data. Group configuration and the
+        // authoritative title still refresh asynchronously after presentation.
+        let titleSeed = initialSession.flatMap { $0.id == sessionId ? $0 : nil }
+        _titlePillSession = State(initialValue: titleSeed)
         // [T-ios-aichatview-eager-cachedvm] Build the CachedViewModel INSIDE the
         // StateObject autoclosure so SwiftUI only constructs it the first time
         // this view's StateObject is created — NOT on every struct re-init.
@@ -438,7 +442,7 @@ struct AIChatView: View {
     /// Live delta while a drag is in flight, in POINTS. Kept separate from the
     /// persisted fraction so an in-progress drag never writes to defaults and a
     /// cancelled gesture leaves no trace.
-    @State private var composerDragOffset: CGFloat = 0
+    @GestureState private var composerDragOffset: CGFloat = 0
 
     /// The drag handle is iPad-only: on iPhone the composer is already close to
     /// the keyboard and a 50%-height composer would leave no readable
@@ -2909,7 +2913,7 @@ struct AIChatView: View {
     #if DEBUG
     private var forkBanner: some View {
         VStack(spacing: 0) {
-            Divider()
+            Divider().hidden()
             HStack {
                 Image(systemName: "eye")
                     .foregroundStyle(.secondary)
@@ -3465,7 +3469,6 @@ struct AIChatView: View {
                 .padding(.vertical, 6)
                 .background(ChatColors.inputIconBg)
                 .clipShape(Capsule())
-                .overlay(Capsule().stroke(ChatColors.inputIconBorder, lineWidth: 0.5))
         }
     }
 
@@ -3719,14 +3722,16 @@ struct AIChatView: View {
             // first and the second tap never forms.
             .onTapGesture(count: 2) { toggleComposerHeight() }
             .gesture(
-                DragGesture(minimumDistance: 2)
-                    .onChanged { value in composerDragOffset = -value.translation.height }
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                    .updating($composerDragOffset) { value, offset, transaction in
+                        transaction.animation = nil
+                        offset = -value.translation.height
+                    }
                     .onEnded { value in
                         let resolved = min(
                             max(currentComposerHeight - value.translation.height,
                                 Self.composerDefaultHeight),
                             composerMaxHeight)
-                        composerDragOffset = 0
                         persistComposerHeight(resolved)
                     }
             )
@@ -4395,7 +4400,7 @@ struct AIChatView: View {
                         // two groups are visually distinct. Fires when this
                         // row is the first skill row in the list.
                         if cmd.isSkill && index > 0 && !commands[index - 1].isSkill {
-                            Divider()
+                            Divider().hidden()
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 3)
                         }
@@ -5674,7 +5679,6 @@ private struct ChatTrailingMenu: View, Equatable {
                 Label(AppLocalized("New Chat"), systemImage: "square.and.pencil")
             }
 
-            Divider()
 
             // [T-chat-menu-compact-entry] Compact above Clear Chat.
             Button { onCompact() } label: {
@@ -5687,7 +5691,6 @@ private struct ChatTrailingMenu: View, Equatable {
             }
             .disabled(messagesEmpty)
 
-            Divider()
 
             // iCloud sync actions: iOS 17+ (v2 sync engine) AND the user's
             // iCloud Sync toggle on.
@@ -5702,7 +5705,6 @@ private struct ChatTrailingMenu: View, Equatable {
                 }
                 .disabled(!hasSession || isForcePulling)
 
-                Divider()
             }
 
             Button { onOpenTerminal() } label: {
@@ -5721,7 +5723,6 @@ private struct ChatTrailingMenu: View, Equatable {
                 Label(AppLocalized("Browse Chat Files"), systemImage: "folder")
             }
 
-            Divider()
 
             Button { onSkills() } label: {
                 Label(AppLocalized("Skills in Session"), systemImage: "puzzlepiece.extension")
@@ -5752,7 +5753,6 @@ private struct ChatTrailingMenu: View, Equatable {
             // [T-codex-fast-mode-menu-group] Model-control toggles in their
             // own divider-separated section (mirrors the UIKit buildMenu).
             if showEnhancedCacheToggle || showFastModeToggle {
-                Divider()
 
                 if showEnhancedCacheToggle {
                     Toggle(isOn: Binding(
@@ -5773,14 +5773,12 @@ private struct ChatTrailingMenu: View, Equatable {
                 }
             }
 
-            Divider()
 
             Button { onTokenUsage() } label: {
                 Label(AppLocalized("Token Usage"), systemImage: "number")
             }
 
             #if DEBUG
-            Divider()
 
             Button { onCopyRequests() } label: {
                 let n = LastAPIRequestBody.shared.getAll().count
@@ -5965,10 +5963,7 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
                      image: UIImage(systemName: "square.and.pencil")) { _ in coordinator.parent.onNewChat() },
         ]))
 
-        // [T-chat-menu-compact-entry] Compact sits ABOVE Clear Chat in its own
-        // group with the destructive clear; the iCloud actions moved to a
-        // separate inline group so a divider lands between Clear Chat and the
-        // sync rows (user-requested layout).
+        // Keep Compact above Clear Chat and sync actions after Clear Chat.
         groups.append(UIMenu(options: .displayInline, children: [
             UIAction(title: AppLocalized("Compact Messages"),
                      image: UIImage(systemName: "arrow.down.right.and.arrow.up.left"),
@@ -6067,6 +6062,12 @@ private struct ChatTrailingMenuButton: UIViewRepresentable {
         #endif
         groups.append(UIMenu(options: .displayInline, children: tailGroup))
 
+        // UIKit renders a hairline between inline groups. Flatten only those
+        // wrappers; keep the original native actions, gates and disabled states.
+        groups = groups.flatMap { element -> [UIMenuElement] in
+            guard let menu = element as? UIMenu, menu.options.contains(.displayInline) else { return [element] }
+            return menu.children
+        }
         return UIMenu(children: groups)
     }
 }
@@ -6620,7 +6621,7 @@ struct CompactSummarySheet: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
                 if onRevert != nil {
-                    Divider()
+                    Divider().hidden()
                     Button(role: .destructive) {
                         showRevertConfirm = true
                     } label: {
@@ -6715,8 +6716,20 @@ private struct TokenUsageSheet: View {
             List {
                 let s = vm.sessionTokenStats
 
+                Section {
+                    MinisPageIntro(
+                        title: "Session Token Usage",
+                        message: "Context is the latest request size. The totals below cover the whole session.",
+                        systemImage: "number",
+                        tint: .blue,
+                        facts: [
+                            .init(label: "Context Used", value: formatted(s.context)),
+                            .init(label: "Total Loops", value: s.loopCount.formatted())
+                        ]
+                    )
+                }
+
                 Section("Context") {
-                    StatRow(label: "Context Used", value: formatted(s.context), icon: "text.alignleft")
                     if let window = vm.currentModelContextWindow {
                         StatRow(label: "Context Window", value: formatted(window), icon: "arrow.left.and.right")
                     }
@@ -6760,9 +6773,6 @@ private struct TokenUsageSheet: View {
                     StatRow(label: "Output Speed", value: speed > 0 ? String(format: "%.1f tok/s", speed) : "—", icon: "speedometer")
                 }
 
-                Section("Agent Loop") {
-                    StatRow(label: "Total Loops", value: "\(s.loopCount)", icon: "repeat")
-                }
             }
             .minisNavigationChrome()
             .navigationTitle("Session Token Usage")
@@ -6854,9 +6864,6 @@ private struct EmptyChatDirectoryTimeline: View {
                     .padding(.vertical, 5)
                     .background(
                         Capsule().fill(ChatColors.secondaryBg)
-                    )
-                    .overlay(
-                        Capsule().stroke(ChatColors.toolBorder, lineWidth: 0.5)
                     )
                 }
                 .buttonStyle(.plain)
@@ -7739,7 +7746,7 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
     @ViewBuilder
     private var systemDivider: some View {
         HStack(spacing: 10) {
-            Divider()
+            Divider().hidden()
             HStack(spacing: 5) {
                 if message.isCompactLoading {
                     ThinkingOrb(.weaving, size: .small, diameter: 12, speed: 0.8)
@@ -7758,7 +7765,7 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
             }
             .foregroundStyle(.secondary)
             .layoutPriority(1)
-            Divider()
+            Divider().hidden()
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, message.role == .compactDivider ? 16 : 6)

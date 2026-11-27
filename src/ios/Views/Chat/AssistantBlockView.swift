@@ -473,10 +473,6 @@ struct ToolCapsuleView: View {
                     }
                 }
             )
-            .overlay(
-                Capsule()
-                    .stroke(ChatColors.toolBorder, lineWidth: 0.5)
-            )
             .contentShape(Capsule())
             .onTapGesture {
                 detailBlock = block
@@ -506,11 +502,8 @@ struct ToolCapsuleView: View {
                     // [T-ios-retry-hide-when-processing] Only expose the
                     // destructive Re-run action when the agent loop is idle.
                     // Re-running mid-stream would tear down an in-flight turn
-                    // and confuse downstream state — hide both the divider and
-                    // the button as a group so the menu doesn't leave a
-                    // trailing separator with nothing under it.
+                    // and confuse downstream state.
                     if !vm.isProcessing {
-                        Divider()
                         Button(role: .destructive) {
                             // Re-run the whole assistant turn that owns this
                             // tool_use. Routed via notification so we don't have
@@ -532,7 +525,6 @@ struct ToolCapsuleView: View {
                     // Memories in Session → detail sheet. Only appears for a
                     // memory_write that carries input args.
                     if isRevocableMemoryWrite {
-                        Divider()
                         Button(role: .destructive) {
                             showRevokeMemoryAlert = true
                         } label: {

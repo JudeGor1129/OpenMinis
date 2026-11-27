@@ -19,7 +19,7 @@ struct BuildConsoleView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
+            Divider().hidden()
             content
         }
         .background(Color(UIColor.systemBackground))
@@ -152,7 +152,7 @@ struct BuildConsoleView: View {
 
     private func artifactRow(_ path: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Divider().padding(.vertical, 6)
+            Divider().hidden().padding(.vertical, 6)
             Text("产物")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)

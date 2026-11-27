@@ -75,7 +75,7 @@ private struct OffloadPermissionDialogContent: View {
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 8)
                                 if idx < args.count - 1 {
-                                    Divider().padding(.leading, 108)
+                                    Divider().hidden().padding(.leading, 108)
                                 }
                             }
                         }

@@ -56,6 +56,20 @@ struct SkillsManagementView: View {
 
     var body: some View {
         List {
+            if !store.skills.isEmpty {
+                Section {
+                    MinisPageIntro(
+                        title: "Installed Skills",
+                        message: "Skills add reusable instructions and files to the agent. Toggle availability per skill; open one to inspect its source and files.",
+                        systemImage: "puzzlepiece.extension",
+                        tint: .indigo,
+                        facts: [
+                            .init(label: "Installed", value: "\(store.skills.count)"),
+                            .init(label: "Enabled", value: "\(store.skills.filter(\.isEnabled).count)")
+                        ]
+                    )
+                }
+            }
             if store.skills.isEmpty {
                 Section {
                     Text(AppLocalized("No skills installed. Tap + to import a SKILL.md from GitHub or paste one manually."))
@@ -148,7 +162,6 @@ struct SkillsManagementView: View {
                     // force-sync entry entirely when the user has the
                     // feature off in Settings (no-op otherwise).
                     if #available(iOS 17.0, *), iCloudSyncEnabled {
-                        Divider()
                         Button {
                             forceSyncAllSkills()
                         } label: {
@@ -486,6 +499,20 @@ private struct SkillDetailView: View {
     var body: some View {
         List {
             if let skill {
+                Section {
+                    MinisPageIntro(
+                        title: Text(verbatim: skill.name),
+                        message: Text(verbatim: skill.description.isEmpty
+                            ? "Review the source, update actions and installed files for this skill."
+                            : skill.description),
+                        systemImage: "puzzlepiece.extension",
+                        tint: .indigo,
+                        facts: [
+                            .init(label: "Version", value: skill.version),
+                            .init(label: "Usage", value: usageFrequencyLabel(store.usageFrequency(for: skill.id)))
+                        ]
+                    )
+                }
                 // ── Meta ──────────────────────────────────────────────
                 Section {
                     HStack {

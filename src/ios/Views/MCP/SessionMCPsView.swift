@@ -86,6 +86,18 @@ struct SessionMCPsView: View {
 
         MinisNavigationContainer {
             List {
+                Section {
+                    MinisPageIntro(
+                        title: "Session MCP Access",
+                        message: "These switches override server defaults for this session only. They do not alter provider credentials or the saved server configuration.",
+                        systemImage: "wrench.and.screwdriver",
+                        tint: .orange,
+                        facts: [
+                            .init(label: "Configured", value: "\(filteredServers.count)"),
+                            .init(label: "Enabled here", value: "\(filteredServers.filter(isEnabled).count)")
+                        ]
+                    )
+                }
                 if store.servers.isEmpty {
                     Section {
                         Text("No MCP servers configured. Add servers in Settings → MCP Integrations.")

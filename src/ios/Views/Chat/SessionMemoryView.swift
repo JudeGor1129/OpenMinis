@@ -12,11 +12,25 @@ struct SessionMemoryView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        let injected = autoInjected
+        let activity = toolMemories
         MinisNavigationContainer {
             List {
+                Section {
+                    MinisPageIntro(
+                        title: "Memories in Session",
+                        message: "Inspect what is injected at turn start and what the agent read or wrote during this session.",
+                        systemImage: "brain.head.profile",
+                        tint: .purple,
+                        facts: [
+                            .init(label: "Injected", value: "\(injected.count)"),
+                            .init(label: "Tool activity", value: "\(activity.count)")
+                        ]
+                    )
+                }
                 // Section 1: Auto-injected memories
                 Section {
-                    ForEach(autoInjected, id: \.name) { item in
+                    ForEach(injected, id: \.name) { item in
                         NavigationLink {
                             MemoryContentView(title: item.name, content: item.content, fileURL: item.fileURL)
                         } label: {
@@ -30,9 +44,9 @@ struct SessionMemoryView: View {
                 }
 
                 // Section 2: Tool-recalled memories
-                if !toolMemories.isEmpty {
+                if !activity.isEmpty {
                     Section {
-                        ForEach(toolMemories) { item in
+                        ForEach(activity) { item in
                             NavigationLink {
                                 if item.isWrite {
                                     MemoryWriteDetailView(item: item, memoryDirectory: vm.sessionMemoryDirectory)

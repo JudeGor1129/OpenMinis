@@ -32,7 +32,7 @@ struct ChatShareSelectionView: View {
                 }
                 .padding(.horizontal, 18).frame(minHeight: 48)
                 .background(Color(UIColor.secondarySystemGroupedBackground))
-                Divider()
+                Divider().hidden()
                 List(model.items) { item in
                     Button { model.toggle(item) } label: {
                         HStack(alignment: .top, spacing: 12) {

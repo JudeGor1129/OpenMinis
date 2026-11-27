@@ -90,6 +90,18 @@ struct SessionSkillsView: View {
 
         MinisNavigationContainer {
             List {
+                Section {
+                    MinisPageIntro(
+                        title: "Session Skill Overrides",
+                        message: "Session choices override group defaults, which override global defaults. Running tasks keep the skill snapshot they started with.",
+                        systemImage: "puzzlepiece.extension",
+                        tint: .indigo,
+                        facts: [
+                            .init(label: "Available", value: "\(filteredSkills.count)"),
+                            .init(label: "Enabled", value: "\(filteredSkills.filter(isEnabled).count)")
+                        ]
+                    )
+                }
                 if store.skills.isEmpty {
                     Section {
                         Text("No skills installed. Add skills in Settings.")

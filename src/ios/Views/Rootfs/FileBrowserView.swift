@@ -317,14 +317,12 @@ struct FileBrowserView: View {
                 } label: {
                     Label("Go to Parent Folder", systemImage: "arrow.up.doc")
                 }
-                Divider()
             }
             Button {
                 showImportPicker = true
             } label: {
                 Label("Import File", systemImage: "plus")
             }
-            Divider()
             Picker(selection: $sortKeyRaw) {
                 ForEach(FileSortKey.allCases) { key in
                     Text(key.label).tag(key.rawValue)
@@ -776,7 +774,6 @@ private struct FileBrowserRow: View {
                 Button { onMove() } label: {
                     Label("Move to…", systemImage: "folder")
                 }
-                Divider()
                 if !item.isDirectory {
                     Button { onExport() } label: {
                         Label("Export", systemImage: "square.and.arrow.up")

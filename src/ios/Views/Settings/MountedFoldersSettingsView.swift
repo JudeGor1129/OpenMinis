@@ -319,9 +319,7 @@ private struct MountedFolderRow: View {
             .foregroundStyle(color)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
-            .background(
-                Capsule().strokeBorder(color.opacity(0.5), lineWidth: 1)
-            )
+            .background(Capsule().fill(color.opacity(0.12)))
     }
 }
 

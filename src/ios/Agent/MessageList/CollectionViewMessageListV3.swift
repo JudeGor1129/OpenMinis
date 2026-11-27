@@ -393,7 +393,6 @@ private struct BridgedAssistantBlockV3: View {
                         }
                     }
                     if let onForceSync = bridge.onForceSync {
-                        Divider()
                         Button {
                             onForceSync()
                         } label: {
@@ -401,7 +400,6 @@ private struct BridgedAssistantBlockV3: View {
                         }
                     }
                     if let onCompact = bridge.onCompact {
-                        Divider()
                         Button(role: .destructive) {
                             onCompact()
                         } label: {
@@ -568,7 +566,6 @@ private struct BridgedAssistantFooterV3: View {
                         }
                     }
                     if let onForceSync = bridge.onForceSync {
-                        Divider()
                         Button {
                             onForceSync()
                         } label: {
@@ -576,7 +573,6 @@ private struct BridgedAssistantFooterV3: View {
                         }
                     }
                     if let onCompact = bridge.onCompact {
-                        Divider()
                         Button(role: .destructive) {
                             onCompact()
                         } label: {

@@ -38,6 +38,16 @@ struct ModelGroupsView: View {
 
             if !store.modelGroups.isEmpty {
                 Section {
+                    MinisPageIntro(
+                        title: "Model Routing",
+                        message: "Groups combine models into an ordered fallback chain or distribute sessions across a load-balanced pool.",
+                        systemImage: "point.3.connected.trianglepath.dotted",
+                        tint: .indigo,
+                        facts: [
+                            .init(label: "Groups", value: "\(store.modelGroups.count)"),
+                            .init(label: "Defaults", value: "\([store.defaultPrimaryGroupId, store.defaultSubGroupId, store.voiceInputGroupId, store.voiceOutputGroupId, store.visionGroupId].compactMap { $0 }.count)")
+                        ]
+                    )
                     ForEach(store.modelGroups) { group in
                         NavigationLink {
                             ModelGroupDetailView(groupId: group.id)
@@ -159,7 +169,6 @@ struct ModelGroupsView: View {
                         Label(AppLocalized("New Group"), systemImage: "plus")
                     }
                     if #available(iOS 17.0, *), iCloudSyncEnabled {
-                        Divider()
                         Button {
                             Task { await forceSyncGroups() }
                         } label: {
