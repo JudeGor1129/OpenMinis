@@ -20,9 +20,26 @@ private final class CachedViewModel: ObservableObject {
     let vm: AIChatViewModel
     /// True if this ViewModel was freshly created (not found in cache).
     let isNew: Bool
-    /// Forwards the VM's objectWillChange to this wrapper so SwiftUI
-    /// observes all @Published changes through the @StateObject.
     private var cancellable: AnyCancellable?
+
+    private func observeModel() {
+        cancellable = vm.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+    }
+
+    // Only the legacy destination detaches its root observer while offscreen.
+    // This leaves the cached VM, child observers and persistence untouched.
+    func setLegacyViewVisible(_ visible: Bool) {
+        if #available(iOS 16.0, *) { return }
+        if visible {
+            guard cancellable == nil else { return }
+            observeModel()
+            objectWillChange.send()
+        } else {
+            cancellable?.cancel()
+            cancellable = nil
+        }
+    }
 
     init(sessionId: String?) {
         if let sessionId {
@@ -48,18 +65,14 @@ private final class CachedViewModel: ObservableObject {
             self.isNew = true
             minisLogger.info("🔑DRAFT CachedViewModel.init DRAFT vm=\(draft.vmInstanceId)")
         }
-        // Forward VM's objectWillChange → this wrapper's objectWillChange
-        // so that SwiftUI re-renders when any @Published property on `vm` changes.
-        cancellable = vm.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-
-        // iOS 16 fix: When NavigationStack recreates the @StateObject, the new
-        // CachedViewModel may wrap a VM that already has messages loaded. Force
-        // a re-render so SwiftUI picks up the current state, since objectWillChange
-        // events between the old and new subscription may have been lost.
-        if !isNew {
-            DispatchQueue.main.async { [weak self] in
-                self?.objectWillChange.send()
+        if #available(iOS 16.0, *) {
+            observeModel()
+            // A recreated NavigationStack destination can miss updates
+            // posted before the new wrapper subscribed.
+            if !isNew {
+                DispatchQueue.main.async { [weak self] in
+                    self?.objectWillChange.send()
+                }
             }
         }
     }
@@ -205,8 +218,8 @@ struct AIChatView: View {
 
     /// The actual ViewModel — always derived from the @StateObject to avoid
     /// the @ObservedObject re-init-on-body-recompute problem.
-    /// CachedViewModel is ObservableObject and forwards objectWillChange from its vm,
-    /// so SwiftUI observes changes through `cached`.
+    /// The legacy destination resumes the root observer and republishes
+    /// current state on re-entry. Modern navigation keeps its existing relay.
     private var vm: AIChatViewModel { cached.vm }
 
     /// Whether this view is in read-only mode (remote session).
@@ -1385,6 +1398,7 @@ struct AIChatView: View {
             if let newId { AIChatViewModel.activeSessionId = newId }
         }
         .onAppear {
+            cached.setLegacyViewVisible(true)
             chatSearch.bind(to: vm)
             wireComposerActions()
             let sinceInit = (CFAbsoluteTimeGetCurrent() - AIChatViewModel.onAppearTimestamp) * 1000
@@ -1546,6 +1560,7 @@ struct AIChatView: View {
             injectPendingShareIfNeeded()
         }
         .onDisappear {
+            cached.setLegacyViewVisible(false)
             chatSearch.deactivate()
             isChatViewVisible = false
             siriFlowArmTask?.cancel()

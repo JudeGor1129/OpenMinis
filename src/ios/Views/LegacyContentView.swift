@@ -73,15 +73,41 @@ private func legacySessionListPreview(_ text: String?) -> String? {
     return String(text.prefix(240))
 }
 
-// ChatSession equality intentionally omits the long preview and immutable
-// fields. Compare only what this UI shows plus fields used by its actions.
-private func legacySessionRowsMatch(_ lhs: [ChatSession], _ rhs: [ChatSession]) -> Bool {
-    guard lhs.count == rhs.count else { return false }
-    return zip(lhs, rhs).allSatisfy { pair in
-        let (a, b) = pair
-        return a == b && a.modelId == b.modelId && a.createdAt == b.createdAt
-            && a.parentToolUseId == b.parentToolUseId
-            && legacySessionListPreview(a.lastMessage) == legacySessionListPreview(b.lastMessage)
+// The List gets exactly one row per stable ID. Keep display text bounded and
+// cached, but pass the complete session to navigation, edit, and export actions.
+private struct LegacySessionListEntry: Identifiable, Equatable {
+    let session: ChatSession
+    let preview: String?
+    var id: String { session.id }
+
+    init(session: ChatSession) {
+        self.session = session
+        self.preview = legacySessionListPreview(session.lastMessage)
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        // ChatSession equality omits the preview and these metadata fields.
+        lhs.session == rhs.session && lhs.preview == rhs.preview
+            && lhs.session.modelId == rhs.session.modelId
+            && lhs.session.createdAt == rhs.session.createdAt
+            && lhs.session.parentToolUseId == rhs.session.parentToolUseId
+    }
+}
+
+private struct LegacySessionListSnapshot: Equatable {
+    var grouped: [String: [LegacySessionListEntry]] = [:]
+    var ungrouped: [LegacySessionListEntry] = []
+    var isEmpty: Bool { grouped.isEmpty && ungrouped.isEmpty }
+
+    init(sessions: [ChatSession] = []) {
+        for session in sessions where !session.isChild {
+            let entry = LegacySessionListEntry(session: session)
+            if let folderID = session.folderId {
+                grouped[folderID, default: []].append(entry)
+            } else {
+                ungrouped.append(entry)
+            }
+        }
     }
 }
 
@@ -91,14 +117,8 @@ private func legacySessionRowsMatch(_ lhs: [ChatSession], _ rhs: [ChatSession]) 
 /// to imitate `NavigationPath`. Additional behavior is migrated behind this
 /// seam only after its iOS 15 build diagnostics pass.
 private struct LegacyContentView: View {
-    @State private var sessions: [ChatSession] = []
+    @State private var sessionRows = LegacySessionListSnapshot()
     @State private var folders: [ChatFolder] = []
-    @State private var ungroupedSessions: [ChatSession] = []
-    // Keep the grouped List's diff input to stable IDs, avoiding session-value
-    // array comparisons during parent updates. The row models stay in a lookup
-    // table so titles, previews, and context actions still use fresh data.
-    @State private var groupSessionIDs: [String: [String]] = [:]
-    @State private var groupedSessionsByID: [String: ChatSession] = [:]
     @State private var expandedGroups: Set<String> = []
     @State private var groupsExpanded = false
     @State private var draftGroupId: String? = nil
@@ -153,7 +173,7 @@ private struct LegacyContentView: View {
                         ForEach(folders) { folder in
                             DisclosuredGroupHeader(
                                 folder: folder,
-                                memberCount: groupSessionIDs[folder.id]?.count ?? 0,
+                                memberCount: sessionRows.grouped[folder.id]?.count ?? 0,
                                 expanded: expandedGroups.contains(folder.id),
                                 onToggle: { toggleGroup(folder.id) },
                                 onManage: { managingFolder = folder }
@@ -162,30 +182,26 @@ private struct LegacyContentView: View {
                                 Button { startDraft(in: folder.id) } label: {
                                     Label("开始新会话", systemImage: "plus.bubble")
                                 }
-                                let memberIDs = groupSessionIDs[folder.id] ?? []
-                                if memberIDs.isEmpty {
+                                let members = sessionRows.grouped[folder.id] ?? []
+                                if members.isEmpty {
                                     Text("组内暂无会话")
                                         .font(.footnote)
                                         .foregroundColor(.secondary)
                                 }
-                                ForEach(memberIDs, id: \.self) { sessionID in
-                                    if let session = groupedSessionsByID[sessionID] {
-                                        // Keep the group list's diff key to the
-                                        // session ID; do not diff ChatSession arrays.
-                                        LegacySessionRow(
-                                            session: session,
-                                            selectionMode: .constant(false),
-                                            selectedSessions: .constant([]),
-                                            onChange: reload,
-                                            showsActivity: true
-                                        )
-                                    }
+                                ForEach(members) { entry in
+                                    LegacySessionRow(
+                                        entry: entry,
+                                        selectionMode: .constant(false),
+                                        selectedSessions: .constant([]),
+                                        onChange: reload,
+                                        showsActivity: true
+                                    )
                                 }
                             }
                         }
                     }
                 }
-                if sessions.isEmpty {
+                if sessionRows.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "bubble.left.and.bubble.right")
                             .font(.system(size: 38))
@@ -199,9 +215,9 @@ private struct LegacyContentView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 36)
                 } else {
-                    ForEach(ungroupedSessions) { session in
+                    ForEach(sessionRows.ungrouped) { entry in
                         LegacySessionRow(
-                            session: session,
+                            entry: entry,
                             selectionMode: $selectionMode,
                             selectedSessions: $selectedSessions,
                             onChange: reload,
@@ -437,11 +453,8 @@ private struct LegacyContentView: View {
             async let loadedSessions = ChatStore.shared.listSessions()
             async let loadedFolders = ChatStore.shared.listFolders()
             let (allSessions, loadedFoldersValue) = await (loadedSessions, loadedFolders)
-            let nextSessions = allSessions.filter { !$0.isChild }
-            if !legacySessionRowsMatch(sessions, nextSessions) {
-                sessions = nextSessions
-                reloadGroupMembers()
-            }
+            let nextRows = LegacySessionListSnapshot(sessions: allSessions)
+            if sessionRows != nextRows { sessionRows = nextRows }
             if folders != loadedFoldersValue { folders = loadedFoldersValue }
         }
     }
@@ -451,23 +464,6 @@ private struct LegacyContentView: View {
             let next = await ChatStore.shared.listFolders()
             if folders != next { folders = next }
         }
-    }
-
-    @MainActor
-    private func reloadGroupMembers() {
-        // Build an id-only ForEach input and a lookup table once per refresh.
-        // This keeps ChatSession value comparisons out of the scroll hot path.
-        var idsByFolder: [String: [String]] = [:]
-        var sessionsByID: [String: ChatSession] = [:]
-        for session in sessions where !session.isChild {
-            sessionsByID[session.id] = session
-            guard let folderID = session.folderId else { continue }
-            idsByFolder[folderID, default: []].append(session.id)
-        }
-        if groupSessionIDs != idsByFolder { groupSessionIDs = idsByFolder }
-        groupedSessionsByID = sessionsByID
-        let loose = sessions.filter { $0.folderId == nil }
-        if !legacySessionRowsMatch(ungroupedSessions, loose) { ungroupedSessions = loose }
     }
 
     /// Destination for the sheet-dismiss-then-push path. Guarded so an empty
@@ -671,7 +667,8 @@ private struct LegacySettingsSheet: View {
 
 /// Destination navigation and context actions share the same stored session.
 private struct LegacySessionRow: View {
-    let session: ChatSession
+    let entry: LegacySessionListEntry
+    private var session: ChatSession { entry.session }
     @Binding var selectionMode: Bool
     @Binding var selectedSessions: Set<String>
     let onChange: () -> Void
@@ -762,7 +759,7 @@ private struct LegacySessionRow: View {
                     if session.isPinned { Image(systemName: "pin.fill").font(.caption2) }
                     if busy { ProgressView().scaleEffect(0.75) }
                 }
-                if let preview = legacySessionListPreview(session.lastMessage) {
+                if let preview = entry.preview {
                     Text(preview).font(.caption).foregroundColor(.secondary).lineLimit(2)
                 }
             }
@@ -990,7 +987,7 @@ private struct LegacyGroupDetailView: View {
                     // turn every tap into a checkbox toggle instead of opening
                     // the chat. `onOpen` hands the push to the home stack.
                     LegacySessionRow(
-                        session: session,
+                        entry: LegacySessionListEntry(session: session),
                         selectionMode: .constant(false),
                         selectedSessions: .constant([]),
                         onChange: reload,
