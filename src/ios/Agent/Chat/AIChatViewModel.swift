@@ -2698,7 +2698,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     var titleGenEpoch: UInt = 0
 
     /// Unified conversation history used by both Anthropic and Gemini agent loops.
-    var agentHistory: [AgentMessage] = []
+    private(set) var agentHistoryRevision: UInt64 = 0
+    var agentHistory: [AgentMessage] = [] {
+        didSet { agentHistoryRevision &+= 1 }
+    }
 
     #if DEBUG
     /// [T-ios-log-noise-reduction] High-water mark of how many agentHistory
@@ -6474,7 +6477,27 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             // [T-ctx-measure-outbound] Judged on the outbound measurement, not
             // `turnUsage.latestContextTokens`: after an in-loop compaction that
             // report still describes the pre-compaction request.
-            offloadContextIfNeeded(model: activeModelForOffload, lastContextTokens: measureOutboundContextTokens())
+            let offloadSession = sessionId
+            let offloadDraft = draftId
+            await offloadContextIfNeeded(model: activeModelForOffload, lastContextTokens: measureOutboundContextTokens())
+            try Task.checkCancellation()
+            guard !userDidCancel else { throw CancellationError() }
+            // Draft promotion keeps this VM and reply; a different session does not.
+            let promotedDraft = offloadSession == nil && offloadDraft != nil && sessionId != nil
+                && messages.contains(where: { $0.id == runMsgId })
+            guard (sessionId == offloadSession && draftId == offloadDraft) || promotedDraft else {
+                throw CancellationError()
+            }
+            if pendingModelSwitch || promotedDraft {
+                turnCount -= 1
+                continue
+            }
+            // The UI can be edited while the worker runs. Re-resolve the reply
+            // row before doing more work; the next iteration re-anchors by ID.
+            if !messages.indices.contains(msgIdx) || messages[msgIdx].id != runMsgId {
+                turnCount -= 1
+                continue
+            }
 
             // [T-chat-auto-compact-inloop] In-loop context guard. checkContext-
             // BeforeSend only runs at the SEND entry point; a single turn that

@@ -451,7 +451,29 @@ extension AIChatViewModel {
     /// - `force`: When true, skip the threshold check and offload all eligible candidates
     ///   regardless of current context usage. Used after compaction to unconditionally slim down
     ///   the kept messages.
-    func offloadContextIfNeeded(model: LLMModel, lastContextTokens: Int, force: Bool = false) {
+    func offloadContextIfNeeded(model: LLMModel, lastContextTokens: Int, force: Bool = false) async {
+        let sourceSession = sessionId
+        let sourceDraft = draftId
+        let sourceModel = currentContextModelId()
+        var baseline = lastContextTokens
+        while !Task.isCancelled, !userDidCancel, sessionId == sourceSession,
+              draftId == sourceDraft, currentContextModelId() == sourceModel {
+            if await applyContextOffload(model: model, lastContextTokens: baseline, force: force) {
+                return
+            }
+            // History was edited/reloaded while counting. Re-evaluate the
+            // threshold from fresh outbound history, never reuse old indices.
+            baseline = force ? 0 : measureOutboundContextTokens()
+        }
+    }
+
+    // False means the snapshot changed before any write; the caller retries.
+    private func applyContextOffload(model: LLMModel, lastContextTokens: Int, force: Bool) async -> Bool {
+        let sourceSession = sessionId
+        let sourceDraft = draftId
+        let sourceModel = currentContextModelId()
+        let revision = agentHistoryRevision
+        let marker = cachedLatestMarker?.id
         // [T-ctx-user-cap] Build the policy the same way the capacity guards do,
         // or a 32K user cap lands in the native small-window tier and disables
         // offload (offloadThreshold == 0) for a model with ample room for it.
@@ -462,7 +484,7 @@ extension AIChatViewModel {
         // Policy disables offloading for this context window tier
         if !force && policy.offloadThreshold == 0 {
             logger.debug("Context offload: disabled for window \(contextWindow) tokens")
-            return
+            return true
         }
 
         // When no API baseline exists (first iteration of a new message),
@@ -474,19 +496,20 @@ extension AIChatViewModel {
                 if effectiveTokens < policy.offloadThreshold {
                     let remaining = contextWindow - effectiveTokens
                     logger.debug("Context offload: skipped (estimate \(effectiveTokens)/\(contextWindow), remaining ~\(remaining) tokens)")
-                    return
+                    return true
                 }
             }
             logger.info("Context offload: no API baseline — using char estimate: ~\(effectiveTokens) tokens")
         }
 
+        guard contextWindow > 0 else { return true }
         let pct = Int(Double(effectiveTokens) / Double(contextWindow) * 100)
 
         if !force {
             guard effectiveTokens >= policy.offloadThreshold else {
                 let remaining = contextWindow - effectiveTokens
                 logger.debug("Context offload: below threshold — \(effectiveTokens)/\(contextWindow) (\(pct)%), remaining ~\(remaining) tokens")
-                return
+                return true
             }
         }
 
@@ -517,13 +540,16 @@ extension AIChatViewModel {
         struct OffloadCandidate {
             let msgIdx: Int
             let partIdx: Int
-            let tokens: Int
+            var tokens: Int
             let bytes: Int
             let toolId: String
             let toolName: String
         }
 
         var candidates: [OffloadCandidate] = []
+        // Only immutable strings cross the executor boundary. Keep image
+        // sizing, the same JSON serialization, and all writes on their old path.
+        var tokenInputs: [[String]] = []
         var skippedAlreadyOffloaded = 0
         var skippedTooSmall = 0
         /// [T-offload-readback-loop] Parts skipped because they are the
@@ -580,7 +606,8 @@ extension AIChatViewModel {
                         continue
                     }
 
-                    let tokens = BPETokenizer.shared.countPartTokens(part)
+                    tokenInputs.append([name, content])
+                    let tokens = 4 + (imgData.map { BPETokenizer.shared.countImageTokens($0) } ?? 0)
                     let bytes = content.utf8.count + (imgData?.count ?? 0)
                     candidates.append(OffloadCandidate(msgIdx: msgIdx, partIdx: partIdx, tokens: tokens, bytes: bytes, toolId: id, toolName: name))
 
@@ -622,7 +649,13 @@ extension AIChatViewModel {
                     }
 
                     if let content = input["content"] as? String, content.count > 500 {
-                        let tokens = BPETokenizer.shared.countPartTokens(part)
+                        var inputs = [name]
+                        if let data = try? JSONSerialization.data(withJSONObject: input),
+                           let json = String(data: data, encoding: .utf8) {
+                            inputs.append(json)
+                        }
+                        tokenInputs.append(inputs)
+                        let tokens = 4
                         let bytes = content.utf8.count
                         candidates.append(OffloadCandidate(msgIdx: msgIdx, partIdx: partIdx, tokens: tokens, bytes: bytes, toolId: id, toolName: name))
                     }
@@ -632,7 +665,8 @@ extension AIChatViewModel {
                         skippedTooSmall += 1
                         continue
                     }
-                    let tokens = BPETokenizer.shared.countPartTokens(part)
+                    tokenInputs.append([])
+                    let tokens = BPETokenizer.shared.countImageTokens(data)
                     candidates.append(OffloadCandidate(msgIdx: msgIdx, partIdx: partIdx, tokens: tokens, bytes: data.count, toolId: "img\(msgIdx)_\(partIdx)", toolName: "image"))
 
                 case .text:
@@ -641,6 +675,35 @@ extension AIChatViewModel {
             }
         }
 
+        if tokenInputs.contains(where: { !$0.isEmpty }) {
+            let inputs = tokenInputs
+            let worker = Task.detached(priority: .utility) { () -> [Int]? in
+                var counts: [Int] = []
+                counts.reserveCapacity(inputs.count)
+                for texts in inputs {
+                    guard !Task.isCancelled else { return nil }
+                    counts.append(autoreleasepool {
+                        texts.reduce(0) { $0 + BPETokenizer.shared.countTokens($1) }
+                    })
+                }
+                return counts
+            }
+            let counts = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard !Task.isCancelled, !userDidCancel, sessionId == sourceSession,
+                  draftId == sourceDraft, currentContextModelId() == sourceModel,
+                  let counts else { return true }
+            let currentWindow = resolvedContextWindow(for: model)
+            guard revision == agentHistoryRevision, marker == cachedLatestMarker?.id,
+                  currentWindow.window == contextWindow, currentWindow.isUserCap == resolved.isUserCap else {
+                return false
+            }
+            for index in candidates.indices { candidates[index].tokens += counts[index] }
+        }
+        // From here through the last write there is no suspension point.
         // Sort by token count descending (offload largest first)
         candidates.sort { $0.tokens > $1.tokens }
 
@@ -764,6 +827,7 @@ extension AIChatViewModel {
             }
             logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         }
+        return true
     }
 
     /// Remove persistent minis data for a given session.

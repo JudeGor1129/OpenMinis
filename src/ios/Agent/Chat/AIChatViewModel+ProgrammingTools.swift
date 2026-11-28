@@ -108,6 +108,92 @@ struct UnavailableCodeSemanticSearchProvider: CodeSemanticSearchProviding {
     func search(query: String, projectPath: String, limit: Int) async throws -> [CodeSearchHit] { [] }
 }
 
+enum CodeSearchWorker {
+    private static func tokenize(_ text: String) -> [String] {
+        text.lowercased().split { !$0.isLetter && !$0.isNumber && $0 != "_" }
+            .map(String.init).filter { $0.count > 1 }.prefix(200_000).map { $0 }
+    }
+
+    private static func snippet(_ lines: [String], _ line: Int, _ context: Int) -> String {
+        let start = max(1, line - context)
+        let end = min(lines.count, line + context)
+        return (start...max(start, end)).compactMap { number -> String? in
+            guard number > 0, number <= lines.count else { return nil }
+            return "\(number): \(String(lines[number - 1].prefix(500)))"
+        }.joined(separator: "\n").prefix(3000).description
+    }
+
+    static func search(entries: [IndexedCodeFile], root: URL, query: String, mode: String,
+                       limit: Int, contextLines: Int, commit: String) throws -> [CodeSearchHit] {
+        let terms = tokenize(query)
+        let uniqueTerms = Set(terms)
+        let queryLower = query.lowercased()
+        var documentFrequency: [String: Int] = [:]
+        var candidates: [(IndexedCodeFile, String, [String: Int])] = []
+        for entry in entries {
+            try Task.checkCancellation()
+            let url = root.appendingPathComponent(entry.relativePath)
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let symbolCandidate = entry.symbols.contains {
+                $0.name.caseInsensitiveCompare(query) == .orderedSame
+                    || $0.name.range(of: query, options: .caseInsensitive) != nil
+            }
+            let lexicalCandidate = text.range(of: query, options: .caseInsensitive) != nil
+                || terms.contains { text.range(of: $0, options: .caseInsensitive) != nil }
+            guard symbolCandidate || lexicalCandidate else { continue }
+            var counts: [String: Int] = [:]
+            for token in tokenize(text) where uniqueTerms.contains(token) {
+                counts[token, default: 0] += 1
+            }
+            for term in counts.keys { documentFrequency[term, default: 0] += 1 }
+            candidates.append((entry, text, counts))
+        }
+
+        let n = Double(max(1, candidates.count))
+        var hits: [CodeSearchHit] = []
+        for (entry, text, tokenCounts) in candidates {
+            try Task.checkCancellation()
+            let lines = text.components(separatedBy: .newlines)
+            var baseScore = 0.0
+            for term in terms {
+                let tf = Double(tokenCounts[term] ?? 0)
+                let df = Double(documentFrequency[term] ?? 0)
+                baseScore += (tf / (tf + 1.2)) * log(1.0 + (n - df + 0.5) / (df + 0.5))
+            }
+            let matchingSymbols = entry.symbols.filter {
+                $0.name.lowercased() == queryLower || $0.name.lowercased().contains(queryLower)
+            }
+            for symbol in matchingSymbols {
+                let bonus = symbol.name.lowercased() == queryLower ? 100.0 : 35.0
+                hits.append(CodeSearchHit(path: entry.relativePath, line: symbol.line,
+                    endLine: min(lines.count, symbol.line + contextLines), kind: symbol.kind,
+                    symbol: symbol.name, score: bonus + baseScore,
+                    snippet: snippet(lines, symbol.line, contextLines), commit: commit, fileHash: entry.hash))
+            }
+            if matchingSymbols.isEmpty || mode == "keyword" || mode == "auto" || mode == "semantic" {
+                for (offset, line) in lines.enumerated() where line.lowercased().contains(queryLower) {
+                    let number = offset + 1
+                    hits.append(CodeSearchHit(path: entry.relativePath, line: number,
+                        endLine: min(lines.count, number + contextLines), kind: "text", symbol: nil,
+                        score: 10.0 + baseScore, snippet: snippet(lines, number, contextLines),
+                        commit: commit, fileHash: entry.hash))
+                    if hits.count > limit * 8 { break }
+                }
+            }
+        }
+        let sorted = hits.sorted { lhs, rhs in
+            lhs.score == rhs.score ? (lhs.path, lhs.line) < (rhs.path, rhs.line) : lhs.score > rhs.score
+        }
+        var result: [CodeSearchHit] = []
+        var seen: Set<String> = []
+        for hit in sorted where result.count < limit {
+            let key = hit.path + ":" + String(hit.line) + ":" + (hit.symbol ?? "")
+            if seen.insert(key).inserted { result.append(hit) }
+        }
+        return result
+    }
+}
+
 enum CodeSymbolExtractor {
     private struct Pattern {
         let expression: NSRegularExpression
@@ -489,63 +575,21 @@ extension AIChatViewModel {
                                     "fallback": false, "hits": try jsonObject(hits)], success: true)
         }
 
-        let terms = tokenize(query)
-        let queryLower = query.lowercased()
-        let rootURL = context.hostRoot
-        var documentFrequency: [String: Int] = [:]
-        var searchable: [(IndexedCodeFile, String, [String])] = []
-        for entry in index.files.values {
-            let url = rootURL.appendingPathComponent(entry.relativePath)
-            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            let symbolCandidate = entry.symbols.contains {
-                $0.name.caseInsensitiveCompare(query) == .orderedSame
-                    || $0.name.range(of: query, options: .caseInsensitive) != nil
-            }
-            let lexicalCandidate = text.range(of: query, options: .caseInsensitive) != nil
-                || terms.contains { text.range(of: $0, options: .caseInsensitive) != nil }
-            guard symbolCandidate || lexicalCandidate else { continue }
-            let tokens = tokenize(text)
-            for term in Set(tokens).intersection(terms) { documentFrequency[term, default: 0] += 1 }
-            searchable.append((entry, text, tokens))
+        let searchEntries = Array(index.files.values)
+        let searchRoot = context.hostRoot
+        let searchCommit = index.commit
+        let searchSessionID = fsSessionId
+        let searchTask = Task.detached(priority: .utility) {
+            try CodeSearchWorker.search(entries: searchEntries, root: searchRoot, query: query,
+                                        mode: requestedMode, limit: limit,
+                                        contextLines: contextLines, commit: searchCommit)
         }
-        let n = Double(max(1, searchable.count))
-        var hits: [CodeSearchHit] = []
-        for (entry, text, tokens) in searchable {
-            let lines = text.components(separatedBy: .newlines)
-            let tokenCounts = Dictionary(grouping: tokens, by: { $0 }).mapValues(\.count)
-            var baseScore = 0.0
-            for term in terms {
-                let tf = Double(tokenCounts[term] ?? 0)
-                let df = Double(documentFrequency[term] ?? 0)
-                baseScore += (tf / (tf + 1.2)) * log(1.0 + (n - df + 0.5) / (df + 0.5))
-            }
-            let matchingSymbols = entry.symbols.filter {
-                $0.name.lowercased() == queryLower || $0.name.lowercased().contains(queryLower)
-            }
-            for symbol in matchingSymbols {
-                let exactBonus = symbol.name.lowercased() == queryLower ? 100.0 : 35.0
-                hits.append(makeHit(entry: entry, lines: lines, line: symbol.line,
-                                    contextLines: contextLines, kind: symbol.kind, symbol: symbol.name,
-                                    score: exactBonus + baseScore, commit: index.commit))
-            }
-            if matchingSymbols.isEmpty || requestedMode == "keyword" || requestedMode == "auto" || requestedMode == "semantic" {
-                for (lineOffset, line) in lines.enumerated() where line.lowercased().contains(queryLower) {
-                    hits.append(makeHit(entry: entry, lines: lines, line: lineOffset + 1,
-                                        contextLines: contextLines, kind: "text", symbol: nil,
-                                        score: 10.0 + baseScore, commit: index.commit))
-                    if hits.count > limit * 8 { break }
-                }
-            }
+        let deduped = try await withTaskCancellationHandler {
+            try await searchTask.value
+        } onCancel: {
+            searchTask.cancel()
         }
-        let sorted = hits.sorted { lhs, rhs in
-            lhs.score == rhs.score ? (lhs.path, lhs.line) < (rhs.path, rhs.line) : lhs.score > rhs.score
-        }
-        var deduped: [CodeSearchHit] = []
-        var seen: Set<String> = []
-        for hit in sorted where deduped.count < limit {
-            let key = "\(hit.path):\(hit.line):\(hit.symbol ?? "")"
-            if seen.insert(key).inserted { deduped.append(hit) }
-        }
+        guard !Task.isCancelled, fsSessionId == searchSessionID else { throw CancellationError() }
         let semanticRequested = requestedMode == "semantic"
         return programmingJSON([
             "ok": true,
@@ -560,19 +604,6 @@ extension AIChatViewModel {
             "context_lines": contextLines,
             "hits": try jsonObject(deduped)
         ], success: true)
-    }
-
-    private func makeHit(entry: IndexedCodeFile, lines: [String], line: Int, contextLines: Int,
-                         kind: String, symbol: String?, score: Double, commit: String) -> CodeSearchHit {
-        let start = max(1, line - contextLines)
-        let end = min(lines.count, line + contextLines)
-        let snippet = (start...max(start, end)).compactMap { number -> String? in
-            guard number > 0, number <= lines.count else { return nil }
-            return "\(number): \(String(lines[number - 1].prefix(500)))"
-        }.joined(separator: "\n")
-        return CodeSearchHit(path: entry.relativePath, line: line, endLine: end,
-                             kind: kind, symbol: symbol, score: score,
-                             snippet: String(snippet.prefix(3000)), commit: commit, fileHash: entry.hash)
     }
 
     private func readProgrammingFile(_ args: [String: Any]) async throws -> FileToolResult {
@@ -887,11 +918,6 @@ extension AIChatViewModel {
             guard match.numberOfRanges > 1, let capture = Range(match.range(at: 1), in: text) else { return nil }
             return String(text[capture]).trimmingCharacters(in: .whitespacesAndNewlines)
         }.filter { !$0.isEmpty }
-    }
-
-    private func tokenize(_ text: String) -> [String] {
-        text.lowercased().split { !$0.isLetter && !$0.isNumber && $0 != "_" }
-            .map(String.init).filter { $0.count > 1 }.prefix(200_000).map { $0 }
     }
 
     private func languageName(_ ext: String) -> String {

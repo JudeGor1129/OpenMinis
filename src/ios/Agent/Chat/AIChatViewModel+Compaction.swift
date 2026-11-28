@@ -1249,7 +1249,8 @@ extension AIChatViewModel {
         } else {
             activeModel = selectedModel
         }
-        offloadContextIfNeeded(model: activeModel, lastContextTokens: 0, force: true)
+        await offloadContextIfNeeded(model: activeModel, lastContextTokens: 0, force: true)
+        guard self.sessionId == sessionId, cachedLatestMarker?.id == marker.id else { return }
 
         // [T-ctx-measure-outbound] The glow still shows the last report — the
         // size of the context we just replaced. Show what will actually be sent.

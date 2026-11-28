@@ -25,8 +25,8 @@ final class BPETokenizer: @unchecked Sendable {
     /// Count tokens in a text string using BPE encoding.
     /// First call lazy-loads the vocabulary from bundle (~100ms).
     func countTokens(_ text: String) -> Int {
-        ensureLoaded()
-        let tokens = encode(text)
+        let encoder = vocabularySnapshot()
+        let tokens = encode(text, encoder: encoder)
         return tokens.count
     }
 
@@ -74,21 +74,21 @@ final class BPETokenizer: @unchecked Sendable {
 
     // MARK: - Vocabulary Loading
 
-    private func ensureLoaded() {
+    private func vocabularySnapshot() -> [[UInt8]: Int] {
         lock.lock()
         defer { lock.unlock() }
-        guard !isLoaded else { return }
+        guard !isLoaded else { return encoder }
 
         let start = CFAbsoluteTimeGetCurrent()
 
         guard let url = Bundle.main.url(forResource: "cl100k_base", withExtension: "tiktoken") else {
             logger.error("cl100k_base.tiktoken not found in bundle")
-            return
+            return encoder
         }
 
         guard let data = try? String(contentsOf: url, encoding: .utf8) else {
             logger.error("Failed to read cl100k_base.tiktoken")
-            return
+            return encoder
         }
 
         var dict = [[UInt8]: Int]()
@@ -107,12 +107,13 @@ final class BPETokenizer: @unchecked Sendable {
 
         let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
         logger.info("BPE vocabulary loaded: \(dict.count) entries in \(String(format: "%.1f", elapsed))ms")
+        return dict
     }
 
     // MARK: - BPE Encoding (cl100k_base)
 
     /// Encode text into BPE token IDs.
-    private func encode(_ text: String) -> [Int] {
+    private func encode(_ text: String, encoder: [[UInt8]: Int]) -> [Int] {
         guard !text.isEmpty else { return [] }
 
         // cl100k_base regex pattern (simplified — split on whitespace boundaries and punctuation)
@@ -128,7 +129,7 @@ final class BPETokenizer: @unchecked Sendable {
                 continue
             }
             // BPE merge
-            let merged = bytePairEncode(bytes)
+            let merged = bytePairEncode(bytes, encoder: encoder)
             tokens.append(contentsOf: merged)
         }
 
@@ -138,11 +139,14 @@ final class BPETokenizer: @unchecked Sendable {
     /// Split text into pieces matching cl100k_base's tokenization pattern.
     /// This approximates the tiktoken regex:
     /// (?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
-    private func splitIntoPieces(_ text: String) -> [String] {
-        // Use NSRegularExpression for the cl100k_base pattern
+    // Immutable, reusable Foundation regex. Keep the existing token boundaries.
+    private static let pieceRegex: NSRegularExpression? = {
         let pattern = #"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"#
+        return try? NSRegularExpression(pattern: pattern, options: [])
+    }()
 
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+    private func splitIntoPieces(_ text: String) -> [String] {
+        guard let regex = Self.pieceRegex else {
             // Fallback: return whole text as one piece
             return [text]
         }
@@ -164,7 +168,7 @@ final class BPETokenizer: @unchecked Sendable {
     /// in flame graphs). We now cache pair ranks in a parallel array and
     /// only refresh the (≤2) neighbors of each merge — same algorithm,
     /// vastly fewer lookups and allocations.
-    private func bytePairEncode(_ bytes: [UInt8]) -> [Int] {
+    private func bytePairEncode(_ bytes: [UInt8], encoder: [[UInt8]: Int]) -> [Int] {
         guard bytes.count > 1 else {
             if let rank = encoder[bytes] {
                 return [rank]

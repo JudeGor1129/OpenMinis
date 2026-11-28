@@ -425,7 +425,7 @@ do {
 
     // Every size consumer in the loop reads the same number.
     check("offload is judged on the measurement",
-          vm.contains("offloadContextIfNeeded(model: activeModelForOffload, lastContextTokens: measureOutboundContextTokens())"))
+          vm.contains("await offloadContextIfNeeded(model: activeModelForOffload, lastContextTokens: measureOutboundContextTokens())"))
     // 5 sizing sites + the [CtxMeter] dispatch log, which reports the same max_tokens.
     checkEq("max_tokens / fallback sizing read the dispatch measurement (5 sites + dispatch log)",
             vm.components(separatedBy: "lastContextTokens: dispatchInputTokens").count - 1, 6)
@@ -441,7 +441,7 @@ do {
     // Reload, compaction and revert.
     check("load seeds calibration from the stamped pair", persist.contains("if seedContextCalibration() {"))
     check("…and never re-seeds a raw size", !persist.contains("liveContextTokensForCapacity ="))
-    let compactTail = compaction.range(of: "offloadContextIfNeeded(model: activeModel, lastContextTokens: 0, force: true)")
+    let compactTail = compaction.range(of: "await offloadContextIfNeeded(model: activeModel, lastContextTokens: 0, force: true)")
         .map { String(compaction[$0.upperBound...].prefix(400)) } ?? ""
     // [T-ctx-usage-after-compact] The refresh now runs inside
     // announceContextUsageAfterCompaction(), which also re-issues the
