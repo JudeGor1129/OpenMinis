@@ -194,6 +194,85 @@ enum CodeSearchWorker {
     }
 }
 
+/// Performs project file enumeration, reads, hashing, symbol extraction,
+/// and index serialization away from the main actor. The immutable snapshot is
+/// returned for the caller to publish into its normal tool-result path.
+@globalActor actor CodeIndexRefreshActor {
+    static let shared = CodeIndexRefreshActor()
+}
+
+@CodeIndexRefreshActor
+enum CodeIndexWorker {
+    static var isRunningOnMainThread: Bool { Thread.isMainThread }
+
+    static func refresh(rootURL: URL, projectPath: String, commit: String,
+                        indexURL: URL, force: Bool, extensions: Set<String>) throws -> CodeIndexSnapshot {
+        let old: CodeIndexSnapshot? = force ? nil : (try? Data(contentsOf: indexURL)).flatMap {
+            try? JSONDecoder().decode(CodeIndexSnapshot.self, from: $0)
+        }
+        var files: [String: IndexedCodeFile] = [:]
+        var indexedBytes = 0
+        let maximumIndexedBytes = 48 * 1_024 * 1_024
+        for url in try projectFiles(rootURL: rootURL, maxDepth: 20, maxFiles: 12_000) {
+            try Task.checkCancellation()
+            guard extensions.contains(url.pathExtension.lowercased()),
+                  let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true, (values.fileSize ?? 0) <= 2_000_000 else { continue }
+            let fileSize = values.fileSize ?? 0
+            guard indexedBytes + fileSize <= maximumIndexedBytes else { continue }
+            guard let data = try? Data(contentsOf: url), !data.contains(0),
+                  let text = String(data: data, encoding: .utf8) else { continue }
+            let rel = relative(url, to: rootURL)
+            indexedBytes += data.count
+            let hash = sha256(data)
+            if let cached = old?.files[rel], cached.hash == hash {
+                files[rel] = cached
+            } else {
+                files[rel] = IndexedCodeFile(relativePath: rel, hash: hash,
+                                             byteCount: data.count,
+                                             symbols: CodeSymbolExtractor.extract(text: text, extension: url.pathExtension))
+            }
+        }
+        try Task.checkCancellation()
+        let snapshot = CodeIndexSnapshot(schemaVersion: 1, projectPath: projectPath,
+                                         commit: commit, generatedAt: Date(), files: files)
+        try FileManager.default.createDirectory(at: indexURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(snapshot).write(to: indexURL, options: .atomic)
+        return snapshot
+    }
+
+    private static func projectFiles(rootURL: URL, maxDepth: Int, maxFiles: Int) throws -> [URL] {
+        let fm = FileManager.default
+        let rootComponents = rootURL.standardizedFileURL.pathComponents.count
+        let skipNames: Set<String> = [".git", ".build", "DerivedData", "Pods", "node_modules", "vendor", "build", "dist", ".theos"]
+        guard let enumerator = fm.enumerator(at: rootURL,
+                                             includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey],
+                                             options: [.skipsHiddenFiles]) else { return [] }
+        var result: [URL] = []
+        while let url = enumerator.nextObject() as? URL, result.count < maxFiles {
+            try Task.checkCancellation()
+            let depth = url.standardizedFileURL.pathComponents.count - rootComponents
+            if depth > maxDepth { enumerator.skipDescendants(); continue }
+            if skipNames.contains(url.lastPathComponent) { enumerator.skipDescendants(); continue }
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey])
+            if values?.isSymbolicLink == true { enumerator.skipDescendants(); continue }
+            if values?.isRegularFile == true { result.append(url) }
+        }
+        return result
+    }
+
+    private static func relative(_ url: URL, to root: URL) -> String {
+        let rootPath = root.standardizedFileURL.path.hasSuffix("/")
+            ? root.standardizedFileURL.path : root.standardizedFileURL.path + "/"
+        let path = url.standardizedFileURL.path
+        return path.hasPrefix(rootPath) ? String(path.dropFirst(rootPath.count)) : path
+    }
+
+    private static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
 enum CodeSymbolExtractor {
     private struct Pattern {
         let expression: NSRegularExpression
@@ -524,40 +603,13 @@ extension AIChatViewModel {
     // MARK: Incremental indexing and bounded search
 
     private func refreshCodeIndex(context: ProjectContext, force: Bool) async throws -> CodeIndexSnapshot {
-        let fm = FileManager.default
         let rootURL = context.hostRoot
-        let indexURL = indexFileURL(project: context.root)
-        let old: CodeIndexSnapshot? = force ? nil : (try? Data(contentsOf: indexURL)).flatMap {
-            try? JSONDecoder().decode(CodeIndexSnapshot.self, from: $0)
-        }
-        var files: [String: IndexedCodeFile] = [:]
-        var indexedBytes = 0
-        let maximumIndexedBytes = 48 * 1_024 * 1_024
-        for url in projectFiles(rootURL: rootURL, maxDepth: 20, includeHidden: false, maxFiles: 12_000) {
-            guard Self.programmingSearchExtensions.contains(url.pathExtension.lowercased()),
-                  let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
-                  values.isRegularFile == true, (values.fileSize ?? 0) <= 2_000_000 else { continue }
-            let fileSize = values.fileSize ?? 0
-            guard indexedBytes + fileSize <= maximumIndexedBytes else { continue }
-            guard let data = try? Data(contentsOf: url), !data.contains(0),
-                  let text = String(data: data, encoding: .utf8) else { continue }
-            let rel = relative(url, to: rootURL)
-            indexedBytes += data.count
-            let hash = sha256(data)
-            if let cached = old?.files[rel], cached.hash == hash {
-                files[rel] = cached
-            } else {
-                files[rel] = IndexedCodeFile(relativePath: rel, hash: hash,
-                                             byteCount: data.count,
-                                             symbols: CodeSymbolExtractor.extract(text: text, extension: url.pathExtension))
-            }
-        }
-        let snapshot = CodeIndexSnapshot(schemaVersion: 1, projectPath: context.root,
-                                         commit: context.commit, generatedAt: Date(), files: files)
-        try fm.createDirectory(at: indexURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let encoded = try JSONEncoder().encode(snapshot)
-        try encoded.write(to: indexURL, options: .atomic)
-        return snapshot
+        let projectPath = context.root
+        let commit = context.commit
+        let indexURL = indexFileURL(project: projectPath)
+        let extensions = Self.programmingSearchExtensions
+        return try await CodeIndexWorker.refresh(rootURL: rootURL, projectPath: projectPath, commit: commit,
+                                                 indexURL: indexURL, force: force, extensions: extensions)
     }
 
     private func searchCode(_ args: [String: Any]) async throws -> FileToolResult {

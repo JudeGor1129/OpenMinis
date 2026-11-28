@@ -22,8 +22,14 @@ grep -q 'status --porcelain=v1' "$impl"
 grep -q 'replaceItemAt' "$impl"
 grep -q 'ProjectWriteLockRegistry.shared.withLock' "$impl"
 grep -q 'ProgrammingPathPolicy.projectRelativePath' "$impl"
+grep -q '@globalActor actor CodeIndexRefreshActor' "$impl"
+grep -q '@CodeIndexRefreshActor' "$impl"
+grep -q 'CodeIndexWorker.refresh(rootURL:' "$impl"
+grep -q 'try Task.checkCancellation()' "$impl"
 grep -q 'EnvVarRedactor.redactIfEnabled' "$impl"
 [[ "$(grep -c 'AIChatViewModel+ProgrammingTools.swift in Sources' "$project")" -ge 2 ]] || { echo 'FAIL: ProgrammingTools not added to Minis Sources phase'; exit 1; }
 grep -q 'testRelativePathRejectsProjectEscape' "$tests"
+grep -q 'testCodeIndexWorkerRefreshesIncrementallyOffMainActor' "$tests"
+grep -q 'XCTAssertFalse(workerRanOnMainThread' "$tests"
 
 echo 'PASS: structured project index, safe patching, Git/lint/test tools, stream UI, Xcode wiring and safety tests.'
