@@ -437,6 +437,7 @@ private struct HelperTranscript: View {
                 // nested task sheet; opening it must not create a second
                 // hosting graph inside an in-flight sheet transition.
                 MinisLegacyTranscript(vm: vm, bottomInset: 16, readOnly: true)
+                    .equatable()
             }
         }
     }

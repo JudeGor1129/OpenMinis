@@ -2970,13 +2970,14 @@ struct AIChatView: View {
                     chatSearch: chatSearch,
                     groupSoul: activeGroupSoul
                 )
+                .equatable()
             }
-            // Empty/loading overlay for tap-to-dismiss-keyboard.
+            // Empty-page overlay for tap-to-dismiss-keyboard.
             // Placed BEFORE the directory timeline in the ZStack so the
             // timeline can sit on top and receive its own taps (folder-card
             // arrow buttons). Taps that miss the timeline content fall
             // through to this background overlay.
-            if vm.messages.isEmpty || vm.isLoadingSession {
+            if vm.messages.isEmpty {
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
@@ -7423,14 +7424,48 @@ private struct MinisSessionPresentationModifier: ViewModifier {
 // iOS 15 starts at the newest edge of the transcript. Native offset zero is
 // already the latest position: cold load and preview → full history never
 // issue scrollTo/contentOffset commands or wait for estimated row heights.
-struct MinisLegacyTranscript: View {
-    @ObservedObject var vm: AIChatViewModel
+struct MinisLegacyTranscript: View, Equatable {
+    // Both hosts already observe the VM. The equatable boundary is fed only
+    // structural changes; each row and block still observes its own object.
+    let vm: AIChatViewModel
     let bottomInset: CGFloat
-    var readOnly = false
-    var chatSearch: ChatSearchController? = nil
-    var groupSoul: GroupSoulIdentity? = nil
+    let readOnly: Bool
+    let chatSearch: ChatSearchController?
+    let groupSoul: GroupSoulIdentity?
+    private struct Inputs: Equatable {
+        let messages: UInt64
+        let snapshots: UInt64
+        let anchorRequest: UInt
+        let sessionID: String?
+        let processing: Bool
+        let compacting: Bool
+        let loading: Bool
+        let restoring: Bool
+        let commandStartTime: Date?
+        let browserPool: ObjectIdentifier
+    }
+    private let inputs: Inputs
+
+    @MainActor
+    init(vm: AIChatViewModel, bottomInset: CGFloat, readOnly: Bool = false,
+         chatSearch: ChatSearchController? = nil, groupSoul: GroupSoulIdentity? = nil) {
+        self.vm = vm
+        self.bottomInset = bottomInset
+        self.readOnly = readOnly
+        self.chatSearch = chatSearch
+        self.groupSoul = groupSoul
+        inputs = Inputs(messages: vm.legacyMessageListRevision, snapshots: vm.legacyToolSnapshotRevision,
+                        anchorRequest: vm.latestSessionAnchorRequest, sessionID: vm.sessionId,
+                        processing: vm.isProcessing, compacting: vm.isCompacting,
+                        loading: vm.isLoadingSession, restoring: vm.isRestoringFullHistory,
+                        commandStartTime: vm.commandStartTime, browserPool: ObjectIdentifier(vm.browserTabPool))
+    }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.vm === rhs.vm && lhs.bottomInset == rhs.bottomInset && lhs.readOnly == rhs.readOnly
+            && lhs.chatSearch === rhs.chatSearch && lhs.groupSoul == rhs.groupSoul && lhs.inputs == rhs.inputs
+    }
     @State private var searchNavigationGeneration = 0
-    @State private var followingBottom = true
     @State private var toolDetail: MinisLegacyToolDetailTarget?
     @State private var displayStart = 0
     @State private var browseEndIndex: Int?
@@ -7478,28 +7513,28 @@ struct MinisLegacyTranscript: View {
         beginHistoryBrowse()
         displayStart = min(index, displayStart)
         browseEndIndex = max(index, browseEndIndex ?? index)
-        followingBottom = false
         if vm.isNearBottom { vm.isNearBottom = false }
         if vm.isAtFirstTurn { vm.isAtFirstTurn = false }
         pendingHistoryJump = id
     }
 
-    private func loadOlderDisplayPageIfNeeded(isAtOldestEdge: Bool) {
-        guard isAtOldestEdge, !legacyFollowing, !vm.isLoadingSession, !vm.messages.isEmpty else { return }
+    private func loadOlderDisplayPageIfNeeded(isAtOldestEdge: Bool) -> Bool {
+        guard isAtOldestEdge, !legacyFollowing, !vm.isLoadingSession, !vm.messages.isEmpty else { return false }
         let resolvedStart = min(max(0, displayStart), vm.messages.count - 1)
         if resolvedStart == 0 {
             if !vm.isAtFirstTurn { vm.isAtFirstTurn = true }
-            return
+            return false
         }
         let target = max(0, resolvedStart - displayPageStep)
         let lower = max(0, target - 24)
         let aligned = (lower..<target).last(where: { vm.messages[$0].isUserTurnAnchor }) ?? target
-        guard aligned < resolvedStart else { return }
+        guard aligned < resolvedStart else { return false }
         // Append at the native far edge of the inverted stack, without
         // issuing an automatic scroll command or replacing existing IDs.
         displayStart = aligned
         pageRevision &+= 1
         if vm.isAtFirstTurn { vm.isAtFirstTurn = false }
+        return true
     }
     private let bottomAnchor = "legacyTranscriptBottom"
 
@@ -7532,12 +7567,18 @@ struct MinisLegacyTranscript: View {
                         ForEach(rows.reversed()) { message in
                             MinisLegacyTranscriptRow(
                                 message: message, vm: vm, readOnly: readOnly,
-                                detailTarget: $toolDetail, groupSoul: groupSoul
+                                detailTarget: $toolDetail, groupSoul: groupSoul,
+                                messageIdentity: ObjectIdentifier(message),
+                                sessionID: inputs.sessionID,
+                                actionsBlocked: inputs.processing || inputs.restoring,
+                                isActiveMessage: inputs.processing && vm.messages.last?.id == message.id,
+                                commandStartTime: inputs.commandStartTime,
+                                snapshotsRevision: inputs.snapshots, browserPoolID: inputs.browserPool,
+                                messageListRevision: message.error == nil ? nil : inputs.messages
                             )
                                 .equatable()
                                 .environment(\.chatSearchHighlights, chatSearch?.highlights)
                                 .environment(\.chatSearchMessageId, message.id)
-                                .environment(\.chatSearchDimmed, message.isCompactedHistory)
                                 .rotationEffect(.degrees(180))
                                 // Native top is visual bottom. Keep 20pt
                                 // between messages, not after the newest edge.
@@ -7550,11 +7591,17 @@ struct MinisLegacyTranscript: View {
                     .frame(width: max(0, viewport.size.width - 36), alignment: .leading)
                     .padding(.horizontal, 18)
                     .background(MinisLegacyScrollFollow(
-                        enabled: followingBottom,
+                        canRevealOlder: (legacyFollowing
+                            ? max(0, vm.messages.count - displayPageSize) : displayStart) > 0,
                         anchors: pageAnchors,
                         pageRevision: pageRevision,
+                        onInteractionBegan: {
+                            if pendingHistoryJump != nil {
+                                searchNavigationGeneration &+= 1
+                                pendingHistoryJump = nil
+                            }
+                        },
                         onFollowingChanged: { follows in
-                            if followingBottom != follows { followingBottom = follows }
                             if legacyFollowing != follows {
                                 if follows {
                                     resetDisplayWindowToLatest()
@@ -7582,7 +7629,6 @@ struct MinisLegacyTranscript: View {
                 // zero. It never animates a preserved top/mid-history offset.
                 .id(vm.latestSessionAnchorRequest)
                 .onAppear {
-                    followingBottom = true
                     resetDisplayWindowToLatest()
                     if !vm.isNearBottom { vm.isNearBottom = true }
                     chatSearch?.onNavigate = { hit in
@@ -7594,31 +7640,30 @@ struct MinisLegacyTranscript: View {
                     pendingHistoryJump = nil
                     searchNavigationGeneration &+= 1
                 }
-                .simultaneousGesture(DragGesture(minimumDistance: 3).onChanged { _ in
-                    searchNavigationGeneration += 1
-                    pendingHistoryJump = nil
-                })
                 .onChange(of: pendingHistoryJump) { target in
                     guard let target else { return }
                     let generation = searchNavigationGeneration
                     DispatchQueue.main.async {
                         guard pendingHistoryJump == target, generation == searchNavigationGeneration else { return }
-                        guard vm.messages.contains(where: { $0.id == target }) else {
+                        guard !pageAnchors.userOwnsScroll,
+                              vm.messages.contains(where: { $0.id == target }) else {
                             pendingHistoryJump = nil
                             return
                         }
+                        pageAnchors.cancelPageCorrection?()
                         proxy.scrollTo(target, anchor: target == vm.messages.first?.id ? .bottom : .center)
                         pendingHistoryJump = nil
                     }
                 }
                 .onChange(of: vm.latestSessionAnchorRequest) { _ in
-                    followingBottom = true
                     resetDisplayWindowToLatest()
                     if !vm.isNearBottom { vm.isNearBottom = true }
                 }
-                // These are EXPLICIT user actions, not session entry or load.
+                // User actions can interrupt momentum; an active touch on
+                // the transcript still takes priority over a jump.
                 .onReceive(vm.forceScrollToBottom) { _ in
-                    followingBottom = true
+                    guard !pageAnchors.userIsDragging else { return }
+                    pageAnchors.cancelPageCorrection?()
                     resetDisplayWindowToLatest()
                     if !vm.isNearBottom { vm.isNearBottom = true }
                     withAnimation(MinisMotion.transition) {
@@ -7755,9 +7800,7 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
     let text: String
     let isQueued: Bool
     let readOnly: Bool
-    // The parent transcript observes the VM. Keeping a plain reference here
-    // prevents every composer/streaming publication from invalidating every
-    // visible message row and its UIKit Markdown renderer.
+    let actionsBlocked: Bool
     let vm: AIChatViewModel
     @State private var showDeleteConfirm = false
 
@@ -7784,17 +7827,17 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
                             MinisContextMenuAction(
                                 title: "编辑并重发（替换后续记录）",
                                 image: "pencil",
-                                isEnabled: !readOnly && !vm.isProcessing && !vm.isRestoringFullHistory && !isQueued
+                                isEnabled: !readOnly && !actionsBlocked && !isQueued
                             ) { vm.editMessage(messageID) },
                             MinisContextMenuAction(
                                 title: "从此处重发（替换后续记录）",
                                 image: "arrow.clockwise",
-                                isEnabled: !readOnly && !vm.isProcessing && !vm.isRestoringFullHistory && !isQueued
+                                isEnabled: !readOnly && !actionsBlocked && !isQueued
                             ) { vm.retryFromMessage(messageID) },
                             MinisContextMenuAction(
                                 title: "删除消息",
                                 image: "trash",
-                                isEnabled: !readOnly && !vm.isProcessing && !vm.isRestoringFullHistory && !isQueued
+                                isEnabled: !readOnly && !actionsBlocked && !isQueued
                             ) { showDeleteConfirm = true },
                             MinisContextMenuAction(
                                 title: "拷贝",
@@ -7822,19 +7865,19 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
         } label: {
             Label("编辑并重发（替换后续记录）", systemImage: "pencil")
         }
-        .disabled(readOnly || vm.isProcessing || vm.isRestoringFullHistory || isQueued)
+        .disabled(readOnly || actionsBlocked || isQueued)
         Button {
             vm.retryFromMessage(messageID)
         } label: {
             Label("从此处重发（替换后续记录）", systemImage: "arrow.clockwise")
         }
-        .disabled(readOnly || vm.isProcessing || vm.isRestoringFullHistory || isQueued)
+        .disabled(readOnly || actionsBlocked || isQueued)
         Button(role: .destructive) {
             showDeleteConfirm = true
         } label: {
             Label("删除消息", systemImage: "trash")
         }
-        .disabled(readOnly || vm.isProcessing || vm.isRestoringFullHistory || isQueued)
+        .disabled(readOnly || actionsBlocked || isQueued)
         Button {
             UIPasteboard.general.string = text
         } label: {
@@ -7847,6 +7890,16 @@ private struct MinisLegacyUserMessageActions: ViewModifier {
 // Lightweight row markers are owned by SwiftUI. The registry never retains a
 // row or subscribes to per-frame layout/scroll notifications.
 private final class MinisLegacyPageAnchors {
+    weak var scrollView: UIScrollView?
+    var cancelPageCorrection: (() -> Void)?
+    var userOwnsScroll: Bool { userIsDragging || scrollView?.isDecelerating == true }
+    var userIsDragging: Bool {
+        guard let scroll = scrollView else { return false }
+        return scroll.isTracking || scroll.isDragging
+            || scroll.panGestureRecognizer.state == .began
+            || scroll.panGestureRecognizer.state == .changed
+    }
+
     private let rows = NSMapTable<NSUUID, UIView>(keyOptions: .strongMemory, valueOptions: .weakMemory)
 
     func register(_ id: UUID, view: UIView) { rows.setObject(view, forKey: id as NSUUID) }
@@ -7913,17 +7966,26 @@ private struct MinisLegacyPageRowMarker: UIViewRepresentable {
 // Observe SwiftUI's native scroll view without replacing its delegate. The
 // inverted list follows the newest edge naturally. This probe only allows
 // an anchor correction for a committed older-page insertion.
+private func legacyShouldFollowNewest(atNewest: Bool, atOldest: Bool,
+                                      hasOlderPage: Bool, draggedTowardHistory: Bool) -> Bool {
+    // Edge thresholds can overlap on a short page. A pull toward history
+    // must not be mistaken for a return to the latest messages.
+    atNewest && !(atOldest && hasOlderPage && draggedTowardHistory)
+}
+
 private struct MinisLegacyScrollFollow: UIViewRepresentable {
-    let enabled: Bool
+    let canRevealOlder: Bool
     let anchors: MinisLegacyPageAnchors
     let pageRevision: UInt
+    let onInteractionBegan: () -> Void
     let onFollowingChanged: (Bool) -> Void
-    let onOlderEdge: (Bool) -> Void
+    let onOlderEdge: (Bool) -> Bool
 
     func makeUIView(context: Context) -> Probe { Probe() }
     func updateUIView(_ view: Probe, context: Context) {
-        view.following = enabled
+        view.canRevealOlder = canRevealOlder
         view.anchors = anchors
+        view.onInteractionBegan = onInteractionBegan
         view.commitPage(pageRevision)
         view.onFollowingChanged = onFollowingChanged
         view.onOlderEdge = onOlderEdge
@@ -7931,13 +7993,48 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
     }
     static func dismantleUIView(_ view: Probe, coordinator: ()) {
         view.stop()
+        view.onInteractionBegan = nil
         view.onFollowingChanged = nil
         view.onOlderEdge = nil
     }
 
     final class Probe: UIView {
-        var following = true
-        var anchors: MinisLegacyPageAnchors?
+        var canRevealOlder = false {
+            didSet { if canRevealOlder != oldValue { updateBounce() } }
+        }
+        var anchors: MinisLegacyPageAnchors? {
+            didSet {
+                guard oldValue !== anchors else { return }
+                if let scroll = scrollView, oldValue?.scrollView === scroll {
+                    oldValue?.scrollView = nil
+                    oldValue?.cancelPageCorrection = nil
+                }
+                bindAnchors()
+            }
+        }
+        private func bindAnchors() {
+            guard let scroll = scrollView else { return }
+            anchors?.scrollView = scroll
+            anchors?.cancelPageCorrection = { [weak self] in
+                self?.invalidatePageCorrection()
+            }
+        }
+
+        private func invalidatePageCorrection() {
+            gestureGeneration &+= 1
+            pendingPageAnchor = nil
+            olderEdgePending = false
+        }
+
+        var onInteractionBegan: (() -> Void)?
+        private var nativeAlwaysBounce = false
+        private var draggedTowardHistory = false
+
+        private func updateBounce() {
+            guard let scroll = scrollView else { return }
+            let enabled = nativeAlwaysBounce || canRevealOlder
+            if scroll.alwaysBounceVertical != enabled { scroll.alwaysBounceVertical = enabled }
+        }
         private var appliedPageRevision: UInt?
         private var pendingPageAnchor: (id: UUID, y: CGFloat)?
         private var gestureGeneration: UInt = 0
@@ -7954,13 +8051,14 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
                 guard let self, self.appliedPageRevision == revision,
                       self.gestureGeneration == generation, self.window != nil,
                       let scroll = self.scrollView,
-                      !scroll.isTracking, !scroll.isDragging, !scroll.isDecelerating else { return }
+                      !self.userInteractionActive, self.anchors?.userOwnsScroll == false else { return }
                 scroll.layoutIfNeeded()
+                guard self.gestureGeneration == generation, self.anchors?.userOwnsScroll == false else { return }
                 self.anchors?.restore(anchor, in: scroll)
             }
         }
         var onFollowingChanged: ((Bool) -> Void)?
-        var onOlderEdge: ((Bool) -> Void)?
+        var onOlderEdge: ((Bool) -> Bool)?
         private weak var scrollView: UIScrollView?
         private var userInteractionActive = false
         private var updateScheduled = false
@@ -7987,6 +8085,9 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             while let view = ancestor, !(view is UIScrollView) { ancestor = view.superview }
             guard let scroll = ancestor as? UIScrollView else { return }
             scrollView = scroll
+            bindAnchors()
+            nativeAlwaysBounce = scroll.alwaysBounceVertical
+            updateBounce()
             scroll.keyboardDismissMode = .interactive
             // Do not observe contentOffset: KVO fires every display frame and
             // queues a main-actor sample while the user is dragging. The pan
@@ -7998,26 +8099,36 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(panChanged(_:)))
             interactionEndCheck?.cancel()
             interactionEndCheck = nil
+            if let scroll = scrollView {
+                if scroll.alwaysBounceVertical != nativeAlwaysBounce {
+                    scroll.alwaysBounceVertical = nativeAlwaysBounce
+                }
+                if anchors?.scrollView === scroll {
+                    anchors?.scrollView = nil
+                    anchors?.cancelPageCorrection = nil
+                }
+            }
             scrollView = nil
-            gestureGeneration &+= 1
-            pendingPageAnchor = nil
-            olderEdgePending = false
+            invalidatePageCorrection()
             userInteractionActive = false
         }
         @objc private func panChanged(_ pan: UIPanGestureRecognizer) {
             switch pan.state {
             case .began, .changed:
-                if pan.state == .began {
-                    gestureGeneration &+= 1
-                    pendingPageAnchor = nil
-                    olderEdgePending = false
-                }
-                if !userInteractionActive {
+                if pan.state == .began || !userInteractionActive {
+                    invalidatePageCorrection()
+                    draggedTowardHistory = false
+                    let wasInteracting = userInteractionActive
                     userInteractionActive = true
-                    following = false
-                    onFollowingChanged?(false)
+                    onInteractionBegan?()
+                    if !wasInteracting { onFollowingChanged?(false) }
                 }
             case .ended, .cancelled, .failed:
+                if let window = scrollView?.window {
+                    // The transcript is inverted, not the screen. Pulling
+                    // down on screen moves the viewport toward older rows.
+                    draggedTowardHistory = pan.state == .ended && pan.translation(in: window).y > 3
+                }
                 // Do not enqueue a main-actor sample for every changed event.
                 // The UIScrollView will continue decelerating; sample() polls
                 // only after the gesture ends until UIKit reports it settled.
@@ -8048,6 +8159,7 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
         private func sample() {
             guard window != nil, let scroll = scrollView, scroll.bounds.height > 0 else { return }
             let moving = scroll.isTracking || scroll.isDragging || scroll.isDecelerating
+                || anchors?.userOwnsScroll == true
             if moving {
                 if userInteractionActive { checkInteractionEnd() }
                 return
@@ -8057,15 +8169,20 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
             guard userInteractionActive else { return }
             userInteractionActive = false
             // In inverted native coordinates, the newest edge is the TOP.
-            following = abs(scroll.contentOffset.y + scroll.adjustedContentInset.top) <= 24
-            onFollowingChanged?(following)
-            let oldestOffset = max(-scroll.adjustedContentInset.top,
+            let newestOffset = -scroll.adjustedContentInset.top
+            let oldestOffset = max(newestOffset,
                                    scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+            let atNewest = abs(scroll.contentOffset.y - newestOffset) <= 24
             let isAtOldestEdge = scroll.contentOffset.y >= oldestOffset - 8
+            let shouldFollow = legacyShouldFollowNewest(atNewest: atNewest, atOldest: isAtOldestEdge,
+                                                        hasOlderPage: canRevealOlder, draggedTowardHistory: draggedTowardHistory)
+            onFollowingChanged?(shouldFollow)
             if isAtOldestEdge, !olderEdgePending {
                 olderEdgePending = true
-                pendingPageAnchor = anchors?.capture(in: scroll)
-                onOlderEdge?(true)
+                // The real oldest edge still updates the top-arrow state.
+                // Only an actual insertion may arm a correction.
+                pendingPageAnchor = canRevealOlder ? anchors?.capture(in: scroll) : nil
+                if onOlderEdge?(true) != true { pendingPageAnchor = nil }
             } else if !isAtOldestEdge {
                 pendingPageAnchor = nil
                 olderEdgePending = false
@@ -8076,13 +8193,21 @@ private struct MinisLegacyScrollFollow: UIViewRepresentable {
 
 private struct MinisLegacyTranscriptRow: View, Equatable {
     @ObservedObject var message: ChatMessage
-    // Parent transcript owns the VM observation; rows stay value-gated.
+    // Only captured renderer inputs participate in parent-driven refreshes.
     let vm: AIChatViewModel
     var readOnly = false
     @ObservedObject private var fontSettings = FontSettings.shared
     @State private var highlightedBlockId: UUID?
     @Binding var detailTarget: MinisLegacyToolDetailTarget?
     var groupSoul: GroupSoulIdentity? = nil
+    let messageIdentity: ObjectIdentifier
+    let sessionID: String?
+    let actionsBlocked: Bool
+    let isActiveMessage: Bool
+    let commandStartTime: Date?
+    let snapshotsRevision: UInt64
+    let browserPoolID: ObjectIdentifier
+    let messageListRevision: UInt64?
     @State private var groupIcon: String?
 
     private var detailBlock: Binding<AssistantBlock?> {
@@ -8102,36 +8227,15 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
         )
     }
 
-    // [T-ios15-typing-lag] Value-equality gate so a keystroke in the composer
-    // does NOT re-evaluate every message row.
-    //
-    // `vm` is an @ObservedObject here, and `vm.inputText` is @Published, so
-    // every keystroke sends objectWillChange through the view model. Before
-    // this gate the enclosing non-lazy `VStack { ForEach(vm.messages) }` had
-    // no equality barrier, so each keystroke re-ran the body of EVERY row —
-    // each of which hosts a SelectableMarkdownView. With a long transcript
-    // that is the reported "keyboard typing is laggy" symptom.
-    //
-    // Comparing only the fields that actually affect this row's rendering
-    // lets SwiftUI skip unchanged rows entirely. Anything not compared here
-    // must not be rendered by this row, or it would go stale.
-    static func == (lhs: MinisLegacyTranscriptRow, rhs: MinisLegacyTranscriptRow) -> Bool {
-        lhs.readOnly == rhs.readOnly
-            && lhs.groupSoul == rhs.groupSoul
-            && lhs.message === rhs.message
-            && lhs.message.content == rhs.message.content
-            && lhs.message.blocks.count == rhs.message.blocks.count
-            && lhs.message.isQueued == rhs.message.isQueued
-            && lhs.message.error == rhs.message.error
-            && lhs.message.isCompactLoading == rhs.message.isCompactLoading
-            && lhs.message.isAwaitingModelResponse == rhs.message.isAwaitingModelResponse
-            && lhs.vm.sessionId == rhs.vm.sessionId
-            && lhs.vm.isProcessing == rhs.vm.isProcessing
-            && lhs.vm.messages.last?.id == rhs.vm.messages.last?.id
-    }
-
-    private var isActiveMessage: Bool {
-        vm.isProcessing && vm.messages.last?.id == message.id
+    // The same message instance publishes its own mutations. Compare only
+    // captured inputs here, not two reads of the same mutable model object.
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.vm === rhs.vm && lhs.messageIdentity == rhs.messageIdentity
+            && lhs.readOnly == rhs.readOnly && lhs.groupSoul == rhs.groupSoul
+            && lhs.sessionID == rhs.sessionID && lhs.actionsBlocked == rhs.actionsBlocked
+            && lhs.isActiveMessage == rhs.isActiveMessage && lhs.commandStartTime == rhs.commandStartTime
+            && lhs.snapshotsRevision == rhs.snapshotsRevision && lhs.browserPoolID == rhs.browserPoolID
+            && lhs.messageListRevision == rhs.messageListRevision
     }
 
     /// The user turn that produced this assistant message. Error retry uses
@@ -8220,8 +8324,8 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                 HStack(spacing: 6) {
                     SoulIconView(icon: (groupSoul == nil ? groupIcon : groupSoul?.icon) ?? SoulStore.cachedMetadata.icon, size: 26)
                         .accessibilityHidden(true)
-                        .task(id: vm.sessionId) {
-                            guard groupSoul == nil, let id = vm.sessionId else { groupIcon = nil; return }
+                        .task(id: sessionID) {
+                            guard groupSoul == nil, let id = sessionID else { groupIcon = nil; return }
                             let folder = await ChatStore.shared.getSession(id)?.folderId
                             groupIcon = folder.flatMap { MinisGroupConfigurationStore.soulIdentity(for: $0).icon }
                         }
@@ -8248,6 +8352,7 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                         text: userDisplayText,
                         isQueued: message.isQueued,
                         readOnly: readOnly,
+                        actionsBlocked: actionsBlocked,
                         vm: vm
                     ))
             } else if !message.content.isEmpty && !message.blocks.contains(where: { $0.kind == .text && !$0.content.isEmpty }) {
@@ -8300,7 +8405,7 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                     block: block,
                     message: message,
                     isActiveMessage: isActiveMessage,
-                    commandStartTime: vm.commandStartTime,
+                    commandStartTime: commandStartTime,
                     onStop: { [vm] in vm.cancel() },
                     browserPool: vm.browserTabPool,
                     toolSnapshots: vm.toolSnapshots,
@@ -8328,7 +8433,7 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
                                 .background(Color.orange.opacity(0.16), in: Capsule())
                         }
                         .buttonStyle(.plain)
-                        .disabled(vm.isProcessing || vm.isRestoringFullHistory)
+                        .disabled(actionsBlocked)
                         .accessibilityHint("从产生此错误的用户消息重新请求模型")
                     }
                 }
@@ -8348,5 +8453,6 @@ private struct MinisLegacyTranscriptRow: View, Equatable {
         // again or expand the bubble's own background to the full row width.
         .padding(.leading, message.role == .user ? 60 : 0)
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+        .environment(\.chatSearchDimmed, message.isCompactedHistory)
     }
 }

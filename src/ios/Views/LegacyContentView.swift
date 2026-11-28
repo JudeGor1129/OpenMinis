@@ -14,31 +14,56 @@ struct ContentView: View {
     }
 }
 
+// Status changes should invalidate only the icon of the matching List row.
+// The stores still drive all model scheduling and background behavior.
 @MainActor
-private final class LegacySessionActivitySnapshot: ObservableObject {
-    @Published private(set) var active: Set<String> = []
-    @Published private(set) var suspended: Set<String> = []
+private struct LegacySessionActivityBadge: View {
+    private enum Status: Equatable { case idle, active, suspended }
+    let sessionID: String
+    let color: Color
+    @State private var status: Status
 
-    private var cancellables: Set<AnyCancellable> = []
-    private let activity = SessionActivityTracker.shared
-    private let concurrency = SessionConcurrencyManager.shared
-
-    init() {
-        activity.$activeSessions
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] ids in self?.active = ids }
-            .store(in: &cancellables)
-        concurrency.$suspendedSessions
-            .map { Set($0) }
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] ids in self?.suspended = ids }
-            .store(in: &cancellables)
+    init(sessionID: String, color: Color) {
+        self.sessionID = sessionID
+        self.color = color
+        _status = State(initialValue: Self.status(
+            id: sessionID, active: SessionActivityTracker.shared.activeSessions,
+            suspended: Set(SessionConcurrencyManager.shared.suspendedSessions)))
     }
 
-    func isActive(_ id: String) -> Bool { active.contains(id) }
-    func isSuspended(_ id: String) -> Bool { suspended.contains(id) }
+    private static func status(id: String, active: Set<String>, suspended: Set<String>) -> Status {
+        if suspended.contains(id) { return .suspended }
+        return active.contains(id) ? .active : .idle
+    }
+
+    private var updates: AnyPublisher<Status, Never> {
+        let id = sessionID
+        return SessionActivityTracker.shared.$activeSessions
+            .map { $0.contains(id) }
+            .removeDuplicates()
+            .combineLatest(SessionConcurrencyManager.shared.$suspendedSessions
+                .map { $0.contains(id) }
+                .removeDuplicates())
+            .map { active, suspended in suspended ? Status.suspended : (active ? .active : .idle) }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .eraseToAnyPublisher()
+    }
+
+    var body: some View {
+        Group {
+            switch status {
+            case .idle: Color.clear
+            case .active: LegacySpinningRing(color: color)
+            case .suspended: LegacySuspendedRing(color: .yellow)
+            }
+        }
+        .frame(width: 36, height: 36)
+        .allowsHitTesting(false)
+        .onReceive(updates) { next in
+            if status != next { status = next }
+        }
+    }
 }
 
 // A two-line list subtitle must not lay out a whole generated reply. Bound
@@ -46,6 +71,18 @@ private final class LegacySessionActivitySnapshot: ObservableObject {
 private func legacySessionListPreview(_ text: String?) -> String? {
     guard let text, !text.isEmpty else { return nil }
     return String(text.prefix(240))
+}
+
+// ChatSession equality intentionally omits the long preview and immutable
+// fields. Compare only what this UI shows plus fields used by its actions.
+private func legacySessionRowsMatch(_ lhs: [ChatSession], _ rhs: [ChatSession]) -> Bool {
+    guard lhs.count == rhs.count else { return false }
+    return zip(lhs, rhs).allSatisfy { pair in
+        let (a, b) = pair
+        return a == b && a.modelId == b.modelId && a.createdAt == b.createdAt
+            && a.parentToolUseId == b.parentToolUseId
+            && legacySessionListPreview(a.lastMessage) == legacySessionListPreview(b.lastMessage)
+    }
 }
 
 /// iOS 15 Implementation of the essential conversation flow.
@@ -56,7 +93,7 @@ private func legacySessionListPreview(_ text: String?) -> String? {
 private struct LegacyContentView: View {
     @State private var sessions: [ChatSession] = []
     @State private var folders: [ChatFolder] = []
-    @StateObject private var activitySnapshot = LegacySessionActivitySnapshot()
+    @State private var ungroupedSessions: [ChatSession] = []
     // Keep the grouped List's diff input to stable IDs, avoiding session-value
     // array comparisons during parent updates. The row models stay in a lookup
     // table so titles, previews, and context actions still use fresh data.
@@ -140,8 +177,7 @@ private struct LegacyContentView: View {
                                             selectionMode: .constant(false),
                                             selectedSessions: .constant([]),
                                             onChange: reload,
-                                            isActiveOverride: sessionIsActive(session.id),
-                                            isSuspendedOverride: sessionIsSuspended(session.id)
+                                            showsActivity: true
                                         )
                                     }
                                 }
@@ -169,8 +205,7 @@ private struct LegacyContentView: View {
                             selectionMode: $selectionMode,
                             selectedSessions: $selectedSessions,
                             onChange: reload,
-                            isActiveOverride: sessionIsActive(session.id),
-                            isSuspendedOverride: sessionIsSuspended(session.id)
+                            showsActivity: true
                         )
                     }
                 }
@@ -269,7 +304,9 @@ private struct LegacyContentView: View {
                 LegacySettingsSheet()
             }
             .sheet(item: $managingFolder, onDismiss: {
-                reloadFolders()
+                // The manager can add or remove members as well as edit the
+                // folder. Refresh membership before returning to the home list.
+                reload()
                 // Dismiss-then-push: the sheet's own stack would render the
                 // chat card-sized on iOS 15.
                 if let sid = pendingOpenSessionId {
@@ -384,18 +421,6 @@ private struct LegacyContentView: View {
         }
     }
 
-    private var ungroupedSessions: [ChatSession] {
-        sessions.filter { $0.folderId == nil }
-    }
-
-    private func sessionIsActive(_ id: String) -> Bool {
-        activitySnapshot.isActive(id)
-    }
-
-    private func sessionIsSuspended(_ id: String) -> Bool {
-        activitySnapshot.isSuspended(id)
-    }
-
     private func toggleGroup(_ id: String) {
         withAnimation(MinisMotion.transition) {
             if expandedGroups.contains(id) { expandedGroups.remove(id) }
@@ -412,16 +437,19 @@ private struct LegacyContentView: View {
             async let loadedSessions = ChatStore.shared.listSessions()
             async let loadedFolders = ChatStore.shared.listFolders()
             let (allSessions, loadedFoldersValue) = await (loadedSessions, loadedFolders)
-            sessions = allSessions.filter { !$0.isChild }
-            folders = loadedFoldersValue
-            reloadGroupMembers()
+            let nextSessions = allSessions.filter { !$0.isChild }
+            if !legacySessionRowsMatch(sessions, nextSessions) {
+                sessions = nextSessions
+                reloadGroupMembers()
+            }
+            if folders != loadedFoldersValue { folders = loadedFoldersValue }
         }
     }
 
     private func reloadFolders() {
         Task { @MainActor in
-            folders = await ChatStore.shared.listFolders()
-            reloadGroupMembers()
+            let next = await ChatStore.shared.listFolders()
+            if folders != next { folders = next }
         }
     }
 
@@ -436,8 +464,10 @@ private struct LegacyContentView: View {
             guard let folderID = session.folderId else { continue }
             idsByFolder[folderID, default: []].append(session.id)
         }
-        groupSessionIDs = idsByFolder
+        if groupSessionIDs != idsByFolder { groupSessionIDs = idsByFolder }
         groupedSessionsByID = sessionsByID
+        let loose = sessions.filter { $0.folderId == nil }
+        if !legacySessionRowsMatch(ungroupedSessions, loose) { ungroupedSessions = loose }
     }
 
     /// Destination for the sheet-dismiss-then-push path. Guarded so an empty
@@ -652,8 +682,7 @@ private struct LegacySessionRow: View {
     /// gestures then interfere with long-press text selection. The sheet
     /// dismisses and the home NavigationView performs the push instead.
     var onOpen: ((String) -> Void)? = nil
-    var isActiveOverride: Bool? = nil
-    var isSuspendedOverride: Bool? = nil
+    var showsActivity = false
     @State private var editing = false
     @State private var choosingFolder = false
     @State private var confirmingDelete = false
@@ -663,8 +692,6 @@ private struct LegacySessionRow: View {
     @State private var folders: [ChatFolder] = []
 
     private var title: String { session.title ?? "New Conversation" }
-    private var isActive: Bool { isActiveOverride ?? false }
-    private var isSuspended: Bool { isSuspendedOverride ?? false }
     private var categoryIcon: (systemName: String, color: Color) {
         sessionCategoryIcon(for: session.category)
     }
@@ -722,12 +749,9 @@ private struct LegacySessionRow: View {
                 .background(icon.color.opacity(0.12))
                 .clipShape(Circle())
                 .overlay {
-                    if isSuspended {
-                        LegacySuspendedRing(color: .yellow)
-                            .frame(width: 36, height: 36)
-                    } else if isActive {
-                        LegacySpinningRing(color: icon.color)
-                            .frame(width: 36, height: 36)
+                    if showsActivity {
+                        LegacySessionActivityBadge(sessionID: session.id, color: icon.color)
+                            .id(session.id)
                     }
                 }
                 .accessibilityHidden(true)

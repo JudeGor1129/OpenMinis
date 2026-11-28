@@ -709,7 +709,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
     // MARK: - Published State
 
-    @Published var messages: [ChatMessage] = []
+    @Published var messages: [ChatMessage] = [] {
+        didSet { legacyMessageListRevision &+= 1 }
+    }
+    private(set) var legacyMessageListRevision: UInt64 = 0
     /// [T-voice-input-mode-preference-ios] True when a voice session
     /// contributed to the CURRENT composition (set on recording start by any
     /// path: mic tap, quick action, preference auto-entry). Cleared whenever
@@ -1646,7 +1649,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     }
 
     // Tool snapshots
-    @Published var toolSnapshots: [ToolSnapshotItem] = []
+    @Published var toolSnapshots: [ToolSnapshotItem] = [] {
+        didSet { legacyToolSnapshotRevision &+= 1 }
+    }
+    private(set) var legacyToolSnapshotRevision: UInt64 = 0
 
     // Attachments
     @Published var attachments: [InputAttachment] = []

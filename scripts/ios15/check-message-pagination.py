@@ -58,6 +58,20 @@ assert "private func loadOlderDisplayPageIfNeeded(isAtOldestEdge: Bool)" in chat
 assert "LIMIT ? OFFSET ?" in store
 assert store.count("loadMessagePage(sessionId:") == 1
 assert "tailLimit: 48" in persist
+# Native pan is authoritative; no second DragGesture or stale correction.
+legacy = chat.split("struct MinisLegacyTranscript:", 1)[1].split("private struct MinisLegacyTranscriptRow:", 1)[0]
+probe = legacy.split("private struct MinisLegacyScrollFollow:", 1)[1]
+assert "DragGesture(" not in legacy
+assert 'pan.translation(in: window).y > 3' in probe
+assert 'nativeAlwaysBounce || canRevealOlder' in probe
+assert 'if onOlderEdge?(true) != true { pendingPageAnchor = nil }' in probe
+assert probe.count('self.anchors?.userOwnsScroll == false') == 2
+assert 'pageAnchors.cancelPageCorrection?()' in legacy
+assert 'struct MinisLegacyTranscript: View, Equatable' in chat
+assert '@ObservedObject var message: ChatMessage' in chat.split('private struct MinisLegacyTranscriptRow:', 1)[1]
+assert 'lhs.messageIdentity == rhs.messageIdentity' in chat
+assert 'if vm.messages.isEmpty || vm.isLoadingSession {\n                Color.clear' not in chat
+
 print("PASS: iOS15 and UIKit message lists start with paged display windows;")
 print("      complete agentHistory is preserved and older pages are turn-aligned.")
 print("NOTE: source contract is not Swift type-check or UIKit runtime evidence.")

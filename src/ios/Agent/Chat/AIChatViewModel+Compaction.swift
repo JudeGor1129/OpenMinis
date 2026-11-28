@@ -1258,8 +1258,14 @@ extension AIChatViewModel {
         announceContextUsageAfterCompaction()
         logger.info("[CtxMeter] compacted marker=\(marker.id.prefix(8)) measured \(compactMeasuredBefore)→\(self.measureOutboundContextTokens())")
 
-        // Scroll to bottom so the user sees the compact divider and retained messages.
-        forceScrollToBottom.send()
+        // Keep explicit compaction navigation. The iOS 15 legacy transcript
+        // should not lose its reading position because an in-loop compaction
+        // happened to finish while the user was browsing older rows.
+        if #available(iOS 16.0, *) {
+            forceScrollToBottom.send()
+        } else if !wasProcessingOnEntry || isNearBottom {
+            forceScrollToBottom.send()
+        }
 
         // [T-compact-queued-drain] Success tail: run any prompts that were
         // enqueued while the compact was in flight. Previously only the

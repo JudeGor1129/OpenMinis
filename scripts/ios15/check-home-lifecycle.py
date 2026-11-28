@@ -28,7 +28,16 @@ check('ForEach(memberIDs, id: \\.self)' in home and 'ForEach(members(of:' not in
 check('if let session = groupedSessionsByID[sessionID]' in home,'row content resolves current lookup')
 check('selectionMode: .constant(false)' in home and 'selectedSessions: .constant([])' in home,'grouped row opens instead of selecting')
 check('memberCount: groupSessionIDs[folder.id]?.count ?? 0' in home,'collapsed group counts retained')
-check('activity.$activeSessions\n            .removeDuplicates()' in legacy and 'concurrency.$suspendedSessions\n            .map { Set($0) }\n            .removeDuplicates()' in legacy,'unchanged activity sets deduplicated')
+badge = legacy.split('private struct LegacySessionActivityBadge:', 1)[1].split('// A two-line list subtitle', 1)[0]
+check('LegacySessionActivitySnapshot' not in home and 'showsActivity: true' in home,
+      'home does not observe whole activity sets')
+check(badge.count('.map { $0.contains(id) }') == 2 and badge.count('.removeDuplicates()') == 3,
+      'activity publishes only changed status for the matching badge')
+check('LegacySessionActivityBadge(sessionID: session.id' in legacy and 'if status != next { status = next }' in badge,
+      'unrelated activity does not write row state')
+check('if !legacySessionRowsMatch(sessions, nextSessions)' in home
+      and 'if groupSessionIDs != idsByFolder' in home,
+      'unchanged sessions and membership do not republish')
 check('legacySessionListPreview(session.lastMessage)' in legacy,'bounded display preview wired')
 for call in ('showPrivacyScreen = true','clearAllUnlocks()','noteAppBackgrounded()'):
     check(observer.index(call)<queued,'privacy precedes deferred maintenance: '+call)
@@ -44,21 +53,37 @@ if swift is None:
     raise SystemExit(1 if args.require_swift else 0)
 preview=function(legacy,'private func legacySessionListPreview(')
 indexer=function(legacy,'private func reloadGroupMembers()').replace('private func','mutating func',1)
+row_match = function(legacy,'private func legacySessionRowsMatch(')
+chat = (ROOT/'src/ios/Views/Chat/AIChatView.swift').read_text()
+edge_policy = function(chat,'private func legacyShouldFollowNewest(')
 source='''import Foundation
-struct ChatSession {
+struct ChatSession: Equatable {
  let id:String
  var title:String
  var folderId:String?
  var isChild:Bool=false
+ var modelId:String="model"
+ var createdAt:Date=Date(timeIntervalSince1970:0)
+ var parentToolUseId:String?=nil
+ var lastMessage:String?=nil
+ static func == (lhs:Self,rhs:Self)->Bool {
+  lhs.id == rhs.id && lhs.title == rhs.title && lhs.folderId == rhs.folderId && lhs.isChild == rhs.isChild
+ }
 }
 struct IndexHarness {
  var sessions:[ChatSession]=[]
+ var ungroupedSessions:[ChatSession]=[]
  var groupSessionIDs:[String:[String]]=[:]
  var groupedSessionsByID:[String:ChatSession]=[:]
-'''+indexer+'\n}\n'+preview+'''
+'''+indexer+'\n}\n'+preview+'\n'+row_match+'\n'+edge_policy+'''
 func expect(_ ok: @autoclosure () -> Bool,_ label:String) {
  guard ok() else { fatalError(label) }; print("PASS Swift:",label)
 }
+expect(!legacyShouldFollowNewest(atNewest:true,atOldest:true,hasOlderPage:true,draggedTowardHistory:true), "first history pull on short page retains browse state")
+expect(legacyShouldFollowNewest(atNewest:true,atOldest:true,hasOlderPage:true,draggedTowardHistory:false), "reverse or cancelled drag returns to newest")
+expect(legacyShouldFollowNewest(atNewest:true,atOldest:true,hasOlderPage:false,draggedTowardHistory:true), "short conversation without older pages stays at newest")
+expect(!legacyShouldFollowNewest(atNewest:false,atOldest:true,hasOlderPage:true,draggedTowardHistory:true), "ordinary oldest edge still reveals history")
+expect(!legacyShouldFollowNewest(atNewest:false,atOldest:false,hasOlderPage:true,draggedTowardHistory:false), "mid-history remains in browse state")
 var h=IndexHarness()
 h.sessions=(0..<400).map { ChatSession(id:"s\\($0)",title:"title\\($0)",folderId:$0<300 ? "a":"b") }
 h.sessions += [ChatSession(id:"hidden",title:"child",folderId:"a",isChild:true),ChatSession(id:"loose",title:"ungrouped",folderId:nil)]
@@ -67,6 +92,11 @@ expect(h.groupSessionIDs["a"] == (0..<300).map { "s\\($0)" },"400-session order 
 expect(h.groupSessionIDs["b"]?.count == 100,"second group count")
 expect(h.groupedSessionsByID["hidden"] == nil,"child sessions excluded")
 expect(h.groupedSessionsByID["loose"]?.title == "ungrouped","ungrouped data retained")
+expect(legacySessionRowsMatch(h.sessions, h.sessions),"no-op refresh stays unchanged")
+var fresh=h.sessions
+fresh[0].lastMessage="new preview"
+expect(!legacySessionRowsMatch(h.sessions,fresh),"preview change refreshes even with unchanged identity and timestamp")
+expect(h.ungroupedSessions.map { $0.id } == ["loose"],"ungrouped order cached")
 let oldIDs=h.groupSessionIDs["a"]
 h.sessions[0].title="renamed"; h.reloadGroupMembers()
 expect(h.groupSessionIDs["a"] == oldIDs && h.groupedSessionsByID["s0"]?.title == "renamed","same IDs expose refreshed data")
